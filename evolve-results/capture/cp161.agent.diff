@@ -1,0 +1,177 @@
+diff --git a/src/main/frontend/features/export/ExportClaims.tsx b/src/main/frontend/features/export/ExportClaims.tsx
+index a06394713..6864998ba 100644
+--- a/src/main/frontend/features/export/ExportClaims.tsx
++++ b/src/main/frontend/features/export/ExportClaims.tsx
+@@ -1,26 +1,32 @@
+-import { useClaims } from '../claims/claims';
+-import { periodOf, usePeriods } from '../periods/periods';
+-import { usePeople } from '../people/people';
+-import { claimDue, useRates } from '../rates/rates';
++import { useQueryClient } from '@tanstack/react-query';
++import { periodOf } from '../periods/periods';
++import { claimDue } from '../rates/rates';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+-import { useDueRules } from '../settings/settings';
++import { dueRules } from '../settings/settings';
+ import { csvField } from './ExportPeople';
++import { freshClaims, freshPeople, freshPeriods, freshRates, freshSettings, freshSheetInfo } from './fresh';
+ 
+ // The button that downloads the claims as a CSV file: people in list order (retired people included)
+ // and each person's claims oldest first, with the number, due and period as the claim's row shows
+-// them (an empty number or period, or n/a, as it is). Quoted and ended as the people export.
++// them (an empty number or period, or n/a, as it is). Quoted and ended as the people export; re-read
++// from the store first, as the people export is.
+ export function ExportClaims() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+-  const people = usePeople().data ?? [];
+-  const claims = useClaims().data ?? [];
+-  const rates = useRates().data ?? [];
+-  const periods = usePeriods().data ?? [];
+-  const rules = useDueRules();
++  const queryClient = useQueryClient();
+ 
+   if (!user || !sheet) return null;
+ 
+-  const download = () => {
++  const download = async () => {
++    const [info, people, claims, rates, periods, settings] = await Promise.all([
++      freshSheetInfo(queryClient, sheet),
++      freshPeople(queryClient, sheet),
++      freshClaims(queryClient, sheet),
++      freshRates(queryClient, sheet),
++      freshPeriods(queryClient, sheet),
++      freshSettings(queryClient, sheet),
++    ]);
++    const rules = dueRules(settings, info.today, claims);
+     const lines = [['person', 'number', 'date', 'amount', 'due', 'status', 'period']];
+     for (const p of people) {
+       const own = claims.filter((c) => c.personId === p.id).reverse();
+diff --git a/src/main/frontend/features/export/ExportPeople.tsx b/src/main/frontend/features/export/ExportPeople.tsx
+index 44a69861b..f4fc1784a 100644
+--- a/src/main/frontend/features/export/ExportPeople.tsx
++++ b/src/main/frontend/features/export/ExportPeople.tsx
+@@ -1,9 +1,9 @@
+-import { useClaims } from '../claims/claims';
+-import { gradeOn, liveHolds, usePeople } from '../people/people';
+-import { personDue, useRates } from '../rates/rates';
++import { useQueryClient } from '@tanstack/react-query';
++import { gradeOn, liveHolds } from '../people/people';
++import { personDue } from '../rates/rates';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+-import { useSheetToday } from '../session/sheetToday';
+-import { useDueRules } from '../settings/settings';
++import { dueRules } from '../settings/settings';
++import { freshClaims, freshPeople, freshRates, freshSettings, freshSheetInfo } from './fresh';
+ 
+ /** A CSV field: wrapped in double quotes, with any quote inside doubled, when it holds a comma, a quote or a line break. */
+ export function csvField(value: string): string {
+@@ -12,19 +12,25 @@ export function csvField(value: string): string {
+ 
+ // The button that downloads the people as a CSV file: one line per person in list order, retired
+ // people included, with the grade in force on the sheet's today, the retired-from date (or nothing)
+-// and the due-total as shown. Lines end with a line feed.
++// and the due-total as shown. Lines end with a line feed. The sheet is re-read from the store first, so
++// while the screen is shown as of a date the lines are as of that date.
+ export function ExportPeople() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+-  const today = useSheetToday();
+-  const people = usePeople().data ?? [];
+-  const claims = useClaims().data ?? [];
+-  const rates = useRates().data ?? [];
+-  const rules = useDueRules();
++  const queryClient = useQueryClient();
+ 
+   if (!user || !sheet) return null;
+ 
+-  const download = () => {
++  const download = async () => {
++    const [info, people, claims, rates, settings] = await Promise.all([
++      freshSheetInfo(queryClient, sheet),
++      freshPeople(queryClient, sheet),
++      freshClaims(queryClient, sheet),
++      freshRates(queryClient, sheet),
++      freshSettings(queryClient, sheet),
++    ]);
++    const today = info.today;
++    const rules = dueRules(settings, today, claims);
+     const lines = [['name', 'grade', 'retired-from', 'due-total']];
+     for (const p of people) {
+       const due = personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules);
+diff --git a/src/main/frontend/features/export/ExportPools.tsx b/src/main/frontend/features/export/ExportPools.tsx
+index 205a16793..bec409744 100644
+--- a/src/main/frontend/features/export/ExportPools.tsx
++++ b/src/main/frontend/features/export/ExportPools.tsx
+@@ -1,14 +1,12 @@
+ import { useQueryClient } from '@tanstack/react-query';
+-import { getJson } from '../../api/http';
+-import { poolsKey } from '../pools/pools';
+-import type { Pool } from '../pools/pools';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { csvField } from './ExportPeople';
++import { freshPools } from './fresh';
+ 
+ // The button that downloads the pools as a CSV file: one line per member, pools in the order added and
+ // members in the order added, a pool member as pool:<name> and the cut as the pool's row shows it (empty
+-// when none). The pools are re-read from the store first, so the cuts are current. Quoted and ended as
+-// the people export.
++// when none). The pools are re-read from the store first, so the cuts are current (as of the screen's
++// as-of date, when one is set). Quoted and ended as the people export.
+ export function ExportPools() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+@@ -17,11 +15,7 @@ export function ExportPools() {
+   if (!user || !sheet) return null;
+ 
+   const download = async () => {
+-    const pools = await queryClient.fetchQuery({
+-      queryKey: poolsKey(sheet),
+-      queryFn: () => getJson<Pool[]>(`/api/sheets/${encodeURIComponent(sheet)}/pools`),
+-      staleTime: 0,
+-    });
++    const pools = await freshPools(queryClient, sheet);
+     const lines = [['pool', 'member', 'share', 'cut']];
+     for (const p of pools) {
+       for (const m of p.members) {
+diff --git a/src/main/frontend/features/export/fresh.ts b/src/main/frontend/features/export/fresh.ts
+new file mode 100644
+index 000000000..512ef275e
+--- /dev/null
++++ b/src/main/frontend/features/export/fresh.ts
+@@ -0,0 +1,35 @@
++import type { QueryClient } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { claimsKey } from '../claims/claims';
++import type { Claim } from '../claims/claims';
++import { periodsKey } from '../periods/periods';
++import type { Period } from '../periods/periods';
++import { peopleKey } from '../people/people';
++import type { Person } from '../people/people';
++import { poolsKey } from '../pools/pools';
++import type { Pool } from '../pools/pools';
++import { ratesKey } from '../rates/rates';
++import type { Rate } from '../rates/rates';
++import { sheetInfoKey } from '../session/session';
++import type { SheetInfo } from '../session/session';
++import { settingsKey } from '../settings/settings';
++import type { Settings } from '../settings/settings';
++
++/**
++ * One part of the sheet re-read from the store under its usual query key, so an export never builds
++ * from what the screen last held: while the screen is shown as of a date (the read carries it), the
++ * export takes the as-of figures even when the screen has not yet re-read them.
++ */
++function fresh<T>(queryClient: QueryClient, queryKey: readonly unknown[], path: string): Promise<T> {
++  return queryClient.fetchQuery({ queryKey, queryFn: () => getJson<T>(path), staleTime: 0 });
++}
++
++const base = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}`;
++
++export const freshSheetInfo = (qc: QueryClient, sheet: string) => fresh<SheetInfo>(qc, sheetInfoKey(sheet), base(sheet));
++export const freshPeople = (qc: QueryClient, sheet: string) => fresh<Person[]>(qc, peopleKey(sheet), `${base(sheet)}/people`);
++export const freshClaims = (qc: QueryClient, sheet: string) => fresh<Claim[]>(qc, claimsKey(sheet), `${base(sheet)}/claims`);
++export const freshRates = (qc: QueryClient, sheet: string) => fresh<Rate[]>(qc, ratesKey(sheet), `${base(sheet)}/rates`);
++export const freshPeriods = (qc: QueryClient, sheet: string) => fresh<Period[]>(qc, periodsKey(sheet), `${base(sheet)}/periods`);
++export const freshSettings = (qc: QueryClient, sheet: string) => fresh<Settings>(qc, settingsKey(sheet), `${base(sheet)}/settings`);
++export const freshPools = (qc: QueryClient, sheet: string) => fresh<Pool[]>(qc, poolsKey(sheet), `${base(sheet)}/pools`);
