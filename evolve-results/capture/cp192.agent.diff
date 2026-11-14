@@ -1,0 +1,123 @@
+diff --git a/src/main/frontend/features/crews/Crews.tsx b/src/main/frontend/features/crews/Crews.tsx
+index 73911dd1a..7ae5f6eba 100644
+--- a/src/main/frontend/features/crews/Crews.tsx
++++ b/src/main/frontend/features/crews/Crews.tsx
+@@ -3,7 +3,7 @@ import type { FormEvent } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+-import { usePeople } from '../people/people';
++import { shownName, usePeople } from '../people/people';
+ import { crewDue, crewsKey, useCrews, useDueByPerson } from './crews';
+ import type { Crew } from './crews';
+ import { poolsKey, usePools } from '../pools/pools';
+@@ -110,6 +110,8 @@ function CrewRow({ crew, due }: { crew: Crew; due: string }) {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const people = usePeople().data ?? [];
++  const lead = crew.lead && people.find((p) => p.id === crew.lead?.id);
++  const leadShown = lead ? shownName(lead) : (crew.lead?.name ?? '');
+   const [member, setMember] = useState('');
+   const [error, setError] = useState('');
+   const queryClient = useQueryClient();
+@@ -152,7 +154,7 @@ function CrewRow({ crew, due }: { crew: Crew; due: string }) {
+ 
+   return (
+     <li data-testid={`crew-row-${crew.name}`}>
+-      <span data-testid="crew-name">{crew.name}</span> lead <span data-testid="crew-lead">{crew.lead?.name ?? ''}</span>{' '}
++      <span data-testid="crew-name">{crew.name}</span> lead <span data-testid="crew-lead">{leadShown}</span>{' '}
+       due-total <span data-testid="crew-due-total">{due}</span>
+       <ul>
+         {crew.members.map((m) => (
+diff --git a/src/main/frontend/features/patrons/PersonPatrons.tsx b/src/main/frontend/features/patrons/PersonPatrons.tsx
+index 38e3b3fea..6ac5a9b58 100644
+--- a/src/main/frontend/features/patrons/PersonPatrons.tsx
++++ b/src/main/frontend/features/patrons/PersonPatrons.tsx
+@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { useOneAtATime } from '../../query/useOneAtATime';
+ import { useClaims } from '../claims/claims';
+-import { usePeople } from '../people/people';
++import { shownName, usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+ import { usePersonError } from '../people/personError';
+ import { NA, total } from '../rates/rates';
+@@ -29,9 +29,9 @@ export function PersonPatrons({ person }: { person: Person }) {
+ 
+   const names = people
+     .filter((p) => ids.includes(p.id))
+-    .map((p) => ({ name: p.name, share: mine.find((m) => m.patronId === p.id)?.share ?? '' }))
++    .map((p) => ({ name: p.name, shown: shownName(p), share: mine.find((m) => m.patronId === p.id)?.share ?? '' }))
+     .sort((a, b) => a.name.localeCompare(b.name))
+-    .map((p) => `${p.name} ${p.share}`);
++    .map((p) => `${p.shown} ${p.share}`);
+   const offered = people.filter((p) => p.id !== person.id && !ids.includes(p.id));
+ 
+   const add = useMutation({
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 090139a9f..c4429800f 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -4,7 +4,7 @@ import { PersonError } from './personError';
+ import { useClaims } from '../claims/claims';
+ import { NA, personDue, useRates } from '../rates/rates';
+ import { useDueRules } from '../settings/settings';
+-import { liveHolds, nameKey, useEditingPerson, usePeople, usePeopleSort, useShowRetired } from './people';
++import { liveHolds, nameKey, shownName, useEditingPerson, usePeople, usePeopleSort, useShowRetired } from './people';
+ import type { Person, SortKey } from './people';
+ import { ColumnHead } from '../columns/ColumnHead';
+ import { useColumnShown } from '../columns/columns';
+@@ -45,7 +45,7 @@ export function PeopleList() {
+         {sorted((people.data ?? []).filter((p) => showRetired || !p.retired), sortKey).map((p) => (
+           <tr key={p.id} data-testid={`person-row-${p.id}`}>
+             <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>
+-              {p.name}
++              {shownName(p)}
+             </td>
+             <td data-testid="person-grade">{p.grade}</td>
+             {showTerms && <td data-testid="person-terms">{p.terms ?? ''}</td>}
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 975b261f1..ac0ef7677 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -18,6 +18,9 @@ export function gradeOn(grades: GradeFrom[], date: string): string | undefined {
+   return found?.grade;
+ }
+ 
++/** A person's name as the screen shows it: `<name> (<grade in force on the sheet's today>)`. */
++export const shownName = (p: { name: string; grade: string }) => `${p.name} (${p.grade})`;
++
+ /** A hold on a person, from its from-date to its to-date, both inclusive (yyyy-MM-dd; null: open-ended). */
+ export type Hold = { from: string | null; to: string | null };
+ 
+diff --git a/src/main/frontend/features/search/TreeSearch.tsx b/src/main/frontend/features/search/TreeSearch.tsx
+index e30d2432b..b1bc39b1b 100644
+--- a/src/main/frontend/features/search/TreeSearch.tsx
++++ b/src/main/frontend/features/search/TreeSearch.tsx
+@@ -4,7 +4,7 @@ import { useAliases } from '../aliases/aliases';
+ import type { Alias } from '../aliases/aliases';
+ import { useClaims } from '../claims/claims';
+ import type { Claim } from '../claims/claims';
+-import { liveHolds, usePeople } from '../people/people';
++import { liveHolds, shownName, usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+ import { personDue, useRates } from '../rates/rates';
+ import type { Rate } from '../rates/rates';
+@@ -30,7 +30,7 @@ async function sheetData(sheet: string): Promise<SheetData> {
+   return { people, aliases, claims, rates, rules: dueRules(settings, info.today, claims) };
+ }
+ 
+-/** The lines `<sheet id> <name> <due-total>` for the sheet's people whose name or an alias contains the text, ignoring case. */
++/** The lines `<sheet id> <name> (<grade>) <due-total>` for the sheet's people whose name or an alias contains the text, ignoring case. */
+ function matches(sheet: string, d: SheetData, text: string): string[] {
+   const key = text.toLowerCase();
+   const hit = (s: string) => s.toLowerCase().includes(key);
+@@ -38,7 +38,7 @@ function matches(sheet: string, d: SheetData, text: string): string[] {
+     .filter((p) => hit(p.name) || d.aliases.some((a) => a.personId === p.id && hit(a.alias)))
+     .map((p) => {
+       const due = personDue(d.claims.filter((c) => c.personId === p.id), d.rates, p.grades, liveHolds(p, d.rules.today), d.rules);
+-      return `${sheet} ${p.name} ${due}`;
++      return `${sheet} ${shownName(p)} ${due}`;
+     });
+ }
+ 
