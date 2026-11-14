@@ -1,0 +1,148 @@
+diff --git a/src/main/frontend/features/claims/PersonClaims.tsx b/src/main/frontend/features/claims/PersonClaims.tsx
+index f6b4889c3..229d7b55f 100644
+--- a/src/main/frontend/features/claims/PersonClaims.tsx
++++ b/src/main/frontend/features/claims/PersonClaims.tsx
+@@ -13,7 +13,8 @@ const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
+  *  claim's date, or bound by the person's last statement; none when there is no such rate), whether
+  *  it is stated,
+  *  the period its date falls in (none when no period contains it), who opened it, and buttons that
+- *  change its status (the user who opened a claim cannot settle it). */
++ *  change its status (the user who opened a claim cannot settle it). Only a DRAFT can be edited:
++ *  editing any other claim is refused with an error on the claim. */
+ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: {
+   sheetId: string; user: string; personId: number; claims: Claim[]; grade: string; rates: Rate[] | undefined;
+ }) {
+@@ -21,6 +22,8 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }:
+   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
+   const [form, setForm] = useState<ClaimInput>(EMPTY);
+   const [editing, setEditing] = useState<number | null>(null);
++  // The claim whose edit was refused (it is not a DRAFT); cleared by the next action on any claim here.
++  const [editRefused, setEditRefused] = useState<number | null>(null);
+ 
+   const save = useMutation({
+     mutationFn: (v: { id: number | null; input: ClaimInput }) =>
+@@ -44,6 +47,7 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }:
+   const act = (id: number, action: ClaimAction) => {
+     actOnce(() => {
+       move.reset();
++      setEditRefused(null);
+       return move.mutateAsync({ id, action });
+     });
+   };
+@@ -54,10 +58,15 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }:
+   };
+ 
+   const open = (c: Claim) => {
++    move.reset();
++    if (c.status !== 'DRAFT') {
++      setEditRefused(c.id);
++      return;
++    }
++    setEditRefused(null);
+     setForm({ amount: c.amount, date: c.date, note: c.note });
+     setEditing(c.id);
+     save.reset();
+-    move.reset();
+   };
+ 
+   const cancel = () => {
+@@ -90,6 +99,8 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }:
+         {save.isError && (
+           <span data-testid="claim-form-error">{save.error instanceof HttpError && save.error.status === 423
+             ? 'A claim dated inside a closed period cannot be added or edited.'
++            : save.error instanceof HttpError && save.error.status === 409
++            ? 'Only a DRAFT claim can be edited.'
+             : 'A claim needs an amount of 0.00 or more with up to two decimals.'}</span>
+         )}
+       </form>
+@@ -123,6 +134,11 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }:
+                     Cancel
+                   </button>
+                 )}
++                {editRefused === c.id && (
++                  <span data-testid="claim-error">
++                    {`A ${c.status} claim cannot be edited. To change it, void it and add a new one.`}
++                  </span>
++                )}
+                 {move.isError && move.variables?.id === c.id && (
+                   <span data-testid="claim-error">{move.error instanceof HttpError && move.error.status === 423
+                     ? 'A claim dated inside a closed period cannot be changed.'
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index 489967d01..2e82cb10b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -5,9 +5,13 @@ import net.officefloor.hq.app.period.PeriodClosedException;
+ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.plugin.variable.Val;
+ 
++/** Edits a claim: only a DRAFT can be edited (to change an open claim, void it and add a new one). */
+ public class ApplyClaim {
+     public void apply(@Val ValidClaim request, @Val Claim claim, SheetRepository sheets,
+-            PeriodRepository periods) throws PeriodClosedException {
++            PeriodRepository periods) throws ClaimStatusException, PeriodClosedException {
++        if (!ClaimStatus.DRAFT.name().equals(claim.getStatus())) {
++            throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be edited");
++        }
+         periods.requireOpen(claim.getSheetId(), claim.getDate());
+         claim.setAmount(request.amount().toPlainString());
+         claim.setDate((request.date() != null ? request.date() : sheets.today(claim.getSheetId())).toString());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 919d49a72..e017e8ebf 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -3,8 +3,8 @@ package net.officefloor.hq.app.claim;
+ import com.fasterxml.jackson.annotation.JsonIgnore;
+ 
+ /** A claim of a person: an amount (two decimals, as text), a date (yyyy-MM-dd), a note and a status
+- *  (a {@link ClaimStatus} name), and its number on the sheet (given when opened; none while a draft or
+- *  once voided), its settled due (fixed when settled; none otherwise, or when there was no rate), and
++ *  (a {@link ClaimStatus} name), and its number on the sheet (given when opened and kept when voided;
++ *  none while a draft), its settled due (fixed when settled; none otherwise, or when there was no rate), and
+  *  who opened it (none while a draft), and whether its person's last statement bound it, with the
+  *  figure it bound (none when it had none): a bound claim shows and totals that figure. */
+ public class Claim {
+@@ -20,8 +20,6 @@ public class Claim {
+     private String openedBy;
+     private boolean stated;
+     private String statedDue;
+-    /** The number a claim had before this request cleared it (a void), for its audit line. */
+-    private Long numberHad;
+ 
+     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
+             String status, Long number, String settledDue, String openedBy) {
+@@ -86,16 +84,9 @@ public class Claim {
+         return stated ? statedDue : live;
+     }
+ 
+-    /** Clear the number, keeping the one it had for the audit line. */
+-    public void clearNumber() {
+-        this.numberHad = number;
+-        this.number = null;
+-    }
+-
+-    /** The audit suffix: {@code " number=<n>"} for a claim that has (or just had) a number. */
++    /** The audit suffix: {@code " number=<n>"} for a claim that has a number. */
+     @JsonIgnore
+     public String getAuditNumber() {
+-        Long n = number != null ? number : numberHad;
+-        return n == null ? "" : " number=" + n;
++        return number == null ? "" : " number=" + number;
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/VoidClaim.java b/src/main/java/net/officefloor/hq/app/claim/VoidClaim.java
+index a4afa5d98..714a1c655 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/VoidClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/VoidClaim.java
+@@ -4,11 +4,11 @@ import net.officefloor.hq.app.period.PeriodClosedException;
+ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.plugin.variable.Val;
+ 
++/** Voids a claim; an opened claim keeps its number (still never reused). */
+ public class VoidClaim {
+     public void move(@Val Claim claim, PeriodRepository periods)
+             throws ClaimStatusException, PeriodClosedException {
+         periods.requireOpen(claim.getSheetId(), claim.getDate());
+         claim.setStatus(ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.VOID).name());
+-        claim.clearNumber();
+     }
+ }
