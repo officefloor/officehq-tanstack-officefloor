@@ -75,7 +75,7 @@ public record Period(String sheetId, String name, LocalDate from, LocalDate to, 
         }
         ClaimStatus then = statusAtEnd(claim, log);
         if (then == ClaimStatus.SETTLED) {
-            return claim.status() != ClaimStatus.VOID;
+            return claim.status() != ClaimStatus.VOID && !claim.deferred(today);
         }
         if (then == null || !then.open() || claim.deferred(today)) {
             return false;

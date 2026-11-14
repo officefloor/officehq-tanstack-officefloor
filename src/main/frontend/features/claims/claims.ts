@@ -16,11 +16,14 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'D
 export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
 
 /**
- * Whether a claim is deferred on the sheet's `today`: OPEN, deferred until a date after it. A deferred claim counts
- * in no total, is not overdue, cannot be settled and is left unbound by a statement.
+ * Whether a claim is deferred on the sheet's `today`: OPEN (or SETTLED while a statement bound it), deferred until a
+ * date after it, and no statement binds it. A deferred claim counts in no total, is not overdue, cannot be settled
+ * and is left unbound by a statement; a claim deferred while bound stays in the totals (and can be settled) until the
+ * binding ends.
  */
 export const deferred = (c: Claim, today: string) =>
-  c.status === 'OPEN' && c.deferredUntil !== null && today !== '' && today < c.deferredUntil;
+  (c.status === 'OPEN' || c.status === 'SETTLED') && !c.stated && c.deferredUntil !== null && today !== '' &&
+  today < c.deferredUntil;
 
 /** Whether a statement binds the claim now: it was stated (a PENDING claim too, showing the bound figure). */
 export const bound = (c: Claim) => c.stated;
@@ -114,12 +117,12 @@ export type ClaimLogLine = { status: ClaimStatus; by: string; date: string; due:
  * nor while it is deferred on the sheet's `today`.
  */
 export const counts = (c: Claim, holds: Hold[], today: string) =>
-  c.status === 'SETTLED' ||
-  (isOpen(c) && !deferred(c, today) && (bound(c) || !holds.some((h) => covers(h, c.date))));
+  !deferred(c, today) &&
+  (c.status === 'SETTLED' || (isOpen(c) && (bound(c) || !holds.some((h) => covers(h, c.date)))));
 
 /** Whether a claim counts toward claimed: as {@link counts}, but a hold (the person's or the claim's) does not take it out. */
 export const countsClaimed = (c: Claim, today: string) =>
-  c.status === 'SETTLED' || (isOpen(c) && !deferred(c, today));
+  !deferred(c, today) && (c.status === 'SETTLED' || isOpen(c));
 
 /** Each person's live holds on the sheet's `today`, by id: their open claims dated within one count in no live total. */
 export const holdsById = (people: { id: number; holds: Hold[]; retiredFrom: string | null }[], today: string) =>

@@ -83,7 +83,7 @@ export function statusAt(c: Claim, date: string): ClaimStatus | undefined {
  */
 export const countsInPeriod = (period: Period, c: Claim, holds: Person['holds'], today: string) => {
   const then = statusAt(c, period.to);
-  if (then === 'SETTLED') return true;
+  if (then === 'SETTLED') return !deferred(c, today);
   if (then !== 'OPEN' && then !== 'PENDING') return false;
   return !deferred(c, today) && (!isOpen(c) || bound(c) || !holds.some((h) => covers(h, c.date)));
 };

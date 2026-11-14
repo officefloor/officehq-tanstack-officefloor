@@ -273,7 +273,8 @@ public class PersonRepository {
      * no repeats); anyone naming them as patron names the other instead (not themselves, no repeats); their pool
      * and crew memberships, crews they lead, and plans move to the other (shares added where the other is already a member), as do their shares of claims (dropped where the other holds one or owns the claim). Their statements join
      * the other's, before them: the other's count is both counts added, and the other's last statement stays theirs (or,
-     * having none, becomes the merged person's). Their grades,
+     * having none, becomes the merged person's). Their figures fixed for closed or soft-closed periods (due-total and
+     * carried) are added to the other's for the same periods. Their grades,
      * holds, past retirements, watchers, snapshot lines and contact are dropped with them.
      */
     public void merge(Person from, Person into) {
@@ -323,6 +324,18 @@ public class PersonRepository {
                 + " claim_share k WHERE k.claim_id = g.claim_id AND k.person_id = ?) OR EXISTS (SELECT 1 FROM claim c"
                 + " WHERE c.id = g.claim_id AND c.person_id = ?))", sheetId, gone, kept, kept);
         jdbc.update("UPDATE claim_share SET person_id = ? WHERE sheet_id = ? AND person_id = ?", kept, sheetId, gone);
+
+        jdbc.update("UPDATE period_person_total k SET total = total + (SELECT g.total FROM period_person_total g"
+                + " WHERE g.sheet_id = k.sheet_id AND g.period_name = k.period_name AND g.person_id = ?), carried ="
+                + " carried + (SELECT g.carried FROM period_person_total g WHERE g.sheet_id = k.sheet_id AND"
+                + " g.period_name = k.period_name AND g.person_id = ?) WHERE k.sheet_id = ? AND k.person_id = ? AND"
+                + " EXISTS (SELECT 1 FROM period_person_total g WHERE g.sheet_id = k.sheet_id AND g.period_name ="
+                + " k.period_name AND g.person_id = ?)", gone, gone, sheetId, kept, gone);
+        jdbc.update("DELETE FROM period_person_total g WHERE g.sheet_id = ? AND g.person_id = ? AND EXISTS (SELECT 1"
+                + " FROM period_person_total k WHERE k.sheet_id = g.sheet_id AND k.period_name = g.period_name AND"
+                + " k.person_id = ?)", sheetId, gone, kept);
+        jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND person_id = ?", kept, sheetId,
+                gone);
 
         mergeStatements(sheetId, gone, kept);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
