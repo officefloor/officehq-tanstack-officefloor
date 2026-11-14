@@ -1,0 +1,65 @@
+diff --git a/src/main/frontend/features/claims/ClaimedTotal.tsx b/src/main/frontend/features/claims/ClaimedTotal.tsx
+index e75527993..f1a49a424 100644
+--- a/src/main/frontend/features/claims/ClaimedTotal.tsx
++++ b/src/main/frontend/features/claims/ClaimedTotal.tsx
+@@ -3,7 +3,7 @@ import { usePeople } from '../people/people';
+ import { useSheetToday } from '../session/sheetToday';
+ import { claimed, holdsById, useClaims } from './claims';
+ 
+-// The sheet's claimed-total: everyone's counting claims added up (open ones a hold covers left out).
++// The sheet's claimed-total: everyone's counting claims added up (corrections and open ones a hold covers left out).
+ export function ClaimedTotal() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+diff --git a/src/main/frontend/features/claims/PersonClaimed.tsx b/src/main/frontend/features/claims/PersonClaimed.tsx
+index 59ab6ca18..55fa48e86 100644
+--- a/src/main/frontend/features/claims/PersonClaimed.tsx
++++ b/src/main/frontend/features/claims/PersonClaimed.tsx
+@@ -2,7 +2,7 @@ import type { Person } from '../people/people';
+ import { useSheetToday } from '../session/sheetToday';
+ import { claimed, holdsById, useClaims } from './claims';
+ 
+-// What a person has claimed: the sum of their counting claims' amounts (not their open ones a hold covers).
++// What a person has claimed: the sum of their counting claims' amounts (not corrections, nor their open ones a hold covers).
+ export function PersonClaimed({ person }: { person: Person }) {
+   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
+   const today = useSheetToday();
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index d020e59d0..e50daf3b2 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -136,8 +136,8 @@ export function useLastBatch() {
+   });
+ }
+ 
+-/** The sum of the counted claims' amounts, with two decimals; added in cents so it is exact. `holds` holds each person's holds. */
++/** The sum of the counted claims' amounts, leaving out corrections, with two decimals; added in cents so it is exact. `holds` holds each person's holds. */
+ export function claimed(claims: Claim[], holds: Map<number, Hold[]>, today: string): string {
+-  const cents = claims.filter((c) => counts(c, holds.get(c.personId) ?? [], today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
++  const cents = claims.filter((c) => !c.corrects && counts(c, holds.get(c.personId) ?? [], today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+   return (cents / 100).toFixed(2);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+index faaad1157..2f3ec060a 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+@@ -21,7 +21,7 @@ import org.springframework.stereotype.Service;
+ 
+ /**
+  * Works out a sheet's figures as the screen shows them: a person's claimed is their counting claims' amounts
+- * added up; their due-total those claims' dues (live figures rounded by its policy date, plus
++ * added up, leaving out corrections; their due-total those claims' dues (live figures rounded by its policy date, plus
+  * any late charge, at the late percent in force on each 30-day boundary, on the overdue ones, then raised to the floor in force on each claim's date) added up, at most the cap in force on the sheet's today; n/a when their grade on the sheet's today has no
+  * rate there and no counting claim has a figure (kept, or at the rate for the grade in force on its date). Their overdue-total
+  * is the dues of their overdue counting claims added up (skipping n/a, not capped). The sheet's totals add these up, skipping n/a;
+@@ -68,7 +68,9 @@ public class RollupService {
+                 if (claim.personId() != person.id() || !person.counts(claim, today)) {
+                     continue;
+                 }
+-                claimed = claimed.add(claim.amount());
++                if (!claim.correction()) {
++                    claimed = claimed.add(claim.amount());
++                }
+                 kept |= claim.keepsFigure();
+                 BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()),
+                         dated.floorOn(claim.date()), dated.lateCharge(today, person), rounding);
