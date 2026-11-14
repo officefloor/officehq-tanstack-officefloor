@@ -84,11 +84,12 @@ public class ClaimRepository {
 
     /**
      * Works out again, from its date and the terms it was fixed with over the sheet's holidays as they stand now, the
-     * due-by of every claim on the sheet that is not SETTLED or VOID and is due by on or after {@code from}.
+     * due-by of every claim on the sheet that is not SETTLED or VOID and is due by on or after {@code from} (but not one
+     * whose due-by a steward set directly).
      */
     public void refixDueBys(String sheetId, LocalDate from) {
         Set<LocalDate> sheetHolidays = holidays.dates(sheetId);
-        jdbc.query("SELECT id, claim_date, fixed_terms FROM claim WHERE sheet_id = ? AND status NOT IN ('SETTLED', 'VOID') AND due_by >= ?",
+        jdbc.query("SELECT id, claim_date, fixed_terms FROM claim WHERE sheet_id = ? AND status NOT IN ('SETTLED', 'VOID') AND due_by >= ? AND NOT due_by_set",
                 (rs, n) -> new long[] { rs.getLong("id"), rs.getDate("claim_date").toLocalDate().toEpochDay(),
                         rs.getInt("fixed_terms") },
                 sheetId, Date.valueOf(from)).forEach((row) -> jdbc.update(
@@ -172,6 +173,12 @@ public class ClaimRepository {
     public void renumber(Claim claim) {
         jdbc.update("UPDATE claim SET claim_number = ? WHERE id = ? AND sheet_id = ?",
                 claim.number(), claim.id(), claim.sheetId());
+    }
+
+    /** Set the claim's due-by directly: kept as set, never worked out again when a holiday is added. */
+    public void setDueBy(String sheetId, long id, LocalDate dueBy) {
+        jdbc.update("UPDATE claim SET due_by = ?, due_by_set = TRUE WHERE id = ? AND sheet_id = ?",
+                Date.valueOf(dueBy), id, sheetId);
     }
 
     /** Store the claim's {@code date} and {@code number}. */
