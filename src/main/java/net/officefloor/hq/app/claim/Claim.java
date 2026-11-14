@@ -189,8 +189,8 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
 
     /**
      * The claim's due (null: n/a): the due fixed when it was settled, else the due its statement bound it to, else
-     * the greater of the floor in force on its date and its {@link #figure figure} plus the late charge on that figure
-     * while it is overdue. A settled claim's fixed due and a bound due already have the charge and floor in them; a
+     * the greater of the floor in force on its date and its {@link #figure figure}, plus the late charge on that
+     * floored figure while it is overdue. A settled claim's fixed due and a bound due already have the charge and floor in them; a
      * correction has no floor and no charge.
      */
     public BigDecimal due(BigDecimal liveRate, BigDecimal floor, LateCharge late, Rounding rounding) {
@@ -198,7 +198,8 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
         if (due != null || bound() || figure == null || correction()) {
             return figure;
         }
-        return atLeast(figure.add(late.on(this, figure, rounding.modeFor(this))), floor);
+        BigDecimal floored = atLeast(figure, floor);
+        return floored.add(late.on(this, floored, rounding.modeFor(this)));
     }
 
     /** An amount times a percent rate, divided by 100, rounded by the mode to two decimals; null with no rate. */
