@@ -8,10 +8,11 @@ export type ClaimAction = 'open' | 'settle' | 'void';
 
 /** A claim: its amount as two-decimal text, its date (yyyy-MM-dd), its note, its status and its
  *  number on the sheet (given when opened; null while a draft or once voided), and its settled due
- *  (fixed when settled; null otherwise, or when there was no rate then — its due stays live). */
+ *  (fixed when settled; null otherwise, or when there was no rate then — its due stays live), and who
+ *  opened it (null while a draft; that user cannot settle it). */
 export type Claim = {
   id: number; sheetId: string; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
-  number: number | null; settledDue: string | null;
+  number: number | null; settledDue: string | null; openedBy: string | null;
 };
 export type ClaimInput = { amount: string; date: string; note: string };
 
@@ -35,7 +36,8 @@ export function updateClaim(sheetId: string, by: string, id: number, input: Clai
   return putJson<Claim>(`${sheetBase(sheetId)}/claims/${id}?by=${encodeURIComponent(by)}`, input);
 }
 
-/** Change a claim's status; refused (rejects) when its status does not allow the change. */
+/** Change a claim's status; refused (rejects) when its status does not allow the change, or when the
+ *  user settling it is the one who opened it. */
 export function moveClaim(sheetId: string, by: string, id: number, action: ClaimAction): Promise<Claim> {
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/${action}?by=${encodeURIComponent(by)}`, {});
 }
