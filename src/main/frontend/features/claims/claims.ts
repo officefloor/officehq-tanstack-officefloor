@@ -29,8 +29,9 @@ export const bound = (c: Claim) => c.stated;
  * A claim as the store holds it: the amount with two decimals, the date as yyyy-MM-dd; its number
  * is the sheet's next one when it was opened (1, 2, ...; under period numbering, the next within its period (the one containing its due-by): P1-1, X-1), null while a draft (a voided claim keeps it); its due is the
  * one fixed when it was settled (two decimals), null while it is live; openedBy is the user who
- * opened it, null while a draft; stated is whether its person's last statement bound it to a figure,
- * statedDue that figure (two decimals; null: n/a) — it then shows and totals that, not its live figure;
+ * opened it, null while a draft; stated is whether its person's last statement bound it to a due,
+ * statedDue that due as shown then, late charge and floor included (two decimals; null: n/a) — it then shows and
+ * totals that, not its live due;
  * corrects is, for a correction (a negative amount), the number of the settled claim it corrects, null otherwise;
  * dueBy (yyyy-MM-dd) is fixed when it was created: the terms-th business day after its date for the terms of its person
  * (else their grade's, else the sheet's) in force on it, skipping Saturdays, Sundays and the sheet's holidays then on the list;

@@ -22,10 +22,11 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Takes the person's statement: records their due-total now, binds each of their claims that counts to the
- * figure it has now (a live one at its rate alone, not raised to the floor), and unbinds (live again) each that does not. The due-total is their counting claims'
- * dues added up, at most the cap in force on the sheet's today (each the greater of the floor in force on its date and its figure plus any late charge on
- * it — the charge and floor are never bound, they keep following the sheet's today and settings); n/a when their grade on the sheet's today has no rate there and no counting claim has a figure (kept, or at the
+ * Takes the person's statement: records their due-total now, binds each of their claims that counts to its
+ * due as shown now (the greater of the floor in force on its date and its figure plus any late charge on it; a due already
+ * bound stays as it is), and unbinds (live again) each that does not. While bound, a claim shows and totals that due: its
+ * late charge no longer follows the sheet's today. The due-total is their counting claims' dues added up, at most the cap
+ * in force on the sheet's today; n/a when their grade on the sheet's today has no rate there and no counting claim has a figure (kept, or at the
  * rate for the grade in force on its date).
  * <p>
  * Taken as of a date (on or before the sheet's today), it works on the sheet as it stood at the end of that date — every
@@ -76,11 +77,13 @@ public class TakeStatement {
             boolean fixed = claim.keepsFigure();
             BigDecimal rate = Rate.inForce(sheetRates, thenPerson.gradeOn(claim.date()), claim);
             BigDecimal figure = claim.figure(rate, rounding);
-            figures.put(claim.id(), figure);
+            BigDecimal due = figure == null ? null
+                    : claim.due(rate, dated.floorOn(claim.date()), dated.lateCharge(on, thenPerson), rounding);
+            figures.put(claim.id(), due);
             counted++;
             kept |= fixed || figure != null;
-            if (figure != null) {
-                total = total.add(claim.due(rate, dated.floorOn(claim.date()), dated.lateCharge(on, thenPerson), rounding));
+            if (due != null) {
+                total = total.add(due);
             }
         }
         for (Claim claim : personClaims) {

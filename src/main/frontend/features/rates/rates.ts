@@ -134,7 +134,7 @@ export function floored(value: string, floor: string): string {
 }
 
 /**
- * A claim's figure: the figure its statement bound it to, else its amount at the rate in force on its
+ * A claim's figure: the due its statement bound it to, else its amount at the rate in force on its
  * date for the person's grade in force on that date (of the rate versions that apply to it), rounded by the policy
  * date — no floor.
  */
@@ -163,14 +163,15 @@ export function lateCharge(claim: Claim, figure: string, grades: GradeFrom[], ru
 }
 
 /**
- * A claim's due: the one fixed when it was settled (any late charge and floor frozen in), else the greater of the
- * floor in force on its date and its figure plus the late charge on it while it is overdue — a correction has no
- * floor and no charge. Neither the charge nor the floor is bound by a statement: they follow the sheet's today.
+ * A claim's due: the one fixed when it was settled (any late charge and floor frozen in), else the due its
+ * statement bound it to (late charge and floor included, as shown when it was taken), else the greater of the floor in
+ * force on its date and its figure plus the late charge on it while it is overdue — a correction has no floor and no
+ * charge.
  */
 export function claimDue(claim: Claim, rates: Rate[], grades: GradeFrom[], rules: DueRules): string {
   if (claim.due !== null) return claim.due;
   const figure = claimFigure(claim, rates, grades, rules);
-  if (figure === NA || claim.corrects !== null) return figure;
+  if (figure === NA || bound(claim) || claim.corrects !== null) return figure;
   return floored(total([figure, lateCharge(claim, figure, grades, rules)]), rules.floorOn(claim.date));
 }
 

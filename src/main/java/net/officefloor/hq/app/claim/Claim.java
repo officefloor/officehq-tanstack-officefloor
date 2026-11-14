@@ -12,8 +12,8 @@ import java.util.stream.Collectors;
  * is null unless the claim has been opened (a draft has none; a voided claim keeps it). {@code due} is the
  * due fixed when the claim was settled, or null while it is live (not settled, or settled with no rate).
  * {@code openedBy} is the user who opened the claim, or null while it is a draft. {@code stated} is whether
- * its person's last statement bound it to a figure, {@code statedDue} (null: n/a) — it then shows and totals
- * that figure, not its live one. {@code number} is sheet-wide (1, 2, ...) or, under period numbering,
+ * its person's last statement bound it to a due, {@code statedDue} (null: n/a) — its due as shown then, late
+ * charge and floor included; it then shows and totals that due, not its live one. {@code number} is sheet-wide (1, 2, ...) or, under period numbering,
  * within its period (P1-1, X-1). {@code corrects} is, for a correction, the number of the claim it corrects (null:
  * not a correction). {@code dueBy} is fixed when the claim is created: the terms-th business day after its date (skipping Saturdays,
  * Sundays and the sheet's holidays) for its person's own terms, else those of their grade, else the sheet's, each in
@@ -163,7 +163,7 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
     }
 
     /**
-     * The claim's figure (null: n/a): the due fixed when it was settled, else the figure its statement bound
+     * The claim's figure (null: n/a): the due fixed when it was settled, else the due its statement bound
      * it to, else its amount at the given live rate (null: none) — no floor. Its live figure
      * rounds by the sheet's policy date.
      */
@@ -178,13 +178,14 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
     }
 
     /**
-     * The claim's due (null: n/a): the due fixed when it was settled, else the greater of the floor in force on its
-     * date and its {@link #figure figure} plus the late charge on that figure while it is overdue. A settled claim's
-     * fixed due already has the charge and floor frozen in; a correction has no floor and no charge.
+     * The claim's due (null: n/a): the due fixed when it was settled, else the due its statement bound it to, else
+     * the greater of the floor in force on its date and its {@link #figure figure} plus the late charge on that figure
+     * while it is overdue. A settled claim's fixed due and a bound due already have the charge and floor in them; a
+     * correction has no floor and no charge.
      */
     public BigDecimal due(BigDecimal liveRate, BigDecimal floor, LateCharge late, Rounding rounding) {
         BigDecimal figure = figure(liveRate, rounding);
-        if (due != null || figure == null || correction()) {
+        if (due != null || bound() || figure == null || correction()) {
             return figure;
         }
         return atLeast(figure.add(late.on(this, figure, rounding.modeFor(this))), floor);
