@@ -28,7 +28,7 @@ public class ValidateSettingsRequest {
     public void validate(@RequestBody @Valid SettingsRequest request, Out<ClerkLimit> limit, Out<Floor> floor,
             Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate,
             Out<PeriodNumberingFrom> periodNumberingFrom, Out<EntryDate> entryDate, Out<GradeTerms> gradeTerms, Out<Cap> cap,
-            Out<ProofThreshold> proofThreshold, Out<NoteThreshold> noteThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays,
+            Out<ProofThreshold> proofThreshold, Out<NoteThreshold> noteThreshold, Out<ReviewThreshold> reviewThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays,
             Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold, Out<Pot> pot, Out<Parent> parent,
             Out<FiscalStartMonth> fiscalStartMonth, Out<AlertThreshold> alertThreshold, Out<RoundingSetting> rounding)
             throws InvalidSettingException {
@@ -43,6 +43,7 @@ public class ValidateSettingsRequest {
         cap.set(cap(request.cap(), from(request.capFrom(), "cap")));
         proofThreshold.set(proofThreshold(request.proofThreshold(), from(request.proofThresholdFrom(), "proof threshold")));
         noteThreshold.set(noteThreshold(request.noteThreshold(), from(request.noteThresholdFrom(), "note threshold")));
+        reviewThreshold.set(reviewThreshold(request.reviewThreshold(), from(request.reviewThresholdFrom(), "review threshold")));
         permissions.set(permissions(request.permissions()));
         graceDays.set(graceDays(request.graceDays()));
         gradeGrace.set(gradeGrace(request.gradeGrace(), request.gradeGraceFrom()));
@@ -266,6 +267,20 @@ public class ValidateSettingsRequest {
             throw new InvalidSettingException("The note threshold must be 0.00 or more, with at most two decimals, or blank.");
         }
         return new NoteThreshold(true, new BigDecimal(value).setScale(2), from);
+    }
+
+    private static ReviewThreshold reviewThreshold(String requested, LocalDate from) throws InvalidSettingException {
+        if (requested == null) {
+            return new ReviewThreshold(false, null, null);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new ReviewThreshold(true, null, from);
+        }
+        if (!AMOUNT.matcher(value).matches()) {
+            throw new InvalidSettingException("The review threshold must be 0.00 or more, with at most two decimals, or blank.");
+        }
+        return new ReviewThreshold(true, new BigDecimal(value).setScale(2), from);
     }
 
     private static ClerkLimit clerkLimit(String requested, LocalDate from) throws InvalidSettingException {

@@ -8,7 +8,7 @@ import { useDueRules } from '../settings/settings';
 import { useVoidReasons } from '../voidreasons/voidReasons';
 
 /** The statuses the summary counts claims by; one no claim reaches yet still shows, as 0. */
-const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'] as const;
 
 // The sheet at a glance, worked out from the same figures the list shows. Per grade: the people on it
 // today (retired people left out), their due-totals added up (skipping n/a) and how many of them are active. Per period: its

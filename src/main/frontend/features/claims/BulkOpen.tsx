@@ -10,7 +10,7 @@ import { useOneAtATime } from '../../query/useOneAtATime';
 
 // Opens every ticked claim, one after another in list order (people in their order, each one's
 // claims newest first), so they are numbered in that order. Each goes through the claim's own open
-// action: one the server refuses is left as it is and counted as refused.
+// action: one the server refuses is left as it is and counted as refused; one that went to REVIEW counts as opened.
 export function BulkOpen() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();

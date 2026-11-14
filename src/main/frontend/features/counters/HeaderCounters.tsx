@@ -12,7 +12,7 @@ import type { DueRules } from '../settings/settings';
 import { useCurrentUser } from '../session/session';
 
 /** The statuses counted, as in the summary; one no claim reaches yet still shows, as 0. */
-const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'] as const;
 
 /** A sheet's due-total and overdue-total as its header shows them. */
 export function sheetTotals(people: Person[], claims: Claim[], rates: Rate[], rules: DueRules): { due: string; overdue: string } {

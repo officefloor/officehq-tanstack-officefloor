@@ -9,10 +9,11 @@ import { useOneAtATime } from '../../query/useOneAtATime';
 import { useClaimError } from './claimError';
 import { useVoidReasons } from '../voidreasons/voidReasons';
 
-type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore';
+type Action = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore';
 
 const ACTIONS: Array<{ action: Action; label: string }> = [
   { action: 'open', label: 'Open' },
+  { action: 'review', label: 'Review' },
   { action: 'settle', label: 'Settle' },
   { action: 'approve', label: 'Approve' },
   { action: 'reject', label: 'Reject' },
@@ -24,6 +25,7 @@ const ACTIONS: Array<{ action: Action; label: string }> = [
 
 const REFUSED: Partial<Record<Action, string>> = {
   open: ' (your role may not be allowed to open a claim)',
+  review: ' (only a steward reviews a claim in REVIEW, which opens it)',
   settle: ' (the user who opened it cannot settle it, one whose due is above the proof threshold needs a proof, and your role may not be allowed to settle)',
   void: ' (your role may not be allowed to void a claim; only a steward voids a settled claim, within 7 days of its settlement; while the sheet has void reasons, choose one)',
   approve: ' (only a steward approves a pending claim, and not the user who opened it; one whose due is above the proof threshold needs a proof)',
@@ -43,7 +45,8 @@ const REFUSED: Partial<Record<Action, string>> = {
 // OPEN claim into a new OPEN claim of the same person (more than 0.00 and less than the claim's amount). A steward
 // re-dates an OPEN or PENDING claim to the date typed beside the Re-date button. While the sheet has void reasons, a void
 // sends the reason chosen beside it (none chosen: the server refuses it). Delete sets a DRAFT claim aside as DELETED;
-// Restore makes it a DRAFT again, only on the sheet's today it was deleted.
+// Restore makes it a DRAFT again, only on the sheet's today it was deleted. An open whose due is above the review threshold
+// makes the claim REVIEW; a steward's Review then opens it.
 export function ClaimStatus({ claim }: { claim: Claim }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();

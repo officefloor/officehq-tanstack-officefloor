@@ -12,10 +12,10 @@ import net.officefloor.hq.app.claim.LateCharge;
 import net.officefloor.hq.app.person.Person;
 
 /**
- * A sheet's dated settings: for each key (floor, late-pct, terms, terms-&lt;grade&gt;, grace-&lt;grade&gt;, clerk-limit, cap, proof-threshold, proof-threshold-&lt;grade&gt;, note-threshold, rounding) the values
+ * A sheet's dated settings: for each key (floor, late-pct, terms, terms-&lt;grade&gt;, grace-&lt;grade&gt;, clerk-limit, cap, proof-threshold, proof-threshold-&lt;grade&gt;, note-threshold, review-threshold, rounding) the values
  * recorded, by from-date (a value null: blank). The value in force on a date is the one with the latest from-date on or
  * before it; before every from-date it is the sheet's starting value (floor 1.00, late percent 0.00, terms 14; none
- * for the clerk limit, the cap, the proof threshold, the note threshold, a grade's own terms, a grade's grace days, a grade's proof threshold and the rounding mode).
+ * for the clerk limit, the cap, the proof threshold, the note threshold, the review threshold, a grade's own terms, a grade's grace days, a grade's proof threshold and the rounding mode).
  */
 public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values) {
 
@@ -26,6 +26,7 @@ public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values)
     public static final String CAP = "cap";
     public static final String PROOF_THRESHOLD = "proof-threshold";
     public static final String NOTE_THRESHOLD = "note-threshold";
+    public static final String REVIEW_THRESHOLD = "review-threshold";
     public static final String GRACE = "grace";
     public static final String ROUNDING = "rounding";
 
@@ -191,6 +192,21 @@ public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values)
      */
     public boolean needsNote(LocalDate date, BigDecimal due) {
         BigDecimal threshold = noteThresholdOn(date);
+        return threshold != null && due != null && due.compareTo(threshold) > 0;
+    }
+
+    /** The review threshold in force on the date (null: none). */
+    public BigDecimal reviewThresholdOn(LocalDate date) {
+        String value = on(REVIEW_THRESHOLD, date);
+        return value == null ? null : new BigDecimal(value).setScale(2);
+    }
+
+    /**
+     * Whether a claim of the date with this due (null: n/a) goes to REVIEW when opened: its due is above the review
+     * threshold in force on its date.
+     */
+    public boolean needsReview(LocalDate date, BigDecimal due) {
+        BigDecimal threshold = reviewThresholdOn(date);
         return threshold != null && due != null && due.compareTo(threshold) > 0;
     }
 

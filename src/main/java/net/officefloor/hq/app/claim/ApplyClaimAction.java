@@ -40,6 +40,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * status log's latest SETTLED date); it keeps its number and its frozen due, which leaves every total.
  * While the sheet's void reasons list is not empty, a void is refused (400) without a reason chosen from it; a reason
  * not on the list is always refused.
+ * Opening a claim whose due (as shown now) is above the sheet's review threshold in force on its date sends it to REVIEW
+ * instead, with no number yet, recording who opened it; only a steward reviews it, which opens it (giving its number).
  * Deleting sets a DRAFT claim aside as DELETED (counting nowhere); restoring makes it a DRAFT again, only while the
  * sheet's today is the day it was deleted (the status log's latest DELETED date).
  */
@@ -79,6 +81,9 @@ public class ApplyClaimAction {
         if ((found == ClaimAction.APPROVE || found == ClaimAction.REJECT)
                 && settings.find(claim.sheetId()).roleOf(user) != Role.STEWARD) {
             throw new InvalidClaimException("Only a steward can " + action + " a pending claim.");
+        }
+        if (found == ClaimAction.REVIEW && settings.find(claim.sheetId()).roleOf(user) != Role.STEWARD) {
+            throw new InvalidClaimException("Only a steward can review a claim.");
         }
         if (found == ClaimAction.RESETTLE && settings.find(claim.sheetId()).roleOf(user) != Role.STEWARD) {
             throw new InvalidClaimException("Only a steward can re-settle a settled claim.");
@@ -126,18 +131,22 @@ public class ApplyClaimAction {
             throw new InvalidClaimException("The claim's due is above the proof threshold: it needs a proof to be "
                     + (found == ClaimAction.SETTLE ? "settled" : "approved") + ".");
         }
+        if (found == ClaimAction.OPEN && settings.dated(claim.sheetId()).needsReview(claim.date(),
+                ClaimDueNow.of(claim, sheets, people, rates, settings, claims))) {
+            found = ClaimAction.SEND_TO_REVIEW;
+        }
         if (found == ClaimAction.SETTLE && !settings.find(claim.sheetId()).maySettle(user, due)) {
             found = ClaimAction.PEND;
             due = null;
         }
         String next = switch (found) {
-            case OPEN -> ClaimNumbers.next(claim, sheets, settings, periods);
+            case OPEN, REVIEW -> ClaimNumbers.next(claim, sheets, settings, periods);
             default -> claim.number();
         };
         applied.set(found);
         previous.set(new PreviousDue(claim.due(), claim.status() == ClaimStatus.SETTLED));
         number.set(new ClaimNumber(next));
-        updated.set(claim.withStatus(found.to(), next, due, found == ClaimAction.OPEN ? user : claim.openedBy()));
+        updated.set(claim.withStatus(found.to(), next, due, found == ClaimAction.OPEN || found == ClaimAction.SEND_TO_REVIEW ? user : claim.openedBy()));
     }
 
     /** Refuses opening the claim when its period's cap on its person's OPEN and PENDING claims is already reached. */

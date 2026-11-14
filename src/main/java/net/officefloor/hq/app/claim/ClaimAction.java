@@ -4,16 +4,19 @@ package net.officefloor.hq.app.claim;
  * A change of a claim's status: the status it may start from, the status it ends in, and its audit event. PEND is
  * never asked for by name: it is what a clerk's settle becomes when the due is above the clerk limit. RESETTLE
  * freezes a SETTLED claim again at today's figure. DELETE sets a DRAFT aside as DELETED; RESTORE makes it a DRAFT again,
- * only on the sheet's today it was deleted.
+ * only on the sheet's today it was deleted. SEND_TO_REVIEW is never asked for by name: it is what an open becomes when
+ * the due is above the review threshold; REVIEW (a steward's) then opens the claim.
  */
 public enum ClaimAction {
     OPEN("open", ClaimStatus.OPEN, "CLAIM_OPENED", ClaimStatus.DRAFT),
+    SEND_TO_REVIEW(null, ClaimStatus.REVIEW, "CLAIM_REVIEW", ClaimStatus.DRAFT),
+    REVIEW("review", ClaimStatus.OPEN, "CLAIM_REVIEWED", ClaimStatus.REVIEW),
     SETTLE("settle", ClaimStatus.SETTLED, "CLAIM_SETTLED", ClaimStatus.OPEN),
     PEND(null, ClaimStatus.PENDING, "CLAIM_PENDING", ClaimStatus.OPEN),
     APPROVE("approve", ClaimStatus.SETTLED, "CLAIM_APPROVED", ClaimStatus.PENDING),
     REJECT("reject", ClaimStatus.OPEN, "CLAIM_REJECTED", ClaimStatus.PENDING),
     VOID("void", ClaimStatus.VOID, "CLAIM_VOIDED", ClaimStatus.DRAFT, ClaimStatus.OPEN, ClaimStatus.PENDING,
-            ClaimStatus.SETTLED),
+            ClaimStatus.SETTLED, ClaimStatus.REVIEW),
     RESETTLE("resettle", ClaimStatus.SETTLED, "CLAIM_RESETTLED", ClaimStatus.SETTLED),
     DELETE("delete", ClaimStatus.DELETED, "CLAIM_DELETED", ClaimStatus.DRAFT),
     RESTORE("restore", ClaimStatus.DRAFT, "CLAIM_RESTORED", ClaimStatus.DELETED);

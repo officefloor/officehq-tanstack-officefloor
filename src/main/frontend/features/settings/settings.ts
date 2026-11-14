@@ -21,10 +21,11 @@ export type UserRole = { user: string; role: string };
  * numbered within its period), the entry date (yyyy-MM-dd; '': off — a new claim left without a date takes it instead of the
  * sheet's today), the cap (two decimals; '': none — a person's due-total is at most it), the proof threshold (two decimals; '': none — a
  * claim whose due is above the one in force on its date is settled or approved only once it has a proof), the note threshold (two decimals; '': none — a
- * claim whose due is above the one in force on its date is opened only with a note), and the roles
- * given to user names. The clerk limit, floor, terms, grade terms, late percent, cap, proof threshold and note threshold are those in force on the sheet's
+ * claim whose due is above the one in force on its date is opened only with a note), the review threshold (two decimals; '': none — a
+ * claim whose due is above the one in force on its date goes to REVIEW when opened), and the roles
+ * given to user names. The clerk limit, floor, terms, grade terms, late percent, cap, proof threshold, note threshold and review threshold are those in force on the sheet's
  * today; `history` holds every value recorded for them, by key (floor, late-pct, terms, terms-<grade>, grace-<grade>, clerk-limit,
- * cap, proof-threshold, proof-threshold-<grade>, note-threshold, rounding), oldest from-date first (value '': blank). `permissions` is the permission matrix: by action, the
+ * cap, proof-threshold, proof-threshold-<grade>, note-threshold, review-threshold, rounding), oldest from-date first (value '': blank). `permissions` is the permission matrix: by action, the
  * roles allowed it, comma separated ('': blank, the standing rule); it is not dated.
  * `graceDays` is the grace days (whole days; '': off — when the sheet's today is changed, an open period whose
  * to-date plus them is before the new today is closed); it is not dated.
@@ -36,7 +37,7 @@ export type UserRole = { user: string; role: string };
  * `rounding` is the rounding mode in force on the sheet's today (half-up or half-even; '': none — a claim with none in force on its
  * date rounds by the policy date); it is dated, its values in `history` under rounding.
  */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; entryDate: string; cap: string; proofThreshold: string; noteThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[]; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; entryDate: string; cap: string; proofThreshold: string; noteThreshold: string; reviewThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[]; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string };
 
 /**
  * The steward role delegated by a steward (`by`) to a user name, from a from-date to a to-date (yyyy-MM-dd), both

@@ -7,9 +7,10 @@ import { sheetKey, useCurrentSheet } from '../session/session';
 /**
  * Where a claim is in its life: DRAFT -> OPEN -> SETTLED; a clerk's settle above the clerk limit makes it
  * PENDING, which a steward approves (SETTLED) or rejects (OPEN); DRAFT, OPEN or PENDING -> VOID; a DRAFT is deleted
- * (DELETED, counting nowhere) and restored to a DRAFT on the sheet's today it was deleted.
+ * (DELETED, counting nowhere) and restored to a DRAFT on the sheet's today it was deleted; an open whose due is above
+ * the review threshold makes it REVIEW (counting nowhere, voidable), which a steward reviews (OPEN).
  */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED' | 'REVIEW';
 
 /** Whether a claim is open: OPEN, or PENDING (handled like an open claim). */
 export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';

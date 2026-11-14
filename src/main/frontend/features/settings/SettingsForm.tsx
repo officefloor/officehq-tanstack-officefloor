@@ -39,6 +39,7 @@ type SettingsInput = {
   cap?: string;
   proofThreshold?: string;
   noteThreshold?: string;
+  reviewThreshold?: string;
   clerkLimitFrom?: string;
   floorFrom?: string;
   termsFrom?: string;
@@ -46,6 +47,7 @@ type SettingsInput = {
   capFrom?: string;
   proofThresholdFrom?: string;
   noteThresholdFrom?: string;
+  reviewThresholdFrom?: string;
   gradeTermsFrom?: Record<string, string>;
   gradeGrace?: Record<string, string>;
   gradeGraceFrom?: Record<string, string>;
@@ -75,6 +77,7 @@ type Touched = {
   cap: boolean;
   proofThreshold: boolean;
   noteThreshold: boolean;
+  reviewThreshold: boolean;
   graceDays: boolean;
   pot: boolean;
   parent: boolean;
@@ -94,6 +97,7 @@ const UNTOUCHED: Touched = {
   cap: false,
   proofThreshold: false,
   noteThreshold: false,
+  reviewThreshold: false,
   graceDays: false,
   pot: false,
   parent: false,
@@ -102,10 +106,10 @@ const UNTOUCHED: Touched = {
   rounding: false,
 };
 
-// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and entry date (blank: off) and cap (blank: none) and proof threshold (blank: none) and each grade's proof threshold (blank: the sheet's) and note threshold (blank: none) and rounding mode (half-up or half-even; blank: none, the policy date decides) in force, and the
+// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and entry date (blank: off) and cap (blank: none) and proof threshold (blank: none) and each grade's proof threshold (blank: the sheet's) and note threshold (blank: none) and review threshold (blank: none) and rounding mode (half-up or half-even; blank: none, the policy date decides) in force, and the
 // permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the pot (blank: none; not dated), and the parent sheet (blank: none; not dated), and the fiscal year start month (1 to 12; blank: 1; not dated), and the alert threshold (blank: off; not dated), and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing. A dated setting (the clerk
-// limit, floor, terms, each grade's terms, late percent, cap, proof threshold, each grade's proof threshold, note threshold and rounding mode) is recorded from the date typed beside it (blank: the
+// limit, floor, terms, each grade's terms, late percent, cap, proof threshold, each grade's proof threshold, note threshold, review threshold and rounding mode) is recorded from the date typed beside it (blank: the
 // sheet's today); the value shown is the one in force on the sheet's today.
 export function SettingsForm() {
   const [user] = useCurrentUser();
@@ -128,6 +132,7 @@ export function SettingsForm() {
   const [cap, setCap] = useState('');
   const [proofThreshold, setProofThreshold] = useState('');
   const [noteThreshold, setNoteThreshold] = useState('');
+  const [reviewThreshold, setReviewThreshold] = useState('');
   const [graceDays, setGraceDays] = useState('');
   const [pot, setPot] = useState('');
   const [parent, setParent] = useState('');
@@ -162,6 +167,7 @@ export function SettingsForm() {
       setCap('');
       setProofThreshold('');
       setNoteThreshold('');
+      setReviewThreshold('');
       setGraceDays('');
       setPot('');
       setParent('');
@@ -219,6 +225,7 @@ export function SettingsForm() {
       ['proof-threshold', 'proof threshold'],
       ...GRADES.map((g) => [`proof-threshold-${g}`, `proof threshold for grade ${g}`]),
       ['note-threshold', 'note threshold'],
+      ['review-threshold', 'review threshold'],
       ['rounding', 'rounding mode'],
     ]) {
       if (fromOf(key) === null) {
@@ -351,6 +358,15 @@ export function SettingsForm() {
       input.noteThreshold = value;
       input.noteThresholdFrom = datedFrom('note-threshold');
     }
+    if (touched.reviewThreshold) {
+      const value = reviewThreshold.trim();
+      if (value !== '' && !AMOUNT.test(value)) {
+        setError('Type a review threshold of 0.00 or more, with at most two decimals, or leave it blank for none.');
+        return;
+      }
+      input.reviewThreshold = value;
+      input.reviewThresholdFrom = datedFrom('review-threshold');
+    }
     if (touched.rounding) {
       const value = rounding.trim();
       if (value !== '' && !(ROUNDING_MODES as readonly string[]).includes(value)) {
@@ -418,6 +434,7 @@ export function SettingsForm() {
       input.proofThreshold === undefined &&
       input.gradeProofThreshold === undefined &&
       input.noteThreshold === undefined &&
+      input.reviewThreshold === undefined &&
       input.permissions === undefined &&
       input.graceDays === undefined &&
       input.pot === undefined &&
@@ -486,6 +503,9 @@ export function SettingsForm() {
       ))}
       <p>
         Note threshold: <span data-testid="setting-note-threshold-current">{settings?.noteThreshold ?? ''}</span>
+      </p>
+      <p>
+        Review threshold: <span data-testid="setting-review-threshold-current">{settings?.reviewThreshold ?? ''}</span>
       </p>
       <p>
         Rounding mode: <span data-testid="setting-rounding-current">{settings?.rounding ?? ''}</span>
@@ -677,6 +697,18 @@ export function SettingsForm() {
           }}
         />
         {fromField('note-threshold', 'Note threshold')}
+        <input
+          data-testid="setting-review-threshold"
+          placeholder="Review threshold on a claim's due: above it an open goes to REVIEW (blank: none)"
+          value={reviewThreshold}
+          onFocus={() => setTouched((t) => ({ ...t, reviewThreshold: true }))}
+          onChange={(e) => {
+            setReviewThreshold(e.target.value);
+            setTouched((t) => ({ ...t, reviewThreshold: true }));
+            setError('');
+          }}
+        />
+        {fromField('review-threshold', 'Review threshold')}
         <input
           data-testid="setting-rounding"
           placeholder="Rounding mode, half-up or half-even (blank: none, the policy date decides)"
