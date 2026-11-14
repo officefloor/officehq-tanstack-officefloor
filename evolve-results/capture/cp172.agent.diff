@@ -1,0 +1,161 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 271e74c56..001a651f8 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -22,8 +22,8 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
+ export const deferred = (c: Claim, today: string) =>
+   c.status === 'OPEN' && c.deferredUntil !== null && today !== '' && today < c.deferredUntil;
+ 
+-/** Whether a statement binds the claim now: it was stated and is not PENDING (a pending claim shows its live figure). */
+-export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
++/** Whether a statement binds the claim now: it was stated (a PENDING claim too, showing the bound figure). */
++export const bound = (c: Claim) => c.stated;
+ 
+ /**
+  * A claim as the store holds it: the amount with two decimals, the date as yyyy-MM-dd; its number
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 7be00a2c8..882afa017 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -134,7 +134,7 @@ export function floored(value: string, floor: string): string {
+ }
+ 
+ /**
+- * A claim's figure: the figure its statement bound it to (not while PENDING), else its amount at the rate in force on its
++ * A claim's figure: the figure its statement bound it to, else its amount at the rate in force on its
+  * date for the person's grade in force on that date (of the rate versions that apply to it), rounded by the policy
+  * date — no floor.
+  */
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfSchemas.java b/src/main/java/net/officefloor/hq/app/asof/AsOfSchemas.java
+index 4c9d9e667..e7c96c196 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfSchemas.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfSchemas.java
+@@ -9,6 +9,7 @@ import java.util.ArrayList;
+ import java.util.List;
+ import java.util.UUID;
+ import javax.sql.DataSource;
++import net.officefloor.hq.app.rate.RateRepository;
+ import org.springframework.stereotype.Component;
+ 
+ /**
+@@ -16,7 +17,8 @@ import org.springframework.stereotype.Component;
+  * repository reads it unchanged once a request's connection is switched to it), with {@code sheet} a view whose today
+  * is the session's {@code @asof} date:
+  * <ul>
+- * <li>a snapshot: a copy of the sheet's rows (and its pools' members) as they stood at a moment;</li>
++ * <li>a snapshot: a copy of the sheet's rows (and its pools' members, and the rates of the sheets above it it
++ * inherits rates from) as they stood at a moment;</li>
+  * <li>{@link #LIVE}: the sheet as it stands now;</li>
+  * <li>{@link #EMPTY}: nothing on the sheet yet (every setting at its default).</li>
+  * </ul>
+@@ -30,6 +32,8 @@ public class AsOfSchemas {
+ 
+     private static final String SHEET = "SHEET";
+     private static final List<String> NOT_COPIED = List.of("SHEET_DAY", "flyway_schema_history");
++    /** The tables also copied for the sheets above it, so the rates it inherits read as they stood. */
++    private static final List<String> INHERITED = List.of("RATE", "RATE_VERSION");
+ 
+     private final DataSource dataSource;
+     private boolean shared;
+@@ -41,13 +45,14 @@ public class AsOfSchemas {
+     /** Copy every row kept for the sheet, as committed now, into a new schema; its name. */
+     public String snapshot(String sheetId) {
+         String schema = "ASOF_" + UUID.randomUUID().toString().replace("-", "").toUpperCase();
+-        String id = "'" + sheetId.replace("'", "''") + "'";
++        String id = literal(sheetId);
+         try (Connection c = dataSource.getConnection(); Statement s = c.createStatement()) {
+             c.setAutoCommit(true);
++            String inherited = String.join(", ", lineage(c, sheetId).stream().map(AsOfSchemas::literal).toList());
+             s.execute("CREATE SCHEMA " + schema);
+             for (String table : tables(c)) {
+                 s.execute("CREATE TABLE " + schema + "." + q(table) + " AS SELECT * FROM PUBLIC." + q(table)
+-                        + " WHERE SHEET_ID = " + id);
++                        + " WHERE SHEET_ID " + (INHERITED.contains(table) ? "IN (" + inherited + ")" : "= " + id));
+             }
+             for (String table : poolTables(c)) {
+                 s.execute("CREATE TABLE " + schema + "." + q(table) + " AS SELECT * FROM PUBLIC." + q(table)
+@@ -62,6 +67,33 @@ public class AsOfSchemas {
+         return schema;
+     }
+ 
++    /** The sheet and the sheets above it it inherits rates from: see {@link RateRepository#findAll}. */
++    private static List<String> lineage(Connection c, String sheetId) throws SQLException {
++        List<String> ids = new ArrayList<>(List.of(sheetId));
++        try (PreparedStatement p = c.prepareStatement("SELECT PARENT_ID FROM PUBLIC.SHEET WHERE ID = ?")) {
++            String at = sheetId;
++            for (int level = 1; level <= RateRepository.PARENT_LEVELS && at != null; level++) {
++                p.setString(1, at);
++                String up = null;
++                try (ResultSet rs = p.executeQuery()) {
++                    if (rs.next()) {
++                        up = rs.getString(1);
++                    }
++                }
++                if (up == null || ids.contains(up)) {
++                    break;
++                }
++                ids.add(up);
++                at = up;
++            }
++        }
++        return ids;
++    }
++
++    private static String literal(String value) {
++        return "'" + value.replace("'", "''") + "'";
++    }
++
+     /** Make the live and empty schemas, once. */
+     public synchronized void ensureShared() {
+         if (shared) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+index bdbf8cd1f..f495f11e6 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+@@ -32,8 +32,8 @@ import org.springframework.web.bind.annotation.RequestParam;
+  * its person's grade's own, when that grade has one then, else the sheet's — is refused settling or approving — before the clerk limit is considered, so it never goes PENDING.
+  * A claim with an empty note whose due (as shown now) is above the sheet's note threshold in force on its date is refused opening.
+  * Opening a claim due by a date in a period with a cap is refused while its person already has that many OPEN or PENDING
+- * claims due by a date in that period. Only a steward approves a PENDING claim (fixing its due at its live
+- * figure, plus any late charge, at that moment) — not the user who opened it — or rejects it, with a reason, back to OPEN.
++ * claims due by a date in that period. Only a steward approves a PENDING claim (fixing its due at its figure —
++ * the one its statement bound it to, if any — plus any late charge, at that moment) — not the user who opened it — or rejects it, with a reason, back to OPEN.
+  * Only a steward re-settles a SETTLED claim, fixing its due again at the figure it would have today as an open claim
+  * bound by no statement (today's rates, grades, floor and late charge); its previous due is kept for the audit.
+  * Only a steward voids a SETTLED claim, and only while the sheet's today is within 7 days of its settlement (the
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index ece4fefb9..6d073c7b7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -17,8 +17,8 @@ import java.util.stream.Collectors;
+  * within its period (P1-1, X-1). {@code corrects} is, for a correction, the number of the claim it corrects (null:
+  * not a correction). {@code dueBy} is fixed when the claim is created: the terms-th business day after its date (skipping Saturdays,
+  * Sundays and the sheet's holidays) for its person's own terms, else those of their grade, else the sheet's, each in
+- * force on that date; it does not change when the terms or its date change later. While PENDING the claim is not bound: it shows and totals its live figure, and is bound again
+- * once rejected (back to OPEN) when the statement included it. {@code deferredUntil} is the date an OPEN claim is
++ * force on that date; it does not change when the terms or its date change later. A PENDING claim is bound like any other claim that counts: while a statement binds it, it shows and
++ * totals the bound figure. {@code deferredUntil} is the date an OPEN claim is
+  * deferred until (null: never deferred): while the sheet's today is before it the claim is {@link #deferred deferred}.
+  * {@code proofs} is how many proofs the claim has been given. {@code splitFrom} is the number of the claim it was split
+  * off (null: not split off another claim). {@code added} is when the claim was added to the sheet, on the sequence rates
+@@ -142,9 +142,9 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
+                 && dueBy.plusDays(grace).isBefore(today);
+     }
+ 
+-    /** Whether a statement binds the claim now: it was stated and is not PENDING. */
++    /** Whether a statement binds the claim now: it was stated (PENDING included). */
+     public boolean bound() {
+-        return stated && status != ClaimStatus.PENDING;
++        return stated;
+     }
+ 
+     /** Whether the claim keeps a figure whatever the rates: fixed when settled, or bound by a statement. */
+@@ -154,7 +154,7 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
+ 
+     /**
+      * The claim's figure (null: n/a): the due fixed when it was settled, else the figure its statement bound
+-     * it to (not while PENDING), else its amount at the given live rate (null: none) — no floor. Its live figure
++     * it to, else its amount at the given live rate (null: none) — no floor. Its live figure
+      * rounds by the sheet's policy date.
+      */
+     public BigDecimal figure(BigDecimal liveRate, Rounding rounding) {
