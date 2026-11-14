@@ -119,11 +119,9 @@ public class ClaimRepository {
 
     /**
      * Move the claim to another person: it loses any figure a statement bound it to (live again) and is listed as
-     * their newest claim; any share of it that person held goes. The claim as stored.
+     * their newest claim; its shares stay as they are (one that person held included). The claim as stored.
      */
     public Claim reassign(Claim claim, long personId) {
-        jdbc.update("DELETE FROM claim_share WHERE sheet_id = ? AND claim_id = ? AND person_id = ?", claim.sheetId(),
-                claim.id(), personId);
         jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL,"
                 + " listed = NEXT VALUE FOR claim_listed_seq WHERE id = ? AND sheet_id = ?",
                 personId, claim.id(), claim.sheetId());

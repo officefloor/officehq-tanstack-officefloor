@@ -1,10 +1,11 @@
 import { useClaims } from '../claims/claims';
 import { liveHolds, usePeople } from '../people/people';
-import { personSplit, total, useRates } from '../rates/rates';
+import { personSplit, trimmedTotal, useRates } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { useDueRules } from '../settings/settings';
 
-// The sheet's settled-total and open-total: everyone's added up (not trimmed).
+// The sheet's settled-total and open-total: everyone's added up, leaving out the single highest and
+// lowest person's figure when three or more have one.
 export function SplitTotals() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -24,8 +25,8 @@ export function SplitTotals() {
   );
   return (
     <p>
-      Settled total: <strong data-testid="rollup-settled-total">{total(each.map((s) => s.settled))}</strong>, open
-      total: <strong data-testid="rollup-open-total">{total(each.map((s) => s.open))}</strong>
+      Settled total: <strong data-testid="rollup-settled-total">{trimmedTotal(each.map((s) => s.settled))}</strong>, open
+      total: <strong data-testid="rollup-open-total">{trimmedTotal(each.map((s) => s.open))}</strong>
     </p>
   );
 }

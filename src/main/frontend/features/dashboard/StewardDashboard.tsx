@@ -3,6 +3,7 @@ import { useAliases } from '../aliases/aliases';
 import { useClaims } from '../claims/claims';
 import { sheetFigures, useStoredFigures } from '../counters/ConsolidatedFigures';
 import { usePeople } from '../people/people';
+import { usePools } from '../pools/pools';
 import { useRates } from '../rates/rates';
 import { useCurrentUser } from '../session/session';
 import { useDueRules, useSettings } from '../settings/settings';
@@ -28,10 +29,11 @@ export function StewardDashboard() {
   const rates = useRates().data ?? [];
   const rules = useDueRules();
   const aliases = useAliases().data ?? [];
+  const pools = usePools().data ?? [];
   const stored = useStoredFigures(currentAsOf()).data ?? [];
 
   const steward = actsAsSteward(settings, user ?? '', rules.today);
-  const all = [sheetFigures(people, aliases, claims, rates, rules), ...stored];
+  const all = [sheetFigures(people, aliases, claims, rates, rules, pools), ...stored];
   const pending = all.reduce((n, f) => n + f.statuses.PENDING, 0);
   const review = all.reduce((n, f) => n + f.statuses.REVIEW, 0);
   const overdue = all.reduce((n, f) => n + f.overdueCount, 0);
