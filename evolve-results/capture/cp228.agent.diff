@@ -1,0 +1,64 @@
+diff --git a/src/main/java/net/officefloor/hq/app/rollover/SoftCloseOldPeriods.java b/src/main/java/net/officefloor/hq/app/rollover/SoftCloseOldPeriods.java
+new file mode 100644
+index 000000000..25f38e0df
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollover/SoftCloseOldPeriods.java
+@@ -0,0 +1,32 @@
++package net.officefloor.hq.app.rollover;
++
++import java.util.Comparator;
++import java.util.Set;
++import java.util.stream.Collectors;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.period.Period;
++import net.officefloor.hq.app.period.PeriodCloser;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.pool.PoolCuts;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * Soft-closes every period of the old fiscal year still open, earliest start first, each as a soft close would: its
++ * figures fixed as they stand now (see {@link PeriodCloser}), its pool cuts fixed, and recorded as PERIOD_SOFT_CLOSED.
++ */
++public class SoftCloseOldPeriods {
++    public void softClose(@Val Rollover rollover, @Val Sheet sheet, @RequestParam("user") String user,
++            PeriodRepository periods, PeriodCloser closer, PoolCuts poolCuts, Audit audit) {
++        Set<String> old = rollover.oldPeriods().stream().map(Period::name).collect(Collectors.toSet());
++        periods.findAll(sheet.id()).stream().filter((p) -> old.contains(p.name()) && !p.fixed())
++                .sorted(Comparator.comparing(Period::from).thenComparing(Period::to)).forEach((open) -> {
++                    Period closed = closer.softClose(open);
++                    periods.saveClosed(closed);
++                    poolCuts.fix(closed.sheetId(), closed.name());
++                    audit.record("PERIOD_SOFT_CLOSED sheet=" + closed.sheetId() + " by=" + user + " period="
++                            + closed.name() + " total=" + closed.closedTotal().setScale(2).toPlainString());
++                });
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rollover.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rollover.POST.yml
+index 4b13cb7d4..09b8581a0 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rollover.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rollover.POST.yml
+@@ -2,7 +2,9 @@
+ # generate-fiscal-year does (each audited as PERIOD_ADDED), then adds each person's open figure at the end of the old
+ # year's last period (the dues of their claims belonging to a period of the old year, OPEN or PENDING at that period's
+ # end, counted as the period figures count them) to their carried figure for the new year's first period, each
+-# audited as OPENING_SET, then records ROLLOVER fy=<old FY> periods=<made>. A year that is not four digits, a user who
++# audited as OPENING_SET, then records ROLLOVER fy=<old FY> periods=<made>, then
++# soft-closes every period of the old year still open, in start-date order, each as a soft close would
++# (PERIOD_SOFT_CLOSED). A year that is not four digits, a user who
+ # is not a steward, or an old year with no periods is refused (400). Answers how many periods were made.
+ archived:
+   class: net.officefloor.hq.app.sheet.CheckNotArchived
+@@ -37,6 +39,10 @@ carry:
+ audit:
+   class: net.officefloor.hq.app.rollover.AuditRollover
+   govern: [ transaction ]
++  next: softClose
++softClose:
++  class: net.officefloor.hq.app.rollover.SoftCloseOldPeriods
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.period.RespondWithGeneratedPeriods
