@@ -192,45 +192,66 @@ export function SettingsForm() {
   const save = useMutation({
     mutationFn: (input: SettingsInput) =>
       putJson<Settings>(`/api/sheets/${encodeURIComponent(sheet)}/settings?user=${encodeURIComponent(user)}`, input),
-    onSuccess: async (saved) => {
-      setClerkLimit('');
-      setFloor('');
-      setTerms('');
-      setGradeTerms({});
-      setTouchedGrades({});
-      setGradeGrace({});
-      setTouchedGrace({});
-      setGradeProof({});
-      setTouchedProof({});
-      setGradeLimit({});
-      setTouchedLimit({});
-      setLatePct('');
-      setPolicyDate('');
-      setPeriodNumberingFrom('');
-      setEntryDate('');
-      setCap('');
-      setProofThreshold('');
-      setNoteThreshold('');
-      setReviewThreshold('');
-      setGraceDays('');
-      setEscalateAfter('');
-      setReviewSla('');
-      setPendingSla('');
-      setScoreMid('');
-      setScoreHigh('');
-      setScoreLog('');
-      setMaxOpen('');
-      setProofKinds('');
-      setDefaultGrade('');
-      setPot('');
-      setParent('');
-      setFiscalStartMonth('');
-      setAlertThreshold('');
-      setRounding('');
-      setPerms({});
-      setTouchedPerms({});
-      setFroms({});
-      setTouched(UNTOUCHED);
+    onSuccess: async (saved, input) => {
+      // Clear only the fields this save sent: one touched or typed while it was on its way is kept for the next save.
+      const fields: Record<keyof Touched, (value: string) => void> = {
+        clerkLimit: setClerkLimit,
+        floor: setFloor,
+        terms: setTerms,
+        latePct: setLatePct,
+        policyDate: setPolicyDate,
+        periodNumberingFrom: setPeriodNumberingFrom,
+        entryDate: setEntryDate,
+        cap: setCap,
+        proofThreshold: setProofThreshold,
+        noteThreshold: setNoteThreshold,
+        reviewThreshold: setReviewThreshold,
+        graceDays: setGraceDays,
+        escalateAfter: setEscalateAfter,
+        reviewSla: setReviewSla,
+        pendingSla: setPendingSla,
+        scoreMid: setScoreMid,
+        scoreHigh: setScoreHigh,
+        scoreLog: setScoreLog,
+        maxOpen: setMaxOpen,
+        proofKinds: setProofKinds,
+        defaultGrade: setDefaultGrade,
+        pot: setPot,
+        parent: setParent,
+        fiscalStartMonth: setFiscalStartMonth,
+        alertThreshold: setAlertThreshold,
+        rounding: setRounding,
+      };
+      const sent = (Object.keys(fields) as (keyof Touched)[]).filter((k) => input[k] !== undefined);
+      sent.forEach((k) => fields[k](''));
+      setTouched((t) => ({ ...t, ...Object.fromEntries(sent.map((k) => [k, false])) }));
+      const without = <T,>(record: Record<string, T>, keys: string[]) =>
+        Object.fromEntries(Object.entries(record).filter(([k]) => !keys.includes(k)));
+      const limits = Object.keys(input.gradeClerkLimit ?? {});
+      const gradeTermsSent = Object.keys(input.gradeTerms ?? {});
+      const graces = Object.keys(input.gradeGrace ?? {});
+      const proofs = Object.keys(input.gradeProofThreshold ?? {});
+      const permsSent = Object.keys(input.permissions ?? {});
+      setGradeLimit((r) => without(r, limits));
+      setTouchedLimit((r) => without(r, limits));
+      setGradeTerms((r) => without(r, gradeTermsSent));
+      setTouchedGrades((r) => without(r, gradeTermsSent));
+      setGradeGrace((r) => without(r, graces));
+      setTouchedGrace((r) => without(r, graces));
+      setGradeProof((r) => without(r, proofs));
+      setTouchedProof((r) => without(r, proofs));
+      setPerms((r) => without(r, permsSent));
+      setTouchedPerms((r) => without(r, permsSent));
+      // The from-date of each dated setting sent, by its key as the screen names it.
+      const kebab = (k: string) => k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+      const fromsSent = [
+        ...sent.map(kebab),
+        ...limits.map((g) => `clerk-limit-${g}`),
+        ...gradeTermsSent.map((g) => `terms-${g}`),
+        ...graces.map((g) => `grace-${g}`),
+        ...proofs.map((g) => `proof-threshold-${g}`),
+      ];
+      setFroms((f) => without(f, fromsSent));
       setError('');
       queryClient.setQueryData(settingsKey(sheet), saved);
       await queryClient.invalidateQueries({ queryKey: settingsKey(sheet) });
