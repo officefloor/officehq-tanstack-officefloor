@@ -6,6 +6,7 @@ import { peopleKey } from '../people/people';
 import type { Person } from '../people/people';
 import { usePersonError } from '../people/personError';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { useColumnShown } from '../columns/columns';
 
 // Whether the person is retired and from when, and the date and button that retire them (a blank
 // date is the sheet's today). From the day the date is reached, a retired person's open and pending claims leave
@@ -13,6 +14,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 // person can be unretired on the sheet's today; each past retirement stays on the row as "<from> to <to>", and a
 // claim dated after its from and before its to is refused.
 export function PersonRetire({ person }: { person: Person }) {
+  const showRetired = useColumnShown('retired');
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const [from, setFrom] = useState('');
@@ -57,7 +59,7 @@ export function PersonRetire({ person }: { person: Person }) {
 
   return (
     <td>
-      <span data-testid="person-retired">{person.retired ? 'yes' : 'no'}</span>{' '}
+      {showRetired && <span data-testid="person-retired">{person.retired ? 'yes' : 'no'}</span>}{' '}
       <span data-testid="person-retired-from">{person.retiredFrom ?? ''}</span>{' '}
       <input
         data-testid="person-retire-date"

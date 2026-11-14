@@ -11,10 +11,12 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { useDueRules } from '../settings/settings';
 import { patronsKey, patronsOf, usePatrons } from './patrons';
 import type { Patron } from './patrons';
+import { useColumnShown } from '../columns/columns';
 
 // A person's patrons (each as their name and share, sorted by name) and the select and button that name one more: anyone else on
 // the sheet who is not already their patron.
 export function PersonPatrons({ person }: { person: Person }) {
+  const showPatrons = useColumnShown('patrons');
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const people = usePeople().data ?? [];
@@ -56,7 +58,7 @@ export function PersonPatrons({ person }: { person: Person }) {
 
   return (
     <td>
-      <span data-testid="person-patrons">{names.join(', ')}</span>{' '}
+      {showPatrons && <span data-testid="person-patrons">{names.join(', ')}</span>}{' '}
       <select
         data-testid="person-patron-select"
         value={chosen}
@@ -93,6 +95,7 @@ const backingStart = (today: string) =>
 export function PersonBacking({ person }: { person: Person }) {
   const mine = patronsOf(usePatrons().data ?? [], person.id);
   const today = useDueRules().today;
+  const showBacking = useColumnShown('backing');
   const claims = useClaims().data ?? [];
   const from = today === '' ? '' : backingStart(today);
   const figureOf = (patronId: number) =>
@@ -102,6 +105,7 @@ export function PersonBacking({ person }: { person: Person }) {
         .map((c) => c.due ?? NA),
     );
   const products = mine.reduce((sum, p) => sum + hundredths(figureOf(p.patronId)) * hundredths(p.share), 0);
+  if (!showBacking) return null;
   return <td data-testid="person-backing">{halfEven(products)}</td>;
 }
 

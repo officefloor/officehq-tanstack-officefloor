@@ -6,6 +6,8 @@ import { NA, personDue, useRates } from '../rates/rates';
 import { useDueRules } from '../settings/settings';
 import { liveHolds, nameKey, useEditingPerson, usePeople, usePeopleSort, useShowRetired } from './people';
 import type { Person, SortKey } from './people';
+import { ColumnHead } from '../columns/ColumnHead';
+import { useColumnShown } from '../columns/columns';
 
 /** Orders a and b by key: negative, zero or positive. */
 const compare = (a: string | number, b: string | number) => (a < b ? -1 : a > b ? 1 : 0);
@@ -21,6 +23,8 @@ export function PeopleList() {
   const [showRetired] = useShowRetired();
   const [sort] = usePeopleSort();
   const sortKey = useSortKey(sort);
+  const showTerms = useColumnShown('terms');
+  const showContact = useColumnShown('contact');
 
   if (!user || !sheet) return null;
 
@@ -30,8 +34,8 @@ export function PeopleList() {
         <tr>
           <th>Name</th>
           <th>Grade</th>
-          <th>Terms</th>
-          <th>Contact</th>
+          <ColumnHead column="terms">Terms</ColumnHead>
+          <ColumnHead column="contact">Contact</ColumnHead>
           <th>Clashing</th>
           <PersonColumnHeads.Slot />
           <th />
@@ -44,8 +48,8 @@ export function PeopleList() {
               {p.name}
             </td>
             <td data-testid="person-grade">{p.grade}</td>
-            <td data-testid="person-terms">{p.terms ?? ''}</td>
-            <td data-testid="person-contact">{p.contact ?? ''}</td>
+            {showTerms && <td data-testid="person-terms">{p.terms ?? ''}</td>}
+            {showContact && <td data-testid="person-contact">{p.contact ?? ''}</td>}
             <td data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</td>
             <PersonColumns.Slot person={p} />
             <td>

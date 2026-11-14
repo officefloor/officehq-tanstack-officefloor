@@ -7,6 +7,7 @@ import { peopleKey } from '../people/people';
 import type { Person } from '../people/people';
 import { usePersonError } from '../people/personError';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { useColumnShown } from '../columns/columns';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -15,6 +16,11 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 // button a steward cancels the last one with, making the claims it bound live again. A date beside the button takes the
 // statement as of that day (on or before the sheet's today; blank: now), as the sheet stood at the end of it.
 export function PersonStatement({ person }: { person: Person }) {
+  const shown = {
+    count: useColumnShown('statement-count'),
+    stated: useColumnShown('stated-total'),
+    date: useColumnShown('statement-date'),
+  };
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const [, setError] = usePersonError(person.id);
@@ -56,9 +62,9 @@ export function PersonStatement({ person }: { person: Person }) {
 
   return (
     <td>
-      <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
-      <span data-testid="person-stated-total">{person.statedTotal ?? ''}</span>{' '}
-      <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}
+      {shown.count && <span data-testid="person-statement-count">{person.statementCount}</span>}{' '}
+      {shown.stated && <span data-testid="person-stated-total">{person.statedTotal ?? ''}</span>}{' '}
+      {shown.date && <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>}{' '}
       <input
         data-testid="person-statement-asof"
         placeholder="As of yyyy-mm-dd (blank: now)"

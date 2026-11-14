@@ -7,10 +7,12 @@ import { usePersonError } from '../people/personError';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { aliasesKey, aliasesOf, useAliases } from './aliases';
 import type { Alias } from './aliases';
+import { useColumnShown } from '../columns/columns';
 
 // A person's aliases (sorted as names are compared) and the entry and button that add one more. An alias shares
 // the names' uniqueness: one equal to any name or alias on the sheet, or a blank one, is refused on the row.
 export function PersonAliases({ person }: { person: Person }) {
+  const showAliases = useColumnShown('aliases');
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const aliases = aliasesOf(useAliases().data ?? [], person.id);
@@ -44,7 +46,7 @@ export function PersonAliases({ person }: { person: Person }) {
 
   return (
     <td>
-      <span data-testid="person-aliases">{aliases.join(', ')}</span>{' '}
+      {showAliases && <span data-testid="person-aliases">{aliases.join(', ')}</span>}{' '}
       <input
         data-testid="person-alias-input"
         value={typed}
