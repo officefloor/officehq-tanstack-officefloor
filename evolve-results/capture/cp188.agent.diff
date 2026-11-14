@@ -1,0 +1,173 @@
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 67fb998c0..65ec14f27 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -13,7 +13,8 @@ import type { DueRules } from '../settings/settings';
+  * A grade's rate as the store holds it: a percent with two decimals, in force from its from-date
+  * (yyyy-MM-dd; null: from the beginning of time) until the grade's next rate takes over, or through its
+  * to-date (null: no end), whichever comes first. `sheet` is the sheet it is set on: the sheet's own rates come
+- * first, then those it inherits from its parent, its parent's parent and so on (up to three levels up). A rate is kept
++ * first, then those it inherits from its parent, its parent's parent and so on (up to three levels up), then, for a
++ * cloned sheet, those of the sheet it was cloned from (with its own parents and source likewise). A rate is kept
+  * as versions, one per time it was set for its grade and from-date: this is the newest (in force), `version` how many.
+  * A rate saved with a from-date on or after the sheet's today is `forward`-only: it applies only to claims added after
+  * it was `saved` (a claim's `added` is on the same sequence); a claim added before keeps the `earlier` version that
+@@ -43,7 +44,7 @@ export const PERCENT = /^(\d{1,5}(\.\d{1,2})?|\.\d{1,2})$/;
+ /** The query key for the sheet's rates; under sheetKey, so re-loading the sheet re-reads them. */
+ export const ratesKey = (sheet: string) => [...sheetKey(sheet), 'rates'] as const;
+ 
+-/** The sheet's rates, by grade and then from-date (from the start first), then those it inherits, nearest parent first. */
++/** The sheet's rates, by grade and then from-date (from the start first), then those it inherits, nearest parent first, then the clone source's. */
+ export function useRates() {
+   const [sheet] = useCurrentSheet();
+   return useQuery({
+@@ -56,7 +57,7 @@ export function useRates() {
+ /**
+  * The grade's rate (two decimals) in force on the date: the one with the latest from-date on or
+  * before it, a rate with no from-date applying from the start; undefined when none applies, or when that
+- * one's to-date is before the date. With inherited rates, the first sheet (own, then the nearest parent up) with
++ * one's to-date is before the date. With inherited rates, the first sheet (own, then the nearest parent up, then the clone source) with
+  * a rate in force gives it.
+  */
+ export function rateFor(rates: Rate[], grade: string | undefined, date: string): string | undefined {
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfSchemas.java b/src/main/java/net/officefloor/hq/app/asof/AsOfSchemas.java
+index e7c96c196..5049c2e4d 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfSchemas.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfSchemas.java
+@@ -69,25 +69,19 @@ public class AsOfSchemas {
+ 
+     /** The sheet and the sheets above it it inherits rates from: see {@link RateRepository#findAll}. */
+     private static List<String> lineage(Connection c, String sheetId) throws SQLException {
+-        List<String> ids = new ArrayList<>(List.of(sheetId));
+-        try (PreparedStatement p = c.prepareStatement("SELECT PARENT_ID FROM PUBLIC.SHEET WHERE ID = ?")) {
+-            String at = sheetId;
+-            for (int level = 1; level <= RateRepository.PARENT_LEVELS && at != null; level++) {
+-                p.setString(1, at);
+-                String up = null;
+-                try (ResultSet rs = p.executeQuery()) {
+-                    if (rs.next()) {
+-                        up = rs.getString(1);
++        try (PreparedStatement p = c.prepareStatement("SELECT PARENT_ID, CLONED_FROM FROM PUBLIC.SHEET WHERE ID = ?")) {
++            return RateRepository.lineage(sheetId, (at) -> {
++                try {
++                    p.setString(1, at);
++                    try (ResultSet rs = p.executeQuery()) {
++                        return rs.next() ? new RateRepository.Links(rs.getString(1), rs.getString(2))
++                                : new RateRepository.Links(null, null);
+                     }
++                } catch (SQLException e) {
++                    throw new IllegalStateException("Could not read the sheets above " + at, e);
+                 }
+-                if (up == null || ids.contains(up)) {
+-                    break;
+-                }
+-                ids.add(up);
+-                at = up;
+-            }
++            });
+         }
+-        return ids;
+     }
+ 
+     private static String literal(String value) {
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index f2c1ca9a2..9d8aec09a 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -5,10 +5,10 @@ import java.sql.SQLException;
+ import java.time.LocalDate;
+ import java.util.ArrayList;
+ import java.util.HashMap;
+-import java.util.HashSet;
++import java.util.LinkedHashSet;
+ import java.util.Map;
+-import java.util.Set;
+ import java.util.List;
++import java.util.function.Function;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+@@ -25,20 +25,39 @@ public class RateRepository {
+     public static final int PARENT_LEVELS = 3;
+ 
+     /**
+-     * The sheet's rates, by grade and then from-date (from the start first), followed by those of its parent, its
+-     * parent's parent and so on, up to {@link #PARENT_LEVELS} levels up: see {@link Rate#inForce}.
++     * The sheet's rates, by grade and then from-date (from the start first), followed by those of the sheets it
++     * inherits from, in {@link #lineage} order: see {@link Rate#inForce}.
+      */
+     public List<Rate> findAll(String sheetId) {
+-        List<Rate> rates = new ArrayList<>(findOwn(sheetId));
+-        Set<String> seen = new HashSet<>(Set.of(sheetId));
+-        String up = parent(sheetId);
+-        for (int level = 1; level <= PARENT_LEVELS && up != null && seen.add(up); level++) {
+-            rates.addAll(findOwn(up));
+-            up = parent(up);
++        List<Rate> rates = new ArrayList<>();
++        for (String id : lineage(sheetId, this::links)) {
++            rates.addAll(findOwn(id));
+         }
+         return rates;
+     }
+ 
++    /** A sheet's parent and the sheet it was cloned from (either null: none). */
++    public record Links(String parent, String source) {
++    }
++
++    /**
++     * The sheet and the sheets it inherits rates from, each once, in the order they are looked at: the sheet, its
++     * parent, its parent's parent and so on up to {@link #PARENT_LEVELS} levels up; then, for a sheet that was cloned,
++     * the sheet it was cloned from with its own lineage likewise (its parents, then the sheet it was cloned from, ...).
++     */
++    public static List<String> lineage(String sheetId, Function<String, Links> links) {
++        LinkedHashSet<String> ids = new LinkedHashSet<>();
++        for (String at = sheetId; at != null && ids.add(at); ) {
++            Links own = links.apply(at);
++            String up = own.parent();
++            for (int level = 1; level <= PARENT_LEVELS && up != null && ids.add(up); level++) {
++                up = links.apply(up).parent();
++            }
++            at = own.source();
++        }
++        return List.copyOf(ids);
++    }
++
+     /** The sheet's own rates, by grade and then from-date (from the start first). */
+     public List<Rate> findOwn(String sheetId) {
+         Map<String, Rate> newest = new HashMap<>();
+@@ -58,9 +77,11 @@ public class RateRepository {
+         return rate.grade() + "|" + rate.from();
+     }
+ 
+-    private String parent(String sheetId) {
+-        List<String> parent = jdbc.query("SELECT parent_id FROM sheet WHERE id = ?", (rs, n) -> rs.getString("parent_id"), sheetId);
+-        return parent.isEmpty() ? null : parent.get(0);
++    /** The sheet's links as the store holds them now; they are not dated, so an as-of view follows them too. */
++    private Links links(String sheetId) {
++        List<Links> found = jdbc.query("SELECT parent_id, cloned_from FROM PUBLIC.sheet WHERE id = ?",
++                (rs, n) -> new Links(rs.getString("parent_id"), rs.getString("cloned_from")), sheetId);
++        return found.isEmpty() ? new Links(null, null) : found.get(0);
+     }
+ 
+     /**
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index 07d8018f2..deace6472 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -58,6 +58,7 @@ public class SheetCloner {
+         sheet.put("archived", false);
+         sheet.put("last_claim_number", 0);
+         sheet.put("last_batch", 0);
++        sheet.put("cloned_from", from);
+         RowCopy.copyAll(jdbc, "sheet", "id = ?", List.of(from), null, sheet);
+         Map<String, Object> onClone = Map.of("sheet_id", to);
+         for (String table : SHEET_TABLES) {
+diff --git a/src/main/resources/db/migration/V101__sheet_cloned_from.sql b/src/main/resources/db/migration/V101__sheet_cloned_from.sql
+new file mode 100644
+index 000000000..8cb65c2fa
+--- /dev/null
++++ b/src/main/resources/db/migration/V101__sheet_cloned_from.sql
+@@ -0,0 +1,3 @@
++-- The sheet a sheet was cloned from (null: not a clone): a grade with no rate in force on the sheet nor its parents
++-- takes the rate of that sheet (and so on up its parents and the sheet it was cloned from).
++ALTER TABLE sheet ADD COLUMN cloned_from VARCHAR(100);
