@@ -1,11 +1,12 @@
 import { useAliases } from '../aliases/aliases';
 import type { Alias } from '../aliases/aliases';
 import { useClaims } from '../claims/claims';
+import { crewDue, useCrews, useDueByPerson } from '../crews/crews';
 import type { Claim } from '../claims/claims';
 import { personOverdue } from '../overdue/overdue';
 import { liveHolds, usePeople } from '../people/people';
 import type { Person } from '../people/people';
-import { personDue, trimmedTotal, useRates } from '../rates/rates';
+import { personDue, total, trimmedTotal, useRates } from '../rates/rates';
 import type { Rate } from '../rates/rates';
 import { useDueRules } from '../settings/settings';
 import type { DueRules } from '../settings/settings';
@@ -36,19 +37,24 @@ export function personNamed(people: Person[], aliases: Alias[], user: string): P
 }
 
 // The sheet's counters, always in the header: everyone on it (retired people included), its claims per
-// status, its due-total and overdue-total, and the signed-in user's own (blank when no one on it has their name) — each worked out exactly as the figure it repeats.
+// status, its due-total and overdue-total, the signed-in user's own (blank when no one on it has their name), and the due-totals of the crews that person
+// leads added up (blank when they lead none) — each worked out exactly as the figure it repeats.
 export function HeaderCounters() {
   const people = usePeople().data ?? [];
   const claims = useClaims().data ?? [];
   const rates = useRates().data ?? [];
   const rules = useDueRules();
   const aliases = useAliases().data ?? [];
+  const crews = useCrews().data ?? [];
+  const dueOf = useDueByPerson();
   const [user] = useCurrentUser();
 
   const me = personNamed(people, aliases, user ?? '');
   const mine = me ? claims.filter((c) => c.personId === me.id) : [];
   const myDue = me ? personDue(mine, rates, me.grades, liveHolds(me, rules.today), rules) : '';
   const myOverdue = me ? personOverdue(mine, rates, me.grades, liveHolds(me, rules.today), rules).total : '';
+  const led = me ? crews.filter((c) => c.lead.id === me.id) : [];
+  const myCrewDue = led.length ? total(led.map((c) => crewDue(c, dueOf))) : '';
   const totals = sheetTotals(people, claims, rates, rules);
   return (
     <p data-testid="header-counters">
@@ -63,6 +69,7 @@ export function HeaderCounters() {
       {' · '}Overdue: <strong data-testid="header-overdue-total">{totals.overdue}</strong>
       {' · '}Mine: <strong data-testid="my-due-total">{myDue}</strong>
       {' / '}<strong data-testid="my-overdue-total">{myOverdue}</strong>
+      {' · '}My crews: <strong data-testid="my-crew-due-total">{myCrewDue}</strong>
     </p>
   );
 }
