@@ -40,7 +40,7 @@ public class ClosePeriod {
             Person person = people.find(id, c.getPersonId());
             if (person != null && !person.countsLive(c)) continue;
             Rate rate = person == null ? null
-                    : rates.find(id, person.getGrade(), LocalDate.parse(c.getDate()));
+                    : rates.find(id, person.gradeOn(c.getDate()), LocalDate.parse(c.getDate()));
             String due = Dues.shown(c, rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor), late);
             if (due != null) total = total.add(new BigDecimal(due));
         }

@@ -47,9 +47,11 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             for (Claim c : all) {
                 if (c.getPersonId() != p.getId() || !p.countsLive(c)) continue;
                 claimed = claimed.add(new BigDecimal(c.getAmount()));
-                String pct = rateOn(sheetRates, p.getGrade(), c.getDate());
+                String grade = p.gradeOn(c.getDate());
+                String pct = rateOn(sheetRates, grade, c.getDate());
                 String d = Dues.shown(c, pct == null ? null : Dues.of(c.getAmount(), pct, floor), late);
-                kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null);
+                kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null)
+                        || (pct != null && !grade.equals(p.getGrade()));
                 if (d != null) due = due.add(new BigDecimal(d));
             }
             boolean na = rateOn(sheetRates, p.getGrade(), today) == null && !kept;

@@ -30,7 +30,7 @@ public class SettleClaim {
             throw new ClaimStatusException("The user who opened a claim cannot settle it");
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
-        Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.getGrade(),
+        Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),
                 LocalDate.parse(claim.getDate()));
         // A claim bound by a statement settles at the figure it was bound to.
         // Its late charge on the sheet's today is frozen in.

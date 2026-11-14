@@ -14,7 +14,7 @@ import net.officefloor.plugin.variable.Val;
 
 /** Takes a statement of the person: records their due-total now (the sum of the due of their claims that
  *  count live (OPEN ones of a person on hold do not), n/a ones skipped; n/a when their grade has no rate on the sheet's today and none of
- *  those claims keeps a settled or bound figure) on the sheet's today, and binds each counting claim
+ *  those claims keeps a settled or bound figure, or a live one at a grade no longer in force) on the sheet's today, and binds each counting claim
  *  to the figure under the due it shows now (its late charge is never bound); a claim that does not
  *  count live is unbound. */
 public class TakeStatement {
@@ -32,10 +32,12 @@ public class TakeStatement {
             if (!person.countsLive(c)) {
                 c.bind(false, null);
             } else {
-                Rate rate = rates.find(sheetId, person.getGrade(), LocalDate.parse(c.getDate()));
+                String grade = person.gradeOn(c.getDate());
+                Rate rate = rates.find(sheetId, grade, LocalDate.parse(c.getDate()));
                 String live = rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor);
                 String shown = Dues.shown(c, live, late);
-                kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null);
+                kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null)
+                        || (rate != null && !grade.equals(person.getGrade()));
                 if (shown != null) total = total.add(new BigDecimal(shown));
                 // The figure under it is bound; its late charge keeps following the sheet's today.
                 c.bind(true, c.due(live));

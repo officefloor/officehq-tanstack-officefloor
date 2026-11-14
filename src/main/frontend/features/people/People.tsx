@@ -9,12 +9,12 @@ import { useFloor, useLate, useTerms } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
-import { GRADES, addPatron, addPerson, holdPerson, listPeople, peopleKey, retirePerson, takeStatement, updatePerson, type Person, type PersonInput } from './api';
+import { GRADES, addPatron, addPerson, gradeOn, holdPerson, listPeople, peopleKey, retirePerson, takeStatement, updatePerson, type Person, type PersonInput } from './api';
 
-const EMPTY: PersonInput = { name: '', grade: 'A' };
+const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '' };
 
 /** The people on the sheet: a form that adds a person or edits one, and the list in added order,
- *  each with their claimed total, their due-total (the sum of their claims' due figures; n/a
+ *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures; n/a
  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
  *  their statements (a button that takes one, the count, the last one's due-total and date), whether
  *  they are retired and from when (with a date and a button that retires them), whether they are on
@@ -53,7 +53,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
         if (e instanceof HttpError && e.status === 409) {
           const now = await queryClient.fetchQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId), staleTime: 0 });
           const current = now.find((p) => p.id === v.editing?.id);
-          if (current) setForm({ name: current.name, grade: current.grade });
+          if (current) setForm({ name: current.name, grade: current.grade, gradeFrom: '' });
         }
         throw e;
       }
@@ -141,7 +141,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   };
 
   const open = (p: Person) => {
-    setForm({ name: p.name, grade: p.grade });
+    setForm({ name: p.name, grade: p.grade, gradeFrom: '' });
     setEditing({ id: p.id, version: p.version });
     save.reset();
   };
@@ -156,7 +156,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const everyone = people.data ?? [];
   const dueOf = new Map(everyone.map((q) => [q.id, personDue(
     liveClaims((claims.data ?? []).filter((c) => c.personId === q.id), [q]),
-    rates.data, q.grade, byGrade.get(q.grade), floor, charges)]));
+    rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges)]));
   const nameOf = new Map(everyone.map((q) => [q.id, q.name]));
 
   return (
@@ -186,6 +186,11 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
             ))}
           </select>
         </label>{' '}
+        <label>
+          from{' '}
+          <input type="date" data-testid="person-form-grade-from" value={form.gradeFrom}
+            onChange={(e) => change({ gradeFrom: e.target.value })} />
+        </label>{' '}
         <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
           {editing === null ? 'Add person' : 'Save person'}
         </button>
@@ -212,7 +217,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
             const live = liveClaims(own, [p]);
             const claimed = sumAmounts(live);
             const pct = byGrade.get(p.grade);
-            const late = overdue(live, terms, today, (c) => claimDue(c, rates.data, p.grade, floor, charges));
+            const late = overdue(live, terms, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
             return (
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
                 <td data-testid="person-name">{p.name}</td>
@@ -221,7 +226,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   Claimed <span data-testid="person-claimed">{claimed}</span>
                 </td>
                 <td>
-                  Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, p.grade, pct, floor, charges))}</span>
+                  Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges))}</span>
                 </td>
                 <td>
                   Overdue <span data-testid="person-overdue-count">{late.count}</span>{' '}
@@ -296,7 +301,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   )}
                 </td>
                 <td>
-                  <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} grade={p.grade} rates={rates.data} floor={floor}
+                  <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} gradeOn={(d) => gradeOn(p, d)} rates={rates.data} floor={floor}
                     terms={terms} today={today} charges={charges} />
                 </td>
               </tr>

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { claimsKey, listClaims, liveClaims } from '../claims/api';
-import { listPeople, peopleKey } from '../people/api';
+import { gradeOn, listPeople, peopleKey, type Person } from '../people/api';
 import { useFloor, useLate, useTerms } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { claimDue, listRates, overdue, ratesKey } from './api';
@@ -15,9 +15,9 @@ export function Overdue({ sheetId, user }: { sheetId: string; user: string }) {
   const terms = useTerms(sheetId);
   const today = useSheetToday(sheetId, user);
   const charges = useLate(sheetId, today);
-  const grades = new Map((people.data ?? []).map((p) => [p.id, p.grade]));
-  const live = liveClaims(claims.data ?? [], people.data).filter((c) => grades.has(c.personId));
-  const late = overdue(live, terms, today, (c) => claimDue(c, rates.data, grades.get(c.personId) ?? '', floor, charges));
+  const byId = new Map<number, Person>((people.data ?? []).map((p) => [p.id, p]));
+  const live = liveClaims(claims.data ?? [], people.data).filter((c) => byId.has(c.personId));
+  const late = overdue(live, terms, today, (c) => claimDue(c, rates.data, (d) => gradeOn(byId.get(c.personId)!, d), floor, charges));
   return (
     <p>
       Overdue <span data-testid="rollup-overdue-count">{late.count}</span>{' '}

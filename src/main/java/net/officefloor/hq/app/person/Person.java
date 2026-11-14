@@ -4,7 +4,8 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimStatus;
 
-/** A person on a sheet: a name and a grade (A, B or C), the version raised by each saved edit, and
+/** A person on a sheet: a name and their grades (A, B or C), each in force from its from-date (the
+ *  first from the beginning of time), with {@code grade} the one in force on the sheet's today, the version raised by each saved edit, and
  *  their statements: how many have been taken, and the last one's due-total and date (none until the
  *  first), and the date they are retired from (null: not retired; set at all, they count as retired),
  *  and whether they are on hold (their OPEN claims then count in no live total). */
@@ -13,6 +14,10 @@ public class Person {
     private final String sheetId;
     private String name;
     private String grade;
+    /** The grades they were given, by from-date (none first). */
+    private java.util.List<GradeFrom> grades = new java.util.ArrayList<>();
+    /** The grade this request's save records (null: none). */
+    private GradeFrom recorded;
     private long version;
     private int statementCount;
     private String statedTotal;
@@ -45,7 +50,38 @@ public class Person {
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
     public String getGrade() { return grade; }
-    public void setGrade(String grade) { this.grade = grade; }
+    public java.util.List<GradeFrom> getGrades() { return grades; }
+
+    /** Their grades, by from-date (none first), and the one in force on the sheet's today. */
+    public void setGrades(java.util.List<GradeFrom> grades, java.time.LocalDate today) {
+        this.grades = grades;
+        this.grade = gradeOn(today.toString());
+    }
+
+    /** The grade in force on the date (yyyy-MM-dd): the one with the latest from-date on or before
+     *  it; null when there is none. */
+    public String gradeOn(String date) {
+        GradeFrom found = null;
+        for (GradeFrom g : grades) {
+            if (g.from() != null && g.from().compareTo(date) > 0) continue;
+            if (found == null || (found.from() == null ? "" : found.from()).compareTo(g.from() == null ? "" : g.from()) < 0) found = g;
+        }
+        return found == null ? null : found.grade();
+    }
+
+    /** Give them the grade from the from-date (null: the beginning of time), replacing the one
+     *  with the same from-date; the save records it. */
+    public void giveGrade(String grade, String from, java.time.LocalDate today) {
+        java.util.List<GradeFrom> now = new java.util.ArrayList<>(grades);
+        now.removeIf((g) -> java.util.Objects.equals(g.from(), from));
+        now.add(new GradeFrom(grade, from));
+        now.sort(java.util.Comparator.comparing((GradeFrom g) -> g.from() == null ? "" : g.from()));
+        setGrades(now, today);
+        recorded = new GradeFrom(grade, from);
+    }
+
+    @JsonIgnore
+    public GradeFrom getRecorded() { return recorded; }
     public long getVersion() { return version; }
     public void setVersion(long version) { this.version = version; }
     public int getStatementCount() { return statementCount; }

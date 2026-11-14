@@ -1,9 +1,11 @@
 package net.officefloor.hq.app.person;
 
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 
 public class ApplyPerson {
-    public void apply(@Val PersonRequest request, @Val Person person, PersonRepository people)
+    public void apply(@Val PersonRequest request, @Val Person person, PersonRepository people,
+            SheetRepository sheets)
             throws InvalidPersonException, PersonConflictException {
         if (request.version() != null && request.version() != person.getVersion()) {
             throw new PersonConflictException(person.getId());
@@ -12,6 +14,11 @@ public class ApplyPerson {
             throw new InvalidPersonException("The name is already in use");
         }
         person.setName(request.name());
-        person.setGrade(request.grade());
+        // The form's grade is given from its from-date (blank: the sheet's today); a save leaving
+        // the grade as the row showed it, with no from-date, gives none.
+        if (request.gradeFrom() != null || !request.grade().equals(person.getGrade())) {
+            java.time.LocalDate today = sheets.today(person.getSheetId());
+            person.giveGrade(request.grade(), request.gradeFrom() != null ? request.gradeFrom() : today.toString(), today);
+        }
     }
 }

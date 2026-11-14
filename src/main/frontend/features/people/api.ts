@@ -5,17 +5,32 @@ import type { Claim } from '../claims/api';
 export type Grade = 'A' | 'B' | 'C';
 export const GRADES: Grade[] = ['A', 'B', 'C'];
 
-/** `version` is raised by every saved edit; an edit sends the version its form loaded. Their
+/** A grade a person was given, in force from its from-date (yyyy-MM-dd; null: from the beginning of time). */
+export type GradeFrom = { grade: Grade; from: string | null };
+
+/** `grade` is the one in force on the sheet's today, of their `grades` by from-date (none first).
+ *  `version` is raised by every saved edit; an edit sends the version its form loaded. Their
  *  statements: how many were taken, and the last one's due-total and date (null until the first).
  *  `retiredFrom` is the date they are retired from (null: not retired); with it set at all they
  *  are `retired`, whatever the date. While `held`, their OPEN claims count in no live total. `patronIds` are the people they name
  *  as patrons, in the order named. */
 export type Person = {
-  id: number; sheetId: string; name: string; grade: Grade; version: number;
+  id: number; sheetId: string; name: string; grade: Grade; grades: GradeFrom[]; version: number;
   statementCount: number; statedTotal: string | null; statementDate: string | null;
   retired: boolean; retiredFrom: string | null; held: boolean; patronIds: number[];
 };
-export type PersonInput = { name: string; grade: string };
+/** `gradeFrom` is the date an edit's grade applies from (blank: the sheet's today). */
+export type PersonInput = { name: string; grade: string; gradeFrom: string };
+
+/** The person's grade in force on a date (yyyy-MM-dd): the one with the latest from-date on or before it. */
+export function gradeOn(p: Person, date: string): string {
+  let found: GradeFrom | undefined;
+  for (const g of p.grades) {
+    if (g.from !== null && g.from > date) continue;
+    if (found === undefined || (found.from ?? '') < (g.from ?? '')) found = g;
+  }
+  return found?.grade ?? '';
+}
 
 const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/people`;
 

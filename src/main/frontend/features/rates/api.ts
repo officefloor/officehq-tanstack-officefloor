@@ -72,12 +72,16 @@ export function lateCharge(c: Claim, figure: string, late: Late): bigint {
   return roundPct(hundredths(figure) * hundredths(late.pct) * BigInt(Math.floor(days / 30)));
 }
 
+/** A person's grade in force on a date (yyyy-MM-dd). */
+export type GradeOn = (date: string) => string;
+
 /** A claim's due: the one fixed when it was settled (its late charge then frozen in), else its
- *  figure — the one bound by its person's last statement, else live at the grade's rate in force on
- *  the claim's date, at least the `floor` — with its late charge on the sheet's today on top. */
-export function claimDue(c: Claim, rates: Rate[] | undefined, grade: string, floor: string, late: Late): string | null {
+ *  figure — the one bound by its person's last statement, else live at the rate in force on the
+ *  claim's date of the grade in force then (`gradeOn`), at least the `floor` — with its late charge
+ *  on the sheet's today on top. */
+export function claimDue(c: Claim, rates: Rate[] | undefined, gradeOn: GradeOn, floor: string, late: Late): string | null {
   if (c.settledDue !== null) return c.settledDue;
-  const figure = c.stated ? c.statedDue : dueOf(c.amount, rateOn(rates, grade, c.date), floor);
+  const figure = c.stated ? c.statedDue : dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date), floor);
   return figure === null ? null : formatCents(hundredths(figure) + lateCharge(c, figure, late));
 }
 
@@ -89,12 +93,16 @@ function roundPct(product: bigint): bigint {
 }
 
 /** A person's due-total: the sum of their counting claims' due figures (n/a ones skipped); n/a
- *  when their grade has no rate today (`pct`) and none of those claims keeps a settled or bound figure. */
-export function personDue(claims: Claim[], rates: Rate[] | undefined, grade: string, pct: string | undefined,
+ *  when their grade today has no rate today (`pct`) and none of those claims keeps a settled or bound
+ *  figure, or a live one at a grade no longer in force on the sheet's today. */
+export function personDue(claims: Claim[], rates: Rate[] | undefined, gradeOn: GradeOn, pct: string | undefined,
   floor: string, late: Late) {
   const own = claims.filter(counts);
-  if (pct === undefined && !own.some((c) => c.settledDue !== null || (c.stated && c.statedDue !== null))) return null;
-  return sumDues(own.map((c) => claimDue(c, rates, grade, floor, late)));
+  const now = gradeOn(late.today);
+  const kept = (c: Claim) => c.settledDue !== null || (c.stated && c.statedDue !== null)
+    || (gradeOn(c.date) !== now && rateOn(rates, gradeOn(c.date), c.date) !== undefined);
+  if (pct === undefined && !own.some(kept)) return null;
+  return sumDues(own.map((c) => claimDue(c, rates, gradeOn, floor, late)));
 }
 
 /** The overdue claims among those that count (`claims`, the live ones): their count and the sum

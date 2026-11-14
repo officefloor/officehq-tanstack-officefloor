@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { claimsKey, counts, listClaims, liveClaims } from '../claims/api';
-import { listPeople, peopleKey } from '../people/api';
+import { gradeOn, listPeople, peopleKey } from '../people/api';
 import { claimDue, listRates, ratesKey, sumDues } from '../rates/api';
 import { useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
@@ -52,11 +52,11 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
     save.reset();
   };
 
-  const gradeOf = new Map((people.data ?? []).map((p) => [p.id, p.grade]));
+  const personOf = new Map((people.data ?? []).map((p) => [p.id, p]));
   const counting = liveClaims(claims.data ?? [], people.data).filter(counts);
   const dueTotal = (from: string, to: string) =>
     sumDues(counting.filter((c) => from <= c.date && c.date <= to)
-      .map((c) => claimDue(c, rates.data, gradeOf.get(c.personId) ?? '', floor, charges)));
+      .map((c) => claimDue(c, rates.data, (d) => { const p = personOf.get(c.personId); return p ? gradeOn(p, d) : ''; }, floor, charges)));
 
   return (
     <section>

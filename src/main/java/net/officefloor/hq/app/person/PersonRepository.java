@@ -14,13 +14,13 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, grade, version, statement_count, stated_total, statement_date, retired_from, held";
+    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, held";
 
     private static final RowMapper<Person> ROW = (rs, n) -> {
         LocalDate stated = rs.getObject("statement_date", LocalDate.class);
         LocalDate retired = rs.getObject("retired_from", LocalDate.class);
         Person person = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
-                rs.getString("grade"), rs.getLong("version"), rs.getInt("statement_count"),
+                null, rs.getLong("version"), rs.getInt("statement_count"),
                 rs.getString("stated_total"), stated == null ? null : stated.toString());
         person.setRetiredFrom(retired == null ? null : retired.toString());
         person.setHeld(rs.getBoolean("held"));
@@ -39,6 +39,7 @@ public class PersonRepository {
                 ROW, sheetId);
         Map<Long, Person> byId = new HashMap<>();
         people.forEach((p) -> byId.put(p.getId(), p));
+        withGrades(sheetId, people);
         jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY added_at, patron_id",
                 (rs) -> {
                     Person p = byId.get(rs.getLong("person_id"));
@@ -56,8 +57,26 @@ public class PersonRepository {
             person.setPatronIds(new ArrayList<>(jdbc.queryForList(
                     "SELECT patron_id FROM person_patron WHERE sheet_id = ? AND person_id = ? ORDER BY added_at, patron_id",
                     Long.class, sheetId, id)));
+            withGrades(sheetId, List.of(person));
         }
         return person;
+    }
+
+    /** Give each person their grades, by from-date (none first), and the one in force on the sheet's today. */
+    private void withGrades(String sheetId, List<Person> people) {
+        if (people.isEmpty()) {
+            return;
+        }
+        LocalDate today = jdbc.queryForList("SELECT today FROM sheet WHERE id = ?", LocalDate.class, sheetId)
+                .stream().findFirst().orElse(LocalDate.now());
+        Map<Long, List<GradeFrom>> grades = new HashMap<>();
+        jdbc.query("SELECT person_id, grade, from_date FROM person_grade WHERE sheet_id = ? ORDER BY person_id, from_key",
+                (rs) -> {
+                    LocalDate from = rs.getObject("from_date", LocalDate.class);
+                    grades.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())
+                            .add(new GradeFrom(rs.getString("grade"), from == null ? null : from.toString()));
+                }, sheetId);
+        people.forEach((p) -> p.setGrades(grades.getOrDefault(p.getId(), new ArrayList<>()), today));
     }
 
     /** Name the patron as one of the person's patrons. */
@@ -69,8 +88,9 @@ public class PersonRepository {
 
     /** The person on the sheet with this name, compared ignoring case and surrounding spaces; null when none. */
     public Person findByName(String sheetId, String name) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))",
+        Person found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))",
                 ROW, sheetId, name).stream().findFirst().orElse(null);
+        return found == null ? null : find(sheetId, found.getId());
     }
 
     /** Whether another person on the sheet already has this name, compared ignoring case and surrounding spaces. */
@@ -85,23 +105,43 @@ public class PersonRepository {
         GeneratedKeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, created_by) VALUES (?, ?, ?, ?)",
+                    "INSERT INTO person (sheet_id, name, created_by) VALUES (?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
-            ps.setString(3, grade);
-            ps.setString(4, user);
+            ps.setString(3, user);
             return ps;
         }, key);
-        return new Person(key.getKey().longValue(), sheetId, name, grade, 0);
+        long id = key.getKey().longValue();
+        // The first grade a person is given applies from the beginning of time.
+        jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date, set_by) VALUES (?, ?, ?, NULL, ?)",
+                sheetId, id, grade, user);
+        Person person = new Person(id, sheetId, name, grade, 0);
+        person.getGrades().add(new GradeFrom(grade, null));
+        return person;
+    }
+
+    /** Record the grade the person was just given (see {@link Person#giveGrade}), replacing the one
+     *  with the same from-date. */
+    public void saveGrade(Person person, GradeFrom given, String user) {
+        LocalDate from = given.from() == null ? null : LocalDate.parse(given.from());
+        if (from == null) {
+            jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ? AND from_date IS NULL",
+                    person.getSheetId(), person.getId());
+        } else {
+            jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ? AND from_date = ?",
+                    person.getSheetId(), person.getId(), from);
+        }
+        jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date, set_by) VALUES (?, ?, ?, ?, ?)",
+                person.getSheetId(), person.getId(), given.grade(), from, user);
     }
 
     /** Save the person over the version it was loaded at, raising the version; false (nothing
      *  written) when someone else has saved the person since. */
     public boolean update(Person person) {
         int n = jdbc.update(
-                "UPDATE person SET name = ?, grade = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
-                person.getName(), person.getGrade(), person.getSheetId(), person.getId(), person.getVersion());
+                "UPDATE person SET name = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
+                person.getName(), person.getSheetId(), person.getId(), person.getVersion());
         if (n == 0) {
             return false;
         }
