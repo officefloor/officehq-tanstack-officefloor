@@ -6,6 +6,7 @@ import { PersonClaims } from '../claims/PersonClaims';
 import { claimsKey, listClaims, sumAmounts } from '../claims/api';
 import { listRates, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
 import { useSheetToday } from '../sheet/api';
+import { QuickAdd } from './QuickAdd';
 import { GRADES, addPerson, listPeople, peopleKey, takeStatement, updatePerson, type Person, type PersonInput } from './api';
 
 const EMPTY: PersonInput = { name: '', grade: 'A' };
@@ -126,6 +127,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
           </span>
         )}
       </form>
+      <QuickAdd sheetId={sheetId} user={user} />
       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
       <table>
         <tbody>

@@ -37,6 +37,12 @@ public class PersonRepository {
                 ROW, sheetId, id).stream().findFirst().orElse(null);
     }
 
+    /** The person on the sheet with this name, compared ignoring case and surrounding spaces; null when none. */
+    public Person findByName(String sheetId, String name) {
+        return jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))",
+                ROW, sheetId, name).stream().findFirst().orElse(null);
+    }
+
     /** Whether another person on the sheet already has this name, compared ignoring case and surrounding spaces. */
     public boolean nameTaken(String sheetId, String name, Long exceptId) {
         Integer n = jdbc.queryForObject(

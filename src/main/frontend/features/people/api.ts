@@ -1,5 +1,6 @@
 import { getJson, postJson, putJson } from '../../api/http';
 import { sheetKey } from '../sheet/api';
+import type { Claim } from '../claims/api';
 
 export type Grade = 'A' | 'B' | 'C';
 export const GRADES: Grade[] = ['A', 'B', 'C'];
@@ -36,4 +37,13 @@ export function updatePerson(sheetId: string, by: string, id: number, version: n
  *  claims to the figure it shows now (unbinding the others). */
 export function takeStatement(sheetId: string, by: string, id: number): Promise<Person> {
   return postJson<Person>(`${base(sheetId)}/${id}/statement?by=${encodeURIComponent(by)}`, {});
+}
+
+export type QuickAddInput = { name: string; amount: string };
+
+/** Add a DRAFT claim of `amount` (the sheet's today, empty note) to the named person, adding them
+ *  first with grade A when the name is not on the sheet; refused (rejects), adding no one, when the
+ *  name is empty or the claim would be refused. */
+export function quickAdd(sheetId: string, by: string, input: QuickAddInput): Promise<Claim> {
+  return postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/quick-add?by=${encodeURIComponent(by)}`, input);
 }

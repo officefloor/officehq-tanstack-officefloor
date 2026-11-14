@@ -1,0 +1,43 @@
+package net.officefloor.hq.app.quick;
+
+import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.period.PeriodClosedException;
+import net.officefloor.hq.app.period.PeriodRepository;
+import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.sheet.SheetRepository;
+import net.officefloor.plugin.variable.Out;
+import net.officefloor.plugin.variable.Val;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
+
+/** The person named (ignoring case and surrounding spaces), or a new one with grade A, recorded as
+ *  the person form records an add. The claim's own rules are checked first, so a claim that would
+ *  be refused adds no one. */
+public class FindOrAddPerson {
+    public void find(@PathVariable("sheetId") String sheetId,
+            @RequestParam(name = "by", required = false) String by, @Val QuickAddName name,
+            @Val Rollup before, SheetRepository sheets, PersonRepository people,
+            ClaimRepository claims, RateRepository rates, PeriodRepository periods, Audit audit,
+            Out<Person> person) throws PeriodClosedException {
+        String id = sheetId.trim();
+        String user = by == null ? "" : by;
+        Person found = people.findByName(id, name.name());
+        if (found != null) {
+            person.set(found);
+            return;
+        }
+        periods.requireOpen(id, sheets.today(id).toString());
+        sheets.open(id, user);
+        Person added = people.add(id, name.name(), "A", user);
+        audit.record("PERSON_ADDED sheet=" + id + " by=" + user + " name=" + added.getName()
+                + " grade=" + added.getGrade());
+        for (String line : Rollup.of(id, people, claims, rates, sheets).changesSince(before, id, user)) {
+            audit.record(line);
+        }
+        person.set(added);
+    }
+}
