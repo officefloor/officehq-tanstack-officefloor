@@ -30,7 +30,11 @@ export const covers = (h: Hold, date: string) => (h.from === null || h.from <= d
  * hold's would (settled ones, and ones a statement binds, still count).
  */
 export const liveHolds = (p: { holds: Hold[]; retiredFrom: string | null }, today: string): Hold[] =>
-  p.retiredFrom !== null && today !== '' && today >= p.retiredFrom ? [...p.holds, { from: null, to: null }] : p.holds;
+  retiredOn(p, today) ? [...p.holds, { from: null, to: null }] : p.holds;
+
+/** Whether the person's retirement date has been reached on the sheet's `today` (on or after it). */
+export const retiredOn = (p: { retiredFrom: string | null }, today: string): boolean =>
+  p.retiredFrom !== null && today !== '' && today >= p.retiredFrom;
 
 /**
  * A person on the sheet as the store holds them; `grade` is the one in force on the sheet's today and

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { covers, liveHolds } from '../people/people';
+import { covers, liveHolds, retiredOn } from '../people/people';
 import type { Hold } from '../people/people';
 import { sheetKey, useCurrentSheet } from '../session/session';
 
@@ -151,8 +151,12 @@ export function useLastBatch() {
   });
 }
 
-/** The sum of the counted claims' amounts (held ones too), leaving out corrections, with two decimals; added in cents so it is exact. */
-export function claimed(claims: Claim[], today: string): string {
-  const cents = claims.filter((c) => !c.corrects && countsClaimed(c, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+/**
+ * The sum of the counted claims' amounts (held ones too), leaving out corrections and the claims of people whose retirement
+ * date has been reached on `today`, with two decimals; added in cents so it is exact.
+ */
+export function claimed(claims: Claim[], today: string, people: { id: number; retiredFrom: string | null }[]): string {
+  const retired = new Set(people.filter((p) => retiredOn(p, today)).map((p) => p.id));
+  const cents = claims.filter((c) => !c.corrects && !retired.has(c.personId) && countsClaimed(c, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }
