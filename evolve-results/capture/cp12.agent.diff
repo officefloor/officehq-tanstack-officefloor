@@ -1,0 +1,126 @@
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index fa257d91e..83721a2f3 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -2,15 +2,15 @@ import { useState } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { PersonClaims } from '../claims/PersonClaims';
+ import { claimsKey, listClaims, sumAmounts } from '../claims/api';
+-import { dueOf, listRates, rateByGrade, ratesKey, showDue } from '../rates/api';
++import { listRates, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
+ import { useSheetToday } from '../sheet/api';
+ import { GRADES, addPerson, listPeople, peopleKey, updatePerson, type Person, type PersonInput } from './api';
+ 
+ const EMPTY: PersonInput = { name: '', grade: 'A' };
+ 
+ /** The people on the sheet: a form that adds a person or edits one, and the list in added order,
+- *  each with their claimed total, their due-total (at their grade's rate in force on the sheet's
+- *  today) and their claims. */
++ *  each with their claimed total, their due-total (the sum of their claims' due figures; n/a
++ *  when their grade has no rate on the sheet's today and no settled claim keeps a figure) and their claims. */
+ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const queryClient = useQueryClient();
+   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
+@@ -96,7 +96,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   Claimed <span data-testid="person-claimed">{claimed}</span>
+                 </td>
+                 <td>
+-                  Due <span data-testid="person-due-total">{showDue(dueOf(claimed, pct))}</span>
++                  Due <span data-testid="person-due-total">{showDue(personDue(own, rates.data, p.grade, pct))}</span>
+                 </td>
+                 <td>
+                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
+diff --git a/src/main/frontend/features/rates/DueTotal.tsx b/src/main/frontend/features/rates/DueTotal.tsx
+index de67e3820..485faa0f0 100644
+--- a/src/main/frontend/features/rates/DueTotal.tsx
++++ b/src/main/frontend/features/rates/DueTotal.tsx
+@@ -1,18 +1,17 @@
+ import { useQuery } from '@tanstack/react-query';
+-import { claimsKey, listClaims, sumAmounts } from '../claims/api';
++import { claimsKey, listClaims } from '../claims/api';
+ import { listPeople, peopleKey } from '../people/api';
+ import { useSheetToday } from '../sheet/api';
+-import { dueOf, listRates, rateByGrade, ratesKey, sumDues } from './api';
++import { listRates, personDue, rateByGrade, ratesKey, sumDues } from './api';
+ 
+-/** The sheet's due-total: everyone's due-total added up, skipping those with no rate,
+- *  each at their grade's rate in force on the sheet's today. */
++/** The sheet's due-total: everyone's due-total added up, skipping those shown n/a. */
+ export function DueTotal({ sheetId, user }: { sheetId: string; user: string }) {
+   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
+   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
+   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
+   const byGrade = rateByGrade(rates.data, useSheetToday(sheetId, user));
+   const dues = (people.data ?? []).map((p) =>
+-    dueOf(sumAmounts((claims.data ?? []).filter((c) => c.personId === p.id)), byGrade.get(p.grade)),
++    personDue((claims.data ?? []).filter((c) => c.personId === p.id), rates.data, p.grade, byGrade.get(p.grade)),
+   );
+   return (
+     <p>
+diff --git a/src/main/frontend/features/rates/api.ts b/src/main/frontend/features/rates/api.ts
+index b1268ee8c..16e6c0eca 100644
+--- a/src/main/frontend/features/rates/api.ts
++++ b/src/main/frontend/features/rates/api.ts
+@@ -1,5 +1,5 @@
+ import { getJson, postJson } from '../../api/http';
+-import type { Claim } from '../claims/api';
++import { counts, type Claim } from '../claims/api';
+ import { sheetKey } from '../sheet/api';
+ 
+ /** A grade's rate on the sheet: a percent as two-decimal text, in force from its from-date
+@@ -51,13 +51,15 @@ function hundredths(text: string): bigint {
+   return BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2));
+ }
+ 
+-/** An amount times a percent, divided by 100, rounded half up to two decimals; null (n/a) when
+- *  there is no rate. Exact: worked in whole hundredths. */
++/** An amount times a percent, divided by 100, rounded half to even to two decimals; null (n/a)
++ *  when there is no rate. Exact: worked in whole hundredths. */
+ export function dueOf(amount: string, pct: string | undefined): string | null {
+   if (pct === undefined) return null;
+-  // amount (1/100) x pct (1/100) / 100 is in 1/1_000_000; to cents is / 10_000, half up.
++  // amount (1/100) x pct (1/100) / 100 is in 1/1_000_000; to cents is / 10_000, half to even.
+   const product = hundredths(amount) * hundredths(pct);
+-  const cents = (product + 5_000n) / 10_000n;
++  const floor = product / 10_000n;
++  const rest = product % 10_000n;
++  const cents = rest > 5_000n || (rest === 5_000n && floor % 2n === 1n) ? floor + 1n : floor;
+   return formatCents(cents);
+ }
+ 
+@@ -66,6 +68,14 @@ export function dueOf(amount: string, pct: string | undefined): string | null {
+ export const claimDue = (c: Claim, rates: Rate[] | undefined, grade: string) =>
+   c.settledDue ?? dueOf(c.amount, rateOn(rates, grade, c.date));
+ 
++/** A person's due-total: the sum of their counting claims' due figures (n/a ones skipped); n/a
++ *  when their grade has no rate today (`pct`) and none of those claims keeps a settled figure. */
++export function personDue(claims: Claim[], rates: Rate[] | undefined, grade: string, pct: string | undefined) {
++  const own = claims.filter(counts);
++  if (pct === undefined && !own.some((c) => c.settledDue !== null)) return null;
++  return sumDues(own.map((c) => claimDue(c, rates, grade)));
++}
++
+ /** Add up two-decimal dues, skipping n/a. */
+ export function sumDues(dues: Array<string | null>): string {
+   return formatCents(dues.reduce<bigint>((t, d) => (d === null ? t : t + hundredths(d)), 0n));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+index 36609b7af..bfac7ca93 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+@@ -9,7 +9,7 @@ import net.officefloor.hq.app.rate.Rate;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Settles a claim, fixing its due: its amount at its person's grade's rate in force on its date, rounded half up to
++/** Settles a claim, fixing its due: its amount at its person's grade's rate in force on its date, rounded half to even to
+  *  two decimals. With no rate the due is not fixed and stays live. */
+ public class SettleClaim {
+     public void move(@Val Claim claim, PersonRepository people, RateRepository rates)
+@@ -20,6 +20,6 @@ public class SettleClaim {
+                 LocalDate.parse(claim.getDate()));
+         claim.setSettledDue(rate == null ? null
+                 : new BigDecimal(claim.getAmount()).multiply(new BigDecimal(rate.pct()))
+-                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP).toPlainString());
++                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN).toPlainString());
+     }
+ }
