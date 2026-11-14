@@ -12,29 +12,33 @@ import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 
-/** Takes a statement of the person: records their due-total now (the sum of their counting claims'
- *  due figures, n/a ones skipped; n/a when their grade has no rate on the sheet's today and none of
+/** Takes a statement of the person: records their due-total now (the sum of the due of their claims that
+ *  count live (OPEN ones of a person on hold do not), n/a ones skipped; n/a when their grade has no rate on the sheet's today and none of
  *  those claims keeps a settled or bound figure) on the sheet's today, and binds each counting claim
- *  to the figure it shows now; a claim that does not count is unbound. */
+ *  to the figure under the due it shows now (its late charge is never bound); a claim that does not
+ *  count live is unbound. */
 public class TakeStatement {
     public void take(@Val Person person, PersonRepository people, ClaimRepository claims, RateRepository rates,
             SheetRepository sheets, SettingRepository settings) {
         String sheetId = person.getSheetId();
         LocalDate today = sheets.today(sheetId);
         String floor = settings.floor(sheetId);
+        Dues.Late late = settings.late(sheetId, today);
         List<Claim> own = claims.listOf(sheetId, person.getId());
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean kept = false;
         int bound = 0;
         for (Claim c : own) {
-            if (!c.isCounting()) {
+            if (!person.countsLive(c)) {
                 c.bind(false, null);
             } else {
                 Rate rate = rates.find(sheetId, person.getGrade(), LocalDate.parse(c.getDate()));
-                String due = c.due(rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor));
+                String live = rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor);
+                String shown = Dues.shown(c, live, late);
                 kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null);
-                if (due != null) total = total.add(new BigDecimal(due));
-                c.bind(true, due);
+                if (shown != null) total = total.add(new BigDecimal(shown));
+                // The figure under it is bound; its late charge keeps following the sheet's today.
+                c.bind(true, c.due(live));
                 bound++;
             }
             claims.updateBinding(c);

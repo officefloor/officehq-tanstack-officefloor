@@ -33,7 +33,9 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             RateRepository rates, SheetRepository sheets, SettingRepository settings) {
         List<Rate> sheetRates = rates.list(sheetId);
         String floor = settings.floor(sheetId);
-        String today = sheets.today(sheetId).toString();
+        LocalDate todayDate = sheets.today(sheetId);
+        String today = todayDate.toString();
+        Dues.Late late = settings.late(sheetId, todayDate);
         List<Claim> all = claims.list(sheetId);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = zero();
@@ -46,7 +48,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 if (c.getPersonId() != p.getId() || !p.countsLive(c)) continue;
                 claimed = claimed.add(new BigDecimal(c.getAmount()));
                 String pct = rateOn(sheetRates, p.getGrade(), c.getDate());
-                String d = c.due(pct == null ? null : Dues.of(c.getAmount(), pct, floor));
+                String d = Dues.shown(c, pct == null ? null : Dues.of(c.getAmount(), pct, floor), late);
                 kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null);
                 if (d != null) due = due.add(new BigDecimal(d));
             }

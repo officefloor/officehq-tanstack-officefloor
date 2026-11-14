@@ -4,7 +4,8 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { claimsKey, counts, listClaims, liveClaims } from '../claims/api';
 import { listPeople, peopleKey } from '../people/api';
 import { claimDue, listRates, ratesKey, sumDues } from '../rates/api';
-import { useFloor } from '../settings/api';
+import { useFloor, useLate } from '../settings/api';
+import { useSheetToday } from '../sheet/api';
 import { addPeriod, closePeriod, listPeriods, periodsKey, type PeriodInput } from './api';
 
 const EMPTY: PeriodInput = { name: '', from: '', to: '' };
@@ -19,6 +20,7 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
   const floor = useFloor(sheetId);
+  const charges = useLate(sheetId, useSheetToday(sheetId, user));
   const [form, setForm] = useState<PeriodInput>(EMPTY);
 
   const save = useMutation({
@@ -54,7 +56,7 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const counting = liveClaims(claims.data ?? [], people.data).filter(counts);
   const dueTotal = (from: string, to: string) =>
     sumDues(counting.filter((c) => from <= c.date && c.date <= to)
-      .map((c) => claimDue(c, rates.data, gradeOf.get(c.personId) ?? '', floor)));
+      .map((c) => claimDue(c, rates.data, gradeOf.get(c.personId) ?? '', floor, charges)));
 
   return (
     <section>

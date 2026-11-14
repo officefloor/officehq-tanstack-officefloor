@@ -1,5 +1,5 @@
 import { getJson, postJson } from '../../api/http';
-import { counts, isOverdue, type Claim } from '../claims/api';
+import { counts, dueBy, isOverdue, type Claim } from '../claims/api';
 import { sheetKey } from '../sheet/api';
 
 /** A grade's rate on the sheet: a percent as two-decimal text, in force from its from-date
@@ -56,26 +56,45 @@ function hundredths(text: string): bigint {
 export function dueOf(amount: string, pct: string | undefined, floor: string): string | null {
   if (pct === undefined) return null;
   // amount (1/100) x pct (1/100) / 100 is in 1/1_000_000; to cents is / 10_000, half to even.
-  const product = hundredths(amount) * hundredths(pct);
-  const whole = product / 10_000n;
-  const rest = product % 10_000n;
-  const cents = rest > 5_000n || (rest === 5_000n && whole % 2n === 1n) ? whole + 1n : whole;
+  const cents = roundPct(hundredths(amount) * hundredths(pct));
   const least = hundredths(floor);
   return formatCents(cents < least ? least : cents);
 }
 
-/** A claim's due: the one fixed when it was settled, else the one bound by its person's last
- *  statement, else live at the grade's rate in force on the claim's date, at least the `floor`. */
-export const claimDue = (c: Claim, rates: Rate[] | undefined, grade: string, floor: string) =>
-  c.settledDue ?? (c.stated ? c.statedDue : dueOf(c.amount, rateOn(rates, grade, c.date), floor));
+/** What a claim's late charge goes by: the sheet's late percent, its terms (days) and its today. */
+export type Late = { pct: string; terms: number; today: string };
+
+/** The late charge on an OPEN claim's `figure`: the late percent of it for every full 30 days it is
+ *  past its due-by on the sheet's today, rounded half to even to two decimals (0 when not overdue). */
+export function lateCharge(c: Claim, figure: string, late: Late): bigint {
+  if (!isOverdue(c, late.terms, late.today)) return 0n;
+  const days = (Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(c, late.terms)}T00:00:00Z`)) / 86_400_000;
+  return roundPct(hundredths(figure) * hundredths(late.pct) * BigInt(Math.floor(days / 30)));
+}
+
+/** A claim's due: the one fixed when it was settled (its late charge then frozen in), else its
+ *  figure — the one bound by its person's last statement, else live at the grade's rate in force on
+ *  the claim's date, at least the `floor` — with its late charge on the sheet's today on top. */
+export function claimDue(c: Claim, rates: Rate[] | undefined, grade: string, floor: string, late: Late): string | null {
+  if (c.settledDue !== null) return c.settledDue;
+  const figure = c.stated ? c.statedDue : dueOf(c.amount, rateOn(rates, grade, c.date), floor);
+  return figure === null ? null : formatCents(hundredths(figure) + lateCharge(c, figure, late));
+}
+
+/** A product of hundredths and a percent's hundredths (in 1/1_000_000) to cents, half to even. */
+function roundPct(product: bigint): bigint {
+  const whole = product / 10_000n;
+  const rest = product % 10_000n;
+  return rest > 5_000n || (rest === 5_000n && whole % 2n === 1n) ? whole + 1n : whole;
+}
 
 /** A person's due-total: the sum of their counting claims' due figures (n/a ones skipped); n/a
  *  when their grade has no rate today (`pct`) and none of those claims keeps a settled or bound figure. */
 export function personDue(claims: Claim[], rates: Rate[] | undefined, grade: string, pct: string | undefined,
-  floor: string) {
+  floor: string, late: Late) {
   const own = claims.filter(counts);
   if (pct === undefined && !own.some((c) => c.settledDue !== null || (c.stated && c.statedDue !== null))) return null;
-  return sumDues(own.map((c) => claimDue(c, rates, grade, floor)));
+  return sumDues(own.map((c) => claimDue(c, rates, grade, floor, late)));
 }
 
 /** The overdue claims among those that count (`claims`, the live ones): their count and the sum

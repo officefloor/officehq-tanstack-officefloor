@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
 import { sheetKey } from '../sheet/api';
+import type { Late } from '../rates/api';
 
 /** A sheet setting: its value as text ("" when blank). A setting never set is not listed. */
 export type Setting = { sheetId: string; key: string; value: string };
@@ -9,11 +10,12 @@ export type Role = { sheetId: string; user: string; role: string };
 
 /** The settings the screen offers: the clerk limit (two decimals; blank means no limit), the
  *  floor (two decimals; the least a claim's live due can be) and the terms (whole days after its
- *  date by which a claim is due). */
-export const SETTING_KEYS = ['clerk-limit', 'floor', 'terms'] as const;
+ *  date by which a claim is due) and the late percent (two decimals; the share of an overdue claim's
+ *  figure it gains for every full 30 days it is overdue). */
+export const SETTING_KEYS = ['clerk-limit', 'floor', 'terms', 'late-pct'] as const;
 
 /** A setting's value until it is first set. */
-export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14' };
+export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00' };
 
 const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}`;
 
@@ -42,6 +44,13 @@ export function setRole(sheetId: string, by: string, user: string, role: string)
 export function useFloor(sheetId: string): string {
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
   return settings.data?.find((s) => s.key === 'floor')?.value || SETTING_DEFAULTS.floor;
+}
+
+/** What a claim's late charge goes by: the sheet's late percent, terms and today. */
+export function useLate(sheetId: string, today: string): Late {
+  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+  const pct = settings.data?.find((s) => s.key === 'late-pct')?.value || SETTING_DEFAULTS['late-pct'];
+  return { pct, terms: useTerms(sheetId), today };
 }
 
 /** The sheet's terms: the number of days after its date by which a claim is due. */

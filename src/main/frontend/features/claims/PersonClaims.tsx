@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
-import { claimDue, showDue, type Rate } from '../rates/api';
+import { claimDue, showDue, type Late, type Rate } from '../rates/api';
 import { addClaim, claimsKey, dueBy, isOverdue, moveClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
@@ -11,16 +11,16 @@ const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
 /** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
  *  with its status, its due (fixed when settled, else at the person's `grade`'s rate in force on the
  *  claim's date and at least the sheet's `floor`, or bound by the person's last statement; none when
- *  there is no such rate), its due-by (its date plus the sheet's `terms` in days) and whether it is
+ *  there is no such rate; an overdue one gains its late charge on top, see `charges`), its due-by (its date plus the sheet's `terms` in days) and whether it is
  *  overdue (OPEN and due-by before the sheet's `today`), whether
  *  it is stated,
  *  the period its date falls in (none when no period contains it), who opened it, and buttons that
  *  change its status (the user who opened a claim cannot settle it, nor a clerk one whose due is
  *  above the sheet's clerk limit). Only a DRAFT can be edited:
  *  editing any other claim is refused with an error on the claim. */
-export function PersonClaims({ sheetId, user, personId, claims, grade, rates, floor, terms, today }: {
+export function PersonClaims({ sheetId, user, personId, claims, grade, rates, floor, terms, today, charges }: {
   sheetId: string; user: string; personId: number; claims: Claim[]; grade: string; rates: Rate[] | undefined;
-  floor: string; terms: number; today: string;
+  floor: string; terms: number; today: string; charges: Late;
 }) {
   const queryClient = useQueryClient();
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
@@ -116,7 +116,7 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates, fl
               <td data-testid="claim-amount">{Number(c.amount).toFixed(2)}</td>
               <td data-testid="claim-date">{c.date}</td>
               <td data-testid="claim-note">{c.note}</td>
-              <td data-testid="claim-due">{showDue(claimDue(c, rates, grade, floor))}</td>
+              <td data-testid="claim-due">{showDue(claimDue(c, rates, grade, floor, charges))}</td>
               <td>
                 Due by <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
                 overdue <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>

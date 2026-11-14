@@ -24,6 +24,10 @@ public class ValidateSetting {
             if (!MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("The floor is 0.00 or more with up to two decimals");
             }
+        } else if (SettingRepository.LATE_PCT.equals(key)) {
+            if (!MONEY.matcher(value).matches()) {
+                throw new InvalidSettingException("The late percent is 0.00 or more with up to two decimals");
+            }
         } else if (SettingRepository.TERMS.equals(key)) {
             if (!DAYS.matcher(value).matches()) {
                 throw new InvalidSettingException("The terms are a whole number of days, 0 or more");

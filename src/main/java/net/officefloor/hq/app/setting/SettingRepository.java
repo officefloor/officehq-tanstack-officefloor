@@ -1,7 +1,9 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.claim.Dues;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -16,6 +18,13 @@ public class SettingRepository {
 
     /** The terms: the number of days after its date by which a claim is due (a whole number). */
     public static final String TERMS = "terms";
+
+    /** The late percent: the share of an overdue claim's figure it gains for every full 30 days
+     *  it is overdue (two decimals). */
+    public static final String LATE_PCT = "late-pct";
+
+    /** The late percent until it is first set. */
+    public static final String DEFAULT_LATE_PCT = "0.00";
 
     /** The terms until they are first set. */
     public static final String DEFAULT_TERMS = "14";
@@ -38,8 +47,10 @@ public class SettingRepository {
 
     /** The setting's value; null when blank or never set. */
     public String find(String sheetId, String key) {
-        return jdbc.query("SELECT val FROM sheet_setting WHERE sheet_id = ? AND setting = ?",
-                (rs, n) -> rs.getString("val"), sheetId, key).stream().findFirst().orElse(null);
+        // A blank value is a null row value, which a stream's findFirst cannot carry.
+        List<String> values = jdbc.query("SELECT val FROM sheet_setting WHERE sheet_id = ? AND setting = ?",
+                (rs, n) -> rs.getString("val"), sheetId, key);
+        return values.isEmpty() ? null : values.get(0);
     }
 
     /** The sheet's clerk limit; null when there is none. */
@@ -52,6 +63,23 @@ public class SettingRepository {
     public String floor(String sheetId) {
         String value = find(sheetId, FLOOR);
         return value == null ? DEFAULT_FLOOR : value;
+    }
+
+    /** The sheet's terms (whole days). */
+    public int terms(String sheetId) {
+        String value = find(sheetId, TERMS);
+        return Integer.parseInt(value == null ? DEFAULT_TERMS : value);
+    }
+
+    /** The sheet's late percent (two decimals). */
+    public String latePct(String sheetId) {
+        String value = find(sheetId, LATE_PCT);
+        return value == null ? DEFAULT_LATE_PCT : value;
+    }
+
+    /** What a claim's late charge goes by on the sheet now. */
+    public Dues.Late late(String sheetId, LocalDate today) {
+        return new Dues.Late(latePct(sheetId), terms(sheetId), today);
     }
 
     /** Set (or replace) the setting's value (null: blank). */

@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { PersonClaims } from '../claims/PersonClaims';
 import { claimsKey, listClaims, liveClaims, sumAmounts } from '../claims/api';
 import { claimDue, listRates, overdue, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
-import { useFloor, useTerms } from '../settings/api';
+import { useFloor, useLate, useTerms } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
@@ -29,6 +29,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const floor = useFloor(sheetId);
   const terms = useTerms(sheetId);
   const today = useSheetToday(sheetId, user);
+  const charges = useLate(sheetId, today);
   const byGrade = rateByGrade(rates.data, today);
   const [form, setForm] = useState<PersonInput>(EMPTY);
   // The person being edited and the version of them the form loaded.
@@ -185,7 +186,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
             const live = liveClaims(own, [p]);
             const claimed = sumAmounts(live);
             const pct = byGrade.get(p.grade);
-            const late = overdue(live, terms, today, (c) => claimDue(c, rates.data, p.grade, floor));
+            const late = overdue(live, terms, today, (c) => claimDue(c, rates.data, p.grade, floor, charges));
             return (
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
                 <td data-testid="person-name">{p.name}</td>
@@ -194,7 +195,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   Claimed <span data-testid="person-claimed">{claimed}</span>
                 </td>
                 <td>
-                  Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, p.grade, pct, floor))}</span>
+                  Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, p.grade, pct, floor, charges))}</span>
                 </td>
                 <td>
                   Overdue <span data-testid="person-overdue-count">{late.count}</span>{' '}
@@ -245,7 +246,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                 </td>
                 <td>
                   <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} grade={p.grade} rates={rates.data} floor={floor}
-                    terms={terms} today={today} />
+                    terms={terms} today={today} charges={charges} />
                 </td>
               </tr>
             );

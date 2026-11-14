@@ -45,7 +45,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {SETTING_KEYS.map((key) => (
           <div key={key}>
             <label>
-              {key === 'clerk-limit' ? 'Clerk limit' : key === 'floor' ? 'Floor' : 'Terms (days)'}{' '}
+              {key === 'clerk-limit' ? 'Clerk limit' : key === 'floor' ? 'Floor' : key === 'late-pct' ? 'Late percent' : 'Terms (days)'}{' '}
               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
                 placeholder={key === 'clerk-limit' ? 'No limit' : undefined}
                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
@@ -59,7 +59,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {save.isError && (
           <span data-testid="settings-error">
             The clerk limit must be blank, and the floor given, as 0.00 or more with up to two decimals;
-            the terms a whole number of days.
+            the terms a whole number of days; the late percent 0.00 or more with up to two decimals.
           </span>
         )}
       </form>
