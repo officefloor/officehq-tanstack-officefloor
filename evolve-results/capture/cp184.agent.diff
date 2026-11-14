@@ -1,0 +1,135 @@
+diff --git a/src/main/frontend/features/claims/ClaimedTotal.tsx b/src/main/frontend/features/claims/ClaimedTotal.tsx
+index f1a49a424..18a3cb010 100644
+--- a/src/main/frontend/features/claims/ClaimedTotal.tsx
++++ b/src/main/frontend/features/claims/ClaimedTotal.tsx
+@@ -1,21 +1,19 @@
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+-import { usePeople } from '../people/people';
+ import { useSheetToday } from '../session/sheetToday';
+-import { claimed, holdsById, useClaims } from './claims';
++import { claimed, useClaims } from './claims';
+ 
+-// The sheet's claimed-total: everyone's counting claims added up (corrections and open ones a hold covers left out).
++// The sheet's claimed-total: everyone's counting claims added up (corrections left out; held ones count).
+ export function ClaimedTotal() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const claims = useClaims();
+-  const people = usePeople().data ?? [];
+   const today = useSheetToday();
+ 
+   if (!user || !sheet) return null;
+ 
+   return (
+     <p>
+-      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], holdsById(people, today), today)}</strong>
++      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], today)}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/claims/PersonClaimed.tsx b/src/main/frontend/features/claims/PersonClaimed.tsx
+index c05b81689..9531bd10b 100644
+--- a/src/main/frontend/features/claims/PersonClaimed.tsx
++++ b/src/main/frontend/features/claims/PersonClaimed.tsx
+@@ -1,12 +1,12 @@
+ import type { Person } from '../people/people';
+ import { useSheetToday } from '../session/sheetToday';
+-import { claimed, holdsById, useClaims } from './claims';
++import { claimed, useClaims } from './claims';
+ import { useColumnShown } from '../columns/columns';
+ 
+-// What a person has claimed: the sum of their counting claims' amounts (not corrections, nor their open ones a hold covers).
++// What a person has claimed: the sum of their counting claims' amounts (not corrections; held ones count).
+ export function PersonClaimed({ person }: { person: Person }) {
+   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
+   const today = useSheetToday();
+   if (!useColumnShown('claimed')) return null;
+-  return <td data-testid="person-claimed">{claimed(claims, holdsById([person], today), today)}</td>;
++  return <td data-testid="person-claimed">{claimed(claims, today)}</td>;
+ }
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index ec38a19da..fdb0420fc 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -100,7 +100,7 @@ export type ClaimComment = { by: string; date: string; text: string };
+ export type ClaimLogLine = { status: ClaimStatus; by: string; date: string; due: string };
+ 
+ /**
+- * Whether a claim counts toward claimed, due-total and every live total: only OPEN, PENDING and SETTLED do,
++ * Whether a claim counts toward due-total and every live total but claimed (see countsClaimed): only OPEN, PENDING and SETTLED do,
+  * and an open (or pending) one not when it is held or one of its person's `holds` covers its date and no statement binds it,
+  * nor while it is deferred on the sheet's `today`.
+  */
+@@ -108,6 +108,10 @@ export const counts = (c: Claim, holds: Hold[], today: string) =>
+   c.status === 'SETTLED' ||
+   (isOpen(c) && !deferred(c, today) && (bound(c) || !(c.held || holds.some((h) => covers(h, c.date)))));
+ 
++/** Whether a claim counts toward claimed: as {@link counts}, but a hold (the person's or the claim's) does not take it out. */
++export const countsClaimed = (c: Claim, today: string) =>
++  c.status === 'SETTLED' || (isOpen(c) && !deferred(c, today));
++
+ /** Each person's live holds on the sheet's `today`, by id: their open claims dated within one count in no live total. */
+ export const holdsById = (people: { id: number; holds: Hold[]; retiredFrom: string | null }[], today: string) =>
+   new Map(people.map((p) => [p.id, liveHolds(p, today)]));
+@@ -147,8 +151,8 @@ export function useLastBatch() {
+   });
+ }
+ 
+-/** The sum of the counted claims' amounts, leaving out corrections, with two decimals; added in cents so it is exact. `holds` holds each person's holds. */
+-export function claimed(claims: Claim[], holds: Map<number, Hold[]>, today: string): string {
+-  const cents = claims.filter((c) => !c.corrects && counts(c, holds.get(c.personId) ?? [], today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
++/** The sum of the counted claims' amounts (held ones too), leaving out corrections, with two decimals; added in cents so it is exact. */
++export function claimed(claims: Claim[], today: string): string {
++  const cents = claims.filter((c) => !c.corrects && countsClaimed(c, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+   return (cents / 100).toFixed(2);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 64275fec4..2821e2fbb 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -166,6 +166,14 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
+         return !claim.deferred(today) && claim.counts(!claim.bound() && (claim.held() || heldOn(claim.date(), today)));
+     }
+ 
++    /**
++     * Whether the claim counts toward this person's claimed on the given today: as {@link #counts}, but a hold (theirs
++     * or the claim's own) does not take it out.
++     */
++    public boolean countsClaimed(Claim claim, LocalDate today) {
++        return !claim.deferred(today) && claim.counts(false);
++    }
++
+     /**
+      * Whether the person's open claims on this date are held on the given today: a hold covers the date, or their
+      * retirement date has been reached (then all of them are, as a hold's would be).
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+index d16ec8ac4..b17d693f8 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+@@ -21,7 +21,7 @@ import org.springframework.stereotype.Service;
+ 
+ /**
+  * Works out a sheet's figures as the screen shows them: a person's claimed is their counting claims' amounts
+- * added up, leaving out corrections; their due-total those claims' dues (live figures rounded by its policy date, plus
++ * added up (a held claim's too: a hold leaves out only the due figures), leaving out corrections; their due-total those claims' dues (live figures rounded by its policy date, plus
+  * any late charge, at the late percent in force on each 30-day boundary, on the overdue ones, then raised to the floor in force on each claim's date) added up, at most the cap in force on the sheet's today; n/a when their grade on the sheet's today has no
+  * rate there and no counting claim has a figure (kept, or at the rate for the grade in force on its date). Their overdue-total
+  * is the dues of their overdue counting claims added up (skipping n/a, not capped). The sheet's totals add these up, skipping n/a;
+@@ -65,12 +65,15 @@ public class RollupService {
+             BigDecimal overdue = BigDecimal.ZERO.setScale(2);
+             boolean kept = false;
+             for (Claim claim : sheetClaims) {
+-                if (claim.personId() != person.id() || !person.counts(claim, today)) {
++                if (claim.personId() != person.id()) {
+                     continue;
+                 }
+-                if (!claim.correction()) {
++                if (!claim.correction() && person.countsClaimed(claim, today)) {
+                     claimed = claimed.add(claim.amount());
+                 }
++                if (!person.counts(claim, today)) {
++                    continue;
++                }
+                 kept |= claim.keepsFigure();
+                 BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim),
+                         dated.floorOn(claim.date()), dated.lateCharge(today, person), rounding);
