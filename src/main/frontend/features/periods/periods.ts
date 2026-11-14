@@ -29,6 +29,7 @@ export type Period = {
   cap: number | null;
   personCarried: Record<string, string>;
   personOpenings: Record<string, string>;
+  locked: boolean;
 };
 
 /** The fields the period form submits; cap is a whole number of at least 1, or blank for none. */

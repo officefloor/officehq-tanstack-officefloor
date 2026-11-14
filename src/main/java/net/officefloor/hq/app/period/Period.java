@@ -16,11 +16,11 @@ import net.officefloor.hq.app.person.Person;
  * ({@code personCarried}, by person id; empty while open). A soft-closed period
  * ({@code softClosed}; never also {@code closed}) keeps its figures fixed the same way, but claims due by a date in it can
  * still be added and changed. {@code cap} is the most OPEN or PENDING claims due by a date in it a person may have
- * when another of theirs is opened (null: no cap).
+ * when another of theirs is opened (null: no cap). A {@code locked} period, locked by a steward, cannot be reopened.
  */
 public record Period(String sheetId, String name, LocalDate from, LocalDate to, boolean closed,
         BigDecimal closedTotal, Map<Long, BigDecimal> personTotals, boolean softClosed, Integer cap,
-        Map<Long, BigDecimal> personCarried) {
+        Map<Long, BigDecimal> personCarried, boolean locked) {
 
     /** A new, open period with no cap. */
     public Period(String sheetId, String name, LocalDate from, LocalDate to) {
@@ -29,7 +29,7 @@ public record Period(String sheetId, String name, LocalDate from, LocalDate to, 
 
     /** A new, open period with this cap (null: none). */
     public Period(String sheetId, String name, LocalDate from, LocalDate to, Integer cap) {
-        this(sheetId, name, from, to, false, null, Map.of(), false, cap, Map.of());
+        this(sheetId, name, from, to, false, null, Map.of(), false, cap, Map.of(), false);
     }
 
     /** Whether the period's figures are fixed: it is closed or soft-closed. */
@@ -102,22 +102,28 @@ public record Period(String sheetId, String name, LocalDate from, LocalDate to, 
 
     /** The same period, closed with its due-total and each person's due-total and carried figure fixed. */
     public Period close(BigDecimal total, Map<Long, BigDecimal> perPerson, Map<Long, BigDecimal> carried) {
-        return new Period(sheetId, name, from, to, true, total, Map.copyOf(perPerson), false, cap, Map.copyOf(carried));
+        return new Period(sheetId, name, from, to, true, total, Map.copyOf(perPerson), false, cap, Map.copyOf(carried), locked);
     }
 
     /** The same period, soft-closed with its due-total and each person's due-total and carried figure fixed. */
     public Period softClose(BigDecimal total, Map<Long, BigDecimal> perPerson, Map<Long, BigDecimal> carried) {
-        return new Period(sheetId, name, from, to, false, total, Map.copyOf(perPerson), true, cap, Map.copyOf(carried));
+        return new Period(sheetId, name, from, to, false, total, Map.copyOf(perPerson), true, cap, Map.copyOf(carried), locked);
     }
 
     /** The same period with these fixed per-person due-totals and carried figures. */
     public Period withPersonTotals(Map<Long, BigDecimal> perPerson, Map<Long, BigDecimal> carried) {
         return new Period(sheetId, name, from, to, closed, closedTotal, Map.copyOf(perPerson), softClosed, cap,
-                Map.copyOf(carried));
+                Map.copyOf(carried), locked);
     }
 
     /** The same period, open again with its due-total and carried figures live. */
     public Period reopen() {
-        return new Period(sheetId, name, from, to, false, null, Map.of(), false, cap, Map.of());
+        return new Period(sheetId, name, from, to, false, null, Map.of(), false, cap, Map.of(), locked);
+    }
+
+    /** The same period, locked (true) or unlocked (false). */
+    public Period withLocked(boolean locked) {
+        return new Period(sheetId, name, from, to, closed, closedTotal, personTotals, softClosed, cap, personCarried,
+                locked);
     }
 }

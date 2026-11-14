@@ -74,10 +74,10 @@ export function Periods() {
     onError: () => setGenError('No periods were generated: type the fiscal year as yyyy.'),
   });
 
-  // The period whose close or reopen was refused, and why; cleared by the next action on a period.
+  // The period whose close, reopen, lock or unlock was refused, and why; cleared by the next action on a period.
   const [rowError, setRowError] = useState<{ name: string; message: string } | null>(null);
   const act = useMutation({
-    mutationFn: ({ name, action }: { name: string; action: 'close' | 'soft-close' | 'reopen' }) =>
+    mutationFn: ({ name, action }: { name: string; action: 'close' | 'soft-close' | 'reopen' | 'lock' | 'unlock' }) =>
       postJson<Period>(
         `/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/${action}?user=${encodeURIComponent(user)}`,
         {},
@@ -93,7 +93,11 @@ export function Periods() {
             ? 'That period could not be closed: it is already closed, or your role is not allowed to close a period.'
             : action === 'soft-close'
               ? 'That period could not be soft-closed: it is already closed or soft-closed, or your role is not allowed to close a period.'
-              : 'That period could not be reopened: it is not closed, or your role is not allowed to reopen a period.',
+              : action === 'lock'
+                ? 'That period could not be locked: it is already locked, or you are not a steward.'
+                : action === 'unlock'
+                  ? 'That period could not be unlocked: it is not locked, or you are not a steward.'
+                  : 'That period could not be reopened: it is not closed or it is locked, or your role is not allowed to reopen a period.',
       }),
   });
 
@@ -172,6 +176,7 @@ export function Periods() {
             <th>Closed</th>
             <th>Fiscal year</th>
             <th>Cap</th>
+            <th>Locked</th>
             <th />
           </tr>
         </thead>
@@ -185,6 +190,7 @@ export function Periods() {
               <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
               <td data-testid="period-fy">{fiscalYearOf(p.from, fiscalStartMonth)}</td>
               <td data-testid="period-cap">{p.cap ?? ''}</td>
+              <td data-testid="period-locked">{p.locked ? 'yes' : 'no'}</td>
               <td>
                 <button
                   type="button"
@@ -218,6 +224,28 @@ export function Periods() {
                   }}
                 >
                   Reopen
+                </button>
+                <button
+                  type="button"
+                  data-testid="period-lock"
+                  disabled={act.isPending}
+                  onClick={() => {
+                    setRowError(null);
+                    once(() => act.mutateAsync({ name: p.name, action: 'lock' }));
+                  }}
+                >
+                  Lock
+                </button>
+                <button
+                  type="button"
+                  data-testid="period-unlock"
+                  disabled={act.isPending}
+                  onClick={() => {
+                    setRowError(null);
+                    once(() => act.mutateAsync({ name: p.name, action: 'unlock' }));
+                  }}
+                >
+                  Unlock
                 </button>
                 {rowError?.name === p.name && <span data-testid="period-error">{rowError.message}</span>}
               </td>

@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PeriodRepository {
 
-    private static final String COLUMNS = "sheet_id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap";
+    private static final String COLUMNS = "sheet_id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap, locked";
 
     private final JdbcTemplate jdbc;
 
@@ -82,9 +82,16 @@ public class PeriodRepository {
                 period.personCarried().getOrDefault(personId, BigDecimal.ZERO.setScale(2))));
     }
 
+    /** Store the period's locked flag. */
+    public void saveLocked(Period period) {
+        jdbc.update("UPDATE period SET locked = ? WHERE sheet_id = ? AND name = ?", period.locked(), period.sheetId(),
+                period.name());
+    }
+
     private static Period map(ResultSet rs, int n) throws SQLException {
         return new Period(rs.getString("sheet_id"), rs.getString("name"), rs.getObject("from_date", LocalDate.class),
                 rs.getObject("to_date", LocalDate.class), rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of(),
-                rs.getBoolean("soft_closed"), rs.getObject("claim_cap", Integer.class), Map.of());
+                rs.getBoolean("soft_closed"), rs.getObject("claim_cap", Integer.class), Map.of(),
+                rs.getBoolean("locked"));
     }
 }
