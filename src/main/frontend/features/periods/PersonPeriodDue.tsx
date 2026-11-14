@@ -1,10 +1,12 @@
+import { Fragment } from 'react';
 import { useClaims } from '../claims/claims';
 import type { Person } from '../people/people';
 import { useRates } from '../rates/rates';
 import { useDueRules } from '../settings/settings';
-import { personPeriodDue, usePeriods } from './periods';
+import { personPeriodCarried, personPeriodDue, usePeriods } from './periods';
 
-// A person's due-total for each period on the sheet, one cell per period; fixed while the period is closed.
+// A person's due-total for each period on the sheet, one cell per period; fixed while the period is closed. Beside
+// each, the figure carried into it from earlier periods.
 export function PersonPeriodDue({ person }: { person: Person }) {
   const periods = usePeriods().data ?? [];
   const rates = useRates().data ?? [];
@@ -13,9 +15,10 @@ export function PersonPeriodDue({ person }: { person: Person }) {
   return (
     <>
       {periods.map((p) => (
-        <td key={p.name} data-testid={`person-period-${p.name}-due-total`}>
-          {personPeriodDue(p, person, claims, rates, rules)}
-        </td>
+        <Fragment key={p.name}>
+          <td data-testid={`person-period-${p.name}-due-total`}>{personPeriodDue(p, person, claims, rates, rules)}</td>
+          <td data-testid={`person-period-${p.name}-carried`}>{personPeriodCarried(p, periods, person, claims, rates, rules)}</td>
+        </Fragment>
       ))}
     </>
   );
@@ -27,7 +30,10 @@ export function PersonPeriodHeads() {
   return (
     <>
       {periods.map((p) => (
-        <th key={p.name}>{p.name} due</th>
+        <Fragment key={p.name}>
+          <th>{p.name} due</th>
+          <th>{p.name} carried</th>
+        </Fragment>
       ))}
     </>
   );

@@ -98,3 +98,21 @@ export function personPeriodDue(period: Period, person: Person, claims: Claim[],
 export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], rules: DueRules): string {
   return total(people.map((p) => personPeriodDue(period, p, claims, rates, rules)));
 }
+
+/**
+ * A person's carried figure for a period: the dues (as shown now) of their claims belonging to a period that ends
+ * before this one starts and still OPEN or PENDING at this period's end (by the status log), counted as the period
+ * figures count them, added up; 0.00 with none.
+ */
+export function personPeriodCarried(period: Period, periods: Period[], person: Person, claims: Claim[], rates: Rate[], rules: DueRules): string {
+  const figures = claims
+    .filter((c) => {
+      if (c.personId !== person.id) return false;
+      const own = periodOf(periods, c.dueBy);
+      if (!own || own.to >= period.from) return false;
+      const then = statusAt(c, period.to);
+      return (then === 'OPEN' || then === 'PENDING') && countsInPeriod(period, c, liveHolds(person, rules.today), rules.today);
+    })
+    .map((c) => claimDue(c, rates, person.grades, rules));
+  return total(figures);
+}
