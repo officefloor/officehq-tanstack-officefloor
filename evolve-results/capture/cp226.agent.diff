@@ -1,0 +1,291 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index ffbb9ce49..9b0b824a8 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -17,6 +17,16 @@ export function currentAsOf(): string {
+   return raw.replace(/^"(.*)"$/, '$1');
+ }
+ 
++/**
++ * The date this screen previews the sheet's figures on (yyyy-MM-dd), or '' when it shows them by the sheet's today. It
++ * is the `preview` search param (features/session/Preview), read here so every read of the sheet carries it; a change
++ * is made as ever, by the sheet's real today.
++ */
++export function currentPreview(): string {
++  const raw = new URLSearchParams(window.location.search).get('preview') ?? '';
++  return raw.replace(/^"(.*)"$/, '$1');
++}
++
+ async function send<T>(path: string, init?: RequestInit): Promise<T> {
+   // A screen showing the sheet as of a date changes nothing; loading a sheet is not a change.
+   if (init?.method && init.method !== 'GET' && path !== '/api/sheets' && currentAsOf()) {
+@@ -34,6 +44,10 @@ export function getJson<T>(path: string): Promise<T> {
+   if (asOf && path.startsWith('/api/sheets/')) {
+     return send<T>(`${path}${path.includes('?') ? '&' : '?'}asOf=${encodeURIComponent(asOf)}`);
+   }
++  const preview = currentPreview();
++  if (preview && path.startsWith('/api/sheets/')) {
++    return send<T>(`${path}${path.includes('?') ? '&' : '?'}preview=${encodeURIComponent(preview)}`);
++  }
+   return send<T>(path);
+ }
+ 
+diff --git a/src/main/frontend/features/counters/ConsolidatedFigures.tsx b/src/main/frontend/features/counters/ConsolidatedFigures.tsx
+index b6526aee1..75d49e61b 100644
+--- a/src/main/frontend/features/counters/ConsolidatedFigures.tsx
++++ b/src/main/frontend/features/counters/ConsolidatedFigures.tsx
+@@ -1,7 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { useAliases } from '../aliases/aliases';
+ import type { Alias } from '../aliases/aliases';
+-import { currentAsOf, getJson, getLiveJson } from '../../api/http';
++import { currentAsOf, currentPreview, getJson, getLiveJson } from '../../api/http';
+ import { useClaims } from '../claims/claims';
+ import type { Claim } from '../claims/claims';
+ import { GRADES, liveHolds, usePeople } from '../people/people';
+@@ -80,7 +80,7 @@ async function figuresOf(sheet: string): Promise<Figures> {
+ export function useStoredFigures(asOf: string) {
+   const [sheet] = useCurrentSheet();
+   return useQuery({
+-    queryKey: [...descendantFiguresKey(sheet), asOf],
++    queryKey: [...descendantFiguresKey(sheet), asOf, currentPreview()],
+     queryFn: async () => {
+       const ids = await getLiveJson<string[]>(`/api/sheets/${encodeURIComponent(sheet)}/descendants`);
+       return Promise.all(ids.map(figuresOf));
+diff --git a/src/main/frontend/features/session/Preview.tsx b/src/main/frontend/features/session/Preview.tsx
+new file mode 100644
+index 000000000..ce5ace07e
+--- /dev/null
++++ b/src/main/frontend/features/session/Preview.tsx
+@@ -0,0 +1,78 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { useNavigate } from '@tanstack/react-router';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { sheetKey, useCurrentSheet, useCurrentUser } from './session';
++
++// The date this screen previews the sheet on: every figure is shown as if the sheet's today were that date, over the
++// sheet's current records. It belongs to this screen only (the `preview` search param, carried by every read in
++// api/http); every change is still made by the sheet's real today, and nothing a change of today does happens.
++export function Preview() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [preview] = useSearchParam('preview', asString);
++  const [date, setDate] = useState('');
++  const [error, setError] = useState('');
++  const navigate = useNavigate();
++  const queryClient = useQueryClient();
++
++  if (!user || !sheet) return null;
++
++  const show = async (value: string) => {
++    await navigate({
++      to: '.',
++      search: (prev: Record<string, unknown>) => {
++        const next = { ...prev };
++        if (value) next.preview = value;
++        else delete next.preview;
++        return next;
++      },
++      replace: true,
++    });
++    // Everything kept per sheet is re-read on the new date.
++    await queryClient.invalidateQueries({ queryKey: sheetKey(sheet) });
++  };
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    const trimmed = date.trim();
++    setError('');
++    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed) || Number.isNaN(Date.parse(trimmed))) {
++      setError('Type a date as yyyy-mm-dd.');
++      return;
++    }
++    void show(trimmed);
++  };
++
++  return (
++    <form onSubmit={submit}>
++      <span>
++        Preview: <strong data-testid="sheet-preview">{preview}</strong>{' '}
++      </span>
++      <input
++        data-testid="preview-date"
++        placeholder="yyyy-mm-dd"
++        value={date}
++        onChange={(e) => {
++          setDate(e.target.value);
++          setError('');
++        }}
++      />
++      <button type="submit" data-testid="preview-set">
++        Set preview
++      </button>
++      <button
++        type="button"
++        data-testid="preview-clear"
++        onClick={() => {
++          setError('');
++          void show('');
++        }}
++      >
++        Clear preview
++      </button>
++      {error && <span data-testid="preview-error">{error}</span>}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/session/SheetToday.tsx b/src/main/frontend/features/session/SheetToday.tsx
+index 9efef02a4..57a43d002 100644
+--- a/src/main/frontend/features/session/SheetToday.tsx
++++ b/src/main/frontend/features/session/SheetToday.tsx
+@@ -1,7 +1,7 @@
+ import { useState } from 'react';
+ import type { FormEvent } from 'react';
+-import { useMutation, useQueryClient } from '@tanstack/react-query';
+-import { postJson, putJson } from '../../api/http';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { currentAsOf, currentPreview, getLiveJson, postJson, putJson } from '../../api/http';
+ import { sheetInfoKey, sheetKey, useCurrentSheet, useCurrentUser } from './session';
+ import type { SheetInfo } from './session';
+ import { useSheetInfo, useSheetToday } from './sheetToday';
+@@ -15,6 +15,8 @@ export function SheetToday() {
+   const [sheet] = useCurrentSheet();
+   const today = useSheetToday();
+   const info = useSheetInfo();
++  // While the screen previews another date, the sheet's real today is still the one shown here.
++  const preview = currentAsOf() ? '' : currentPreview();
+   const [date, setDate] = useState('');
+   const [error, setError] = useState('');
+   const [cloneTo, setCloneTo] = useState('');
+@@ -63,7 +65,7 @@ export function SheetToday() {
+   return (
+     <form onSubmit={submit}>
+       <span>
+-        Today: <strong data-testid="sheet-today">{today}</strong>{' '}
++        Today: <strong data-testid="sheet-today">{preview ? <RealToday sheet={sheet} preview={preview} /> : today}</strong>{' '}
+       </span>
+       <input
+         data-testid="sheet-today-input"
+@@ -122,3 +124,12 @@ export function SheetToday() {
+     </form>
+   );
+ }
++
++/** The sheet's real today, read past the date the screen previews. */
++function RealToday({ sheet, preview }: { sheet: string; preview: string }) {
++  const real = useQuery({
++    queryKey: [...sheetKey(sheet), 'real-today', preview],
++    queryFn: () => getLiveJson<SheetInfo>(`/api/sheets/${encodeURIComponent(sheet)}`),
++  });
++  return <>{real.data?.today ?? ''}</>;
++}
+diff --git a/src/main/frontend/features/session/header.slot.tsx b/src/main/frontend/features/session/header.slot.tsx
+index d88e43fca..5efc6b6b4 100644
+--- a/src/main/frontend/features/session/header.slot.tsx
++++ b/src/main/frontend/features/session/header.slot.tsx
+@@ -1,5 +1,6 @@
+ import { AppHeader } from '../../slots/defs/appHeader';
+ import { AsOf } from './AsOf';
++import { Preview } from './Preview';
+ import { SheetPicker } from './SheetPicker';
+ import { SheetToday } from './SheetToday';
+ import { SignIn } from './SignIn';
+@@ -9,4 +10,5 @@ export const contributions = [
+   AppHeader.fill({ order: 10, Component: SheetPicker }),
+   AppHeader.fill({ order: 20, Component: SheetToday }),
+   AppHeader.fill({ order: 25, Component: AsOf }),
++  AppHeader.fill({ order: 26, Component: Preview }),
+ ];
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfFilter.java b/src/main/java/net/officefloor/hq/app/asof/AsOfFilter.java
+index 1a7a300e7..1af46c4f5 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfFilter.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfFilter.java
+@@ -22,6 +22,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
+  * stood at the end of the last day on or before that date ({@link SheetDayRepository#schemaAsOf}), with the date
+  * standing in for the sheet's today: every endpoint reads it unchanged, as every connection the request takes is
+  * pointed at that sheet. Only reads are viewed so; a change is never made as of a date.
++ * <p>
++ * A read with {@code ?preview=<yyyy-MM-dd>} (and no {@code asOf}) reads the sheet's current records with the date
++ * standing in for its today: a preview of its figures on that date. A change always uses the sheet's real today.
+  */
+ @Component
+ @Order(Ordered.HIGHEST_PRECEDENCE)
+@@ -39,6 +42,10 @@ public class AsOfFilter extends OncePerRequestFilter {
+     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+             throws ServletException, IOException {
+         String asOf = request.getParameter("asOf");
++        boolean preview = asOf == null || asOf.isBlank();
++        if (preview) {
++            asOf = request.getParameter("preview");
++        }
+         Matcher read = SHEET_READ.matcher(request.getRequestURI());
+         if (!"GET".equals(request.getMethod()) || asOf == null || asOf.isBlank() || !read.matches()) {
+             AsOfView.set(null);
+@@ -54,8 +61,8 @@ public class AsOfFilter extends OncePerRequestFilter {
+         }
+         String sheetId = URLDecoder.decode(read.group(1), StandardCharsets.UTF_8);
+         AsOfView.set(null);
+-        String schema = days.schemaAsOf(sheetId, date);
+-        AsOfView.set(new AsOfView(schema, date));
++        String schema = preview ? days.liveSchema() : days.schemaAsOf(sheetId, date);
++        AsOfView.set(new AsOfView(schema, date, preview));
+         try {
+             chain.doFilter(request, response);
+         } finally {
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index bfbd6d2da..75eee8732 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -5,9 +5,14 @@ import java.time.LocalDate;
+ /**
+  * The sheet as a request reads it as of a date: the schema ({@link AsOfSchemas}) holding it as it stood at the end of
+  * that date, and the date, which stands in for the sheet's today. Held for the request's thread by {@link AsOfFilter}
+- * and applied to every connection it takes by {@link AsOfConnections}.
++ * and applied to every connection it takes by {@link AsOfConnections}. A preview reads the sheet's current records
++ * ({@link AsOfSchemas#LIVE}) with the date standing in for its today.
+  */
+-public record AsOfView(String schema, LocalDate date) {
++public record AsOfView(String schema, LocalDate date, boolean preview) {
++
++    public AsOfView(String schema, LocalDate date) {
++        this(schema, date, false);
++    }
+ 
+     private static final ThreadLocal<AsOfView> CURRENT = new ThreadLocal<>();
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/asof/SheetDayRepository.java b/src/main/java/net/officefloor/hq/app/asof/SheetDayRepository.java
+index 447890f42..5d9e711fa 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/SheetDayRepository.java
++++ b/src/main/java/net/officefloor/hq/app/asof/SheetDayRepository.java
+@@ -80,6 +80,12 @@ public class SheetDayRepository {
+         return JSON.readValue(state, SheetState.class);
+     }
+ 
++    /** The schema ({@link AsOfSchemas#LIVE}) holding the sheet as it stands now, read with another date as today. */
++    public String liveSchema() {
++        schemas.ensureShared();
++        return AsOfSchemas.LIVE;
++    }
++
+     /** The sheet_day kept as the sheet stood at the end of the date; null: as it stands now; -1: empty. */
+     private Long keptAsOf(String sheetId, LocalDate date) {
+         List<LocalDate> started = jdbc.query("SELECT started FROM sheet WHERE id = ?",
+diff --git a/src/main/java/net/officefloor/hq/app/note/LoadNotes.java b/src/main/java/net/officefloor/hq/app/note/LoadNotes.java
+index c3f0ea11c..8ae20057f 100644
+--- a/src/main/java/net/officefloor/hq/app/note/LoadNotes.java
++++ b/src/main/java/net/officefloor/hq/app/note/LoadNotes.java
+@@ -5,10 +5,10 @@ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** The sheet's notes, newest first; read as of a date, those added while its today was on or before that date. */
++/** The sheet's notes, newest first; read as of a date, those added while its today was on or before that date (a preview reads them all). */
+ public class LoadNotes {
+     public void load(@Val Sheet sheet, NoteRepository repository, Out<Notes> notes) {
+         AsOfView asOf = AsOfView.current();
+-        notes.set(new Notes(asOf == null ? repository.findAll(sheet.id()) : repository.findUpTo(sheet.id(), asOf.date())));
++        notes.set(new Notes(asOf == null || asOf.preview() ? repository.findAll(sheet.id()) : repository.findUpTo(sheet.id(), asOf.date())));
+     }
+ }
