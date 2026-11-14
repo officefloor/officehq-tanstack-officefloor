@@ -1,0 +1,670 @@
+diff --git a/src/main/frontend/features/claims/PersonClaims.tsx b/src/main/frontend/features/claims/PersonClaims.tsx
+index 3d543e9df..5b341754f 100644
+--- a/src/main/frontend/features/claims/PersonClaims.tsx
++++ b/src/main/frontend/features/claims/PersonClaims.tsx
+@@ -3,14 +3,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { HttpError } from '../../api/http';
+ import { useSubmitOnce } from '../../forms/useSubmitOnce';
+ import { listPeriods, periodOf, periodsKey } from '../periods/api';
+-import { claimDue, showDue, type Late, type Rate } from '../rates/api';
++import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
+ import { addClaim, claimsKey, dueBy, isOverdue, moveClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
+ 
+ const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
+ 
+ /** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
+- *  with its status, its due (fixed when settled, else at the person's `grade`'s rate in force on the
+- *  claim's date and at least the sheet's `floor`, or bound by the person's last statement; none when
++ *  with its status, its due (fixed when settled, else at the rate in force on the claim's date of the
++ *  person's grade in force then (`gradeOn`) and at least the sheet's `floor`, or bound by the person's last statement; none when
+  *  there is no such rate; an overdue one gains its late charge on top, see `charges`), its due-by (its date plus the sheet's `terms` in days) and whether it is
+  *  overdue (OPEN and due-by before the sheet's `today`), whether
+  *  it is stated,
+@@ -18,8 +18,8 @@ const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
+  *  change its status (the user who opened a claim cannot settle it, nor a clerk one whose due is
+  *  above the sheet's clerk limit). Only a DRAFT can be edited:
+  *  editing any other claim is refused with an error on the claim. */
+-export function PersonClaims({ sheetId, user, personId, claims, grade, rates, floor, terms, today, charges }: {
+-  sheetId: string; user: string; personId: number; claims: Claim[]; grade: string; rates: Rate[] | undefined;
++export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, terms, today, charges }: {
++  sheetId: string; user: string; personId: number; claims: Claim[]; gradeOn: GradeOn; rates: Rate[] | undefined;
+   floor: string; terms: number; today: string; charges: Late;
+ }) {
+   const queryClient = useQueryClient();
+@@ -116,7 +116,7 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates, fl
+               <td data-testid="claim-amount">{Number(c.amount).toFixed(2)}</td>
+               <td data-testid="claim-date">{c.date}</td>
+               <td data-testid="claim-note">{c.note}</td>
+-              <td data-testid="claim-due">{showDue(claimDue(c, rates, grade, floor, charges))}</td>
++              <td data-testid="claim-due">{showDue(claimDue(c, rates, gradeOn, floor, charges))}</td>
+               <td>
+                 Due by <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
+                 overdue <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 646a6e694..1eabf3d31 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -9,12 +9,12 @@ import { useFloor, useLate, useTerms } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+ import { QuickAdd } from './QuickAdd';
+ import { ShowRetired, useShowRetired } from './ShowRetired';
+-import { GRADES, addPatron, addPerson, holdPerson, listPeople, peopleKey, retirePerson, takeStatement, updatePerson, type Person, type PersonInput } from './api';
++import { GRADES, addPatron, addPerson, gradeOn, holdPerson, listPeople, peopleKey, retirePerson, takeStatement, updatePerson, type Person, type PersonInput } from './api';
+ 
+-const EMPTY: PersonInput = { name: '', grade: 'A' };
++const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '' };
+ 
+ /** The people on the sheet: a form that adds a person or edits one, and the list in added order,
+- *  each with their claimed total, their due-total (the sum of their claims' due figures; n/a
++ *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures; n/a
+  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
+  *  their statements (a button that takes one, the count, the last one's due-total and date), whether
+  *  they are retired and from when (with a date and a button that retires them), whether they are on
+@@ -53,7 +53,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+         if (e instanceof HttpError && e.status === 409) {
+           const now = await queryClient.fetchQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId), staleTime: 0 });
+           const current = now.find((p) => p.id === v.editing?.id);
+-          if (current) setForm({ name: current.name, grade: current.grade });
++          if (current) setForm({ name: current.name, grade: current.grade, gradeFrom: '' });
+         }
+         throw e;
+       }
+@@ -141,7 +141,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+   };
+ 
+   const open = (p: Person) => {
+-    setForm({ name: p.name, grade: p.grade });
++    setForm({ name: p.name, grade: p.grade, gradeFrom: '' });
+     setEditing({ id: p.id, version: p.version });
+     save.reset();
+   };
+@@ -156,7 +156,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const everyone = people.data ?? [];
+   const dueOf = new Map(everyone.map((q) => [q.id, personDue(
+     liveClaims((claims.data ?? []).filter((c) => c.personId === q.id), [q]),
+-    rates.data, q.grade, byGrade.get(q.grade), floor, charges)]));
++    rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges)]));
+   const nameOf = new Map(everyone.map((q) => [q.id, q.name]));
+ 
+   return (
+@@ -186,6 +186,11 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+             ))}
+           </select>
+         </label>{' '}
++        <label>
++          from{' '}
++          <input type="date" data-testid="person-form-grade-from" value={form.gradeFrom}
++            onChange={(e) => change({ gradeFrom: e.target.value })} />
++        </label>{' '}
+         <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
+           {editing === null ? 'Add person' : 'Save person'}
+         </button>
+@@ -212,7 +217,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+             const live = liveClaims(own, [p]);
+             const claimed = sumAmounts(live);
+             const pct = byGrade.get(p.grade);
+-            const late = overdue(live, terms, today, (c) => claimDue(c, rates.data, p.grade, floor, charges));
++            const late = overdue(live, terms, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
+             return (
+               <tr key={p.id} data-testid={`person-row-${p.id}`}>
+                 <td data-testid="person-name">{p.name}</td>
+@@ -221,7 +226,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   Claimed <span data-testid="person-claimed">{claimed}</span>
+                 </td>
+                 <td>
+-                  Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, p.grade, pct, floor, charges))}</span>
++                  Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges))}</span>
+                 </td>
+                 <td>
+                   Overdue <span data-testid="person-overdue-count">{late.count}</span>{' '}
+@@ -296,7 +301,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   )}
+                 </td>
+                 <td>
+-                  <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} grade={p.grade} rates={rates.data} floor={floor}
++                  <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} gradeOn={(d) => gradeOn(p, d)} rates={rates.data} floor={floor}
+                     terms={terms} today={today} charges={charges} />
+                 </td>
+               </tr>
+diff --git a/src/main/frontend/features/people/api.ts b/src/main/frontend/features/people/api.ts
+index 0b4264e29..22ea77381 100644
+--- a/src/main/frontend/features/people/api.ts
++++ b/src/main/frontend/features/people/api.ts
+@@ -5,17 +5,32 @@ import type { Claim } from '../claims/api';
+ export type Grade = 'A' | 'B' | 'C';
+ export const GRADES: Grade[] = ['A', 'B', 'C'];
+ 
+-/** `version` is raised by every saved edit; an edit sends the version its form loaded. Their
++/** A grade a person was given, in force from its from-date (yyyy-MM-dd; null: from the beginning of time). */
++export type GradeFrom = { grade: Grade; from: string | null };
++
++/** `grade` is the one in force on the sheet's today, of their `grades` by from-date (none first).
++ *  `version` is raised by every saved edit; an edit sends the version its form loaded. Their
+  *  statements: how many were taken, and the last one's due-total and date (null until the first).
+  *  `retiredFrom` is the date they are retired from (null: not retired); with it set at all they
+  *  are `retired`, whatever the date. While `held`, their OPEN claims count in no live total. `patronIds` are the people they name
+  *  as patrons, in the order named. */
+ export type Person = {
+-  id: number; sheetId: string; name: string; grade: Grade; version: number;
++  id: number; sheetId: string; name: string; grade: Grade; grades: GradeFrom[]; version: number;
+   statementCount: number; statedTotal: string | null; statementDate: string | null;
+   retired: boolean; retiredFrom: string | null; held: boolean; patronIds: number[];
+ };
+-export type PersonInput = { name: string; grade: string };
++/** `gradeFrom` is the date an edit's grade applies from (blank: the sheet's today). */
++export type PersonInput = { name: string; grade: string; gradeFrom: string };
++
++/** The person's grade in force on a date (yyyy-MM-dd): the one with the latest from-date on or before it. */
++export function gradeOn(p: Person, date: string): string {
++  let found: GradeFrom | undefined;
++  for (const g of p.grades) {
++    if (g.from !== null && g.from > date) continue;
++    if (found === undefined || (found.from ?? '') < (g.from ?? '')) found = g;
++  }
++  return found?.grade ?? '';
++}
+ 
+ const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/people`;
+ 
+diff --git a/src/main/frontend/features/periods/Periods.tsx b/src/main/frontend/features/periods/Periods.tsx
+index 22bfc9736..ac6ddb698 100644
+--- a/src/main/frontend/features/periods/Periods.tsx
++++ b/src/main/frontend/features/periods/Periods.tsx
+@@ -2,7 +2,7 @@ import { useState } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { useSubmitOnce } from '../../forms/useSubmitOnce';
+ import { claimsKey, counts, listClaims, liveClaims } from '../claims/api';
+-import { listPeople, peopleKey } from '../people/api';
++import { gradeOn, listPeople, peopleKey } from '../people/api';
+ import { claimDue, listRates, ratesKey, sumDues } from '../rates/api';
+ import { useFloor, useLate } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+@@ -52,11 +52,11 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
+     save.reset();
+   };
+ 
+-  const gradeOf = new Map((people.data ?? []).map((p) => [p.id, p.grade]));
++  const personOf = new Map((people.data ?? []).map((p) => [p.id, p]));
+   const counting = liveClaims(claims.data ?? [], people.data).filter(counts);
+   const dueTotal = (from: string, to: string) =>
+     sumDues(counting.filter((c) => from <= c.date && c.date <= to)
+-      .map((c) => claimDue(c, rates.data, gradeOf.get(c.personId) ?? '', floor, charges)));
++      .map((c) => claimDue(c, rates.data, (d) => { const p = personOf.get(c.personId); return p ? gradeOn(p, d) : ''; }, floor, charges)));
+ 
+   return (
+     <section>
+diff --git a/src/main/frontend/features/rates/DueTotal.tsx b/src/main/frontend/features/rates/DueTotal.tsx
+index 582d2cc2a..72ec79c46 100644
+--- a/src/main/frontend/features/rates/DueTotal.tsx
++++ b/src/main/frontend/features/rates/DueTotal.tsx
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { claimsKey, listClaims, liveClaims } from '../claims/api';
+-import { listPeople, peopleKey } from '../people/api';
++import { gradeOn, listPeople, peopleKey } from '../people/api';
+ import { useFloor, useLate } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+ import { listRates, personDue, rateByGrade, ratesKey, sumDues } from './api';
+@@ -16,7 +16,7 @@ export function DueTotal({ sheetId, user }: { sheetId: string; user: string }) {
+   const byGrade = rateByGrade(rates.data, today);
+   const live = liveClaims(claims.data ?? [], people.data);
+   const dues = (people.data ?? []).map((p) =>
+-    personDue(live.filter((c) => c.personId === p.id), rates.data, p.grade, byGrade.get(p.grade), floor, charges),
++    personDue(live.filter((c) => c.personId === p.id), rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges),
+   );
+   return (
+     <p>
+diff --git a/src/main/frontend/features/rates/Overdue.tsx b/src/main/frontend/features/rates/Overdue.tsx
+index 987b6955f..59368464f 100644
+--- a/src/main/frontend/features/rates/Overdue.tsx
++++ b/src/main/frontend/features/rates/Overdue.tsx
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { claimsKey, listClaims, liveClaims } from '../claims/api';
+-import { listPeople, peopleKey } from '../people/api';
++import { gradeOn, listPeople, peopleKey, type Person } from '../people/api';
+ import { useFloor, useLate, useTerms } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+ import { claimDue, listRates, overdue, ratesKey } from './api';
+@@ -15,9 +15,9 @@ export function Overdue({ sheetId, user }: { sheetId: string; user: string }) {
+   const terms = useTerms(sheetId);
+   const today = useSheetToday(sheetId, user);
+   const charges = useLate(sheetId, today);
+-  const grades = new Map((people.data ?? []).map((p) => [p.id, p.grade]));
+-  const live = liveClaims(claims.data ?? [], people.data).filter((c) => grades.has(c.personId));
+-  const late = overdue(live, terms, today, (c) => claimDue(c, rates.data, grades.get(c.personId) ?? '', floor, charges));
++  const byId = new Map<number, Person>((people.data ?? []).map((p) => [p.id, p]));
++  const live = liveClaims(claims.data ?? [], people.data).filter((c) => byId.has(c.personId));
++  const late = overdue(live, terms, today, (c) => claimDue(c, rates.data, (d) => gradeOn(byId.get(c.personId)!, d), floor, charges));
+   return (
+     <p>
+       Overdue <span data-testid="rollup-overdue-count">{late.count}</span>{' '}
+diff --git a/src/main/frontend/features/rates/api.ts b/src/main/frontend/features/rates/api.ts
+index 8f8719ce4..a67f12fd1 100644
+--- a/src/main/frontend/features/rates/api.ts
++++ b/src/main/frontend/features/rates/api.ts
+@@ -72,12 +72,16 @@ export function lateCharge(c: Claim, figure: string, late: Late): bigint {
+   return roundPct(hundredths(figure) * hundredths(late.pct) * BigInt(Math.floor(days / 30)));
+ }
+ 
++/** A person's grade in force on a date (yyyy-MM-dd). */
++export type GradeOn = (date: string) => string;
++
+ /** A claim's due: the one fixed when it was settled (its late charge then frozen in), else its
+- *  figure — the one bound by its person's last statement, else live at the grade's rate in force on
+- *  the claim's date, at least the `floor` — with its late charge on the sheet's today on top. */
+-export function claimDue(c: Claim, rates: Rate[] | undefined, grade: string, floor: string, late: Late): string | null {
++ *  figure — the one bound by its person's last statement, else live at the rate in force on the
++ *  claim's date of the grade in force then (`gradeOn`), at least the `floor` — with its late charge
++ *  on the sheet's today on top. */
++export function claimDue(c: Claim, rates: Rate[] | undefined, gradeOn: GradeOn, floor: string, late: Late): string | null {
+   if (c.settledDue !== null) return c.settledDue;
+-  const figure = c.stated ? c.statedDue : dueOf(c.amount, rateOn(rates, grade, c.date), floor);
++  const figure = c.stated ? c.statedDue : dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date), floor);
+   return figure === null ? null : formatCents(hundredths(figure) + lateCharge(c, figure, late));
+ }
+ 
+@@ -89,12 +93,16 @@ function roundPct(product: bigint): bigint {
+ }
+ 
+ /** A person's due-total: the sum of their counting claims' due figures (n/a ones skipped); n/a
+- *  when their grade has no rate today (`pct`) and none of those claims keeps a settled or bound figure. */
+-export function personDue(claims: Claim[], rates: Rate[] | undefined, grade: string, pct: string | undefined,
++ *  when their grade today has no rate today (`pct`) and none of those claims keeps a settled or bound
++ *  figure, or a live one at a grade no longer in force on the sheet's today. */
++export function personDue(claims: Claim[], rates: Rate[] | undefined, gradeOn: GradeOn, pct: string | undefined,
+   floor: string, late: Late) {
+   const own = claims.filter(counts);
+-  if (pct === undefined && !own.some((c) => c.settledDue !== null || (c.stated && c.statedDue !== null))) return null;
+-  return sumDues(own.map((c) => claimDue(c, rates, grade, floor, late)));
++  const now = gradeOn(late.today);
++  const kept = (c: Claim) => c.settledDue !== null || (c.stated && c.statedDue !== null)
++    || (gradeOn(c.date) !== now && rateOn(rates, gradeOn(c.date), c.date) !== undefined);
++  if (pct === undefined && !own.some(kept)) return null;
++  return sumDues(own.map((c) => claimDue(c, rates, gradeOn, floor, late)));
+ }
+ 
+ /** The overdue claims among those that count (`claims`, the live ones): their count and the sum
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+index a7528022e..773994938 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+@@ -30,7 +30,7 @@ public class SettleClaim {
+             throw new ClaimStatusException("The user who opened a claim cannot settle it");
+         }
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+-        Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.getGrade(),
++        Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),
+                 LocalDate.parse(claim.getDate()));
+         // A claim bound by a statement settles at the figure it was bound to.
+         // Its late charge on the sheet's today is frozen in.
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index ade4382a7..57940fdce 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -40,7 +40,7 @@ public class ClosePeriod {
+             Person person = people.find(id, c.getPersonId());
+             if (person != null && !person.countsLive(c)) continue;
+             Rate rate = person == null ? null
+-                    : rates.find(id, person.getGrade(), LocalDate.parse(c.getDate()));
++                    : rates.find(id, person.gradeOn(c.getDate()), LocalDate.parse(c.getDate()));
+             String due = Dues.shown(c, rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor), late);
+             if (due != null) total = total.add(new BigDecimal(due));
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index 98ff2b008..0a87e6d57 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -1,9 +1,11 @@
+ package net.officefloor.hq.app.person;
+ 
++import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class ApplyPerson {
+-    public void apply(@Val PersonRequest request, @Val Person person, PersonRepository people)
++    public void apply(@Val PersonRequest request, @Val Person person, PersonRepository people,
++            SheetRepository sheets)
+             throws InvalidPersonException, PersonConflictException {
+         if (request.version() != null && request.version() != person.getVersion()) {
+             throw new PersonConflictException(person.getId());
+@@ -12,6 +14,11 @@ public class ApplyPerson {
+             throw new InvalidPersonException("The name is already in use");
+         }
+         person.setName(request.name());
+-        person.setGrade(request.grade());
++        // The form's grade is given from its from-date (blank: the sheet's today); a save leaving
++        // the grade as the row showed it, with no from-date, gives none.
++        if (request.gradeFrom() != null || !request.grade().equals(person.getGrade())) {
++            java.time.LocalDate today = sheets.today(person.getSheetId());
++            person.giveGrade(request.grade(), request.gradeFrom() != null ? request.gradeFrom() : today.toString(), today);
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/GradeFrom.java b/src/main/java/net/officefloor/hq/app/person/GradeFrom.java
+new file mode 100644
+index 000000000..76e14641e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/GradeFrom.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A grade a person was given, in force from its from-date (yyyy-MM-dd; null: from the beginning of time). */
++public record GradeFrom(String grade, String from) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index a4e7b1239..b6bb34f04 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -4,7 +4,8 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimStatus;
+ 
+-/** A person on a sheet: a name and a grade (A, B or C), the version raised by each saved edit, and
++/** A person on a sheet: a name and their grades (A, B or C), each in force from its from-date (the
++ *  first from the beginning of time), with {@code grade} the one in force on the sheet's today, the version raised by each saved edit, and
+  *  their statements: how many have been taken, and the last one's due-total and date (none until the
+  *  first), and the date they are retired from (null: not retired; set at all, they count as retired),
+  *  and whether they are on hold (their OPEN claims then count in no live total). */
+@@ -13,6 +14,10 @@ public class Person {
+     private final String sheetId;
+     private String name;
+     private String grade;
++    /** The grades they were given, by from-date (none first). */
++    private java.util.List<GradeFrom> grades = new java.util.ArrayList<>();
++    /** The grade this request's save records (null: none). */
++    private GradeFrom recorded;
+     private long version;
+     private int statementCount;
+     private String statedTotal;
+@@ -45,7 +50,38 @@ public class Person {
+     public String getName() { return name; }
+     public void setName(String name) { this.name = name; }
+     public String getGrade() { return grade; }
+-    public void setGrade(String grade) { this.grade = grade; }
++    public java.util.List<GradeFrom> getGrades() { return grades; }
++
++    /** Their grades, by from-date (none first), and the one in force on the sheet's today. */
++    public void setGrades(java.util.List<GradeFrom> grades, java.time.LocalDate today) {
++        this.grades = grades;
++        this.grade = gradeOn(today.toString());
++    }
++
++    /** The grade in force on the date (yyyy-MM-dd): the one with the latest from-date on or before
++     *  it; null when there is none. */
++    public String gradeOn(String date) {
++        GradeFrom found = null;
++        for (GradeFrom g : grades) {
++            if (g.from() != null && g.from().compareTo(date) > 0) continue;
++            if (found == null || (found.from() == null ? "" : found.from()).compareTo(g.from() == null ? "" : g.from()) < 0) found = g;
++        }
++        return found == null ? null : found.grade();
++    }
++
++    /** Give them the grade from the from-date (null: the beginning of time), replacing the one
++     *  with the same from-date; the save records it. */
++    public void giveGrade(String grade, String from, java.time.LocalDate today) {
++        java.util.List<GradeFrom> now = new java.util.ArrayList<>(grades);
++        now.removeIf((g) -> java.util.Objects.equals(g.from(), from));
++        now.add(new GradeFrom(grade, from));
++        now.sort(java.util.Comparator.comparing((GradeFrom g) -> g.from() == null ? "" : g.from()));
++        setGrades(now, today);
++        recorded = new GradeFrom(grade, from);
++    }
++
++    @JsonIgnore
++    public GradeFrom getRecorded() { return recorded; }
+     public long getVersion() { return version; }
+     public void setVersion(long version) { this.version = version; }
+     public int getStatementCount() { return statementCount; }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 48cee03cb..ffee76bc4 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -14,13 +14,13 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class PersonRepository {
+ 
+-    private static final String COLUMNS = "id, sheet_id, name, grade, version, statement_count, stated_total, statement_date, retired_from, held";
++    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, held";
+ 
+     private static final RowMapper<Person> ROW = (rs, n) -> {
+         LocalDate stated = rs.getObject("statement_date", LocalDate.class);
+         LocalDate retired = rs.getObject("retired_from", LocalDate.class);
+         Person person = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
+-                rs.getString("grade"), rs.getLong("version"), rs.getInt("statement_count"),
++                null, rs.getLong("version"), rs.getInt("statement_count"),
+                 rs.getString("stated_total"), stated == null ? null : stated.toString());
+         person.setRetiredFrom(retired == null ? null : retired.toString());
+         person.setHeld(rs.getBoolean("held"));
+@@ -39,6 +39,7 @@ public class PersonRepository {
+                 ROW, sheetId);
+         Map<Long, Person> byId = new HashMap<>();
+         people.forEach((p) -> byId.put(p.getId(), p));
++        withGrades(sheetId, people);
+         jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY added_at, patron_id",
+                 (rs) -> {
+                     Person p = byId.get(rs.getLong("person_id"));
+@@ -56,10 +57,28 @@ public class PersonRepository {
+             person.setPatronIds(new ArrayList<>(jdbc.queryForList(
+                     "SELECT patron_id FROM person_patron WHERE sheet_id = ? AND person_id = ? ORDER BY added_at, patron_id",
+                     Long.class, sheetId, id)));
++            withGrades(sheetId, List.of(person));
+         }
+         return person;
+     }
+ 
++    /** Give each person their grades, by from-date (none first), and the one in force on the sheet's today. */
++    private void withGrades(String sheetId, List<Person> people) {
++        if (people.isEmpty()) {
++            return;
++        }
++        LocalDate today = jdbc.queryForList("SELECT today FROM sheet WHERE id = ?", LocalDate.class, sheetId)
++                .stream().findFirst().orElse(LocalDate.now());
++        Map<Long, List<GradeFrom>> grades = new HashMap<>();
++        jdbc.query("SELECT person_id, grade, from_date FROM person_grade WHERE sheet_id = ? ORDER BY person_id, from_key",
++                (rs) -> {
++                    LocalDate from = rs.getObject("from_date", LocalDate.class);
++                    grades.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())
++                            .add(new GradeFrom(rs.getString("grade"), from == null ? null : from.toString()));
++                }, sheetId);
++        people.forEach((p) -> p.setGrades(grades.getOrDefault(p.getId(), new ArrayList<>()), today));
++    }
++
+     /** Name the patron as one of the person's patrons. */
+     public void addPatron(Person person, Person patron, String user) {
+         jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, added_by) VALUES (?, ?, ?, ?)",
+@@ -69,8 +88,9 @@ public class PersonRepository {
+ 
+     /** The person on the sheet with this name, compared ignoring case and surrounding spaces; null when none. */
+     public Person findByName(String sheetId, String name) {
+-        return jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))",
++        Person found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))",
+                 ROW, sheetId, name).stream().findFirst().orElse(null);
++        return found == null ? null : find(sheetId, found.getId());
+     }
+ 
+     /** Whether another person on the sheet already has this name, compared ignoring case and surrounding spaces. */
+@@ -85,23 +105,43 @@ public class PersonRepository {
+         GeneratedKeyHolder key = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO person (sheet_id, name, grade, created_by) VALUES (?, ?, ?, ?)",
++                    "INSERT INTO person (sheet_id, name, created_by) VALUES (?, ?, ?)",
+                     new String[] { "id" });
+             ps.setString(1, sheetId);
+             ps.setString(2, name);
+-            ps.setString(3, grade);
+-            ps.setString(4, user);
++            ps.setString(3, user);
+             return ps;
+         }, key);
+-        return new Person(key.getKey().longValue(), sheetId, name, grade, 0);
++        long id = key.getKey().longValue();
++        // The first grade a person is given applies from the beginning of time.
++        jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date, set_by) VALUES (?, ?, ?, NULL, ?)",
++                sheetId, id, grade, user);
++        Person person = new Person(id, sheetId, name, grade, 0);
++        person.getGrades().add(new GradeFrom(grade, null));
++        return person;
++    }
++
++    /** Record the grade the person was just given (see {@link Person#giveGrade}), replacing the one
++     *  with the same from-date. */
++    public void saveGrade(Person person, GradeFrom given, String user) {
++        LocalDate from = given.from() == null ? null : LocalDate.parse(given.from());
++        if (from == null) {
++            jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ? AND from_date IS NULL",
++                    person.getSheetId(), person.getId());
++        } else {
++            jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ? AND from_date = ?",
++                    person.getSheetId(), person.getId(), from);
++        }
++        jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date, set_by) VALUES (?, ?, ?, ?, ?)",
++                person.getSheetId(), person.getId(), given.grade(), from, user);
+     }
+ 
+     /** Save the person over the version it was loaded at, raising the version; false (nothing
+      *  written) when someone else has saved the person since. */
+     public boolean update(Person person) {
+         int n = jdbc.update(
+-                "UPDATE person SET name = ?, grade = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
+-                person.getName(), person.getGrade(), person.getSheetId(), person.getId(), person.getVersion());
++                "UPDATE person SET name = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
++                person.getName(), person.getSheetId(), person.getId(), person.getVersion());
+         if (n == 0) {
+             return false;
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+index 1c87aff4f..c964e32ae 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+@@ -1,5 +1,7 @@
+ package net.officefloor.hq.app.person;
+ 
+-/** Body of an add or edit of a person. An edit carries the version of the person its form loaded. */
+-public record PersonRequest(String name, String grade, Long version) {
++/** Body of an add or edit of a person. An edit carries the version of the person its form loaded,
++ *  and the date its grade applies from (blank: the sheet's today; an add's grade applies from the
++ *  beginning of time). */
++public record PersonRequest(String name, String grade, String gradeFrom, Long version) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/SavePerson.java b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+index d98e90083..59f1e3e3d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/SavePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+@@ -1,11 +1,16 @@
+ package net.officefloor.hq.app.person;
+ 
+ import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class SavePerson {
+-    public void save(@Val Person person, PersonRepository people) throws PersonConflictException {
++    public void save(@RequestParam(name = "by", required = false) String by, @Val Person person,
++            PersonRepository people) throws PersonConflictException {
+         if (!people.update(person)) {
+             throw new PersonConflictException(person.getId()); // saved by someone else meanwhile
+         }
++        if (person.getRecorded() != null) {
++            people.saveGrade(person, person.getRecorded(), by == null ? "" : by);
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/TakeStatement.java b/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
+index 3015f8e56..10df89868 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
+@@ -14,7 +14,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Takes a statement of the person: records their due-total now (the sum of the due of their claims that
+  *  count live (OPEN ones of a person on hold do not), n/a ones skipped; n/a when their grade has no rate on the sheet's today and none of
+- *  those claims keeps a settled or bound figure) on the sheet's today, and binds each counting claim
++ *  those claims keeps a settled or bound figure, or a live one at a grade no longer in force) on the sheet's today, and binds each counting claim
+  *  to the figure under the due it shows now (its late charge is never bound); a claim that does not
+  *  count live is unbound. */
+ public class TakeStatement {
+@@ -32,10 +32,12 @@ public class TakeStatement {
+             if (!person.countsLive(c)) {
+                 c.bind(false, null);
+             } else {
+-                Rate rate = rates.find(sheetId, person.getGrade(), LocalDate.parse(c.getDate()));
++                String grade = person.gradeOn(c.getDate());
++                Rate rate = rates.find(sheetId, grade, LocalDate.parse(c.getDate()));
+                 String live = rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor);
+                 String shown = Dues.shown(c, live, late);
+-                kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null);
++                kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null)
++                        || (rate != null && !grade.equals(person.getGrade()));
+                 if (shown != null) total = total.add(new BigDecimal(shown));
+                 // The figure under it is bound; its late charge keeps following the sheet's today.
+                 c.bind(true, c.due(live));
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+index e76eaf7a5..fbe12e500 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+@@ -1,5 +1,7 @@
+ package net.officefloor.hq.app.person;
+ 
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
+ import java.util.Set;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+@@ -17,6 +19,14 @@ public class ValidatePerson {
+         if (!GRADES.contains(grade)) {
+             throw new InvalidPersonException("Grade must be A, B or C");
+         }
+-        body.set(new PersonRequest(name, grade, request.version()));
++        String from = request.gradeFrom() == null ? "" : request.gradeFrom().trim();
++        if (!from.isEmpty()) {
++            try {
++                LocalDate.parse(from);
++            } catch (DateTimeParseException e) {
++                throw new InvalidPersonException("Not a date: " + from);
++            }
++        }
++        body.set(new PersonRequest(name, grade, from.isEmpty() ? null : from, request.version()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 21c47d867..503e19abe 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -47,9 +47,11 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+             for (Claim c : all) {
+                 if (c.getPersonId() != p.getId() || !p.countsLive(c)) continue;
+                 claimed = claimed.add(new BigDecimal(c.getAmount()));
+-                String pct = rateOn(sheetRates, p.getGrade(), c.getDate());
++                String grade = p.gradeOn(c.getDate());
++                String pct = rateOn(sheetRates, grade, c.getDate());
+                 String d = Dues.shown(c, pct == null ? null : Dues.of(c.getAmount(), pct, floor), late);
+-                kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null);
++                kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null)
++                        || (pct != null && !grade.equals(p.getGrade()));
+                 if (d != null) due = due.add(new BigDecimal(d));
+             }
+             boolean na = rateOn(sheetRates, p.getGrade(), today) == null && !kept;
+diff --git a/src/main/resources/db/migration/V20__person_grade.sql b/src/main/resources/db/migration/V20__person_grade.sql
+new file mode 100644
+index 000000000..6850a1a58
+--- /dev/null
++++ b/src/main/resources/db/migration/V20__person_grade.sql
+@@ -0,0 +1,17 @@
++-- A person's grade is dated: each grade they are given applies from its from-date, and a claim uses
++-- the one whose from-date is the latest on or before its date. No from-date applies from the
++-- beginning of time: the first grade a person was given. The list shows the grade in force on the
++-- sheet's today.
++CREATE TABLE person_grade (
++    sheet_id  VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    person_id BIGINT       NOT NULL REFERENCES person (id),
++    grade     VARCHAR(1)   NOT NULL,
++    from_date DATE,
++    from_key  DATE GENERATED ALWAYS AS (COALESCE(from_date, DATE '0001-01-01')),
++    set_by    VARCHAR(200) NOT NULL,
++    set_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
++);
++CREATE UNIQUE INDEX person_grade_from ON person_grade (person_id, from_key);
++INSERT INTO person_grade (sheet_id, person_id, grade, from_date, set_by)
++    SELECT sheet_id, id, grade, NULL, created_by FROM person;
++ALTER TABLE person DROP COLUMN grade;
