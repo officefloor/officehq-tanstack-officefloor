@@ -134,7 +134,7 @@ export function floored(value: string, floor: string): string {
 }
 
 /**
- * A claim's figure: the figure its statement bound it to (not while PENDING), else its amount at the rate in force on its
+ * A claim's figure: the figure its statement bound it to, else its amount at the rate in force on its
  * date for the person's grade in force on that date (of the rate versions that apply to it), rounded by the policy
  * date — no floor.
  */

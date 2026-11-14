@@ -17,8 +17,8 @@ import java.util.stream.Collectors;
  * within its period (P1-1, X-1). {@code corrects} is, for a correction, the number of the claim it corrects (null:
  * not a correction). {@code dueBy} is fixed when the claim is created: the terms-th business day after its date (skipping Saturdays,
  * Sundays and the sheet's holidays) for its person's own terms, else those of their grade, else the sheet's, each in
- * force on that date; it does not change when the terms or its date change later. While PENDING the claim is not bound: it shows and totals its live figure, and is bound again
- * once rejected (back to OPEN) when the statement included it. {@code deferredUntil} is the date an OPEN claim is
+ * force on that date; it does not change when the terms or its date change later. A PENDING claim is bound like any other claim that counts: while a statement binds it, it shows and
+ * totals the bound figure. {@code deferredUntil} is the date an OPEN claim is
  * deferred until (null: never deferred): while the sheet's today is before it the claim is {@link #deferred deferred}.
  * {@code proofs} is how many proofs the claim has been given. {@code splitFrom} is the number of the claim it was split
  * off (null: not split off another claim). {@code added} is when the claim was added to the sheet, on the sequence rates
@@ -142,9 +142,9 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
                 && dueBy.plusDays(grace).isBefore(today);
     }
 
-    /** Whether a statement binds the claim now: it was stated and is not PENDING. */
+    /** Whether a statement binds the claim now: it was stated (PENDING included). */
     public boolean bound() {
-        return stated && status != ClaimStatus.PENDING;
+        return stated;
     }
 
     /** Whether the claim keeps a figure whatever the rates: fixed when settled, or bound by a statement. */
@@ -154,7 +154,7 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
 
     /**
      * The claim's figure (null: n/a): the due fixed when it was settled, else the figure its statement bound
-     * it to (not while PENDING), else its amount at the given live rate (null: none) — no floor. Its live figure
+     * it to, else its amount at the given live rate (null: none) — no floor. Its live figure
      * rounds by the sheet's policy date.
      */
     public BigDecimal figure(BigDecimal liveRate, Rounding rounding) {

@@ -22,8 +22,8 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
 export const deferred = (c: Claim, today: string) =>
   c.status === 'OPEN' && c.deferredUntil !== null && today !== '' && today < c.deferredUntil;
 
-/** Whether a statement binds the claim now: it was stated and is not PENDING (a pending claim shows its live figure). */
-export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
+/** Whether a statement binds the claim now: it was stated (a PENDING claim too, showing the bound figure). */
+export const bound = (c: Claim) => c.stated;
 
 /**
  * A claim as the store holds it: the amount with two decimals, the date as yyyy-MM-dd; its number

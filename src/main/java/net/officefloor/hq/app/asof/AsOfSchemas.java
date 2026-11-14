@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
+import net.officefloor.hq.app.rate.RateRepository;
 import org.springframework.stereotype.Component;
 
 /**
@@ -16,7 +17,8 @@ import org.springframework.stereotype.Component;
  * repository reads it unchanged once a request's connection is switched to it), with {@code sheet} a view whose today
  * is the session's {@code @asof} date:
  * <ul>
- * <li>a snapshot: a copy of the sheet's rows (and its pools' members) as they stood at a moment;</li>
+ * <li>a snapshot: a copy of the sheet's rows (and its pools' members, and the rates of the sheets above it it
+ * inherits rates from) as they stood at a moment;</li>
  * <li>{@link #LIVE}: the sheet as it stands now;</li>
  * <li>{@link #EMPTY}: nothing on the sheet yet (every setting at its default).</li>
  * </ul>
@@ -30,6 +32,8 @@ public class AsOfSchemas {
 
     private static final String SHEET = "SHEET";
     private static final List<String> NOT_COPIED = List.of("SHEET_DAY", "flyway_schema_history");
+    /** The tables also copied for the sheets above it, so the rates it inherits read as they stood. */
+    private static final List<String> INHERITED = List.of("RATE", "RATE_VERSION");
 
     private final DataSource dataSource;
     private boolean shared;
@@ -41,13 +45,14 @@ public class AsOfSchemas {
     /** Copy every row kept for the sheet, as committed now, into a new schema; its name. */
     public String snapshot(String sheetId) {
         String schema = "ASOF_" + UUID.randomUUID().toString().replace("-", "").toUpperCase();
-        String id = "'" + sheetId.replace("'", "''") + "'";
+        String id = literal(sheetId);
         try (Connection c = dataSource.getConnection(); Statement s = c.createStatement()) {
             c.setAutoCommit(true);
+            String inherited = String.join(", ", lineage(c, sheetId).stream().map(AsOfSchemas::literal).toList());
             s.execute("CREATE SCHEMA " + schema);
             for (String table : tables(c)) {
                 s.execute("CREATE TABLE " + schema + "." + q(table) + " AS SELECT * FROM PUBLIC." + q(table)
-                        + " WHERE SHEET_ID = " + id);
+                        + " WHERE SHEET_ID " + (INHERITED.contains(table) ? "IN (" + inherited + ")" : "= " + id));
             }
             for (String table : poolTables(c)) {
                 s.execute("CREATE TABLE " + schema + "." + q(table) + " AS SELECT * FROM PUBLIC." + q(table)
@@ -60,6 +65,33 @@ public class AsOfSchemas {
             throw new IllegalStateException("Could not keep sheet " + sheetId + " as it stands", e);
         }
         return schema;
+    }
+
+    /** The sheet and the sheets above it it inherits rates from: see {@link RateRepository#findAll}. */
+    private static List<String> lineage(Connection c, String sheetId) throws SQLException {
+        List<String> ids = new ArrayList<>(List.of(sheetId));
+        try (PreparedStatement p = c.prepareStatement("SELECT PARENT_ID FROM PUBLIC.SHEET WHERE ID = ?")) {
+            String at = sheetId;
+            for (int level = 1; level <= RateRepository.PARENT_LEVELS && at != null; level++) {
+                p.setString(1, at);
+                String up = null;
+                try (ResultSet rs = p.executeQuery()) {
+                    if (rs.next()) {
+                        up = rs.getString(1);
+                    }
+                }
+                if (up == null || ids.contains(up)) {
+                    break;
+                }
+                ids.add(up);
+                at = up;
+            }
+        }
+        return ids;
+    }
+
+    private static String literal(String value) {
+        return "'" + value.replace("'", "''") + "'";
     }
 
     /** Make the live and empty schemas, once. */
