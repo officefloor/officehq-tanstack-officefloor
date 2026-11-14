@@ -25,7 +25,7 @@ import org.springframework.stereotype.Repository;
 public class SheetCloner {
 
     /** The tables kept per sheet that are copied as they are, under the clone's id. */
-    private static final List<String> SHEET_TABLES = List.of("user_role", "permission", "delegation", "setting_from",
+    private static final List<String> SHEET_TABLES = List.of("user_role", "permission", "delegation", "setting_from", "policy_version",
             "grade_terms", "rate", "rate_version", "holiday", "void_reason", "claim_template", "claim_tag", "sheet_pot",
             "grade_retired", "grade_added");
 

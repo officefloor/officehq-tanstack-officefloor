@@ -55,14 +55,20 @@ export type UserRole = { user: string; role: string };
  * `fiscalStartMonth` is the month (1 to 12) each fiscal year starts in; it is not dated.
  * `rounding` is the rounding mode in force on the sheet's today (half-up or half-even; '': none — a claim with none in force on its
  * date rounds by the policy date); it is dated, its values in `history` under rounding.
+ * `policyVersion` is the sheet's current policy version: every change to one of the policy settings (the rounding mode, the
+ * floor, the cap, the terms, the late percent and the clerk limit) is a new version, numbered from 1 in the order made;
+ * `policyVersions` holds them all, in that order.
  */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; entryDate: string; cap: string; proofThreshold: string; noteThreshold: string; reviewThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[]; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string; scoreMid: string; scoreHigh: string; scoreLog: string; maxOpen: string; pendingSla: string };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; entryDate: string; cap: string; proofThreshold: string; noteThreshold: string; reviewThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[]; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string; scoreMid: string; scoreHigh: string; scoreLog: string; maxOpen: string; pendingSla: string; policyVersion: number; policyVersions: PolicyVersion[] };
 
 /**
  * The steward role delegated by a steward (`by`) to a user name, from a from-date to a to-date (yyyy-MM-dd), both
  * inclusive: while the sheet's today is inside them the user acts as a steward.
  */
 export type Delegation = { user: string; from: string; to: string; by: string };
+
+/** A policy version: its number, the setting changed and the date it is in force from (yyyy-MM-dd; '': none, it counts always). */
+export type PolicyVersion = { number: number; key: string; from: string };
 
 /** A dated setting's value recorded from a date (yyyy-MM-dd); '': blank. */
 export type FromValue = { from: string; value: string };
@@ -156,7 +162,7 @@ export const DATE = /^\d{4}-\d{2}-\d{2}$/;
 /**
  * What a claim's due is worked out from: the floor and late percent in force on a claim's date, the grace days of a grade
  * in force on a date (0: none), the sheet's today, its policy
- * date in force (blank: today), the rounding mode in force on a date ('': none, the policy date decides), its cap in force on today ('': none), each person's cut total (their cuts across the pools, added up; the cap
+ * date in force (blank: today), the rounding mode in force on a date ('': none, the policy date decides), its cap in force on a date ('': none; a person's is the one on the date of their latest claim that counts), each person's cut total (their cuts across the pools, added up; the cap
  * covers it with their due-total) and the dates of its claims by number (a correction rounds by the date of the claim it corrects).
  */
 export type DueRules = {
@@ -166,7 +172,7 @@ export type DueRules = {
   today: string;
   policyDate: string;
   roundingOn: (date: string) => string;
-  cap: string;
+  capOn: (date: string) => string;
   cutOf: (personId: number) => string;
   claimDates: Map<string, string>;
 };
@@ -190,7 +196,7 @@ export function dueRules(settings: Settings | undefined, today: string, claims: 
     today,
     policyDate: settings?.policyDate || today,
     roundingOn: (date: string) => valueOn(history?.rounding, date, ''),
-    cap: settings?.cap ?? '',
+    capOn: (date: string) => valueOn(history?.cap, date, ''),
     cutOf: (personId: number) => cutTotal(personCuts(pools, personId)),
     claimDates: new Map(claims.filter((c) => c.number !== null).map((c) => [c.number!, c.date])),
   };

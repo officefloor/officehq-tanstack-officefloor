@@ -71,10 +71,14 @@ public class TakeStatement {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean kept = false;
         int counted = 0;
+        LocalDate latest = null;
         Map<Long, BigDecimal> figures = new HashMap<>();
         for (Claim claim : thenClaims) {
             if (!thenPerson.counts(claim, on)) {
                 continue;
+            }
+            if (latest == null || claim.date().isAfter(latest)) {
+                latest = claim.date();
             }
             boolean fixed = claim.keepsFigure();
             BigDecimal rate = Rate.inForce(sheetRates, thenPerson.gradeOn(claim.date()), claim);
@@ -93,7 +97,7 @@ public class TakeStatement {
             claims.bindStatement(claim, stated, stated ? figures.get(claim.id()) : null);
         }
         String dueTotal = Rate.inForce(sheetRates, thenPerson.gradeOn(on), on) == null && !kept ? "n/a"
-                : Cap.apply(dated.capOn(on), cutTotal(poolCuts, person, then == null, on), total).setScale(2).toPlainString();
+                : Cap.apply(dated.capFor(latest, on), cutTotal(poolCuts, person, then == null, on), total).setScale(2).toPlainString();
         statement.set(new Statement(person.name(), dueTotal, counted, asOf.date()));
         updated.set(people.recordStatement(person, dueTotal, on));
     }

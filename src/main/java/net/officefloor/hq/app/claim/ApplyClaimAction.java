@@ -162,7 +162,7 @@ public class ApplyClaimAction {
                 ClaimDueNow.of(claim, sheets, people, rates, settings, claims))) {
             found = ClaimAction.SEND_TO_REVIEW;
         }
-        if (found == ClaimAction.SETTLE && !settings.find(claim.sheetId()).maySettle(user, limitGrade(claim, people), due)) {
+        if (found == ClaimAction.SETTLE && !settings.find(claim.sheetId()).maySettle(user, limitGrade(claim, people), claim.date(), due)) {
             found = ClaimAction.PEND;
             due = null;
         }

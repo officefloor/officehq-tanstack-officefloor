@@ -47,7 +47,7 @@ public class SettingRepository {
                 dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId), graceDays(sheetId),
                 today, delegations(sheetId), pot(sheetId), parent(sheetId), fiscalStartMonth(sheetId), alertThreshold(sheetId),
                 escalateAfter(sheetId), reviewSla(sheetId), pendingSla(sheetId), proofKinds(sheetId), defaultGrade(sheetId),
-                scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId), maxOpen(sheetId));
+                scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId), maxOpen(sheetId), policyVersions(sheetId));
     }
 
     /** The sheet's dated settings: every value recorded, by key and from-date. */
@@ -61,8 +61,27 @@ public class SettingRepository {
         return new DatedSettings(values);
     }
 
-    /** Record the key's value from the date (null: blank), replacing any value already recorded from that date. */
+    /** The settings that are versioned together as the sheet's policy. */
+    public static final List<String> POLICY_KEYS = List.of(DatedSettings.ROUNDING, DatedSettings.FLOOR, DatedSettings.CAP,
+            DatedSettings.TERMS, DatedSettings.LATE_PCT, DatedSettings.CLERK_LIMIT);
+
+    /** The sheet's policy versions, in the order made (the first is number 1). */
+    public List<PolicyVersion> policyVersions(String sheetId) {
+        return jdbc.query("SELECT number, setting_key, from_date FROM policy_version WHERE sheet_id = ? ORDER BY number",
+                (rs, n) -> new PolicyVersion(rs.getInt("number"), rs.getString("setting_key"),
+                        rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate()), sheetId);
+    }
+
+    /**
+     * Record the key's value from the date (null: blank), replacing any value already recorded from that date; a policy
+     * setting's change is the sheet's next policy version.
+     */
     public void saveDated(String sheetId, String key, LocalDate from, String value) {
+        if (POLICY_KEYS.contains(key)) {
+            jdbc.update("INSERT INTO policy_version (sheet_id, number, setting_key, from_date) SELECT ?,"
+                    + " COALESCE(MAX(number), 0) + 1, ?, ? FROM policy_version WHERE sheet_id = ?",
+                    sheetId, key, from == null ? null : Date.valueOf(from), sheetId);
+        }
         jdbc.update("DELETE FROM setting_from WHERE sheet_id = ? AND setting_key = ? AND from_date = ?",
                 sheetId, key, Date.valueOf(from));
         jdbc.update("INSERT INTO setting_from (sheet_id, setting_key, from_date, setting_value) VALUES (?, ?, ?, ?)",

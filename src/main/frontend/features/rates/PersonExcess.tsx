@@ -5,7 +5,7 @@ import { useDueRules } from '../settings/settings';
 import { personExcess, useRates } from './rates';
 import { useColumnShown } from '../columns/columns';
 
-// A person's excess: by how much the figures of their claims that count are above the sheet's cap; 0.00 otherwise.
+// A person's excess: by how much the figures of their claims that count are above their cap (the one in force on the date of their latest claim that counts); 0.00 otherwise.
 export function PersonExcess({ person }: { person: Person }) {
   const rates = useRates().data ?? [];
   const rules = useDueRules();

@@ -28,7 +28,7 @@ import org.springframework.stereotype.Service;
 /**
  * Works out a sheet's figures as the screen shows them: a person's claimed is their counting claims' amounts
  * added up (a held claim's too, in every figure: a hold only takes away a pool cut; none once their retirement date is reached), leaving out corrections; their due-total those claims' dues (live figures rounded by its policy date, plus
- * any late charge, at the late percent in force on each 30-day boundary, on the overdue ones, then raised to the floor in force on each claim's date) added up, at most the cap in force on the sheet's today less their cut total (their pool cuts added up; not below 0.00); n/a when their grade on the sheet's today has no
+ * any late charge, at the late percent in force on each 30-day boundary, on the overdue ones, then raised to the floor in force on each claim's date) added up, at most the cap in force on the date of their latest claim that counts less their cut total (their pool cuts added up; not below 0.00); n/a when their grade on the sheet's today has no
  * rate there and no counting claim has a figure (kept, or at the rate for the grade in force on its date). Their overdue-total
  * is the dues of their overdue counting claims added up (skipping n/a, not capped). The sheet's totals add these up, skipping n/a;
  * its due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one.
@@ -66,8 +66,7 @@ public class RollupService {
         LocalDate today = sheets.today(sheetId);
         List<Rate> sheetRates = rates.findAll(sheetId);
         DatedSettings dated = settings.dated(sheetId);
-        BigDecimal cap = dated.capOn(today);
-        Pools pools = cap == null ? null : poolCuts.live(sheetId, today);
+        Pools pools = dated.hasCap() ? poolCuts.live(sheetId, today) : null;
         List<Claim> sheetClaims = claims.findAll(sheetId);
         Rounding rounding = settings.rounding(sheetId, today, sheetClaims);
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
@@ -83,6 +82,7 @@ public class RollupService {
             BigDecimal settled = BigDecimal.ZERO.setScale(2);
             int overdueCount = 0;
             boolean kept = false;
+            LocalDate latest = null;
             for (Claim claim : sheetClaims) {
                 if (claim.personId() != person.id()) {
                     continue;
@@ -92,6 +92,9 @@ public class RollupService {
                 }
                 if (!person.counts(claim, today)) {
                     continue;
+                }
+                if (latest == null || claim.date().isAfter(latest)) {
+                    latest = claim.date();
                 }
                 kept |= claim.keepsFigure();
                 BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim),
@@ -132,7 +135,7 @@ public class RollupService {
                 }
             }
             boolean na = Rate.inForce(sheetRates, person.grade(), today) == null && !kept;
-            due = Cap.apply(cap, pools == null ? BigDecimal.ZERO : pools.cutTotalOf(person.id()), due);
+            due = Cap.apply(dated.capFor(latest, today), pools == null ? BigDecimal.ZERO : pools.cutTotalOf(person.id()), due);
             claimedTotal = claimedTotal.add(claimed);
             if (!na) {
                 dues.add(due);

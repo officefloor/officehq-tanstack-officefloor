@@ -38,13 +38,14 @@ import java.util.Map;
  * person's score as it stood on the day being left; it is not dated.
  * {@code maxOpen} is the sheet's maximum of OPEN and PENDING claims per person (null: none): opening a claim of a person
  * who already has that many is refused; it is not dated.
+ * {@code policyVersions} are the sheet's policy versions, in the order made: see {@link PolicyVersion}.
  * {@code alertThreshold} is the sheet's alert threshold (null: off), above which a person's due-total crossing is alerted in the audit; it is not dated.
  */
 public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, int terms, Map<String, Integer> gradeTerms, BigDecimal latePct,
         LocalDate policyDate, LocalDate periodNumberingFrom, LocalDate entryDate, BigDecimal cap, BigDecimal proofThreshold, List<UserRole> roles, DatedSettings dated, Permissions permissions, Integer graceDays,
         LocalDate today, List<Delegation> delegations, BigDecimal pot, String parent, int fiscalStartMonth, BigDecimal alertThreshold,
         Integer escalateAfter, Integer reviewSla, Integer pendingSla, List<String> proofKinds, String defaultGrade, Integer scoreMid, Integer scoreHigh,
-        boolean scoreLog, Integer maxOpen) {
+        boolean scoreLog, Integer maxOpen, List<PolicyVersion> policyVersions) {
 
     /** The role the user name acts in: steward while a delegation to it is in force on today, else its given role. */
     public Role roleOf(String user) {
@@ -74,10 +75,10 @@ public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, 
 
     /**
      * Whether the user may settle a claim of a person of the grade (null: none) with this due (null: n/a, within any
-     * limit): the limit is the grade's own clerk limit in force on today, when it has one, else the sheet's.
+     * limit) dated on the date: the limit is the grade's own clerk limit in force on that date, when it has one, else the sheet's.
      */
-    public boolean maySettle(String user, String grade, BigDecimal due) {
-        BigDecimal limit = dated.clerkLimitFor(grade, today);
+    public boolean maySettle(String user, String grade, LocalDate date, BigDecimal due) {
+        BigDecimal limit = dated.clerkLimitFor(grade, date);
         return roleOf(user) == Role.STEWARD || limit == null || due == null || due.compareTo(limit) <= 0;
     }
 }

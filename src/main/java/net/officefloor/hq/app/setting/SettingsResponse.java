@@ -9,13 +9,17 @@ import java.util.Map;
  * The settings as the screen reads them: the clerk limit (null: no limit), the floor, the terms in days, the terms set for
  * each grade that has its own (by grade), the late percent, the policy date ("": blank, the sheet's today), the period
  * numbering from date ("": off), the entry date ("": off), the cap ("": none), the proof threshold ("": none), the note threshold ("": none), the review threshold ("": none) — the dated ones as in force on the sheet's today — each role given,
- * by user name, the permission matrix (by action, the roles allowed it; "": blank, the standing rule), and every dated value recorded, by key, oldest from-date first (value "": blank), the grace days ("": off), the steward role delegated, in the order made, the pot ("": none), the parent sheet id ("": none) the fiscal year start month (1 to 12), the alert threshold ("": off) the rounding mode in force on the sheet's today ("": none) and the escalation gap in days ("": off) and the review SLA in days ("": none) and the proof kinds, comma separated ("": none) and the default grade ("": blank, A) and the mid and high score thresholds ("": blank) and the score log ("on"; "": blank) and the maximum of open claims per person ("": none) and the pending SLA in days ("": none).
+ * by user name, the permission matrix (by action, the roles allowed it; "": blank, the standing rule), and every dated value recorded, by key, oldest from-date first (value "": blank), the grace days ("": off), the steward role delegated, in the order made, the pot ("": none), the parent sheet id ("": none) the fiscal year start month (1 to 12), the alert threshold ("": off) the rounding mode in force on the sheet's today ("": none) and the escalation gap in days ("": off) and the review SLA in days ("": none) and the proof kinds, comma separated ("": none) and the default grade ("": blank, A) and the mid and high score thresholds ("": blank) and the score log ("on"; "": blank) and the maximum of open claims per person ("": none) and the pending SLA in days ("": none) and the current policy version (0: none yet) and every policy version, in the order made.
  */
 public record SettingsResponse(String clerkLimit, String floor, int terms, Map<String, Integer> gradeTerms, String latePct, String policyDate, String periodNumberingFrom, String entryDate, String cap, String proofThreshold, String noteThreshold, String reviewThreshold, List<RoleResponse> roles,
         Map<String, List<FromValueResponse>> history, Map<String, String> permissions, String graceDays,
         List<DelegationResponse> delegations, String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding,
         String escalateAfter, String reviewSla, String proofKinds, String defaultGrade, String scoreMid, String scoreHigh,
-        String scoreLog, String maxOpen, String pendingSla) {
+        String scoreLog, String maxOpen, String pendingSla, int policyVersion, List<PolicyVersionResponse> policyVersions) {
+
+    /** A policy version: its number, the setting changed and its from-date ("": none, it counts always). */
+    public record PolicyVersionResponse(int number, String key, String from) {
+    }
 
     public record RoleResponse(String user, String role) {
     }
@@ -65,6 +69,9 @@ public record SettingsResponse(String clerkLimit, String floor, int terms, Map<S
                 settings.scoreHigh() == null ? "" : settings.scoreHigh().toString(),
                 settings.scoreLog() ? "on" : "",
                 settings.maxOpen() == null ? "" : settings.maxOpen().toString(),
-                settings.pendingSla() == null ? "" : settings.pendingSla().toString());
+                settings.pendingSla() == null ? "" : settings.pendingSla().toString(),
+                settings.policyVersions().size(),
+                settings.policyVersions().stream().map((v) -> new PolicyVersionResponse(v.number(), v.key(),
+                        v.from() == null ? "" : v.from().toString())).toList());
     }
 }

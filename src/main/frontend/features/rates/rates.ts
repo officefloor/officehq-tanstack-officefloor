@@ -185,7 +185,7 @@ const keepsFigure = (c: Claim) => c.due !== null || (bound(c) && c.statedDue !==
  * rate in force on the sheet's today for their grade on that day it is n/a, unless a claim has a figure (kept
  * when settled or stated, or at the rate for the grade in force on its date): then it is the figures there are,
  * added up. Their open claims a hold covers (not bound by a statement) do not count. With `shared`, shared claims are
- * parted between their own person and their holders. The sheet's cap covers it plus their cut total: it is at most
+ * parted between their own person and their holders. The cap in force on the date of their latest claim that counts covers it plus their cut total: it is at most
  * the cap less their cut total, not below 0.00 (n/a is not capped).
  */
 export function personDue(
@@ -197,9 +197,16 @@ export function personDue(
   shared?: Shared,
 ): string {
   const sum = personSum(claims, rates, grades, holds, rules, shared);
-  if (sum === NA || rules.cap === '') return sum;
-  const room = Math.max(0, hundredths(rules.cap) - personCut(rules, shared));
+  const cap = personCap(claims, holds, rules);
+  if (sum === NA || cap === '') return sum;
+  const room = Math.max(0, hundredths(cap) - personCut(rules, shared));
   return hundredths(sum) <= room ? sum : (room / 100).toFixed(2);
+}
+
+/** A person's cap: the one in force on the date of their latest claim that counts (none: the sheet's today); '': none. */
+function personCap(claims: Claim[], holds: Hold[], rules: DueRules): string {
+  const latest = claims.filter((c) => counts(c, holds, rules.today)).reduce((d, c) => (c.date > d ? c.date : d), '');
+  return rules.capOn(latest || rules.today);
 }
 
 /** A person's cut total in whole hundredths (0 when not told who they are). */
@@ -219,8 +226,9 @@ export function personExcess(
   shared?: Shared,
 ): string {
   const sum = personSum(claims, rates, grades, holds, rules, shared);
-  if (sum === NA || rules.cap === '') return '0.00';
-  const room = Math.max(0, hundredths(rules.cap) - personCut(rules, shared));
+  const cap = personCap(claims, holds, rules);
+  if (sum === NA || cap === '') return '0.00';
+  const room = Math.max(0, hundredths(cap) - personCut(rules, shared));
   return (Math.max(0, hundredths(sum) - room) / 100).toFixed(2);
 }
 

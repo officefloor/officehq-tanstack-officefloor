@@ -165,6 +165,16 @@ public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values)
         return value == null ? null : new BigDecimal(value).setScale(2);
     }
 
+    /** Whether a cap was ever recorded. */
+    public boolean hasCap() {
+        return values.containsKey(CAP);
+    }
+
+    /** A person's cap: the one in force on the date of their latest claim that counts (null: none, the sheet's today). */
+    public BigDecimal capFor(LocalDate latestClaim, LocalDate today) {
+        return capOn(latestClaim == null ? today : latestClaim);
+    }
+
     /** The proof threshold in force on the date (null: none). */
     public BigDecimal proofThresholdOn(LocalDate date) {
         String value = on(PROOF_THRESHOLD, date);
