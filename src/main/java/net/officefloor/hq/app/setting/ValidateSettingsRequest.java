@@ -38,7 +38,8 @@ public class ValidateSettingsRequest {
             Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold, Out<Pot> pot, Out<Parent> parent,
             Out<FiscalStartMonth> fiscalStartMonth, Out<AlertThreshold> alertThreshold, Out<RoundingSetting> rounding,
             Out<EscalateAfter> escalateAfter, Out<ReviewSla> reviewSla, Out<ProofKinds> proofKinds,
-            Out<DefaultGrade> defaultGrade, Out<GradeClerkLimit> gradeClerkLimit, Out<ScoreThresholds> scoreThresholds)
+            Out<DefaultGrade> defaultGrade, Out<GradeClerkLimit> gradeClerkLimit, Out<ScoreThresholds> scoreThresholds,
+            Out<ScoreLog> scoreLog)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -68,6 +69,21 @@ public class ValidateSettingsRequest {
         gradeClerkLimit.set(gradeClerkLimit(request.gradeClerkLimit(), request.gradeClerkLimitFrom()));
         scoreThresholds.set(new ScoreThresholds(scoreThreshold(request.scoreMid(), "mid"),
                 scoreThreshold(request.scoreHigh(), "high")));
+        scoreLog.set(scoreLog(request.scoreLog()));
+    }
+
+    private static ScoreLog scoreLog(String requested) throws InvalidSettingException {
+        if (requested == null) {
+            return new ScoreLog(false, false);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new ScoreLog(true, false);
+        }
+        if (!value.equals("on")) {
+            throw new InvalidSettingException("The score log must be on, or blank.");
+        }
+        return new ScoreLog(true, true);
     }
 
     private static RoundingSetting rounding(String requested, LocalDate from) throws InvalidSettingException {

@@ -17,8 +17,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 && new BigDecimal(dueTotal).compareTo(threshold) > 0;
     }
 
-    /** A person's name and figures. */
-    public record Figures(String name, String claimed, String dueTotal, String overdueTotal) {
+    /** A person's name and figures, and their score (as the screen shows it; not a figure a rollup line reports). */
+    public record Figures(String name, String claimed, String dueTotal, String overdueTotal, String score) {
 
         /** Whether the figures are the same as the other's, whatever the name. */
         public boolean sameAs(Figures other) {

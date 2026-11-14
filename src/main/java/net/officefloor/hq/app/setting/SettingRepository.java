@@ -47,7 +47,7 @@ public class SettingRepository {
                 dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId), graceDays(sheetId),
                 today, delegations(sheetId), pot(sheetId), parent(sheetId), fiscalStartMonth(sheetId), alertThreshold(sheetId),
                 escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId), defaultGrade(sheetId),
-                scoreMid(sheetId), scoreHigh(sheetId));
+                scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId));
     }
 
     /** The sheet's dated settings: every value recorded, by key and from-date. */
@@ -245,6 +245,18 @@ public class SettingRepository {
     /** Set the sheet's high score threshold (null: blank). */
     public void saveScoreHigh(String sheetId, Integer value) {
         jdbc.update("UPDATE sheet SET score_high = ? WHERE id = ?", value, sheetId);
+    }
+
+    /** Whether the sheet's score log is on (false: blank). */
+    public boolean scoreLog(String sheetId) {
+        List<Boolean> found = jdbc.query("SELECT score_log FROM sheet WHERE id = ?",
+                (rs, n) -> rs.getBoolean("score_log"), sheetId);
+        return !found.isEmpty() && found.get(0);
+    }
+
+    /** Set the sheet's score log on (false: blank). */
+    public void saveScoreLog(String sheetId, boolean on) {
+        jdbc.update("UPDATE sheet SET score_log = ? WHERE id = ?", on, sheetId);
     }
 
     /** The sheet's default grade (null: blank, A). */

@@ -63,6 +63,7 @@ type SettingsInput = {
   reviewSla?: string;
   scoreMid?: string;
   scoreHigh?: string;
+  scoreLog?: string;
   proofKinds?: string;
   defaultGrade?: string;
   pot?: string;
@@ -93,6 +94,7 @@ type Touched = {
   reviewSla: boolean;
   scoreMid: boolean;
   scoreHigh: boolean;
+  scoreLog: boolean;
   proofKinds: boolean;
   defaultGrade: boolean;
   pot: boolean;
@@ -119,6 +121,7 @@ const UNTOUCHED: Touched = {
   reviewSla: false,
   scoreMid: false,
   scoreHigh: false,
+  scoreLog: false,
   proofKinds: false,
   defaultGrade: false,
   pot: false,
@@ -162,6 +165,7 @@ export function SettingsForm() {
   const [reviewSla, setReviewSla] = useState('');
   const [scoreMid, setScoreMid] = useState('');
   const [scoreHigh, setScoreHigh] = useState('');
+  const [scoreLog, setScoreLog] = useState('');
   const [proofKinds, setProofKinds] = useState('');
   const [defaultGrade, setDefaultGrade] = useState('');
   const [pot, setPot] = useState('');
@@ -205,6 +209,7 @@ export function SettingsForm() {
       setReviewSla('');
       setScoreMid('');
       setScoreHigh('');
+      setScoreLog('');
       setProofKinds('');
       setDefaultGrade('');
       setPot('');
@@ -468,6 +473,14 @@ export function SettingsForm() {
       }
       input.scoreHigh = value;
     }
+    if (touched.scoreLog) {
+      const value = scoreLog.trim();
+      if (value !== '' && value !== 'on') {
+        setError('Type on to turn the score log on, or leave it blank for off.');
+        return;
+      }
+      input.scoreLog = value;
+    }
     if (touched.proofKinds) {
       const value = proofKinds.trim();
       if (value !== '' && !PROOF_KIND_LIST.test(value)) {
@@ -542,6 +555,7 @@ export function SettingsForm() {
       input.reviewSla === undefined &&
       input.scoreMid === undefined &&
       input.scoreHigh === undefined &&
+      input.scoreLog === undefined &&
       input.proofKinds === undefined &&
       input.defaultGrade === undefined &&
       input.pot === undefined &&
@@ -638,6 +652,9 @@ export function SettingsForm() {
       <p>
         Score thresholds: mid <span data-testid="setting-score-mid-current">{settings?.scoreMid ?? ''}</span>, high{' '}
         <span data-testid="setting-score-high-current">{settings?.scoreHigh ?? ''}</span>
+      </p>
+      <p>
+        Score log: <span data-testid="setting-score-log-current">{settings?.scoreLog ?? ''}</span>
       </p>
       <p>
         Proof kinds: <span data-testid="setting-proof-kinds-current">{settings?.proofKinds ?? ''}</span>
@@ -921,6 +938,17 @@ export function SettingsForm() {
           onChange={(e) => {
             setScoreHigh(e.target.value);
             setTouched((t) => ({ ...t, scoreHigh: true }));
+            setError('');
+          }}
+        />
+        <input
+          data-testid="setting-score-log"
+          placeholder="Score log: on to record each person's score when the sheet's today changes (blank: off)"
+          value={scoreLog}
+          onFocus={() => setTouched((t) => ({ ...t, scoreLog: true }))}
+          onChange={(e) => {
+            setScoreLog(e.target.value);
+            setTouched((t) => ({ ...t, scoreLog: true }));
             setError('');
           }}
         />

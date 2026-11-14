@@ -32,12 +32,15 @@ import java.util.Map;
  * blank grade take; it is not dated.
  * {@code scoreMid} and {@code scoreHigh} are the sheet's score thresholds, whole numbers (null: blank): while both are set,
  * each person shows a band; they are not dated.
+ * {@code scoreLog} is the sheet's score log switch (false: blank): while on, changing the sheet's today records each
+ * person's score as it stood on the day being left; it is not dated.
  * {@code alertThreshold} is the sheet's alert threshold (null: off), above which a person's due-total crossing is alerted in the audit; it is not dated.
  */
 public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, int terms, Map<String, Integer> gradeTerms, BigDecimal latePct,
         LocalDate policyDate, LocalDate periodNumberingFrom, LocalDate entryDate, BigDecimal cap, BigDecimal proofThreshold, List<UserRole> roles, DatedSettings dated, Permissions permissions, Integer graceDays,
         LocalDate today, List<Delegation> delegations, BigDecimal pot, String parent, int fiscalStartMonth, BigDecimal alertThreshold,
-        Integer escalateAfter, Integer reviewSla, List<String> proofKinds, String defaultGrade, Integer scoreMid, Integer scoreHigh) {
+        Integer escalateAfter, Integer reviewSla, List<String> proofKinds, String defaultGrade, Integer scoreMid, Integer scoreHigh,
+        boolean scoreLog) {
 
     /** The role the user name acts in: steward while a delegation to it is in force on today, else its given role. */
     public Role roleOf(String user) {
