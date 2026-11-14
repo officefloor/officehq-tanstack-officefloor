@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimLogLine;
@@ -30,10 +31,11 @@ import org.springframework.web.bind.annotation.RequestParam;
  * Carries each person's open figure at the end of the old year's last period into the new year's first period: the
  * dues (as they are now) of their claims belonging to a period of the old year, OPEN or PENDING at the last period's
  * end and counted as the period figures count them, added up. Each figure above 0.00 is added to the person's carried
- * figure for the new year's first period, recorded as OPENING_SET, people in the order added.
+ * figure for the new year's first period, recorded as OPENING_SET, people in the order added. A person whose opening
+ * for that period an earlier rollover still standing already set is not carried again.
  */
 public class CarryOpenings {
-    public void carry(@Val Rollover rollover, @Val Sheet sheet, @RequestParam("user") String user,
+    public void carry(@Val Rollover rollover, @Val RolloverId rolloverId, @Val Sheet sheet, @RequestParam("user") String user,
             PersonRepository people, ClaimRepository claims, ClaimLogRepository logs, PeriodRepository periods,
             RateRepository rates, SettingRepository settings, OpeningRepository openings, Audit audit) {
         List<Period> sheetPeriods = periods.findAll(sheet.id());
@@ -80,12 +82,13 @@ public class CarryOpenings {
                 open.merge(person.id(), figure, BigDecimal::add);
             }
         }
+        Set<Long> carried = openings.carriedByRollover(sheet.id(), first.name());
         open.forEach((id, amount) -> {
-            if (amount.signum() <= 0) {
+            if (amount.signum() <= 0 || carried.contains(id)) {
                 return;
             }
             Person person = byId.get(id);
-            openings.add(sheet.id(), first.name(), id, amount);
+            openings.addFromRollover(sheet.id(), first.name(), id, amount, rolloverId.value());
             audit.record("OPENING_SET sheet=" + sheet.id() + " by=" + user + " name=" + person.name() + " period="
                     + first.name() + " amount=" + amount.setScale(2).toPlainString());
         });
