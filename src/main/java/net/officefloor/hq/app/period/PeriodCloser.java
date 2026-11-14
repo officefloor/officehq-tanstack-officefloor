@@ -24,7 +24,8 @@ import org.springframework.stereotype.Component;
 /**
  * Closes a period, fixing its due-total as it stands now: the dues (figures plus any late charge, as they are now) of
  * the claims dated in it that count by their status at the period's end, added up (n/a skipped), and each person's
- * share of it (0.00 for a person with none). Used by a close by hand and by the automatic close when today changes.
+ * share of it (0.00 for a person with none), with the figure carried into it for each person: the dues of their
+ * claims from earlier periods still open at its end (see {@link Period#carries}). Used by a close by hand and by the automatic close when today changes.
  */
 @Component
 public class PeriodCloser {
@@ -32,15 +33,17 @@ public class PeriodCloser {
     private final ClaimRepository claims;
     private final ClaimLogRepository logs;
     private final PersonRepository people;
+    private final PeriodRepository periods;
     private final RateRepository rates;
     private final SettingRepository settings;
     private final SheetRepository sheets;
 
-    public PeriodCloser(ClaimRepository claims, ClaimLogRepository logs, PersonRepository people, RateRepository rates,
-            SettingRepository settings, SheetRepository sheets) {
+    public PeriodCloser(ClaimRepository claims, ClaimLogRepository logs, PersonRepository people,
+            PeriodRepository periods, RateRepository rates, SettingRepository settings, SheetRepository sheets) {
         this.claims = claims;
         this.logs = logs;
         this.people = people;
+        this.periods = periods;
         this.rates = rates;
         this.settings = settings;
         this.sheets = sheets;
@@ -66,22 +69,37 @@ public class PeriodCloser {
         Map<Long, List<ClaimLogLine>> sheetLogs = logs.findAll(period.sheetId());
         Rounding rounding = settings.rounding(period.sheetId(), today, sheetClaims);
         BigDecimal total = BigDecimal.ZERO.setScale(2);
+        List<Period> sheetPeriods = periods.findAll(period.sheetId());
         Map<Long, BigDecimal> perPerson = new HashMap<>();
+        Map<Long, BigDecimal> carried = new HashMap<>();
         for (Long id : byId.keySet()) {
             perPerson.put(id, BigDecimal.ZERO.setScale(2));
+            carried.put(id, BigDecimal.ZERO.setScale(2));
         }
         for (Claim claim : sheetClaims) {
             Person person = byId.get(claim.personId());
-            if (person == null || !period.counts(claim, sheetLogs.getOrDefault(claim.id(), List.of()), person, today)) {
+            if (person == null) {
+                continue;
+            }
+            List<ClaimLogLine> log = sheetLogs.getOrDefault(claim.id(), List.of());
+            boolean counts = period.counts(claim, log, person, today);
+            boolean carries = period.carries(claim, log, person, today, sheetPeriods);
+            if (!counts && !carries) {
                 continue;
             }
             BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim),
                     dated.floorOn(claim.date()), dated.lateCharge(today, person), rounding);
-            if (figure != null) {
+            if (figure == null) {
+                continue;
+            }
+            if (counts) {
                 total = total.add(figure);
                 perPerson.merge(person.id(), figure, BigDecimal::add);
             }
+            if (carries) {
+                carried.merge(person.id(), figure, BigDecimal::add);
+            }
         }
-        return soft ? period.softClose(total, perPerson) : period.close(total, perPerson);
+        return soft ? period.softClose(total, perPerson, carried) : period.close(total, perPerson, carried);
     }
 }

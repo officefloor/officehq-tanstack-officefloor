@@ -26,12 +26,16 @@ public class PeriodRepository {
         List<Period> periods = jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ? ORDER BY from_date",
                 PeriodRepository::map, sheetId);
         Map<String, Map<Long, BigDecimal>> totals = new HashMap<>();
-        jdbc.query("SELECT period_name, person_id, total FROM period_person_total WHERE sheet_id = ?",
+        Map<String, Map<Long, BigDecimal>> carried = new HashMap<>();
+        jdbc.query("SELECT period_name, person_id, total, carried FROM period_person_total WHERE sheet_id = ?",
                 (rs) -> {
                     totals.computeIfAbsent(rs.getString("period_name"), (k) -> new HashMap<>())
                             .put(rs.getLong("person_id"), rs.getBigDecimal("total"));
+                    carried.computeIfAbsent(rs.getString("period_name"), (k) -> new HashMap<>())
+                            .put(rs.getLong("person_id"), rs.getBigDecimal("carried"));
                 }, sheetId);
-        return periods.stream().map((p) -> p.withPersonTotals(totals.getOrDefault(p.name(), Map.of()))).toList();
+        return periods.stream().map((p) -> p.withPersonTotals(totals.getOrDefault(p.name(), Map.of()),
+                carried.getOrDefault(p.name(), Map.of()))).toList();
     }
 
     /** The sheet's period with this name, or null. */
@@ -42,11 +46,13 @@ public class PeriodRepository {
             return null;
         }
         Map<Long, BigDecimal> totals = new HashMap<>();
-        jdbc.query("SELECT person_id, total FROM period_person_total WHERE sheet_id = ? AND period_name = ?",
+        Map<Long, BigDecimal> carried = new HashMap<>();
+        jdbc.query("SELECT person_id, total, carried FROM period_person_total WHERE sheet_id = ? AND period_name = ?",
                 (rs) -> {
                     totals.put(rs.getLong("person_id"), rs.getBigDecimal("total"));
+                    carried.put(rs.getLong("person_id"), rs.getBigDecimal("carried"));
                 }, sheetId, found.get(0).name());
-        return found.get(0).withPersonTotals(totals);
+        return found.get(0).withPersonTotals(totals, carried);
     }
 
     /** The sheet's closed period containing the date, or null. */
@@ -64,20 +70,21 @@ public class PeriodRepository {
                 period.sheetId(), period.name(), period.from(), period.to(), period.cap());
     }
 
-    /** Store the period's closed and soft-closed flags, fixed due-total (null when reopened) and fixed per-person due-totals. */
+    /** Store the period's closed and soft-closed flags, fixed due-total (null when reopened) and fixed per-person due-totals and carried figures. */
     public void saveClosed(Period period) {
         jdbc.update("UPDATE period SET closed = ?, closed_total = ?, soft_closed = ? WHERE sheet_id = ? AND name = ?",
                 period.closed(), period.closedTotal(), period.softClosed(), period.sheetId(), period.name());
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?",
                 period.sheetId(), period.name());
         period.personTotals().forEach((personId, total) -> jdbc.update(
-                "INSERT INTO period_person_total (sheet_id, period_name, person_id, total) VALUES (?, ?, ?, ?)",
-                period.sheetId(), period.name(), personId, total));
+                "INSERT INTO period_person_total (sheet_id, period_name, person_id, total, carried) VALUES (?, ?, ?, ?, ?)",
+                period.sheetId(), period.name(), personId, total,
+                period.personCarried().getOrDefault(personId, BigDecimal.ZERO.setScale(2))));
     }
 
     private static Period map(ResultSet rs, int n) throws SQLException {
         return new Period(rs.getString("sheet_id"), rs.getString("name"), rs.getObject("from_date", LocalDate.class),
                 rs.getObject("to_date", LocalDate.class), rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of(),
-                rs.getBoolean("soft_closed"), rs.getObject("claim_cap", Integer.class));
+                rs.getBoolean("soft_closed"), rs.getObject("claim_cap", Integer.class), Map.of());
     }
 }

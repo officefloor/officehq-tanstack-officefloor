@@ -12,7 +12,8 @@ import type { DueRules } from '../settings/settings';
 /**
  * A period as the store holds it: its name (unique on the sheet), its from and to dates (yyyy-MM-dd),
  * both inclusive, whether it is closed and, when closed, the due-total fixed then (null while open) and each
- * person's due-total fixed then, by person id (empty while open). A soft-closed period (soft; never also closed)
+ * person's due-total fixed then, by person id (empty while open), with each person's carried figure fixed then
+ * (personCarried; empty while open). A soft-closed period (soft; never also closed)
  * keeps its figures fixed the same way, while claims dated in it can still be added and changed. cap is the most OPEN
  * or PENDING claims due by a date in it a person may have when another of theirs is opened (null: none).
  */
@@ -25,6 +26,7 @@ export type Period = {
   personTotals: Record<string, string>;
   soft: boolean;
   cap: number | null;
+  personCarried: Record<string, string>;
 };
 
 /** The fields the period form submits; cap is a whole number of at least 1, or blank for none. */
@@ -102,9 +104,11 @@ export function periodDue(period: Period, claims: Claim[], people: Person[], rat
 /**
  * A person's carried figure for a period: the dues (as shown now) of their claims belonging to a period that ends
  * before this one starts and still OPEN or PENDING at this period's end (by the status log), counted as the period
- * figures count them, added up; 0.00 with none.
+ * figures count them, added up; 0.00 with none. A closed or soft-closed period keeps the figure fixed when it was
+ * closed (0.00 for a person added since).
  */
 export function personPeriodCarried(period: Period, periods: Period[], person: Person, claims: Claim[], rates: Rate[], rules: DueRules): string {
+  if (period.closed || period.soft) return period.personCarried?.[String(person.id)] ?? '0.00';
   const figures = claims
     .filter((c) => {
       if (c.personId !== person.id) return false;
