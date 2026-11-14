@@ -2,7 +2,10 @@ package net.officefloor.hq.app.person;
 
 import java.sql.PreparedStatement;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -30,15 +33,38 @@ public class PersonRepository {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's people in the order they were added. */
+    /** The sheet's people in the order they were added, each with their patrons. */
     public List<Person> list(String sheetId) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY id",
+        List<Person> people = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY id",
                 ROW, sheetId);
+        Map<Long, Person> byId = new HashMap<>();
+        people.forEach((p) -> byId.put(p.getId(), p));
+        jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY added_at, patron_id",
+                (rs) -> {
+                    Person p = byId.get(rs.getLong("person_id"));
+                    if (p != null) {
+                        p.getPatronIds().add(rs.getLong("patron_id"));
+                    }
+                }, sheetId);
+        return people;
     }
 
     public Person find(String sheetId, long id) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ?",
+        Person person = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ?",
                 ROW, sheetId, id).stream().findFirst().orElse(null);
+        if (person != null) {
+            person.setPatronIds(new ArrayList<>(jdbc.queryForList(
+                    "SELECT patron_id FROM person_patron WHERE sheet_id = ? AND person_id = ? ORDER BY added_at, patron_id",
+                    Long.class, sheetId, id)));
+        }
+        return person;
+    }
+
+    /** Name the patron as one of the person's patrons. */
+    public void addPatron(Person person, Person patron, String user) {
+        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, added_by) VALUES (?, ?, ?, ?)",
+                person.getSheetId(), person.getId(), patron.getId(), user);
+        person.getPatronIds().add(patron.getId());
     }
 
     /** The person on the sheet with this name, compared ignoring case and surrounding spaces; null when none. */

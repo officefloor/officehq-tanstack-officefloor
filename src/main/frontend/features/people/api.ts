@@ -8,11 +8,12 @@ export const GRADES: Grade[] = ['A', 'B', 'C'];
 /** `version` is raised by every saved edit; an edit sends the version its form loaded. Their
  *  statements: how many were taken, and the last one's due-total and date (null until the first).
  *  `retiredFrom` is the date they are retired from (null: not retired); with it set at all they
- *  are `retired`, whatever the date. While `held`, their OPEN claims count in no live total. */
+ *  are `retired`, whatever the date. While `held`, their OPEN claims count in no live total. `patronIds` are the people they name
+ *  as patrons, in the order named. */
 export type Person = {
   id: number; sheetId: string; name: string; grade: Grade; version: number;
   statementCount: number; statedTotal: string | null; statementDate: string | null;
-  retired: boolean; retiredFrom: string | null; held: boolean;
+  retired: boolean; retiredFrom: string | null; held: boolean; patronIds: number[];
 };
 export type PersonInput = { name: string; grade: string };
 
@@ -50,6 +51,12 @@ export function retirePerson(sheetId: string, by: string, id: number, from: stri
 /** Put the person on hold, or take them off it when they are held. */
 export function holdPerson(sheetId: string, by: string, id: number): Promise<Person> {
   return postJson<Person>(`${base(sheetId)}/${id}/hold?by=${encodeURIComponent(by)}`, {});
+}
+
+/** Name another person on the sheet as one of the person's patrons; refused (rejects) for the
+ *  person themselves or a patron already named. */
+export function addPatron(sheetId: string, by: string, id: number, patronId: number): Promise<Person> {
+  return postJson<Person>(`${base(sheetId)}/${id}/patrons?by=${encodeURIComponent(by)}`, { patronId });
 }
 
 export type QuickAddInput = { name: string; amount: string };

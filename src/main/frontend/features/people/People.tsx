@@ -4,12 +4,12 @@ import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { PersonClaims } from '../claims/PersonClaims';
 import { claimsKey, listClaims, liveClaims, sumAmounts } from '../claims/api';
-import { claimDue, listRates, overdue, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
+import { claimDue, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, sumDues } from '../rates/api';
 import { useFloor, useLate, useTerms } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
-import { GRADES, addPerson, holdPerson, listPeople, peopleKey, retirePerson, takeStatement, updatePerson, type Person, type PersonInput } from './api';
+import { GRADES, addPatron, addPerson, holdPerson, listPeople, peopleKey, retirePerson, takeStatement, updatePerson, type Person, type PersonInput } from './api';
 
 const EMPTY: PersonInput = { name: '', grade: 'A' };
 
@@ -18,7 +18,9 @@ const EMPTY: PersonInput = { name: '', grade: 'A' };
  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
  *  their statements (a button that takes one, the count, the last one's due-total and date), whether
  *  they are retired and from when (with a date and a button that retires them), whether they are on
- *  hold (with a button that holds or releases them; held, their OPEN claims count in no total) and
+ *  hold (with a button that holds or releases them; held, their OPEN claims count in no total), their
+ *  patrons (names sorted, with a picker that names one more) and backing (their patrons' due-totals
+ *  added up, skipping n/a), and
  *  their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims.
  *  Retired people are left out of the list unless "show retired" is on; their claims still count. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
@@ -37,6 +39,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const [showRetired] = useShowRetired();
   // The retirement date typed on each person's row (blank: the sheet's today).
   const [retireDates, setRetireDates] = useState<Record<number, string>>({});
+  // The patron picked on each person's row (blank: none picked).
+  const [patronPicks, setPatronPicks] = useState<Record<number, string>>({});
 
   const save = useMutation({
     mutationFn: async (v: { editing: { id: number; version: number } | null; input: PersonInput }) => {
@@ -88,10 +92,17 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     ]),
   });
 
+  // The person whose last patron added was refused; cleared by the next action on the row.
+  const patronage = useMutation({
+    mutationFn: (v: { id: number; patronId: number }) => addPatron(sheetId, user, v.id, v.patronId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+  });
+
   const resetRowActions = () => {
     statement.reset();
     retirement.reset();
     holding.reset();
+    patronage.reset();
   };
 
   const state = (id: number) => {
@@ -116,6 +127,14 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     });
   };
 
+  const patronize = (id: number) => {
+    const patronId = Number(patronPicks[id] ?? '');
+    stateOnce(() => {
+      resetRowActions();
+      return patronage.mutateAsync({ id, patronId });
+    });
+  };
+
   const change = (patch: Partial<PersonInput>) => {
     setForm((f) => ({ ...f, ...patch }));
     save.reset();
@@ -132,6 +151,13 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     setEditing(null);
     save.reset();
   };
+
+  // Everyone's due-total as their row shows it (null: n/a), and their names, by id.
+  const everyone = people.data ?? [];
+  const dueOf = new Map(everyone.map((q) => [q.id, personDue(
+    liveClaims((claims.data ?? []).filter((c) => c.personId === q.id), [q]),
+    rates.data, q.grade, byGrade.get(q.grade), floor, charges)]));
+  const nameOf = new Map(everyone.map((q) => [q.id, q.name]));
 
   return (
     <section>
@@ -243,6 +269,31 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                     onClick={() => hold(p.id)}>
                     {p.held ? 'Release' : 'Hold'}
                   </button>
+                </td>
+                <td>
+                  Patrons <span data-testid="person-patrons">
+                    {p.patronIds.map((id) => nameOf.get(id) ?? '').sort((x, y) => x.localeCompare(y)).join(', ')}
+                  </span>{' '}
+                  backing <span data-testid="person-backing">{sumDues(p.patronIds.map((id) => dueOf.get(id) ?? null))}</span>{' '}
+                  <select data-testid="person-patron-select" value={patronPicks[p.id] ?? ''}
+                    onChange={(e) => {
+                      setPatronPicks((d) => ({ ...d, [p.id]: e.target.value }));
+                      patronage.reset();
+                    }}>
+                    <option value="">Patron…</option>
+                    {everyone.filter((q) => q.id !== p.id).map((q) => (
+                      <option key={q.id} value={String(q.id)}>
+                        {q.name}
+                      </option>
+                    ))}
+                  </select>{' '}
+                  <button type="button" data-testid="person-patron-add" disabled={patronage.isPending}
+                    onClick={() => patronize(p.id)}>
+                    Add patron
+                  </button>
+                  {patronage.isError && patronage.variables?.id === p.id && (
+                    <span data-testid="person-patron-error">The patron could not be added: not themselves, nor one already named.</span>
+                  )}
                 </td>
                 <td>
                   <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} grade={p.grade} rates={rates.data} floor={floor}

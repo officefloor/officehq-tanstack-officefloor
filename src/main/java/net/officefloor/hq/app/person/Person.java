@@ -19,6 +19,8 @@ public class Person {
     private String statementDate;
     private String retiredFrom;
     private boolean held;
+    /** The ids of the people they name as patrons, in the order named. */
+    private java.util.List<Long> patronIds = new java.util.ArrayList<>();
     /** How many claims the statement this request took bound, for its audit line. */
     private int statedClaims;
 
@@ -54,6 +56,8 @@ public class Person {
     public boolean isRetired() { return retiredFrom != null; }
     public boolean isHeld() { return held; }
     public void setHeld(boolean held) { this.held = held; }
+    public java.util.List<Long> getPatronIds() { return patronIds; }
+    public void setPatronIds(java.util.List<Long> patronIds) { this.patronIds = patronIds; }
 
     /** Whether the claim counts in live totals: it counts by status, and is not an OPEN claim of a
      *  person on hold. */
