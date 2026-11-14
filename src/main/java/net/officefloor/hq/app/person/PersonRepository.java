@@ -239,10 +239,10 @@ public class PersonRepository {
         return (date == null ? "" : date.toString()) + " " + (total == null ? "n/a" : total);
     }
 
-    /** Retire the person from this date; the person as stored. Not an edit, so it leaves the version alone. */
+    /** Retire the person from this date, made on the sheet's today; the person as stored. Not an edit, so it leaves the version alone. */
     public Person retire(Person person, LocalDate from) {
-        jdbc.update("UPDATE person SET retired_from = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(from), person.id(),
-                person.sheetId());
+        jdbc.update("UPDATE person SET retired_from = ?, retired_on = (SELECT s.today FROM sheet s WHERE s.id = ?)"
+                + " WHERE id = ? AND sheet_id = ?", Date.valueOf(from), person.sheetId(), person.id(), person.sheetId());
         return find(person.sheetId(), person.id());
     }
 
@@ -253,7 +253,7 @@ public class PersonRepository {
     public Person unretire(Person person, LocalDate on) {
         jdbc.update("INSERT INTO person_retirement (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
                 person.sheetId(), person.id(), Date.valueOf(person.retiredFrom()), Date.valueOf(on));
-        jdbc.update("UPDATE person SET retired_from = NULL WHERE id = ? AND sheet_id = ?", person.id(),
+        jdbc.update("UPDATE person SET retired_from = NULL, retired_on = NULL WHERE id = ? AND sheet_id = ?", person.id(),
                 person.sheetId());
         return find(person.sheetId(), person.id());
     }

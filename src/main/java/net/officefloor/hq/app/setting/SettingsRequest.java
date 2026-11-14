@@ -10,7 +10,7 @@ import java.util.Map;
  * yyyy-MM-dd (blank: the sheet's today); the period numbering from date is yyyy-MM-dd (blank: off); the entry date is yyyy-MM-dd (blank: off); the cap has two decimals at most (blank: no cap); the proof threshold has two decimals at most (blank: none); the note threshold has two decimals at most (blank: none); the review threshold has two decimals at most (blank: none). The grade terms are
  * whole days, 0 or more, by grade, each only for a grade it carries (blank: none of its own, the sheet's terms).
  * The clerk limit, floor, terms, late percent, cap, proof threshold, note threshold, review threshold and each grade's terms are recorded from their from-date, yyyy-MM-dd
- * (left out or blank: the sheet's today). The permissions are, by action (open, settle, void, reassign, close, reopen),
+ * (left out or blank: the sheet's today). The permissions are, by action (open, settle, void, reassign, close, reopen, today),
  * the roles allowed it, comma separated (blank: the standing rule); they are not dated. The grace days are whole days,
  * 0 or more (blank: off); they are not dated. The grade grace days are whole days, 0 or more, by grade, each only for a
  * grade it carries (blank: none), recorded from their from-date by grade (left out or blank: the sheet's today). The pot has two decimals at most (blank: none); it is not dated. The parent is a sheet id (blank: none); it is not dated. The fiscal start month is 1 to 12 (blank: back to 1); it is not dated. The alert threshold has two decimals at most (blank: off); it is not dated. The grade

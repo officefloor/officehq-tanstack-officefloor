@@ -89,7 +89,7 @@ export const DEFAULT_LATE_PCT = '0.00';
 export const ROLES = ['clerk', 'steward', 'viewer', 'restricted'];
 
 /** The actions the permission matrix covers. */
-export const PERMISSION_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'];
+export const PERMISSION_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'];
 
 /** The roles allowed an action when its permission entry is blank. */
 export const STANDING_PERMISSIONS: Record<string, string> = {
@@ -99,6 +99,7 @@ export const STANDING_PERMISSIONS: Record<string, string> = {
   reassign: 'steward',
   close: 'clerk,steward',
   reopen: 'steward',
+  today: 'anyone but a viewer',
 };
 
 /** Proof kinds as the sheet's proof kinds take them: receipt or photo, comma separated. */

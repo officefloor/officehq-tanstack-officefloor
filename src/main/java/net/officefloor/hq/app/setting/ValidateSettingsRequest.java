@@ -173,7 +173,7 @@ public class ValidateSettingsRequest {
         }
         for (String action : requested.keySet()) {
             if (!Permissions.ACTIONS.contains(action)) {
-                throw new InvalidSettingException("Permissions can only be set for open, settle, void, reassign, close or reopen.");
+                throw new InvalidSettingException("Permissions can only be set for open, settle, void, reassign, close, reopen or today.");
             }
         }
         for (String action : Permissions.ACTIONS) {

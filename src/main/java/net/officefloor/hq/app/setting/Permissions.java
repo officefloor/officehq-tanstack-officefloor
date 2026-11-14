@@ -11,7 +11,8 @@ import java.util.stream.Collectors;
 /**
  * A sheet's permission matrix: for each action set, the roles allowed it, as typed and shown (comma separated role
  * labels). An action not set keeps the standing rule: open, settle, void and close by clerk and steward; reassign and
- * reopen by steward. Not dated.
+ * reopen by steward; today by anyone but a viewer (a restricted user
+ * counts as a clerk). Not dated.
  */
 public record Permissions(Map<String, String> set) {
 
@@ -21,9 +22,10 @@ public record Permissions(Map<String, String> set) {
     public static final String REASSIGN = "reassign";
     public static final String CLOSE = "close";
     public static final String REOPEN = "reopen";
+    public static final String TODAY = "today";
 
     /** The actions the matrix covers, in the order they are shown and recorded. */
-    public static final List<String> ACTIONS = List.of(OPEN, SETTLE, VOID, REASSIGN, CLOSE, REOPEN);
+    public static final List<String> ACTIONS = List.of(OPEN, SETTLE, VOID, REASSIGN, CLOSE, REOPEN, TODAY);
 
     /** The setting key of an action's entry: perm-&lt;action&gt;. */
     public static String key(String action) {

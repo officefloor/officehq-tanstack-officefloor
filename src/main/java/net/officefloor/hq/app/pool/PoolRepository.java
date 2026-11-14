@@ -47,7 +47,7 @@ public class PoolRepository {
             pools.put(id, new Pool(id, sheetId, rs.getString("name"), new ArrayList<>()));
         }, sheetId, upTo, upTo);
         jdbc.query("SELECT m.pool_id, m.person_id, m.member_pool_id, m.share, m.from_date, m.to_date, p.name,"
-                + " p.retired_from, q.name AS pool_name,"
+                + RETIRED + ", q.name AS pool_name,"
                 + " CASE WHEN EXISTS (SELECT 1 FROM person_hold h WHERE h.person_id = m.person_id AND CAST(? AS DATE) IS NOT NULL"
                 + " AND (h.from_date IS NULL OR h.from_date <= CAST(? AS DATE))"
                 + " AND (h.to_date IS NULL OR h.to_date >= CAST(? AS DATE))" + ADDED.formatted("h.") + ") THEN 1 ELSE 0 END AS held"
@@ -70,7 +70,7 @@ public class PoolRepository {
                                 rs.getBigDecimal("share"), rs.getDate("retired_from") != null, rs.getInt("held") == 1,
                                 from, to, out));
                     }
-                }, on, on, on, upTo, upTo, sheetId, upTo, upTo, upTo, upTo);
+                }, upTo, upTo, on, on, on, upTo, upTo, sheetId, upTo, upTo, upTo, upTo);
         return new ArrayList<>(pools.values());
     }
 
@@ -95,7 +95,7 @@ public class PoolRepository {
         String held = " CASE WHEN EXISTS (SELECT 1 FROM person_hold h WHERE h.person_id = p.id AND CAST(? AS DATE) IS NOT NULL"
                 + " AND (h.from_date IS NULL OR h.from_date <= CAST(? AS DATE))"
                 + " AND (h.to_date IS NULL OR h.to_date >= CAST(? AS DATE))" + ADDED.formatted("h.") + ") THEN 1 ELSE 0 END AS held";
-        jdbc.query("SELECT c.id, c.name, p.id AS person_id, p.name AS person_name, p.retired_from," + held
+        jdbc.query("SELECT c.id, c.name, p.id AS person_id, p.name AS person_name," + RETIRED + "," + held
                 + " FROM crew c LEFT JOIN person p ON p.id = c.lead_id WHERE c.sheet_id = ?" + ADDED.formatted("c.")
                 + " ORDER BY c.id", rs -> {
                     long id = rs.getLong("id");
@@ -105,8 +105,8 @@ public class PoolRepository {
                         pool.members().add(crewMember(rs));
                     }
                     pools.put(id, pool);
-                }, on, on, on, upTo, upTo, sheetId, upTo, upTo);
-        jdbc.query("SELECT m.crew_id, p.id AS person_id, p.name AS person_name, p.retired_from," + held
+                }, upTo, upTo, on, on, on, upTo, upTo, sheetId, upTo, upTo);
+        jdbc.query("SELECT m.crew_id, p.id AS person_id, p.name AS person_name," + RETIRED + "," + held
                 + " FROM crew_member m JOIN person p ON p.id = m.person_id WHERE m.sheet_id = ?" + ADDED.formatted("m.")
                 + " ORDER BY m.id",
                 rs -> {
@@ -114,7 +114,7 @@ public class PoolRepository {
                     if (crew != null) {
                         crew.members().add(crewMember(rs));
                     }
-                }, on, on, on, upTo, upTo, sheetId, upTo, upTo);
+                }, upTo, upTo, on, on, on, upTo, upTo, sheetId, upTo, upTo);
         List<Pool> list = new ArrayList<>();
         for (Pool pool : pools.values()) {
             int n = pool.members().size();
@@ -140,6 +140,13 @@ public class PoolRepository {
      * are the date (null: any row).
      */
     private static final String ADDED = " AND (CAST(? AS DATE) IS NULL OR %1$sadded_on IS NULL OR %1$sadded_on <= CAST(? AS DATE))";
+
+    /**
+     * The person's retired_from as a column, kept only when the retirement was made on or before a date: its two
+     * parameters are the date (null: any retirement).
+     */
+    private static final String RETIRED = " CASE WHEN CAST(? AS DATE) IS NULL OR p.retired_on IS NULL"
+            + " OR p.retired_on <= CAST(? AS DATE) THEN p.retired_from END AS retired_from";
 
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
 

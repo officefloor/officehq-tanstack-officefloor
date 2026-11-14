@@ -712,7 +712,7 @@ export function SettingsForm() {
       </p>
       {PERMISSION_ACTIONS.map((a) => (
         <p key={a}>
-          Roles allowed to {a}: <span data-testid={`setting-perm-${a}-current`}>{settings?.permissions?.[a] ?? ''}</span>
+          Roles allowed to {a === 'today' ? "change today" : a}: <span data-testid={`setting-perm-${a}-current`}>{settings?.permissions?.[a] ?? ''}</span>
         </p>
       ))}
       <form onSubmit={submit} data-testid="settings-form">
