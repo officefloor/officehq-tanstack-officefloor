@@ -208,12 +208,12 @@ public class PersonRepository {
 
     /**
      * The statements still standing of each person on the sheet, each as {@code <statement date> <due-total>}, oldest
-     * first (by date, then in the order taken).
+     * first (in the order taken).
      */
     public Map<Long, List<String>> statementLinesAll(String sheetId) {
         Map<Long, List<String>> found = new HashMap<>();
         jdbc.query("SELECT person_id, stated_total, statement_date FROM person_statement WHERE sheet_id = ?"
-                + " ORDER BY statement_date, seq", (rs) -> {
+                + " ORDER BY seq", (rs) -> {
                     found.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(statementLine(rs));
                 }, sheetId);
         return found;
@@ -222,7 +222,7 @@ public class PersonRepository {
     /** The person's statements still standing, as {@link #statementLinesAll} gives them. */
     public List<String> statementLines(String sheetId, long personId) {
         return jdbc.query("SELECT stated_total, statement_date FROM person_statement WHERE sheet_id = ? AND person_id = ?"
-                + " ORDER BY statement_date, seq", (rs, n) -> statementLine(rs), sheetId, personId);
+                + " ORDER BY seq", (rs, n) -> statementLine(rs), sheetId, personId);
     }
 
     private static String statementLine(ResultSet rs) throws SQLException {
