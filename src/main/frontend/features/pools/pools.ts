@@ -22,8 +22,10 @@ export type PoolMember = {
 /**
  * A pool on the sheet: its members in the order they were added, the total share (a retired member's share counts
  * as given, one whose dates leave out the sheet's today is not counted) and whether that total is exactly 100.00.
+ * A crew is also a pool (crew: true), listed after the pools under its name: its lead and members at equal shares,
+ * the remainder on the lead; its members come from the crew, and it is a member of no other pool.
  */
-export type Pool = { id: number; name: string; members: PoolMember[]; totalShare: string; balanced: boolean };
+export type Pool = { id: number; name: string; members: PoolMember[]; totalShare: string; balanced: boolean; crew: boolean };
 
 /** The query key for the sheet's pools; under sheetKey, so re-loading the sheet re-reads them. */
 export const poolsKey = (sheet: string) => [...sheetKey(sheet), 'pools'] as const;

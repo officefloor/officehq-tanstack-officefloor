@@ -11,7 +11,8 @@ import { useOneAtATime } from '../../query/useOneAtATime';
 const SHARE = /^\d{1,3}(\.\d{1,2})?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-// The sheet's pools and the form that adds one; a blank name, or one already a pool's, is refused.
+// The sheet's pools (a crew among them, after the pools) and the form that adds one; a blank name, or one already a
+// pool's or a crew's, is refused.
 export function Pools() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -30,7 +31,7 @@ export function Pools() {
       queryClient.setQueryData(poolsKey(sheet), saved);
       await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
     },
-    onError: () => setError('That pool was refused: it needs a name no other pool has.'),
+    onError: () => setError('That pool was refused: it needs a name no other pool or crew has.'),
   });
 
   if (!user || !sheet) return null;
@@ -167,28 +168,30 @@ function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
           </li>
         ))}
       </ul>
-      <form onSubmit={submit}>
-        <select data-testid="pool-member-select" value={form.member} onChange={(e) => change({ member: e.target.value })}>
-          <option value="">Choose a person or a pool</option>
-          {people.map((p) => (
-            <option key={p.id} value={`person:${p.id}`}>
-              {p.name}
-            </option>
-          ))}
-          {pools.map((p) => (
-            <option key={`pool-${p.id}`} value={`pool:${p.id}`}>
-              pool:{p.name}
-            </option>
-          ))}
-        </select>
-        <input data-testid="pool-member-share" placeholder="Share %" value={form.share} onChange={(e) => change({ share: e.target.value })} />
-        <input data-testid="pool-member-from" placeholder="From yyyy-mm-dd (blank: no start)" value={form.from} onChange={(e) => change({ from: e.target.value })} />
-        <input data-testid="pool-member-to" placeholder="To yyyy-mm-dd (blank: no end)" value={form.to} onChange={(e) => change({ to: e.target.value })} />
-        <button type="submit" data-testid="pool-member-add" disabled={add.isPending}>
-          Add member
-        </button>
-        {error && <span data-testid="pool-error">{error}</span>}
-      </form>
+      {!pool.crew && (
+        <form onSubmit={submit}>
+          <select data-testid="pool-member-select" value={form.member} onChange={(e) => change({ member: e.target.value })}>
+            <option value="">Choose a person or a pool</option>
+            {people.map((p) => (
+              <option key={p.id} value={`person:${p.id}`}>
+                {p.name}
+              </option>
+            ))}
+            {pools.filter((p) => !p.crew).map((p) => (
+              <option key={`pool-${p.id}`} value={`pool:${p.id}`}>
+                pool:{p.name}
+              </option>
+            ))}
+          </select>
+          <input data-testid="pool-member-share" placeholder="Share %" value={form.share} onChange={(e) => change({ share: e.target.value })} />
+          <input data-testid="pool-member-from" placeholder="From yyyy-mm-dd (blank: no start)" value={form.from} onChange={(e) => change({ from: e.target.value })} />
+          <input data-testid="pool-member-to" placeholder="To yyyy-mm-dd (blank: no end)" value={form.to} onChange={(e) => change({ to: e.target.value })} />
+          <button type="submit" data-testid="pool-member-add" disabled={add.isPending}>
+            Add member
+          </button>
+          {error && <span data-testid="pool-error">{error}</span>}
+        </form>
+      )}
     </li>
   );
 }

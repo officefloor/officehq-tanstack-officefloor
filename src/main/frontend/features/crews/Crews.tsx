@@ -6,15 +6,17 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { usePeople } from '../people/people';
 import { crewDue, crewsKey, useCrews, useDueByPerson } from './crews';
 import type { Crew } from './crews';
+import { poolsKey, usePools } from '../pools/pools';
 import { useOneAtATime } from '../../query/useOneAtATime';
 
 // The sheet's crews, each with its lead and due-total, and the form that adds one; a blank name, one already a
-// crew's, or no lead chosen, is refused.
+// crew's or a pool's (a crew is also a pool), or no lead chosen, is refused.
 export function Crews() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const crews = useCrews().data ?? [];
   const people = usePeople().data ?? [];
+  const pools = usePools().data ?? [];
   const dueOf = useDueByPerson();
   const [name, setName] = useState('');
   const [lead, setLead] = useState('');
@@ -31,8 +33,9 @@ export function Crews() {
       setError('');
       queryClient.setQueryData(crewsKey(sheet), saved);
       await queryClient.invalidateQueries({ queryKey: crewsKey(sheet) });
+      await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
     },
-    onError: () => setError('That crew was refused: it needs a name no other crew has and a lead on the sheet.'),
+    onError: () => setError('That crew was refused: it needs a name no other crew or pool has and a lead on the sheet.'),
   });
 
   if (!user || !sheet) return null;
@@ -47,6 +50,10 @@ export function Crews() {
     }
     if (crews.some((c) => c.name === trimmed)) {
       setError(`There is already a crew named ${trimmed}.`);
+      return;
+    }
+    if (pools.some((p) => p.name === trimmed)) {
+      setError(`There is already a pool named ${trimmed}.`);
       return;
     }
     if (!lead) {
@@ -119,6 +126,7 @@ function CrewRow({ crew, due }: { crew: Crew; due: string }) {
       setError('');
       queryClient.setQueryData(crewsKey(sheet), saved);
       await queryClient.invalidateQueries({ queryKey: crewsKey(sheet) });
+      await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
     },
     onError: () => setError('That member was refused: a person on the sheet, not the lead and not yet in the crew.'),
   });

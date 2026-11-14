@@ -16,9 +16,10 @@ import java.util.List;
  * goes to the last member with a cut and a share), so the cuts total exactly the pot (when no member has
  * a cut, each is 0.00; when every member in the pool is retired, there are no cuts). Otherwise a member's cut is "" (none). A member is a
  * person ({@code personId}) or another pool ({@code poolId}); the pool's pot is the sheet's when it is a member of no
- * pool, else its cut in the pool above (null: none).
+ * pool, else its cut in the pool above (null: none). A crew's pool ({@code crew}) has the crew's id negated as its id.
  */
-public record PoolResponse(long id, String name, List<Member> members, String totalShare, boolean balanced) {
+public record PoolResponse(long id, String name, List<Member> members, String totalShare, boolean balanced,
+        boolean crew) {
 
     public record Member(Long personId, Long poolId, String name, String share, boolean retired, String cut,
             String from, String to) {
@@ -37,7 +38,7 @@ public record PoolResponse(long id, String name, List<Member> members, String to
                     m.retired(), cuts == null || cuts.get(i) == null ? "" : cuts.get(i).toPlainString(),
                     m.from() == null ? null : m.from().toString(), m.to() == null ? null : m.to().toString()));
         }
-        return new PoolResponse(pool.id(), pool.name(), members, total.toPlainString(), balanced);
+        return new PoolResponse(pool.id(), pool.name(), members, total.toPlainString(), balanced, pool.id() < 0);
     }
 
     /** The pool's total share: its members' shares added up, a retired member's counting as given, an out one's not. */
