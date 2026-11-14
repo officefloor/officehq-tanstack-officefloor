@@ -125,3 +125,7 @@ export function personPeriodCarried(period: Period, periods: Period[], person: P
     .map((c) => claimDue(c, rates, person.grades, rules));
   return total([...figures, period.personOpenings?.[String(person.id)] ?? '0.00']);
 }
+
+/** How many claims belong to a period (their due-by falls in it), VOID and DELETED claims left out. */
+export const periodClaimsCount = (period: Period, claims: Claim[]) =>
+  claims.filter((c) => c.status !== 'VOID' && c.status !== 'DELETED' && contains(period, c.dueBy)).length;

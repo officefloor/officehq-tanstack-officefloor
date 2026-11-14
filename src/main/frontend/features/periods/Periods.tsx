@@ -8,7 +8,7 @@ import { poolsKey } from '../pools/pools';
 import { useRates } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { useDueRules, useSettings } from '../settings/settings';
-import { fiscalYearOf, periodDue, periodsKey, usePeriods } from './periods';
+import { fiscalYearOf, periodClaimsCount, periodDue, periodsKey, usePeriods } from './periods';
 import type { Period, PeriodInput } from './periods';
 import { useOneAtATime } from '../../query/useOneAtATime';
 
@@ -207,6 +207,7 @@ export function Periods() {
             <th>Fiscal year</th>
             <th>Cap</th>
             <th>Locked</th>
+            <th>Claims</th>
             <th />
           </tr>
         </thead>
@@ -221,6 +222,7 @@ export function Periods() {
               <td data-testid="period-fy">{fiscalYearOf(p.from, fiscalStartMonth)}</td>
               <td data-testid="period-cap">{p.cap ?? ''}</td>
               <td data-testid="period-locked">{p.locked ? 'yes' : 'no'}</td>
+              <td data-testid="period-claims-count">{periodClaimsCount(p, claims)}</td>
               <td>
                 <button
                   type="button"
