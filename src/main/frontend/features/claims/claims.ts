@@ -57,8 +57,9 @@ export const bound = (c: Claim) => c.stated;
  * quantities times their unit amounts, added up, as its amount;
  * waived is whether a steward waived its late charge: a waived claim bears none, whatever its overdue state;
  * held is whether the claim is held: a held open (or pending) claim counts as one a hold of its person covers;
- * shares are the other people it is shared with, in the order given: each holder's due-total counts their share of
- * its due, and its own person's the rest.
+ * shares are the other people it is shared with, in the order given: each holder's due-total counts their part (its
+ * amount times their share, at their own grade's rate on its date; a settled claim's frozen as their share of its due),
+ * and its own person's the due less those parts.
  */
 export type Claim = {
   id: number;

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { bound, counts } from '../claims/claims';
-import type { Claim } from '../claims/claims';
+import type { Claim, ClaimShare } from '../claims/claims';
 import { lateBoundary, latePeriods } from '../overdue/dueBy';
 import { gradeOn, liveHolds } from '../people/people';
 import type { GradeFrom, Hold } from '../people/people';
@@ -234,21 +234,50 @@ export type Shared = {
   people: { id: number; grades: GradeFrom[]; holds: Hold[]; retiredFrom: string | null }[];
 };
 
-/** A holder's part of a due: the due times their share divided by 100, rounded half to even; n/a stays n/a. */
-export function sharePart(due: string, share: string): string {
-  return due === NA ? NA : percentOf(hundredths(due), hundredths(share), 'half-even');
+/**
+ * A holder's part of a shared claim with the given due: once settled, frozen as its fixed due times their share divided
+ * by 100, rounded half to even; else its amount times their share divided by 100, times the rate of the holder's own
+ * grade in force on its date (of the rate versions that apply to it) divided by 100, rounded like the claim — n/a (counted
+ * as 0.00) when that grade has no rate, or when the due is n/a.
+ */
+export function sharePart(
+  claim: Claim,
+  due: string,
+  share: ClaimShare,
+  people: Shared['people'],
+  rates: Rate[],
+  rules: DueRules,
+): string {
+  if (due === NA) return NA;
+  if (claim.due !== null) return percentOf(hundredths(due), hundredths(share.share), 'half-even');
+  const holder = people.find((p) => p.id === share.personId);
+  const rate = holder && rateFor(ratesForClaim(rates, claim), gradeOn(holder.grades, claim.date), claim.date);
+  if (rate === undefined) return NA;
+  return partOf(hundredths(claim.amount), hundredths(share.share), hundredths(rate), roundingFor(claim, rules));
 }
 
-/** A claim's own person's part of its due: the due less its holders' parts; n/a stays n/a. */
-export function ownPart(claim: Claim, due: string): string {
+/** Cents times two percents in basis points / 10^8, rounded to two decimals as told; worked in BigInt so it is exact. */
+function partOf(amountCents: number, shareBasisPoints: number, rateBasisPoints: number, rounding: Rounding): string {
+  const product = BigInt(amountCents) * BigInt(shareBasisPoints) * BigInt(rateBasisPoints);
+  const negative = product < 0n;
+  const abs = negative ? -product : product;
+  const whole = abs / 100000000n;
+  const rest = abs - whole * 100000000n;
+  const up = rest > 50000000n || (rest === 50000000n && (rounding === 'half-up' || whole % 2n === 1n));
+  const cents = Number(whole + (up ? 1n : 0n)) * (negative ? -1 : 1);
+  return (cents / 100).toFixed(2);
+}
+
+/** A claim's own person's part of its due: the due less its holders' parts (n/a taking nothing); n/a stays n/a. */
+export function ownPart(claim: Claim, due: string, people: Shared['people'], rates: Rate[], rules: DueRules): string {
   if (due === NA || !claim.shares?.length) return due;
-  const parts = claim.shares.reduce((sum, s) => sum + hundredths(sharePart(due, s.share)), 0);
-  return ((hundredths(due) - parts) / 100).toFixed(2);
+  const parts = total(claim.shares.map((s) => sharePart(claim, due, s, people, rates, rules)));
+  return ((hundredths(due) - hundredths(parts)) / 100).toFixed(2);
 }
 
 /**
  * The parts of other people's claims a person holds shares of, each as the claim (counting for its own person) and the
- * holder's part of its due (worked out by its own person's grades).
+ * holder's part (see {@link sharePart}; the claim's due worked out by its own person's grades).
  */
 export function sharedParts(shared: Shared, rates: Rate[], rules: DueRules): { claim: Claim; part: string }[] {
   const parts: { claim: Claim; part: string }[] = [];
@@ -256,7 +285,7 @@ export function sharedParts(shared: Shared, rates: Rate[], rules: DueRules): { c
     const held = c.shares?.find((s) => s.personId === shared.personId);
     const owner = held && shared.people.find((p) => p.id === c.personId);
     if (!held || !owner || !counts(c, liveHolds(owner, rules.today), rules.today)) continue;
-    parts.push({ claim: c, part: sharePart(claimDue(c, rates, owner.grades, rules), held.share) });
+    parts.push({ claim: c, part: sharePart(c, claimDue(c, rates, owner.grades, rules), held, shared.people, rates, rules) });
   }
   return parts;
 }
@@ -273,7 +302,7 @@ function personSum(
   const counted = claims.filter((c) => counts(c, holds, rules.today));
   const parts = shared ? sharedParts(shared, rates, rules) : [];
   const figures = [
-    ...counted.map((c) => (shared ? ownPart(c, claimDue(c, rates, grades, rules)) : claimDue(c, rates, grades, rules))),
+    ...counted.map((c) => (shared ? ownPart(c, claimDue(c, rates, grades, rules), shared.people, rates, rules) : claimDue(c, rates, grades, rules))),
     ...parts.map((p) => p.part),
   ];
   const anyFigure = counted.some(keepsFigure) || parts.some((p) => keepsFigure(p.claim)) || figures.some((f) => f !== NA);
@@ -314,7 +343,7 @@ export function personSplit(
 ): { settled: string; open: string } {
   const counted = claims.filter((c) => counts(c, holds, rules.today));
   const parts = shared ? sharedParts(shared, rates, rules) : [];
-  const figure = (c: Claim) => (shared ? ownPart(c, claimDue(c, rates, grades, rules)) : claimDue(c, rates, grades, rules));
+  const figure = (c: Claim) => (shared ? ownPart(c, claimDue(c, rates, grades, rules), shared.people, rates, rules) : claimDue(c, rates, grades, rules));
   const dues = (keep: (c: Claim) => boolean) =>
     total([...counted.filter(keep).map(figure), ...parts.filter((p) => keep(p.claim)).map((p) => p.part)]);
   return { settled: dues((c) => c.status === 'SETTLED'), open: dues((c) => c.status !== 'SETTLED') };

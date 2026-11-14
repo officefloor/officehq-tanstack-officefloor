@@ -32,8 +32,10 @@ import org.springframework.stereotype.Service;
  * rate there and no counting claim has a figure (kept, or at the rate for the grade in force on its date). Their overdue-total
  * is the dues of their overdue counting claims added up (skipping n/a, not capped). The sheet's totals add these up, skipping n/a;
  * its due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one.
- * A shared claim's due is parted: each holder's due-total counts the due times their share / 100 (half to even, while
- * the claim counts for its own person), and its own person's the due less those parts; its overdue figure is not parted.
+ * A shared claim's due is parted (while the claim counts for its own person): each holder's due-total counts the amount
+ * times their share / 100 times the rate of the holder's own grade in force on the claim's date / 100, rounded like the
+ * claim (0.00 when that grade has no rate), and its own person's the due less those parts; a settled claim's parts stay
+ * frozen as its fixed due times the share / 100 (half to even). Its overdue figure is not parted.
  */
 @Service
 public class RollupService {
@@ -100,7 +102,11 @@ public class RollupService {
                 }
                 if (figure != null) {
                     kept = true;
-                    due = due.add(ClaimShare.ownPart(figure, shared.getOrDefault(claim.id(), List.of())));
+                    List<BigDecimal> parts = new ArrayList<>();
+                    for (ClaimShare share : shared.getOrDefault(claim.id(), List.of())) {
+                        parts.add(part(claim, share, figure, sheetPeople, sheetRates, rounding));
+                    }
+                    due = due.add(ClaimShare.ownPart(figure, parts));
                     if (late) {
                         overdue = overdue.add(figure);
                     }
@@ -117,9 +123,11 @@ public class RollupService {
                     }
                     BigDecimal figure = claim.due(Rate.inForce(sheetRates, owner.gradeOn(claim.date()), claim),
                             dated.floorOn(claim.date()), dated.lateCharge(today, owner), rounding);
-                    if (figure != null) {
-                        kept = true;
-                        due = due.add(share.part(figure));
+                    BigDecimal part = figure == null ? null
+                            : part(claim, share, figure, sheetPeople, sheetRates, rounding);
+                    kept |= claim.keepsFigure() || part != null;
+                    if (part != null) {
+                        due = due.add(part);
                     }
                 }
             }
@@ -135,6 +143,20 @@ public class RollupService {
         }
         return new Rollup(figures, show(claimedTotal), show(trimmedTotal(dues)), show(trimmedTotal(overdues)),
                 settings.alertThreshold(sheetId));
+    }
+
+    /**
+     * A holder's part of a shared claim with the given due: frozen with its fixed due once settled, else worked out by
+     * the holder's grade on the claim's date (null: n/a, that grade has no rate).
+     */
+    private static BigDecimal part(Claim claim, ClaimShare share, BigDecimal due, List<Person> people,
+            List<Rate> rates, Rounding rounding) {
+        if (claim.due() != null) {
+            return share.part(due);
+        }
+        Person holder = find(people, share.personId());
+        BigDecimal rate = holder == null ? null : Rate.inForce(rates, holder.gradeOn(claim.date()), claim);
+        return share.part(claim.amount(), rate, rounding.modeFor(claim));
     }
 
     private static Person find(List<Person> people, long id) {
