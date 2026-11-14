@@ -24,7 +24,7 @@ export function sheetTotals(people: Person[], claims: Claim[], rates: Rate[], ru
 }
 
 /** A name as names are compared: trimmed, ignoring case. */
-const nameKey = (name: string) => name.trim().toLowerCase();
+export const nameKey = (name: string) => name.trim().toLowerCase();
 
 /** The person on the sheet with the user's name, by name or alias, if any. */
 export function personNamed(people: Person[], aliases: Alias[], user: string): Person | undefined {
