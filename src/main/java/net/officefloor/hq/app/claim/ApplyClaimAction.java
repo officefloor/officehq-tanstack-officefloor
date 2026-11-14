@@ -36,7 +36,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * its person's grade's own, when that grade has one then, else the sheet's — is refused settling or approving — before the clerk limit is considered, so it never goes PENDING.
  * A claim with an empty note whose due (as shown now) is above the sheet's note threshold in force on its date is refused opening.
  * Opening a claim due by a date in a period with a cap is refused while its person already has that many OPEN or PENDING
- * claims due by a date in that period. Only a steward approves a PENDING claim (fixing its due at its figure —
+ * claims due by a date in that period. Only a steward — or the claim's person's approver — approves a PENDING claim (fixing its due at its figure —
  * the one its statement bound it to, if any — plus any late charge, at that moment) — not the user who opened it — or rejects it, with a reason, back to OPEN.
  * Only a steward re-settles a SETTLED claim, fixing its due again at the figure it would have today as an open claim
  * bound by no statement (today's rates, grades, floor and late charge); its previous due is kept for the audit.
@@ -88,8 +88,9 @@ public class ApplyClaimAction {
             throw new InvalidClaimException("The user who last edited a claim cannot " + action + " it.");
         }
         if ((found == ClaimAction.APPROVE || found == ClaimAction.REJECT)
-                && settings.find(claim.sheetId()).roleOf(user) != Role.STEWARD) {
-            throw new InvalidClaimException("Only a steward can " + action + " a pending claim.");
+                && settings.find(claim.sheetId()).roleOf(user) != Role.STEWARD
+                && !user.equals(people.approver(claim.sheetId(), claim.personId()))) {
+            throw new InvalidClaimException("Only a steward or the person's approver can " + action + " a pending claim.");
         }
         if (found == ClaimAction.REVIEW && settings.find(claim.sheetId()).roleOf(user) != Role.STEWARD) {
             throw new InvalidClaimException("Only a steward can review a claim.");

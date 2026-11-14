@@ -12,6 +12,7 @@ public class RespondWithTransfer {
         response.send(PersonResponse.from(person, tree.clashing(person, people.aliases(person.sheetId(), person.id())),
                 people.origin(person.sheetId(), person.id()), people.tags(person.sheetId(), person.id()),
                 people.statementLines(person.sheetId(), person.id()),
-                people.flagOn(person.sheetId(), person.id(), sheets.today(person.sheetId()))));
+                people.flagOn(person.sheetId(), person.id(), sheets.today(person.sheetId())),
+                people.approver(person.sheetId(), person.id())));
     }
 }

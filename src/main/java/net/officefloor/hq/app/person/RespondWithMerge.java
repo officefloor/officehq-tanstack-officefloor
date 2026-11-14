@@ -12,6 +12,7 @@ public class RespondWithMerge {
         response.send(PersonResponse.from(into, tree.clashing(into, people.aliases(into.sheetId(), into.id())),
                 people.origin(into.sheetId(), into.id()), people.tags(into.sheetId(), into.id()),
                 people.statementLines(into.sheetId(), into.id()),
-                people.flagOn(into.sheetId(), into.id(), sheets.today(into.sheetId()))));
+                people.flagOn(into.sheetId(), into.id(), sheets.today(into.sheetId())),
+                people.approver(into.sheetId(), into.id())));
     }
 }

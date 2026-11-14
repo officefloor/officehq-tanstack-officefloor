@@ -54,7 +54,8 @@ export const retiredOn = (p: { retiredFrom: string | null }, today: string): boo
  * the retirements they were unretired from, oldest first: a claim dated after one's from and before its to is refused.
  * `tags` are their tags, sorted (none: empty). `statements` are their statements still standing, each as
  * `<statement date> <due-total>`, oldest first. `flag` is the reason of their flag while it is in force on the sheet's
- * today, "" otherwise.
+ * today, "" otherwise. `approver` is the user who may approve or reject their PENDING claims as a steward may, ""
+ * when none.
  */
 export type Person = {
   id: number;
@@ -77,6 +78,7 @@ export type Person = {
   tags: string[];
   statements: string[];
   flag: string;
+  approver: string;
 };
 
 /**

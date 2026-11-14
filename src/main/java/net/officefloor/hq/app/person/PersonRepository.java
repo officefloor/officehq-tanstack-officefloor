@@ -395,6 +395,28 @@ public class PersonRepository {
         return found;
     }
 
+    /** Store the person's approver (a user name; null: none). */
+    public void saveApprover(String sheetId, long personId, String approver) {
+        jdbc.update("UPDATE person SET approver = ? WHERE id = ? AND sheet_id = ?", approver, personId, sheetId);
+    }
+
+    /** The person's approver, or null when they have none. */
+    public String approver(String sheetId, long personId) {
+        List<String> found = jdbc.query("SELECT approver FROM person WHERE sheet_id = ? AND id = ?",
+                (rs, n) -> rs.getString("approver"), sheetId, personId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The approver of each of the sheet's people who has one, by person id. */
+    public Map<Long, String> approvers(String sheetId) {
+        Map<Long, String> found = new HashMap<>();
+        jdbc.query("SELECT id, approver FROM person WHERE sheet_id = ? AND approver IS NOT NULL",
+                (rs) -> {
+                    found.put(rs.getLong("id"), rs.getString("approver"));
+                }, sheetId);
+        return found;
+    }
+
     /** Store the person's tags (stored form; null: none), adding each to the sheet's tag list. */
     public void saveTags(String sheetId, long personId, String tags) {
         jdbc.update("UPDATE person SET tags = ? WHERE id = ? AND sheet_id = ?", tags, personId, sheetId);

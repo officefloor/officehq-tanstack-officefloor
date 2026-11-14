@@ -25,10 +25,11 @@ public class RespondWithPeople {
         Map<Long, String> tags = repository.tagsAll(sheet.id());
         Map<Long, List<String>> statements = repository.statementLinesAll(sheet.id());
         Map<Long, String> flags = repository.flagsOn(sheet.id(), sheets.today(sheet.id()));
+        Map<Long, String> approvers = repository.approvers(sheet.id());
         response.send(people.stream().map((p) -> PersonResponse.from(p,
                 NameTree.clashing(taken, p.name(), byPerson.getOrDefault(p.id(), List.of())), origins.get(p.id()),
                 tags.get(p.id()), statements.getOrDefault(p.id(), List.of()),
-                flags.get(p.id())))
+                flags.get(p.id()), approvers.get(p.id())))
                 .toList());
     }
 }
