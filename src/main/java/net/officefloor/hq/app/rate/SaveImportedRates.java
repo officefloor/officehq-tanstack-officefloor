@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.rate;
 
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupLines;
 import net.officefloor.hq.app.rollup.RollupService;
@@ -15,12 +16,22 @@ import org.springframework.web.bind.annotation.RequestParam;
  */
 public class SaveImportedRates {
     public void save(@Val ImportedRates imported, @Val Sheet sheet, @RequestParam("user") String user,
-            RateRepository repository, RollupService rollups, Audit audit, Out<ImportRatesResult> result) {
+            RateRepository repository, GradeRepository grades, RollupService rollups, Audit audit,
+            Out<ImportRatesResult> result) throws InvalidRateException {
+        // a grade the sheet does not have refuses the whole import, before anything is set
+        int number = 0;
+        for (RateRequest line : imported.lines()) {
+            number++;
+            if (!grades.exists(sheet.id(), line.grade())) {
+                throw new InvalidRateException("Line " + number + ": the grade " + line.grade()
+                        + " is not one of the sheet's grades.");
+            }
+        }
         int set = 0;
         for (RateRequest line : imported.lines()) {
             Rollup before = rollups.compute(sheet.id());
             Rate[] rate = new Rate[1];
-            new BuildRate().build(line, sheet, value -> rate[0] = value);
+            new BuildRate().build(line, sheet, grades, value -> rate[0] = value);
             repository.save(rate[0]);
             new AuditRateSet().audit(rate[0], user, audit);
             RollupLines.record(before, rollups.compute(sheet.id()), sheet.id(), user, audit);

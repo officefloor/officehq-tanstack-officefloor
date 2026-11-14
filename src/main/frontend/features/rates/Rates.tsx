@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
-import { GRADES } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { useSheetToday } from '../session/sheetToday';
 import { NA, PERCENT, rateFor, ratesKey, useRates } from './rates';
@@ -27,6 +27,7 @@ export function Rates() {
   const [sheet] = useCurrentSheet();
   const rates = useRates().data ?? [];
   const today = useSheetToday();
+  const grades = useGradeCodes();
   const [form, setForm] = useState<RateInput>(EMPTY);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
@@ -86,7 +87,7 @@ export function Rates() {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <tr key={g}>
               <td>{g}</td>
               <td data-testid={`rate-current-${g}`}>{rateFor(rates, g, today) ?? NA}</td>
@@ -104,7 +105,7 @@ export function Rates() {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <tr key={g}>
               <td>{g}</td>
               {MONTHS.map((m) => (
@@ -140,7 +141,7 @@ export function Rates() {
       </table>
       <form onSubmit={submit} data-testid="rate-form">
         <select data-testid="rate-form-grade" value={form.grade} onChange={(e) => change({ grade: e.target.value })}>
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>

@@ -5,6 +5,7 @@ import { currentAsOf, currentPreview, getJson, getLiveJson } from '../../api/htt
 import { useClaims } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 import { GRADES, liveHolds, usePeople } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
 import type { Person } from '../people/people';
 import { personOverdue } from '../overdue/overdue';
 import { personDue, total, trimmedTotal, useRates } from '../rates/rates';
@@ -46,7 +47,8 @@ export function sheetFigures(people: Person[], aliases: Alias[], claims: Claim[]
     ),
     dues: people.map((p) => personDue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules, { personId: p.id, claims, people })),
     overdues: people.map((p) => personOverdue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules).total),
-    grades: Object.fromEntries(GRADES.map((g) => [g, gradeDue(g)])),
+    // A, B, C and every grade a person here is on, so a grade added on any sheet of the tree is counted
+    grades: Object.fromEntries([...new Set([...GRADES, ...current.map((p) => p.grade)])].map((g) => [g, gradeDue(g)])),
     statuses: Object.fromEntries(STATUSES.map((s) => [s, claims.filter((c) => c.status === s).length])),
     overdueCount: people.reduce((n, p) => n + personOverdue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules).count, 0),
   };
@@ -117,6 +119,7 @@ export function ConsolidatedFigures() {
   const rules = useDueRules();
   const aliases = useAliases().data ?? [];
   const stored = useStoredFigures(asOf).data ?? [];
+  const grades = useGradeCodes();
 
   const all: Figures[] = [sheetFigures(people, aliases, claims, rates, rules), ...stored];
   return (
@@ -124,10 +127,10 @@ export function ConsolidatedFigures() {
       Consolidated — People: <strong data-testid="consolidated-people-count">{distinctPeople(all.flatMap((f) => f.names))}</strong>
       {' · '}Due: <strong data-testid="consolidated-due-total">{trimmedTotal(all.flatMap((f) => f.dues))}</strong>
       {' · '}Overdue: <strong data-testid="consolidated-overdue-total">{trimmedTotal(all.flatMap((f) => f.overdues))}</strong>
-      {GRADES.map((g) => (
+      {grades.map((g) => (
         <span key={g}>
           {' · '}
-          {g}: <strong data-testid={`consolidated-grade-${g}-due-total`}>{total(all.map((f) => f.grades[g]))}</strong>
+          {g}: <strong data-testid={`consolidated-grade-${g}-due-total`}>{total(all.map((f) => f.grades[g] ?? '0.00'))}</strong>
         </span>
       ))}
       {STATUSES.map((s) => (

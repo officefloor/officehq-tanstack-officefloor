@@ -4,6 +4,7 @@ import { putJson } from '../../api/http';
 import { useOneAtATime } from '../../query/useOneAtATime';
 import { sheetKey, useCurrentSheet, useCurrentUser } from '../session/session';
 import { GRADES, usePeople } from './people';
+import { useGradeCodes } from '../grades/grades';
 import type { Person } from './people';
 import { setPersonError } from './personError';
 import { useSelectedPeople } from './selection';
@@ -18,6 +19,7 @@ export function BulkGrade() {
   const people = usePeople().data ?? [];
   const [selected, , clear] = useSelectedPeople();
   const [grade, setGrade] = useState<string>(GRADES[0]);
+  const grades = useGradeCodes();
   const [from, setFrom] = useState('');
   const [graded, setGraded] = useState<number | undefined>(undefined);
   const [busy, setBusy] = useState(false);
@@ -56,7 +58,7 @@ export function BulkGrade() {
   return (
     <p>
       <select data-testid="bulk-grade" value={grade} onChange={(e) => setGrade(e.target.value)}>
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <option key={g} value={g}>
             {g}
           </option>

@@ -4,7 +4,7 @@ import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 
 /**
- * A person's fields as the form submits them: a name (required), a grade (A, B or C) and the date the grade
+ * A person's fields as the form submits them: a name (required), a grade (one of the sheet's) and the date the grade
  * is in force from (yyyy-mm-dd; blank is the sheet's today, and is kept blank here) and the person's own terms
  * (a whole number of days, 0 or more; blank: none, kept blank here). An edit also sends the version of the person
  * its editor loaded; an add sends none. The contact is kept trimmed and lower-cased (blank: none, kept blank here).

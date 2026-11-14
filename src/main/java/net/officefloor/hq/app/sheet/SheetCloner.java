@@ -16,7 +16,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /**
- * Clones a sheet to a new id: the clone gets its today, settings, roles, rates (with their versions), retired grades, holidays, void reasons, templates,
+ * Clones a sheet to a new id: the clone gets its today, settings, roles, rates (with their versions), added and retired grades, holidays, void reasons, templates,
  * people (grades, terms, contacts, aliases, tags, holds, retirements, patrons), pools, crews, periods (all open) and claims
  * (status, frozen figures, dates, notes, logs). Statements, watches, comments, locks, batches and as-of days are not
  * copied. Claims that had a number take the clone's own numbers afresh, in the order they were opened.
@@ -27,7 +27,7 @@ public class SheetCloner {
     /** The tables kept per sheet that are copied as they are, under the clone's id. */
     private static final List<String> SHEET_TABLES = List.of("user_role", "permission", "delegation", "setting_from",
             "grade_terms", "rate", "rate_version", "holiday", "void_reason", "claim_template", "claim_tag", "sheet_pot",
-            "grade_retired");
+            "grade_retired", "grade_added");
 
     /** The tables of a person's own entries, copied under the clone's id and the person's id there. */
     private static final List<String> PERSON_TABLES = List.of("person_grade", "person_terms", "person_hold",

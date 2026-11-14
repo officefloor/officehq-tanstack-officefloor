@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useClaims } from '../claims/claims';
-import { GRADES, usePeople } from '../people/people';
+import { usePeople } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
 import { useDueRules } from '../settings/settings';
 import { PERCENT, ratePreview, useRates } from './rates';
 
@@ -12,6 +13,7 @@ export function RatePreview() {
   const people = usePeople().data ?? [];
   const claims = useClaims().data ?? [];
   const rules = useDueRules();
+  const grades = useGradeCodes();
   const [grade, setGrade] = useState<string>('A');
   const [pct, setPct] = useState('');
   const [result, setResult] = useState<{ count: number; diff: string } | null>(null);
@@ -40,7 +42,7 @@ export function RatePreview() {
   return (
     <form onSubmit={submit} data-testid="rate-preview-form">
       <select data-testid="rate-preview-grade" value={grade} onChange={(e) => change(() => setGrade(e.target.value))}>
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <option key={g} value={g}>
             {g}
           </option>

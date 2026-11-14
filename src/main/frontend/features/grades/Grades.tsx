@@ -3,11 +3,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { sheetKey, useCurrentSheet, useCurrentUser } from '../session/session';
 import { GRADES } from '../people/people';
-import { gradesKey, useGrades } from './grades';
+import { gradeCodesKey, gradesKey, useGradeCodes, useGrades } from './grades';
 import type { Grade } from './grades';
 import { useOneAtATime } from '../../query/useOneAtATime';
 
-// The sheet's grades, each showing whether it is retired, and the select and button a grade is retired with; a grade
+// The sheet's grades, each showing whether it is retired; the entry and button a grade is added with (a code of one
+// to three capital letters not yet a grade; anything else is refused); and the select and button a grade is retired with; a grade
 // already retired is refused. A steward merges a grade into another with two selects and a button: everyone on the
 // merged grade today is given the other from today (the same grade twice, or anyone but a steward, is refused); the
 // count of people moved shows once it is done.
@@ -15,9 +16,11 @@ export function Grades() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const grades = useGrades().data ?? [];
+  const codes = useGradeCodes();
   const [grade, setGrade] = useState<string>(GRADES[0]);
   const [mergeFrom, setMergeFrom] = useState<string>(GRADES[0]);
   const [mergeInto, setMergeInto] = useState<string>(GRADES[1]);
+  const [code, setCode] = useState('');
   const [merged, setMerged] = useState<number | undefined>(undefined);
   const [error, setError] = useState('');
   // loading a sheet (again, even the same one) clears the last merge's count
@@ -34,6 +37,20 @@ export function Grades() {
       await queryClient.invalidateQueries({ queryKey: gradesKey(sheet) });
     },
     onError: () => setError('That grade could not be retired: it is already retired.'),
+  });
+
+  const add = useMutation({
+    mutationFn: (input: { grade: string }) =>
+      postJson<Grade[]>(`/api/sheets/${encodeURIComponent(sheet)}/grades/add?user=${encodeURIComponent(user)}`, input),
+    onSuccess: async (saved) => {
+      setError('');
+      setCode('');
+      queryClient.setQueryData(gradesKey(sheet), saved);
+      queryClient.setQueryData(gradeCodesKey(sheet), saved);
+      await queryClient.invalidateQueries({ queryKey: gradesKey(sheet) });
+      await queryClient.invalidateQueries({ queryKey: gradeCodesKey(sheet) });
+    },
+    onError: () => setError('That grade could not be added: a grade is one to three capital letters not yet a grade.'),
   });
 
   const merge = useMutation({
@@ -62,6 +79,26 @@ export function Grades() {
           </li>
         ))}
       </ul>
+      <input
+        data-testid="grade-add-code"
+        placeholder="New grade"
+        value={code}
+        onChange={(e) => {
+          setCode(e.target.value);
+          setError('');
+        }}
+      />
+      <button
+        type="button"
+        data-testid="grade-add"
+        disabled={add.isPending}
+        onClick={() => {
+          setError('');
+          once(() => add.mutateAsync({ grade: code }));
+        }}
+      >
+        Add grade
+      </button>
       <select
         data-testid="grade-retire-select"
         value={grade}
@@ -70,7 +107,7 @@ export function Grades() {
           setError('');
         }}
       >
-        {GRADES.map((g) => (
+        {codes.map((g) => (
           <option key={g} value={g}>
             {g}
           </option>
@@ -95,7 +132,7 @@ export function Grades() {
           setError('');
         }}
       >
-        {GRADES.map((g) => (
+        {codes.map((g) => (
           <option key={g} value={g}>
             {g}
           </option>
@@ -110,7 +147,7 @@ export function Grades() {
           setError('');
         }}
       >
-        {GRADES.map((g) => (
+        {codes.map((g) => (
           <option key={g} value={g}>
             {g}
           </option>

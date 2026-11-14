@@ -4,22 +4,21 @@ import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.util.Set;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateRateRequest {
-
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     /** 0.00 or more, with at most two decimals. */
     private static final Pattern PERCENT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?|\\.\\d{1,2}");
 
     public void validate(@RequestBody @Valid RateRequest request, Out<RateRequest> body) throws InvalidRateException {
         String grade = request.grade() == null ? "" : request.grade().trim().toUpperCase();
-        if (!GRADES.contains(grade)) {
-            throw new InvalidRateException("The grade must be A, B or C.");
+        // the form of a grade here; whether the sheet has it is checked against the sheet
+        if (!GradeRepository.CODE.matcher(grade).matches()) {
+            throw new InvalidRateException("The grade must be one to three letters.");
         }
         String rate = request.rate() == null ? "" : request.rate().trim();
         if (rate.isEmpty()) {

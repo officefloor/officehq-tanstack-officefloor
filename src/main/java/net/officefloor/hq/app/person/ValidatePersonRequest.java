@@ -4,14 +4,12 @@ import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Locale;
-import java.util.Set;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidatePersonRequest {
-
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     public void validate(@RequestBody @Valid PersonRequest request, Out<PersonRequest> body)
             throws InvalidPersonException {
@@ -21,8 +19,9 @@ public class ValidatePersonRequest {
             throw new InvalidPersonException("A name is required.");
         }
         String grade = request.grade() == null ? "" : request.grade().trim().toUpperCase();
-        if (!GRADES.contains(grade)) {
-            throw new InvalidPersonException("The grade must be A, B or C.");
+        // the form of a grade here; whether the sheet has it is checked against the sheet
+        if (!GradeRepository.CODE.matcher(grade).matches()) {
+            throw new InvalidPersonException("The grade must be one to three letters.");
         }
         String from = request.gradeFrom() == null ? "" : request.gradeFrom().trim();
         if (!from.isEmpty()) {

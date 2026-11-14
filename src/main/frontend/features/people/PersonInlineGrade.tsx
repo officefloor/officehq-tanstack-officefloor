@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { useOneAtATime } from '../../query/useOneAtATime';
 import { sheetKey, useCurrentSheet, useCurrentUser } from '../session/session';
-import { GRADES } from './people';
+import { useGradeCodes } from '../grades/grades';
 import type { Person } from './people';
 import { usePersonError } from './personError';
 
@@ -18,6 +18,7 @@ export function PersonInlineGrade({ person }: { person: Person }) {
   const queryClient = useQueryClient();
   const once = useOneAtATime();
   const grade = chosen ?? person.grade;
+  const grades = useGradeCodes();
 
   const save = useMutation({
     mutationFn: (g: string) =>
@@ -48,7 +49,7 @@ export function PersonInlineGrade({ person }: { person: Person }) {
           setError('');
         }}
       >
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <option key={g} value={g}>
             {g}
           </option>

@@ -1,7 +1,8 @@
 import { isActive } from '../active/active';
 import { useClaims } from '../claims/claims';
 import type { Claim } from '../claims/claims';
-import { GRADES, liveHolds, usePeople } from '../people/people';
+import { liveHolds, usePeople } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
 import type { Person } from '../people/people';
 import { periodDue, usePeriods } from '../periods/periods';
 import { personDue, total, useRates } from '../rates/rates';
@@ -26,6 +27,7 @@ export function Summary() {
   const periods = usePeriods().data ?? [];
   const rates = useRates().data ?? [];
   const rules = useDueRules();
+  const grades = useGradeCodes();
   const voidReasons = useVoidReasons().data ?? [];
   const reviewSla = useSettings().data?.reviewSla ?? '';
 
@@ -52,7 +54,7 @@ export function Summary() {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => {
+          {grades.map((g) => {
             const on = current.filter((p) => p.grade === g);
             return (
               <tr key={g}>

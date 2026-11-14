@@ -3,7 +3,7 @@ package net.officefloor.hq.app.rate;
 import jakarta.validation.constraints.Size;
 
 /**
- * A rate as the form submits it: the grade (A, B or C), the percent (required, at most two decimals)
+ * A rate as the form submits it: the grade (one of the sheet's), the percent (required, at most two decimals)
  * the from-date (yyyy-MM-dd; blank: from the beginning of time)
  * and the to-date (yyyy-MM-dd; blank: no end).
  */

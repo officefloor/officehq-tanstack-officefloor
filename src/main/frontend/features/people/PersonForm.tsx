@@ -5,7 +5,8 @@ import { HttpError, postJson, putJson } from '../../api/http';
 import { useOneAtATime } from '../../query/useOneAtATime';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { tagsKey } from '../tags/tags';
-import { GRADES, peopleKey, useEditingPerson, usePeople } from './people';
+import { useGradeCodes } from '../grades/grades';
+import { peopleKey, useEditingPerson, usePeople } from './people';
 import type { Person, PersonInput } from './people';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFrom: '', contact: '', tags: '' };
@@ -29,6 +30,7 @@ export function PersonForm() {
   const [sheet] = useCurrentSheet();
   const [editing, setEditing] = useEditingPerson();
   const people = usePeople();
+  const grades = useGradeCodes();
   const [form, setForm] = useState<PersonInput>(EMPTY);
   const [error, setError] = useState('');
   const filledFor = useRef<number | undefined>(undefined);
@@ -136,7 +138,7 @@ export function PersonForm() {
         value={form.grade}
         onChange={(e) => change({ grade: e.target.value })}
       >
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <option key={g} value={g}>
             {g}
           </option>
