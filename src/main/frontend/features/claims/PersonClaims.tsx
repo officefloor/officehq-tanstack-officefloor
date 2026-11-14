@@ -8,8 +8,8 @@ import { addClaim, claimsKey, dueBy, isOverdue, moveClaim, reassignClaim, update
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
 
-const LABELS: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void', approve: 'Approve', reject: 'Reject' };
-const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided', approve: 'approved', reject: 'rejected' };
+const LABELS: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void', approve: 'Approve', reject: 'Reject', resettle: 'Re-settle' };
+const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided', approve: 'approved', reject: 'rejected', resettle: 're-settled' };
 
 /** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
  *  with its status, its due (fixed when settled, else at the rate in force on the claim's date of the
@@ -23,7 +23,8 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  or any steward rejects with a reason typed beside it), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
  *  charge) the number of the SETTLED claim it corrects. Only a DRAFT can be edited:
  *  editing any other claim is refused with an error on the claim. A steward can move a DRAFT, OPEN or
- *  PENDING claim to another person picked beside it (any other refused with an error on the claim). */
+ *  PENDING claim to another person picked beside it (any other refused with an error on the claim), and
+ *  re-settle a SETTLED one (anyone else, any other status or a claim in a closed period refused likewise). */
 export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, today, charges, selected, onSelect, people }: {
   sheetId: string; user: string; personId: number; claims: Claim[]; gradeOn: GradeOn; rates: Rate[] | undefined;
   floor: string; today: string; charges: Late;
@@ -175,7 +176,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 {(c.log ?? []).map((line, i) => <div key={i} data-testid="claim-log-line">{line}</div>)}
               </td>
               <td>
-                {(['open', 'settle', 'void', 'approve'] as const).map((a) => (
+                {(['open', 'settle', 'void', 'approve', 'resettle'] as const).map((a) => (
                   <button key={a} type="button" data-testid={`claim-${a}`} disabled={move.isPending}
                     onClick={() => act(c.id, a)}>
                     {LABELS[a]}
@@ -225,6 +226,8 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     ? 'Only a steward who did not open a claim can approve it.'
                     : c.status === 'PENDING' && move.variables.action === 'reject'
                     ? 'Only a steward can reject a claim.'
+                    : c.status === 'SETTLED' && move.variables.action === 'resettle'
+                    ? 'Only a steward can re-settle a claim.'
                     : `A ${c.status} claim cannot be ${DONE[move.variables.action]}.`}</span>
                 )}
                 {reassign.isError && reassign.variables?.id === c.id && (

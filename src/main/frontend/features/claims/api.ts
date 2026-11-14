@@ -6,7 +6,7 @@ import { sheetKey } from '../sheet/api';
  *  claim can be voided. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 /** A change of a claim's status. */
-export type ClaimAction = 'open' | 'settle' | 'void' | 'approve' | 'reject';
+export type ClaimAction = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle';
 
 /** Whether a claim is open: OPEN, or PENDING a steward's approval. */
 export const isOpen = (c: Pick<Claim, 'status'>) => c.status === 'OPEN' || c.status === 'PENDING';
@@ -61,7 +61,8 @@ export function updateClaim(sheetId: string, by: string, id: number, input: Clai
 
 /** Change a claim's status; refused (rejects) when its status does not allow the change, when the
  *  user settling or approving it is the one who opened it, when a non-steward approves or rejects it,
- *  or when a rejection has no `reason`. */
+ *  or when a rejection has no `reason`. A steward's `resettle` freezes a SETTLED claim again at the
+ *  figure it would have today as an open claim bound by no statement. */
 export function moveClaim(sheetId: string, by: string, id: number, action: ClaimAction, reason = ''): Promise<Claim> {
   const extra = action === 'reject' ? `&reason=${encodeURIComponent(reason)}` : '';
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/${action}?by=${encodeURIComponent(by)}${extra}`, {});
