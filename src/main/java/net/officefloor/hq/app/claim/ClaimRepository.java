@@ -288,6 +288,29 @@ public class ClaimRepository {
         return refs;
     }
 
+    /** Store the user the claim's review is assigned to. */
+    public void saveReviewAssignee(Claim claim, String user) {
+        jdbc.update("UPDATE claim SET review_assignee = ? WHERE id = ? AND sheet_id = ?", user, claim.id(),
+                claim.sheetId());
+    }
+
+    /** The user the claim's review is assigned to, or null. */
+    public String reviewAssignee(String sheetId, long id) {
+        List<String> found = jdbc.queryForList("SELECT review_assignee FROM claim WHERE sheet_id = ? AND id = ?",
+                String.class, sheetId, id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The user each of the sheet's claims with an assigned review is assigned to, by claim id. */
+    public Map<Long, String> reviewAssignees(String sheetId) {
+        Map<Long, String> assignees = new HashMap<>();
+        jdbc.query("SELECT id, review_assignee FROM claim WHERE sheet_id = ? AND review_assignee IS NOT NULL",
+                (ResultSet rs) -> {
+                    assignees.put(rs.getLong("id"), rs.getString("review_assignee"));
+                }, sheetId);
+        return assignees;
+    }
+
     /** Store the reason the claim was voided with (null: none). */
     public void saveVoidReason(Claim claim, String reason) {
         jdbc.update("UPDATE claim SET void_reason = ? WHERE id = ? AND sheet_id = ?", reason, claim.id(),

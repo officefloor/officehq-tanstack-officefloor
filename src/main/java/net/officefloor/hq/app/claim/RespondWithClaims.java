@@ -25,12 +25,13 @@ public class RespondWithClaims {
         Map<Long, List<ClaimLine>> lined = lines.findAll(sheet.id());
         Map<Long, Integer> photos = repository.photoProofsAll(sheet.id());
         Map<Long, List<ClaimShare>> shared = shares.findAll(sheet.id());
+        Map<Long, String> assignees = repository.reviewAssignees(sheet.id());
         response.send(claims.stream()
                 .map((c) -> ClaimResponse.from(c, log.getOrDefault(c.id(), List.of()), locked.get(c.id()),
                         late.contains(c.id()), reminded.get(c.id()), refs.get(c.id()),
                         tags.get(c.id()), voidReasons.get(c.id()),
                         commented.getOrDefault(c.id(), List.of()), batched.get(c.id()),
                         lined.getOrDefault(c.id(), List.of()), photos.getOrDefault(c.id(), 0),
-                        shared.getOrDefault(c.id(), List.of()))).toList());
+                        shared.getOrDefault(c.id(), List.of()), assignees.get(c.id()))).toList());
     }
 }

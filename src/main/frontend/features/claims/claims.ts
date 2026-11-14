@@ -91,6 +91,8 @@ export type Claim = {
   waived: boolean;
   held: boolean;
   shares: ClaimShare[];
+  /** The user its review is assigned to (null: none); kept when it leaves REVIEW. */
+  reviewAssigned: string | null;
 };
 
 /** A share of a claim: the id of the person holding it and the percent of the claim's due they hold (two decimals). */

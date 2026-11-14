@@ -36,12 +36,12 @@ public class CheckBulkSettle {
                 throw new InvalidClaimException("No such claim on the sheet: " + id);
             }
             new CheckClaimPeriodOpen().check(claim, periods);
-            new ApplyClaimAction().apply("settle", user, claim, settle, sheets, people,
+            ApplyClaimAction.decide("settle", user, claim, settle, sheets, people,
                     rates, settings, periods, voidReasons, claims, logs, null, (a) -> {
                     }, (n) -> {
                     }, (p) -> {
                     }, (c) -> {
-                    });
+                    }, false);
         }
         response.send(new BulkSettleCheck(ids.size()));
     }

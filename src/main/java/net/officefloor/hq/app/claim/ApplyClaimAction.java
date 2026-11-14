@@ -61,6 +61,18 @@ public class ApplyClaimAction {
             @Val ClaimActionRequest request, SheetRepository sheets,
             PersonRepository people, RateRepository rates, SettingRepository settings, PeriodRepository periods,
             VoidReasonRepository voidReasons, ClaimRepository claims, ClaimLogRepository logs, AsOfReader asOf, Out<ClaimAction> applied, Out<ClaimNumber> number, Out<PreviousDue> previous, Out<Claim> updated) throws InvalidClaimException {
+        decide(action, user, claim, request, sheets, people, rates, settings, periods, voidReasons, claims, logs, asOf,
+                applied, number, previous, updated, true);
+    }
+
+    /**
+     * Refuses the action as {@link #apply} does, else publishes its outcome; without {@code draw}, a settle that would
+     * give the claim its number draws none (a check that must change nothing, the sheet's numbering included).
+     */
+    static void decide(String action, String user, Claim claim,
+            ClaimActionRequest request, SheetRepository sheets,
+            PersonRepository people, RateRepository rates, SettingRepository settings, PeriodRepository periods,
+            VoidReasonRepository voidReasons, ClaimRepository claims, ClaimLogRepository logs, AsOfReader asOf, Out<ClaimAction> applied, Out<ClaimNumber> number, Out<PreviousDue> previous, Out<Claim> updated, boolean draw) throws InvalidClaimException {
         ClaimAction found = ClaimAction.of(action);
         if (found == null) {
             throw new InvalidClaimException("No such claim action: " + action);
@@ -154,7 +166,7 @@ public class ApplyClaimAction {
             found = ClaimAction.PEND;
             due = null;
         }
-        String next = found.settles() && claim.number() == null
+        String next = found.settles() && claim.number() == null && draw
                 ? ClaimNumbers.next(claim, sheets, settings, periods)
                 : claim.number();
         applied.set(found);

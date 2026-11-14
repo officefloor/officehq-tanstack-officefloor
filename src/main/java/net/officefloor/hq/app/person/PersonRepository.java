@@ -523,7 +523,7 @@ public class PersonRepository {
 
     /**
      * Remove the person, transferred to another sheet (their claims already moved), from this sheet entirely: their
-     * statements, holds, past retirements, patron links either way, pool and crew memberships, shares of claims, watches, plans and closed-period figures go with them; the crews they lead stay, with no lead.
+     * statements, holds, past retirements, patron links either way, pool and crew memberships, shares of claims, watches, plans, opening balances and closed-period figures go with them; the crews they lead stay, with no lead.
      */
     public void dropTransferred(Person person) {
         String sheetId = person.sheetId();
@@ -544,6 +544,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM period_pool_cut WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM opening_balance WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_plan_change WHERE plan_id IN (SELECT id FROM person_plan WHERE sheet_id = ? AND"
                 + " person_id = ?)", sheetId, gone);
         jdbc.update("DELETE FROM person_plan_pause WHERE plan_id IN (SELECT id FROM person_plan WHERE sheet_id = ? AND"

@@ -19,6 +19,7 @@ public class RespondWithClaim {
                 batches.batch(claim.sheetId(), claim.id()),
                 lines.find(claim.sheetId(), claim.id()),
                 repository.photoProofs(claim.sheetId(), claim.id()),
-                shares.find(claim.sheetId(), claim.id())));
+                shares.find(claim.sheetId(), claim.id()),
+                repository.reviewAssignee(claim.sheetId(), claim.id())));
     }
 }

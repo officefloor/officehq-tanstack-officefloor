@@ -40,7 +40,7 @@ export function personNamed(people: Person[], aliases: Alias[], user: string): P
 
 // The sheet's counters, always in the header: everyone on it (retired people included), its claims per
 // status, its due-total and overdue-total, the signed-in user's own (blank when no one on it has their name), and the due-totals of the crews that person
-// leads added up (blank when they lead none) — each worked out exactly as the figure it repeats.
+// leads added up (blank when they lead none), the REVIEW claims assigned to the user — each worked out exactly as the figure it repeats.
 export function HeaderCounters() {
   const people = usePeople().data ?? [];
   const claims = useClaims().data ?? [];
@@ -57,6 +57,7 @@ export function HeaderCounters() {
   const myOverdue = me ? personOverdue(mine, rates, me.grades, liveHolds(me, rules.today), rules).total : '';
   const led = me ? crews.filter((c) => c.lead?.id === me.id) : [];
   const myCrewDue = led.length ? total(led.map((c) => crewDue(c, dueOf))) : '';
+  const myReviews = claims.filter((c) => c.status === 'REVIEW' && c.reviewAssigned === (user ?? '').trim()).length;
   const totals = sheetTotals(people, claims, rates, rules);
   return (
     <p data-testid="header-counters">
@@ -72,6 +73,7 @@ export function HeaderCounters() {
       {' · '}Mine: <strong data-testid="my-due-total">{myDue}</strong>
       {' / '}<strong data-testid="my-overdue-total">{myOverdue}</strong>
       {' · '}My crews: <strong data-testid="my-crew-due-total">{myCrewDue}</strong>
+      {' · '}My reviews: <strong data-testid="my-reviews-count">{myReviews}</strong>
     </p>
   );
 }
