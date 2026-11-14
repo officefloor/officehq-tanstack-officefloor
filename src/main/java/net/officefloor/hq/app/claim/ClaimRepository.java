@@ -12,7 +12,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due";
 
     private static final RowMapper<Claim> ROW = (rs, n) -> new Claim(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getLong("person_id"),
@@ -21,7 +21,9 @@ public class ClaimRepository {
             rs.getString("status"), rs.getObject("number", Long.class),
             rs.getBigDecimal("settled_due") == null ? null
                     : rs.getBigDecimal("settled_due").setScale(2).toPlainString(),
-            rs.getString("opened_by"));
+            rs.getString("opened_by"), rs.getBoolean("stated"),
+            rs.getBigDecimal("stated_due") == null ? null
+                    : rs.getBigDecimal("stated_due").setScale(2).toPlainString());
 
     private final JdbcTemplate jdbc;
 
@@ -66,6 +68,19 @@ public class ClaimRepository {
                 claim.getStatus(), claim.getNumber(),
                 claim.getSettledDue() == null ? null : new BigDecimal(claim.getSettledDue()),
                 claim.getOpenedBy(),
+                claim.getSheetId(), claim.getId());
+    }
+
+    /** The person's claims, newest first. */
+    public List<Claim> listOf(String sheetId, long personId) {
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC",
+                ROW, sheetId, personId);
+    }
+
+    /** Save a claim's binding by its person's last statement. */
+    public void updateBinding(Claim claim) {
+        jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet_id = ? AND id = ?",
+                claim.isStated(), claim.getStatedDue() == null ? null : new BigDecimal(claim.getStatedDue()),
                 claim.getSheetId(), claim.getId());
     }
 

@@ -5,7 +5,8 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 /** A claim of a person: an amount (two decimals, as text), a date (yyyy-MM-dd), a note and a status
  *  (a {@link ClaimStatus} name), and its number on the sheet (given when opened; none while a draft or
  *  once voided), its settled due (fixed when settled; none otherwise, or when there was no rate), and
- *  who opened it (none while a draft). */
+ *  who opened it (none while a draft), and whether its person's last statement bound it, with the
+ *  figure it bound (none when it had none): a bound claim shows and totals that figure. */
 public class Claim {
     private final long id;
     private final String sheetId;
@@ -17,11 +18,19 @@ public class Claim {
     private Long number;
     private String settledDue;
     private String openedBy;
+    private boolean stated;
+    private String statedDue;
     /** The number a claim had before this request cleared it (a void), for its audit line. */
     private Long numberHad;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, Long number, String settledDue, String openedBy) {
+        this(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, false, null);
+    }
+
+    public Claim(long id, String sheetId, long personId, String amount, String date, String note,
+            String status, Long number, String settledDue, String openedBy, boolean stated,
+            String statedDue) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -32,6 +41,8 @@ public class Claim {
         this.number = number;
         this.settledDue = settledDue;
         this.openedBy = openedBy;
+        this.stated = stated;
+        this.statedDue = statedDue;
     }
 
     public long getId() { return id; }
@@ -52,6 +63,28 @@ public class Claim {
 
     public String getOpenedBy() { return openedBy; }
     public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
+
+    public boolean isStated() { return stated; }
+    public String getStatedDue() { return statedDue; }
+
+    /** Bind to a figure (null: none), or unbind when not {@code stated}. */
+    public void bind(boolean stated, String statedDue) {
+        this.stated = stated;
+        this.statedDue = stated ? statedDue : null;
+    }
+
+    /** Whether it counts toward claimed, due-total and every total: only OPEN and SETTLED do. */
+    @JsonIgnore
+    public boolean isCounting() {
+        return ClaimStatus.OPEN.name().equals(status) || ClaimStatus.SETTLED.name().equals(status);
+    }
+
+    /** The due it shows: the one fixed when settled, else the one bound by a statement, else
+     *  {@code live} (the amount at the rate in force on its date; null: none). */
+    public String due(String live) {
+        if (settledDue != null) return settledDue;
+        return stated ? statedDue : live;
+    }
 
     /** Clear the number, keeping the one it had for the audit line. */
     public void clearNumber() {

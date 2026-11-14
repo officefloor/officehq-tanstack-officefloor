@@ -9,10 +9,12 @@ export type ClaimAction = 'open' | 'settle' | 'void';
 /** A claim: its amount as two-decimal text, its date (yyyy-MM-dd), its note, its status and its
  *  number on the sheet (given when opened; null while a draft or once voided), and its settled due
  *  (fixed when settled; null otherwise, or when there was no rate then — its due stays live), and who
- *  opened it (null while a draft; that user cannot settle it). */
+ *  opened it (null while a draft; that user cannot settle it), and whether its person's last statement
+ *  bound it, with the figure it bound (null when it had none): a bound claim shows and totals that. */
 export type Claim = {
   id: number; sheetId: string; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: number | null; settledDue: string | null; openedBy: string | null;
+  stated: boolean; statedDue: string | null;
 };
 export type ClaimInput = { amount: string; date: string; note: string };
 

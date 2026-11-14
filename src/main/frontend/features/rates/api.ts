@@ -63,16 +63,16 @@ export function dueOf(amount: string, pct: string | undefined): string | null {
   return formatCents(cents);
 }
 
-/** A claim's due: the one fixed when it was settled, else live at the grade's rate in force on the
- *  claim's date. */
+/** A claim's due: the one fixed when it was settled, else the one bound by its person's last
+ *  statement, else live at the grade's rate in force on the claim's date. */
 export const claimDue = (c: Claim, rates: Rate[] | undefined, grade: string) =>
-  c.settledDue ?? dueOf(c.amount, rateOn(rates, grade, c.date));
+  c.settledDue ?? (c.stated ? c.statedDue : dueOf(c.amount, rateOn(rates, grade, c.date)));
 
 /** A person's due-total: the sum of their counting claims' due figures (n/a ones skipped); n/a
- *  when their grade has no rate today (`pct`) and none of those claims keeps a settled figure. */
+ *  when their grade has no rate today (`pct`) and none of those claims keeps a settled or bound figure. */
 export function personDue(claims: Claim[], rates: Rate[] | undefined, grade: string, pct: string | undefined) {
   const own = claims.filter(counts);
-  if (pct === undefined && !own.some((c) => c.settledDue !== null)) return null;
+  if (pct === undefined && !own.some((c) => c.settledDue !== null || (c.stated && c.statedDue !== null))) return null;
   return sumDues(own.map((c) => claimDue(c, rates, grade)));
 }
 

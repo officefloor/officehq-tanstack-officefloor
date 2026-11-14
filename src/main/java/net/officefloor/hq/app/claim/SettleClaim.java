@@ -1,7 +1,5 @@
 package net.officefloor.hq.app.claim;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -11,7 +9,8 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** Settles a claim, fixing its due: its amount at its person's grade's rate in force on its date, rounded half to even to
- *  two decimals. With no rate the due is not fixed and stays live. Refused for the user who opened it (four eyes). */
+ *  two decimals (a claim bound by a statement: the figure it was bound to). With no rate the due is not
+ *  fixed and stays live. Refused for the user who opened it (four eyes). */
 public class SettleClaim {
     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
             PersonRepository people, RateRepository rates) throws ClaimStatusException {
@@ -23,8 +22,8 @@ public class SettleClaim {
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.getGrade(),
                 LocalDate.parse(claim.getDate()));
-        claim.setSettledDue(rate == null ? null
-                : new BigDecimal(claim.getAmount()).multiply(new BigDecimal(rate.pct()))
-                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN).toPlainString());
+        // A claim bound by a statement settles at the figure it was bound to.
+        claim.setSettledDue(claim.isStated() ? claim.getStatedDue()
+                : rate == null ? null : Dues.of(claim.getAmount(), rate.pct()));
     }
 }

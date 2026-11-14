@@ -4,8 +4,12 @@ import { sheetKey } from '../sheet/api';
 export type Grade = 'A' | 'B' | 'C';
 export const GRADES: Grade[] = ['A', 'B', 'C'];
 
-/** `version` is raised by every saved edit; an edit sends the version its form loaded. */
-export type Person = { id: number; sheetId: string; name: string; grade: Grade; version: number };
+/** `version` is raised by every saved edit; an edit sends the version its form loaded. Their
+ *  statements: how many were taken, and the last one's due-total and date (null until the first). */
+export type Person = {
+  id: number; sheetId: string; name: string; grade: Grade; version: number;
+  statementCount: number; statedTotal: string | null; statementDate: string | null;
+};
 export type PersonInput = { name: string; grade: string };
 
 const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/people`;
@@ -26,4 +30,10 @@ export function addPerson(sheetId: string, by: string, input: PersonInput): Prom
  *  else has saved the person since. */
 export function updatePerson(sheetId: string, by: string, id: number, version: number, input: PersonInput): Promise<Person> {
   return putJson<Person>(`${base(sheetId)}/${id}?by=${encodeURIComponent(by)}`, { ...input, version });
+}
+
+/** Take a statement of the person: records their due-total now and binds each of their counting
+ *  claims to the figure it shows now (unbinding the others). */
+export function takeStatement(sheetId: string, by: string, id: number): Promise<Person> {
+  return postJson<Person>(`${base(sheetId)}/${id}/statement?by=${encodeURIComponent(by)}`, {});
 }

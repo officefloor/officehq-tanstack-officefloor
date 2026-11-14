@@ -8,7 +8,8 @@ const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
 
 /** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
  *  with its status, its due (fixed when settled, else at the person's `grade`'s rate in force on the
- *  claim's date; none when there is no such rate)
+ *  claim's date, or bound by the person's last statement; none when there is no such rate), whether
+ *  it is stated,
  *  who opened it, and buttons that change its status (the user who opened a claim cannot settle it). */
 export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: {
   sheetId: string; user: string; personId: number; claims: Claim[]; grade: string; rates: Rate[] | undefined;
@@ -97,6 +98,9 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: 
               <td data-testid="claim-due">{showDue(claimDue(c, rates, grade))}</td>
               <td data-testid="claim-status">{c.status}</td>
               <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>
+              <td>
+                Stated <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>
+              </td>
               <td>
                 {(['open', 'settle', 'void'] as const).map((a) => (
                   <button key={a} type="button" data-testid={`claim-${a}`} disabled={move.isPending}

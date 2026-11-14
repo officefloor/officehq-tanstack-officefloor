@@ -6,13 +6,14 @@ import { PersonClaims } from '../claims/PersonClaims';
 import { claimsKey, listClaims, sumAmounts } from '../claims/api';
 import { listRates, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
 import { useSheetToday } from '../sheet/api';
-import { GRADES, addPerson, listPeople, peopleKey, updatePerson, type Person, type PersonInput } from './api';
+import { GRADES, addPerson, listPeople, peopleKey, takeStatement, updatePerson, type Person, type PersonInput } from './api';
 
 const EMPTY: PersonInput = { name: '', grade: 'A' };
 
 /** The people on the sheet: a form that adds a person or edits one, and the list in added order,
  *  each with their claimed total, their due-total (the sum of their claims' due figures; n/a
- *  when their grade has no rate on the sheet's today and no settled claim keeps a figure) and their claims. */
+ *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
+ *  their statements (a button that takes one, the count, the last one's due-total and date) and their claims. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
@@ -47,6 +48,23 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   });
 
   const submitOnce = useSubmitOnce();
+  const stateOnce = useSubmitOnce();
+
+  // The person whose last statement was refused; cleared by the next statement taken here.
+  const statement = useMutation({
+    mutationFn: (id: number) => takeStatement(sheetId, user, id),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    ]),
+  });
+
+  const state = (id: number) => {
+    stateOnce(() => {
+      statement.reset();
+      return statement.mutateAsync(id);
+    });
+  };
 
   const change = (patch: Partial<PersonInput>) => {
     setForm((f) => ({ ...f, ...patch }));
@@ -129,6 +147,18 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
                     Edit
                   </button>
+                </td>
+                <td>
+                  <button type="button" data-testid="person-statement" disabled={statement.isPending}
+                    onClick={() => state(p.id)}>
+                    Statement
+                  </button>{' '}
+                  Statements <span data-testid="person-statement-count">{p.statementCount}</span>{' '}
+                  last <span data-testid="person-stated-total">{p.statedTotal ?? ''}</span>{' '}
+                  on <span data-testid="person-statement-date">{p.statementDate ?? ''}</span>
+                  {statement.isError && statement.variables === p.id && (
+                    <span data-testid="person-error">The statement could not be taken.</span>
+                  )}
                 </td>
                 <td>
                   <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} grade={p.grade} rates={rates.data} />
