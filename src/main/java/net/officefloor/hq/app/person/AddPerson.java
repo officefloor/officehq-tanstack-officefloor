@@ -10,9 +10,12 @@ public class AddPerson {
     public void add(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by,
             @Val PersonRequest request, SheetRepository sheets, PersonRepository people,
-            Out<Person> person) {
+            Out<Person> person) throws InvalidPersonException {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
+        if (people.nameTaken(id, request.name(), null)) {
+            throw new InvalidPersonException("The name is already in use");
+        }
         sheets.open(id, user);
         person.set(people.add(id, request.name(), request.grade(), user));
     }

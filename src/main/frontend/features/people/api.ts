@@ -16,7 +16,7 @@ export function listPeople(sheetId: string): Promise<Person[]> {
   return getJson<Person[]>(base(sheetId));
 }
 
-/** Add a person; refused (rejects) when the name is empty. */
+/** Add a person; refused (rejects) when the name is empty or already in use on the sheet. */
 export function addPerson(sheetId: string, by: string, input: PersonInput): Promise<Person> {
   return postJson<Person>(`${base(sheetId)}?by=${encodeURIComponent(by)}`, input);
 }

@@ -70,7 +70,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
             Cancel
           </button>
         )}
-        {save.isError && <span data-testid="person-form-error">A person needs a name.</span>}
+        {save.isError && <span data-testid="person-form-error">A person needs a name not already in use.</span>}
       </form>
       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
       <table>

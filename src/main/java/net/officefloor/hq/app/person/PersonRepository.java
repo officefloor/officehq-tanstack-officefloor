@@ -30,6 +30,14 @@ public class PersonRepository {
                 ROW, sheetId, id).stream().findFirst().orElse(null);
     }
 
+    /** Whether another person on the sheet already has this name, compared ignoring case and surrounding spaces. */
+    public boolean nameTaken(String sheetId, String name, Long exceptId) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?)) AND (? IS NULL OR id <> ?)",
+                Integer.class, sheetId, name, exceptId, exceptId);
+        return n != null && n > 0;
+    }
+
     public Person add(String sheetId, String name, String grade, String user) {
         GeneratedKeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
