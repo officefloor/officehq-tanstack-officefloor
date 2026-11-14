@@ -26,6 +26,8 @@ public class Claim {
     private String roundDate;
     private String dueBy;
     private List<String> log = List.of();
+    private String deferredUntil;
+    private boolean deferred;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, String number, String settledDue, String openedBy) {
@@ -85,6 +87,23 @@ public class Claim {
     /** Its status log, oldest first (see {@link ClaimLogRepository}). */
     public List<String> getLog() { return log; }
     public void setLog(List<String> log) { this.log = log; }
+
+    /** The date it was last deferred until (yyyy-MM-dd; none: never deferred). */
+    public String getDeferredUntil() { return deferredUntil; }
+
+    /** Whether it is deferred on the sheet's today: OPEN and deferred until a later date. A deferred
+     *  claim counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
+    public boolean isDeferred() { return deferred; }
+
+    public void setDeferral(String deferredUntil, boolean deferred) {
+        this.deferredUntil = deferredUntil;
+        this.deferred = deferred;
+    }
+
+    /** Defer it until a date after the sheet's today. */
+    public void defer(String until) {
+        setDeferral(until, true);
+    }
 
     public boolean isStated() { return stated; }
     public String getStatedDue() { return statedDue; }

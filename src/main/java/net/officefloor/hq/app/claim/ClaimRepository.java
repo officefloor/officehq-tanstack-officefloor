@@ -13,7 +13,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, "
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, "
+            // Deferred now: OPEN and deferred until a date after the sheet's today.
+            + "(status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > "
+            + "(SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred, "
             // The date it rounds by: a correction's is the date of the claim it corrects.
             + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = claim.sheet_id AND k.number = claim.corrects), "
             + "claim_date) AS round_date";
@@ -29,10 +32,13 @@ public class ClaimRepository {
             rs.getBigDecimal("stated_due") == null ? null
                     : rs.getBigDecimal("stated_due").setScale(2).toPlainString()), rs.getString("corrects"),
             rs.getObject("round_date", LocalDate.class).toString(),
-            rs.getObject("due_by", LocalDate.class).toString());
+            rs.getObject("due_by", LocalDate.class).toString(),
+            rs.getObject("deferred_until", LocalDate.class), rs.getBoolean("deferred"));
 
-    private static Claim withCorrects(Claim claim, String corrects, String roundDate, String dueBy) {
+    private static Claim withCorrects(Claim claim, String corrects, String roundDate, String dueBy,
+            LocalDate deferredUntil, boolean deferred) {
         claim.setCorrects(corrects);
+        claim.setDeferral(deferredUntil == null ? null : deferredUntil.toString(), deferred);
         claim.setDueBy(dueBy);
         claim.setRoundDate(roundDate);
         return claim;
@@ -111,6 +117,13 @@ public class ClaimRepository {
     public List<Claim> listOf(String sheetId, long personId) {
         return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY list_seq DESC, id DESC",
                 ROW, sheetId, personId);
+    }
+
+    /** Save the date a claim is deferred until. */
+    public void updateDeferral(Claim claim) {
+        jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ?",
+                claim.getDeferredUntil() == null ? null : LocalDate.parse(claim.getDeferredUntil()),
+                claim.getSheetId(), claim.getId());
     }
 
     /** Save a claim's binding by its person's last statement. */

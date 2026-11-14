@@ -36,6 +36,9 @@ public class SettleClaim {
         if (!ClaimStatus.OPEN.name().equals(claim.getStatus())) {
             throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be settled");
         }
+        if (claim.isDeferred()) {
+            throw new ClaimStatusException("A deferred claim cannot be settled until " + claim.getDeferredUntil());
+        }
         ClaimStatus settled = ClaimStatus.OPEN.moveTo(ClaimStatus.SETTLED);
         if (claim.getOpenedBy() != null && claim.getOpenedBy().equals(by == null ? "" : by)) {
             throw new ClaimStatusException("The user who opened a claim cannot settle it");

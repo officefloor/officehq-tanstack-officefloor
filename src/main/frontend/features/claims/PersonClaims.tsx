@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import type { DatedOn } from '../settings/api';
-import { addClaim, claimsKey, dueBy, isOverdue, moveClaim, reassignClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
+import { addClaim, claimsKey, deferClaim, dueBy, isOverdue, moveClaim, reassignClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
 
@@ -25,7 +25,9 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  charge) the number of the SETTLED claim it corrects. Only a DRAFT can be edited:
  *  editing any other claim is refused with an error on the claim. A steward can move a DRAFT, OPEN or
  *  PENDING claim to another person picked beside it (any other refused with an error on the claim), and
- *  re-settle a SETTLED one (anyone else, any other status or a claim in a closed period refused likewise). */
+ *  re-settle a SETTLED one (anyone else, any other status or a claim in a closed period refused likewise).
+ *  An OPEN claim can be deferred until a date typed beside it, after the sheet's today (any other claim, date,
+ *  or a claim in a closed period refused with an error on the claim); whether it is deferred, and until when, is shown. */
 export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, today, charges, selected, onSelect, people }: {
   sheetId: string; user: string; personId: number; claims: Claim[]; gradeOn: GradeOn; rates: Rate[] | undefined;
   floor: DatedOn; today: string; charges: Late;
@@ -70,6 +72,25 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
   const [targets, setTargets] = useState<Record<number, string>>({});
   const others = people.filter((p) => p.id !== personId);
 
+  // The date typed for each claim to defer it until.
+  const [deferDates, setDeferDates] = useState<Record<number, string>>({});
+
+  const deferral = useMutation({
+    mutationFn: (v: { id: number; until: string }) => deferClaim(sheetId, user, v.id, v.until),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
+
+  const defer = (id: number) => {
+    const until = (deferDates[id] ?? '').trim();
+    actOnce(() => {
+      move.reset();
+      reassign.reset();
+      deferral.reset();
+      setEditRefused(null);
+      return deferral.mutateAsync({ id, until });
+    });
+  };
+
   const reassign = useMutation({
     mutationFn: (v: { id: number; to: number }) => reassignClaim(sheetId, user, v.id, v.to),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
@@ -80,6 +101,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     actOnce(() => {
       move.reset();
       reassign.reset();
+      deferral.reset();
       setEditRefused(null);
       return reassign.mutateAsync({ id, to });
     });
@@ -89,6 +111,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     actOnce(() => {
       move.reset();
       reassign.reset();
+      deferral.reset();
       setEditRefused(null);
       return move.mutateAsync({ id, action });
     });
@@ -102,6 +125,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
   const open = (c: Claim) => {
     move.reset();
     reassign.reset();
+    deferral.reset();
     if (c.status !== 'DRAFT') {
       setEditRefused(c.id);
       return;
@@ -172,6 +196,10 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
               <td>
                 Stated <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>
               </td>
+              <td>
+                Deferred <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
+                until <span data-testid="claim-deferred-until">{c.deferred ? c.deferredUntil ?? '' : ''}</span>
+              </td>
               <td data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</td>
               <td>
                 {(c.log ?? []).map((line, i) => <div key={i} data-testid="claim-log-line">{line}</div>)}
@@ -191,6 +219,15 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 <button type="button" data-testid="claim-reject" disabled={move.isPending}
                   onClick={() => act(c.id, 'reject')}>
                   {LABELS.reject}
+                </button>{' '}
+                <input type="date" data-testid="claim-defer-date" value={deferDates[c.id] ?? ''}
+                  onChange={(e) => {
+                    setDeferDates((d) => ({ ...d, [c.id]: e.target.value }));
+                    if (deferral.variables?.id === c.id) deferral.reset();
+                  }} />{' '}
+                <button type="button" data-testid="claim-defer" disabled={deferral.isPending}
+                  onClick={() => defer(c.id)}>
+                  Defer
                 </button>{' '}
                 <select data-testid="claim-reassign-to" value={targets[c.id] ?? String(others[0]?.id ?? '')}
                   onChange={(e) => {
@@ -221,6 +258,8 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     ? 'A claim dated inside a closed period cannot be changed.'
                     : move.error instanceof HttpError && move.error.status === 400
                     ? 'A rejection needs a reason.'
+                    : c.deferred && move.variables.action === 'settle'
+                    ? `A deferred claim cannot be settled until ${c.deferredUntil}.`
                     : c.status === 'OPEN' && move.variables.action === 'settle'
                     ? 'The user who opened a claim cannot settle it.'
                     : c.status === 'PENDING' && move.variables.action === 'approve'
@@ -230,6 +269,13 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     : c.status === 'SETTLED' && move.variables.action === 'resettle'
                     ? 'Only a steward can re-settle a claim.'
                     : `A ${c.status} claim cannot be ${DONE[move.variables.action]}.`}</span>
+                )}
+                {deferral.isError && deferral.variables?.id === c.id && (
+                  <span data-testid="claim-error">{deferral.error instanceof HttpError && deferral.error.status === 423
+                    ? 'A claim dated inside a closed period cannot be deferred.'
+                    : deferral.error instanceof HttpError && deferral.error.status === 400
+                    ? 'A claim can only be deferred to a date after the sheet\'s today.'
+                    : `A ${c.status} claim cannot be deferred.`}</span>
                 )}
                 {reassign.isError && reassign.variables?.id === c.id && (
                   <span data-testid="claim-error">{reassign.error instanceof HttpError && reassign.error.status === 423

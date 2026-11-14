@@ -25,12 +25,15 @@ export const isBound = (c: Claim) => c.stated && c.statedDue !== null && c.statu
  *  `roundDate` is the date its live figures round by: its own, or a correction's claim's it corrects.
  *  `dueBy` (yyyy-MM-dd) is fixed when it was added: its date then plus the terms of its person's
  *  grade in force on that date (the grade's own, else the sheet's). `log` is its status log, oldest
- *  first: `<STATUS> by <user> on <date> due=<due>`, the sheet's today and its due at each change. */
+ *  first: `<STATUS> by <user> on <date> due=<due>`, the sheet's today and its due at each change.
+ *  `deferredUntil` is the date it was last deferred until (null: never), and `deferred` whether it is
+ *  deferred on the sheet's today (OPEN and deferred until a later date): a deferred claim counts in no
+ *  total, is not overdue, cannot be settled and is left unbound by a statement. */
 export type Claim = {
   id: number; sheetId: string; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null;
   stated: boolean; statedDue: string | null; corrects: string | null; roundDate: string; dueBy: string;
-  log: string[];
+  log: string[]; deferredUntil: string | null; deferred: boolean;
 };
 /** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects. */
 export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
@@ -68,6 +71,12 @@ export function moveClaim(sheetId: string, by: string, id: number, action: Claim
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/${action}?by=${encodeURIComponent(by)}${extra}`, {});
 }
 
+/** Defer an OPEN claim until a date after the sheet's today; refused (rejects) when it is not OPEN,
+ *  the date is not after today, or it is dated in a closed period. */
+export function deferClaim(sheetId: string, by: string, id: number, until: string): Promise<Claim> {
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/defer?by=${encodeURIComponent(by)}&until=${encodeURIComponent(until)}`, {});
+}
+
 /** A steward moves a DRAFT, OPEN or PENDING claim to another person (`toPersonId`): it keeps its
  *  number and date, loses any figure a statement bound it to, and is listed as that person's newest
  *  claim. Refused (rejects) for anyone else, for a SETTLED or VOID claim, or one dated in a closed period. */
@@ -78,13 +87,13 @@ export function reassignClaim(sheetId: string, by: string, id: number, toPersonI
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED do. */
 export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
 
-/** The claims that count in live totals: all but the open claims dated within one of their
+/** The claims that count in live totals: all but the deferred claims and the open claims dated within one of their
  *  person's holds (`to` null: open-ended) that no statement bound (SETTLED and bound claims still count). */
 export function liveClaims(claims: Claim[],
   people: Array<{ id: number; holds: Array<{ from: string; to: string | null }> }> | undefined): Claim[] {
   const holds = new Map((people ?? []).map((p) => [p.id, p.holds]));
   const held = (c: Claim) => (holds.get(c.personId) ?? []).some((h) => h.from <= c.date && (h.to === null || c.date <= h.to));
-  return claims.filter((c) => !(isOpen(c) && !c.stated && held(c)));
+  return claims.filter((c) => !c.deferred && !(isOpen(c) && !c.stated && held(c)));
 }
 
 /** Sum the amounts of the claims that count (see `counts`) exactly (in cents), shown with two decimals. */
@@ -96,9 +105,9 @@ export function sumAmounts(claims: Claim[]): string {
 /** A claim's due-by (yyyy-MM-dd), fixed when it was added. */
 export const dueBy = (c: Claim): string => c.dueBy;
 
-/** Whether a claim is overdue: it is open (OPEN or PENDING) and its due-by is before the sheet's `today`. */
+/** Whether a claim is overdue: it is open (OPEN or PENDING), not deferred, and its due-by is before the sheet's `today`. */
 export const isOverdue = (c: Claim, today: string) =>
-  isOpen(c) && today !== '' && dueBy(c) < today;
+  isOpen(c) && !c.deferred && today !== '' && dueBy(c) < today;
 
 /** How many of the selected claims a bulk open opened, and how many it refused (left as they were). */
 export type BulkOpenResult = { opened: number; refused: number };

@@ -37,9 +37,9 @@ public final class Dues {
 
     /** The late charge on a claim's figure: the late percent of it for every full 30 days its open (OPEN or PENDING)
      *  claim is past its due-by (fixed when it was added) on the sheet's today, rounded by the
-     *  policy date to two decimals; none (0.00) when it is not overdue, or on a correction. */
+     *  policy date to two decimals; none (0.00) when it is not overdue (a deferred claim never is), or on a correction. */
     public static BigDecimal charge(Claim claim, String figure, Late late) {
-        if (figure == null || isCorrection(claim.getAmount()) || !ClaimStatus.isOpen(claim.getStatus())) return BigDecimal.ZERO.setScale(2);
+        if (figure == null || isCorrection(claim.getAmount()) || !ClaimStatus.isOpen(claim.getStatus()) || claim.isDeferred()) return BigDecimal.ZERO.setScale(2);
         LocalDate dueBy = LocalDate.parse(claim.getDueBy());
         long periods = Math.max(0, ChronoUnit.DAYS.between(dueBy, late.today())) / 30;
         return new BigDecimal(figure).multiply(new BigDecimal(late.pct().on(claim.getDate())))

@@ -100,9 +100,9 @@ public class Person {
     public void setPatronIds(java.util.List<Long> patronIds) { this.patronIds = patronIds; }
 
     /** Whether the claim counts in live totals: it counts by status, and is not an open (OPEN or
-     *  PENDING) claim dated within one of their holds that no statement bound. */
+     *  PENDING) claim dated within one of their holds that no statement bound, nor a deferred one. */
     public boolean countsLive(Claim claim) {
-        return claim.isCounting()
+        return claim.isCounting() && !claim.isDeferred()
                 && !(ClaimStatus.isOpen(claim.getStatus()) && !claim.isStated()
                         && holds.stream().anyMatch((h) -> h.covers(claim.getDate())));
     }
