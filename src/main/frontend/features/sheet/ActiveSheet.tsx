@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useSheetId, useUser } from '../session/session';
 import { openSheet, sheetKey } from './api';
+import { SheetToday } from './SheetToday';
 
 /** The loaded sheet: its id, then everything kept on it (the sheet.body region). */
 export function ActiveSheet() {
@@ -22,6 +23,7 @@ export function ActiveSheet() {
       <h2>
         Sheet <span data-testid="sheet-current-id">{sheet.data.id}</span>
       </h2>
+      <SheetToday key={sheet.data.id} sheet={sheet.data} user={user} />
       <SheetBody.Slot sheetId={sheet.data.id} user={user} />
     </section>
   );

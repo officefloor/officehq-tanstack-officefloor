@@ -1,12 +1,21 @@
 import { postJson } from '../../api/http';
 
-export type Sheet = { id: string; createdBy: string };
+/** `today` is the sheet's own date (yyyy-MM-dd): every date decision and default uses it. */
+export type Sheet = { id: string; createdBy: string; today: string };
 
 /** Load a sheet by id; the server starts it empty the first time the id is used. */
 export function openSheet(id: string, by: string): Promise<Sheet> {
   return postJson<Sheet>(
     `/api/sheets/${encodeURIComponent(id)}/open?by=${encodeURIComponent(by)}`,
     {},
+  );
+}
+
+/** Change the sheet's today; refused (rejects) when it is not a date. */
+export function setSheetToday(id: string, by: string, today: string): Promise<Sheet> {
+  return postJson<Sheet>(
+    `/api/sheets/${encodeURIComponent(id)}/today?by=${encodeURIComponent(by)}`,
+    { today },
   );
 }
 
