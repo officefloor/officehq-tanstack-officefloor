@@ -29,7 +29,8 @@ public class ValidateSettingsRequest {
             Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate,
             Out<PeriodNumberingFrom> periodNumberingFrom, Out<EntryDate> entryDate, Out<GradeTerms> gradeTerms, Out<Cap> cap,
             Out<ProofThreshold> proofThreshold, Out<NoteThreshold> noteThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays,
-            Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold, Out<Pot> pot, Out<Parent> parent)
+            Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold, Out<Pot> pot, Out<Parent> parent,
+            Out<FiscalStartMonth> fiscalStartMonth)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -48,6 +49,22 @@ public class ValidateSettingsRequest {
         gradeProofThreshold.set(gradeProofThreshold(request.gradeProofThreshold(), request.gradeProofThresholdFrom()));
         pot.set(pot(request.pot()));
         parent.set(parent(request.parent()));
+        fiscalStartMonth.set(fiscalStartMonth(request.fiscalStartMonth()));
+    }
+
+    private static FiscalStartMonth fiscalStartMonth(String requested) throws InvalidSettingException {
+        if (requested == null) {
+            return new FiscalStartMonth(false, SettingRepository.DEFAULT_FISCAL_START_MONTH);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new FiscalStartMonth(true, SettingRepository.DEFAULT_FISCAL_START_MONTH);
+        }
+        int month = value.matches("\\d{1,2}") ? Integer.parseInt(value) : 0;
+        if (month < 1 || month > 12) {
+            throw new InvalidSettingException("The fiscal start month must be a month from 1 to 12, or blank.");
+        }
+        return new FiscalStartMonth(true, month);
     }
 
     private static Parent parent(String requested) {

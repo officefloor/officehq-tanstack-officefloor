@@ -54,6 +54,7 @@ type SettingsInput = {
   graceDays?: string;
   pot?: string;
   parent?: string;
+  fiscalStartMonth?: string;
 };
 
 /** The from-date field of each dated setting, by its key as the screen names it (terms-A for a grade's terms). */
@@ -73,6 +74,7 @@ type Touched = {
   graceDays: boolean;
   pot: boolean;
   parent: boolean;
+  fiscalStartMonth: boolean;
 };
 
 const UNTOUCHED: Touched = {
@@ -89,10 +91,11 @@ const UNTOUCHED: Touched = {
   graceDays: false,
   pot: false,
   parent: false,
+  fiscalStartMonth: false,
 };
 
 // The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and entry date (blank: off) and cap (blank: none) and proof threshold (blank: none) and each grade's proof threshold (blank: the sheet's) and note threshold (blank: none) in force, and the
-// permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the pot (blank: none; not dated), and the parent sheet (blank: none; not dated), and the form that sets them. Saving sends
+// permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the pot (blank: none; not dated), and the parent sheet (blank: none; not dated), and the fiscal year start month (1 to 12; blank: 1; not dated), and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing. A dated setting (the clerk
 // limit, floor, terms, each grade's terms, late percent, cap, proof threshold, each grade's proof threshold and note threshold) is recorded from the date typed beside it (blank: the
 // sheet's today); the value shown is the one in force on the sheet's today.
@@ -120,6 +123,7 @@ export function SettingsForm() {
   const [graceDays, setGraceDays] = useState('');
   const [pot, setPot] = useState('');
   const [parent, setParent] = useState('');
+  const [fiscalStartMonth, setFiscalStartMonth] = useState('');
   const [perms, setPerms] = useState<Record<string, string>>({});
   const [touchedPerms, setTouchedPerms] = useState<Record<string, boolean>>({});
   const [froms, setFroms] = useState<Froms>({});
@@ -151,6 +155,7 @@ export function SettingsForm() {
       setGraceDays('');
       setPot('');
       setParent('');
+      setFiscalStartMonth('');
       setPerms({});
       setTouchedPerms({});
       setFroms({});
@@ -352,6 +357,14 @@ export function SettingsForm() {
     if (touched.parent) {
       input.parent = parent.trim();
     }
+    if (touched.fiscalStartMonth) {
+      const value = fiscalStartMonth.trim();
+      if (value !== '' && !(/^\d{1,2}$/.test(value) && Number(value) >= 1 && Number(value) <= 12)) {
+        setError('Type a fiscal year start month from 1 to 12, or leave it blank for 1.');
+        return;
+      }
+      input.fiscalStartMonth = value;
+    }
     for (const a of PERMISSION_ACTIONS) {
       if (!touchedPerms[a]) continue;
       const value = (perms[a] ?? '').trim();
@@ -378,7 +391,8 @@ export function SettingsForm() {
       input.permissions === undefined &&
       input.graceDays === undefined &&
       input.pot === undefined &&
-      input.parent === undefined
+      input.parent === undefined &&
+      input.fiscalStartMonth === undefined
     )
       return;
     once(() => save.mutateAsync(input));
@@ -449,6 +463,10 @@ export function SettingsForm() {
       </p>
       <p>
         Parent sheet: <span data-testid="setting-parent-current">{settings?.parent ?? ''}</span>
+      </p>
+      <p>
+        Fiscal year start month:{' '}
+        <span data-testid="setting-fiscal-start-month-current">{settings?.fiscalStartMonth ?? ''}</span>
       </p>
       {PERMISSION_ACTIONS.map((a) => (
         <p key={a}>
@@ -651,6 +669,17 @@ export function SettingsForm() {
           onChange={(e) => {
             setParent(e.target.value);
             setTouched((t) => ({ ...t, parent: true }));
+            setError('');
+          }}
+        />
+        <input
+          data-testid="setting-fiscal-start-month"
+          placeholder="Fiscal year start month, 1 to 12 (blank: 1)"
+          value={fiscalStartMonth}
+          onFocus={() => setTouched((t) => ({ ...t, fiscalStartMonth: true }))}
+          onChange={(e) => {
+            setFiscalStartMonth(e.target.value);
+            setTouched((t) => ({ ...t, fiscalStartMonth: true }));
             setError('');
           }}
         />

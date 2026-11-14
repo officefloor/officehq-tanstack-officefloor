@@ -24,9 +24,14 @@ public class BuildGeneratedPeriods {
         if (to.isBefore(from)) {
             throw new InvalidPeriodException("The to-date must not be before the from-date.");
         }
+        generated.set(months(sheet, repository, YearMonth.from(from), YearMonth.from(to)));
+    }
+
+    /** One period per calendar month from the first month to the last, leaving out those not free on the sheet. */
+    static GeneratedPeriods months(Sheet sheet, PeriodRepository repository, YearMonth first, YearMonth last) {
         List<Period> existing = repository.findAll(sheet.id());
         List<Period> made = new ArrayList<>();
-        for (YearMonth month = YearMonth.from(from); !month.isAfter(YearMonth.from(to)); month = month.plusMonths(1)) {
+        for (YearMonth month = first; !month.isAfter(last); month = month.plusMonths(1)) {
             Period period = new Period(sheet.id(), month.toString(), month.atDay(1), month.atEndOfMonth());
             boolean free = existing.stream()
                     .noneMatch((other) -> other.name().equalsIgnoreCase(period.name()) || other.overlaps(period));
@@ -34,7 +39,7 @@ public class BuildGeneratedPeriods {
                 made.add(period);
             }
         }
-        generated.set(new GeneratedPeriods(List.copyOf(made)));
+        return new GeneratedPeriods(List.copyOf(made));
     }
 
     private static LocalDate date(String value, String label, LocalDate today) throws InvalidPeriodException {

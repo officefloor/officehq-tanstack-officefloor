@@ -6,8 +6,8 @@ import { useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { useRates } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { useDueRules } from '../settings/settings';
-import { periodDue, periodsKey, usePeriods } from './periods';
+import { useDueRules, useSettings } from '../settings/settings';
+import { fiscalYearOf, periodDue, periodsKey, usePeriods } from './periods';
 import type { Period, PeriodInput } from './periods';
 import { useOneAtATime } from '../../query/useOneAtATime';
 
@@ -25,6 +25,7 @@ export function Periods() {
   const people = usePeople().data ?? [];
   const rates = useRates().data ?? [];
   const rules = useDueRules();
+  const fiscalStartMonth = Number(useSettings().data?.fiscalStartMonth || 1);
   const [form, setForm] = useState<PeriodInput>(EMPTY);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
@@ -56,6 +57,21 @@ export function Periods() {
       setMade(result.made);
     },
     onError: () => setGenError('No periods were generated: the to-date must not be before the from-date.'),
+  });
+
+  // The fiscal year form: the twelve monthly periods of the fiscal year typed, made as the generate form makes them.
+  const [fyYear, setFyYear] = useState('');
+  const generateFy = useMutation({
+    mutationFn: (input: { year: string }) =>
+      postJson<{ made: number }>(
+        `/api/sheets/${encodeURIComponent(sheet)}/generate-fiscal-year?user=${encodeURIComponent(user)}`,
+        input,
+      ),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheet) });
+      setMade(result.made);
+    },
+    onError: () => setGenError('No periods were generated: type the fiscal year as yyyy.'),
   });
 
   // The period whose close or reopen was refused, and why; cleared by the next action on a period.
@@ -118,6 +134,18 @@ export function Periods() {
     once(() => generate.mutateAsync(input));
   };
 
+  const submitGenerateFy = (e: FormEvent) => {
+    e.preventDefault();
+    setGenError('');
+    setMade(undefined);
+    const year = fyYear.trim();
+    if (!/^\d{4}$/.test(year)) {
+      setGenError('Type the fiscal year as yyyy.');
+      return;
+    }
+    once(() => generateFy.mutateAsync({ year }));
+  };
+
   const changeGenerate = (patch: Partial<{ from: string; to: string }>) => {
     setGen((g) => ({ ...g, ...patch }));
     setGenError('');
@@ -138,6 +166,7 @@ export function Periods() {
             <th>To</th>
             <th>Due</th>
             <th>Closed</th>
+            <th>Fiscal year</th>
             <th />
           </tr>
         </thead>
@@ -149,6 +178,7 @@ export function Periods() {
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-due-total">{periodDue(p, claims, people, rates, rules)}</td>
               <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
+              <td data-testid="period-fy">{fiscalYearOf(p.from, fiscalStartMonth)}</td>
               <td>
                 <button
                   type="button"
@@ -236,6 +266,20 @@ export function Periods() {
           </>
         )}
         {genError && <span data-testid="period-generate-error">{genError}</span>}
+      </form>
+      <form onSubmit={submitGenerateFy} data-testid="period-generate-fy-form">
+        <input
+          data-testid="period-generate-fy-year"
+          placeholder="Fiscal year yyyy"
+          value={fyYear}
+          onChange={(e) => {
+            setFyYear(e.target.value);
+            setGenError('');
+          }}
+        />
+        <button type="submit" data-testid="period-generate-fy" disabled={generateFy.isPending}>
+          Generate fiscal year
+        </button>
       </form>
     </section>
   );

@@ -41,6 +41,15 @@ export function usePeriods() {
   });
 }
 
+/**
+ * The fiscal year the date (yyyy-MM-dd) falls in, FY<yyyy>: a fiscal year starts on the first of the start month (1 to 12)
+ * and is named by the calendar year that first day falls in.
+ */
+export const fiscalYearOf = (date: string, startMonth: number) => {
+  const year = Number(date.slice(0, 4));
+  return `FY${Number(date.slice(5, 7)) < startMonth ? year - 1 : year}`;
+};
+
 /** Whether the date (yyyy-MM-dd) falls in the period, both ends included. */
 export const contains = (p: Period, date: string) => p.from <= date && date <= p.to;
 

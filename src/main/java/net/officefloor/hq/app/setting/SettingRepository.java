@@ -25,6 +25,9 @@ public class SettingRepository {
     /** The late percent a sheet starts with. */
     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
 
+    /** The fiscal year start month a sheet starts with. */
+    public static final int DEFAULT_FISCAL_START_MONTH = 1;
+
     private final JdbcTemplate jdbc;
 
     public SettingRepository(JdbcTemplate jdbc) {
@@ -42,7 +45,7 @@ public class SettingRepository {
         return new Settings(sheetId, dated.clerkLimitOn(today), dated.floorOn(today), dated.termsOn(today),
                 dated.gradeTermsOn(today), dated.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), entryDate(sheetId),
                 dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId), graceDays(sheetId),
-                today, delegations(sheetId), pot(sheetId), parent(sheetId));
+                today, delegations(sheetId), pot(sheetId), parent(sheetId), fiscalStartMonth(sheetId));
     }
 
     /** The sheet's dated settings: every value recorded, by key and from-date. */
@@ -141,6 +144,18 @@ public class SettingRepository {
     /** Set the sheet's parent sheet id (null: none). */
     public void saveParent(String sheetId, String parent) {
         jdbc.update("UPDATE sheet SET parent_id = ? WHERE id = ?", parent, sheetId);
+    }
+
+    /** The sheet's fiscal year start month, 1 to 12. */
+    public int fiscalStartMonth(String sheetId) {
+        List<Integer> month = jdbc.query("SELECT fiscal_start_month FROM sheet WHERE id = ?",
+                (rs, n) -> rs.getInt("fiscal_start_month"), sheetId);
+        return month.isEmpty() ? DEFAULT_FISCAL_START_MONTH : month.get(0);
+    }
+
+    /** Set the sheet's fiscal year start month, 1 to 12. */
+    public void saveFiscalStartMonth(String sheetId, int month) {
+        jdbc.update("UPDATE sheet SET fiscal_start_month = ? WHERE id = ?", month, sheetId);
     }
 
     /** The sheet's grace days (null: blank, off). */
