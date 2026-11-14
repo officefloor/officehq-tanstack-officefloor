@@ -6,7 +6,7 @@ import { useDueRules, useSettings } from '../settings/settings';
 import { personOverdue } from '../overdue/overdue';
 import { band, score } from './score';
 
-// A person's score: their settled counting figures / 100, minus 5 per overdue counting claim, rounded half to even.
+// A person's score: their settled counting figures (leaving out corrections) / 100, minus 5 per overdue counting claim, rounded half to even.
 export function PersonScore({ person }: { person: Person }) {
   return <td data-testid="person-score">{usePersonScore(person)}</td>;
 }
@@ -23,7 +23,8 @@ function usePersonScore(person: Person): string {
   const rules = useDueRules();
   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
   const holds = liveHolds(person, rules.today);
-  const { settled } = personSplit(claims, rates, person.grades, holds, rules);
+  // Corrections are left out of the settled figures the score counts.
+  const { settled } = personSplit(claims.filter((c) => c.corrects == null), rates, person.grades, holds, rules);
   const { count } = personOverdue(claims, rates, person.grades, holds, rules);
   return score(settled, count);
 }

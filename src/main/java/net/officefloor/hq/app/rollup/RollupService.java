@@ -91,7 +91,7 @@ public class RollupService {
                     if (late) {
                         overdue = overdue.add(figure);
                     }
-                    if (claim.status() == ClaimStatus.SETTLED) {
+                    if (claim.status() == ClaimStatus.SETTLED && !claim.correction()) {
                         settled = settled.add(figure);
                     }
                 }
@@ -111,7 +111,7 @@ public class RollupService {
     }
 
     /**
-     * A person's score: their settled counting claims' dues / 100, minus 5 per overdue counting claim, rounded half to
+     * A person's score: their settled counting claims' dues (leaving out corrections) / 100, minus 5 per overdue counting claim, rounded half to
      * even to a whole number.
      */
     private static String score(BigDecimal settled, int overdueCount) {
