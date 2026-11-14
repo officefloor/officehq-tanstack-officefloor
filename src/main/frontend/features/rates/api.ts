@@ -65,9 +65,9 @@ export function dueOf(amount: string, pct: string | undefined, floor: string, ha
   return formatCents(cents < least && hundredths(amount) >= 0n ? least : cents);
 }
 
-/** What a claim's late charge goes by: the sheet's late percent, its terms (days) and its today;
+/** What a claim's late charge goes by: the sheet's late percent and its today (a claim's due-by is its own);
  *  and the sheet's policy date (its today when blank), which decides how a claim's live figures round. */
-export type Late = { pct: string; terms: number; today: string; policy: string };
+export type Late = { pct: string; today: string; policy: string };
 
 /** Whether a claim's live figures round half up: its round date (its own, or for a correction the
  *  date of the claim it corrects) is before the policy date; else they round half to even. */
@@ -77,8 +77,8 @@ export const roundsHalfUp = (c: Claim, late: Late) => (c.roundDate ?? c.date) < 
  *  past its due-by on the sheet's today, rounded by the policy date to two decimals (0 when not overdue, and
  *  on a correction). */
 export function lateCharge(c: Claim, figure: string, late: Late): bigint {
-  if (isCorrection(c) || !isOverdue(c, late.terms, late.today)) return 0n;
-  const days = (Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(c, late.terms)}T00:00:00Z`)) / 86_400_000;
+  if (isCorrection(c) || !isOverdue(c, late.today)) return 0n;
+  const days = (Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(c)}T00:00:00Z`)) / 86_400_000;
   return roundPct(hundredths(figure) * hundredths(late.pct) * BigInt(Math.floor(days / 30)), roundsHalfUp(c, late));
 }
 
@@ -119,8 +119,8 @@ export function personDue(claims: Claim[], rates: Rate[] | undefined, gradeOn: G
 
 /** The overdue claims among those that count (`claims`, the live ones): their count and the sum
  *  of their due figures (n/a ones skipped). */
-export function overdue(claims: Claim[], terms: number, today: string, dueOfClaim: (c: Claim) => string | null) {
-  const late = claims.filter((c) => isOverdue(c, terms, today));
+export function overdue(claims: Claim[], today: string, dueOfClaim: (c: Claim) => string | null) {
+  const late = claims.filter((c) => isOverdue(c, today));
   return { count: late.length, total: sumDues(late.map(dueOfClaim)) };
 }
 

@@ -3,6 +3,7 @@ package net.officefloor.hq.app.setting;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.Set;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -13,6 +14,9 @@ public class ValidateSetting {
 
     /** A whole number of days, 0 or more. */
     private static final Pattern DAYS = Pattern.compile("\\d{1,6}");
+
+    /** The grades that may have their own terms. */
+    private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     public void validate(@RequestBody SettingRequest request, Out<SettingRequest> body)
             throws InvalidSettingException {
@@ -35,6 +39,13 @@ public class ValidateSetting {
                 throw new InvalidSettingException("The terms are a whole number of days, 0 or more");
             }
             body.set(new SettingRequest(key, String.valueOf(Integer.parseInt(value))));
+            return;
+        } else if (key.startsWith(SettingRepository.TERMS_OF_GRADE)
+                && GRADES.contains(key.substring(SettingRepository.TERMS_OF_GRADE.length()))) {
+            if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("A grade's terms are blank or a whole number of days, 0 or more");
+            }
+            body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value))));
             return;
         } else if (SettingRepository.POLICY_DATE.equals(key)
                 || SettingRepository.PERIOD_NUMBERING_FROM.equals(key)) {

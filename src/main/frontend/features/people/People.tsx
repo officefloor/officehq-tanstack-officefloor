@@ -6,7 +6,7 @@ import { BulkOpen } from '../claims/BulkOpen';
 import { PersonClaims } from '../claims/PersonClaims';
 import { claimsKey, listClaims, liveClaims, sumAmounts } from '../claims/api';
 import { claimDue, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, sumDues } from '../rates/api';
-import { useFloor, useLate, useTerms } from '../settings/api';
+import { useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { ExportPeople } from './ExportPeople';
 import { QuickAdd } from './QuickAdd';
@@ -33,7 +33,6 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
   const floor = useFloor(sheetId);
-  const terms = useTerms(sheetId);
   const today = useSheetToday(sheetId, user);
   const charges = useLate(sheetId, today);
   const byGrade = rateByGrade(rates.data, today);
@@ -230,7 +229,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
             const live = liveClaims(own, [p]);
             const claimed = sumAmounts(live);
             const pct = byGrade.get(p.grade);
-            const late = overdue(live, terms, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
+            const late = overdue(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
             return (
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
                 <td data-testid="person-name">{p.name}</td>
@@ -315,7 +314,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                 </td>
                 <td>
                   <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} gradeOn={(d) => gradeOn(p, d)} rates={rates.data} floor={floor}
-                    terms={terms} today={today} charges={charges} selected={selected} onSelect={select}
+                    today={today} charges={charges} selected={selected} onSelect={select}
                     people={people.data ?? []} />
                 </td>
               </tr>

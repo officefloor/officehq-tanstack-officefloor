@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, "
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, "
             // The date it rounds by: a correction's is the date of the claim it corrects.
             + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = claim.sheet_id AND k.number = claim.corrects), "
             + "claim_date) AS round_date";
@@ -28,10 +28,12 @@ public class ClaimRepository {
             rs.getString("opened_by"), rs.getBoolean("stated"),
             rs.getBigDecimal("stated_due") == null ? null
                     : rs.getBigDecimal("stated_due").setScale(2).toPlainString()), rs.getString("corrects"),
-            rs.getObject("round_date", LocalDate.class).toString());
+            rs.getObject("round_date", LocalDate.class).toString(),
+            rs.getObject("due_by", LocalDate.class).toString());
 
-    private static Claim withCorrects(Claim claim, String corrects, String roundDate) {
+    private static Claim withCorrects(Claim claim, String corrects, String roundDate, String dueBy) {
         claim.setCorrects(corrects);
+        claim.setDueBy(dueBy);
         claim.setRoundDate(roundDate);
         return claim;
     }
@@ -62,13 +64,14 @@ public class ClaimRepository {
                 ROW, sheetId, number).stream().findFirst().orElse(null);
     }
 
+    /** Add a claim with its due-by, fixed now. */
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-            String corrects, String user) {
+            String corrects, LocalDate dueBy, String user) {
         GeneratedKeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, created_by, corrects) "
-                            + "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, created_by, corrects, due_by) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -77,6 +80,7 @@ public class ClaimRepository {
             ps.setString(5, note);
             ps.setString(6, user);
             ps.setObject(7, corrects);
+            ps.setObject(8, dueBy);
             return ps;
         }, key);
         long id = key.getKey().longValue();

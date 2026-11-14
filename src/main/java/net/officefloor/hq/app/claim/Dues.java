@@ -10,9 +10,9 @@ public final class Dues {
     private Dues() {
     }
 
-    /** What a late charge goes by: the sheet's late percent, its terms (days) and its today; and the
+    /** What a late charge goes by: the sheet's late percent and its today (a claim's due-by is its own); and the
      *  sheet's policy date (its today when blank), which decides how a claim's live figures round. */
-    public record Late(String pct, int terms, LocalDate today, LocalDate policy) {
+    public record Late(String pct, LocalDate today, LocalDate policy) {
 
         /** How the live figures of a claim round by its round date ({@link Claim#getRoundDate}):
          *  half up before the policy date, half to even on or after it. */
@@ -35,11 +35,11 @@ public final class Dues {
     }
 
     /** The late charge on a claim's figure: the late percent of it for every full 30 days its open (OPEN or PENDING)
-     *  claim is past its due-by (its date plus the terms) on the sheet's today, rounded by the
+     *  claim is past its due-by (fixed when it was added) on the sheet's today, rounded by the
      *  policy date to two decimals; none (0.00) when it is not overdue, or on a correction. */
     public static BigDecimal charge(Claim claim, String figure, Late late) {
         if (figure == null || isCorrection(claim.getAmount()) || !ClaimStatus.isOpen(claim.getStatus())) return BigDecimal.ZERO.setScale(2);
-        LocalDate dueBy = LocalDate.parse(claim.getDate()).plusDays(late.terms());
+        LocalDate dueBy = LocalDate.parse(claim.getDueBy());
         long periods = Math.max(0, ChronoUnit.DAYS.between(dueBy, late.today())) / 30;
         return new BigDecimal(figure).multiply(new BigDecimal(late.pct()))
                 .multiply(BigDecimal.valueOf(periods))

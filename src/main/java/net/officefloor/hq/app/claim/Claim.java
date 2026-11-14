@@ -23,6 +23,7 @@ public class Claim {
     private String statedDue;
     private String corrects;
     private String roundDate;
+    private String dueBy;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, String number, String settledDue, String openedBy) {
@@ -73,6 +74,11 @@ public class Claim {
      *  correction the date of the claim it corrects. */
     public String getRoundDate() { return roundDate == null ? date : roundDate; }
     public void setRoundDate(String roundDate) { this.roundDate = roundDate; }
+
+    /** Its due-by (yyyy-MM-dd), fixed when it was added: its date then plus the terms of its
+     *  person's grade in force on that date. */
+    public String getDueBy() { return dueBy; }
+    public void setDueBy(String dueBy) { this.dueBy = dueBy; }
 
     public boolean isStated() { return stated; }
     public String getStatedDue() { return statedDue; }

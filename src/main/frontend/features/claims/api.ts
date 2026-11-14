@@ -22,11 +22,13 @@ export const isBound = (c: Claim) => c.stated && c.statedDue !== null && c.statu
  *  opened it (null while a draft; that user cannot settle it), and whether its person's last statement
  *  bound it, with the figure it bound (null when it had none): a bound claim shows and totals that.
  *  A correction (a negative amount) has the number of the SETTLED claim it corrects (null otherwise).
- *  `roundDate` is the date its live figures round by: its own, or a correction's claim's it corrects. */
+ *  `roundDate` is the date its live figures round by: its own, or a correction's claim's it corrects.
+ *  `dueBy` (yyyy-MM-dd) is fixed when it was added: its date then plus the terms of its person's
+ *  grade in force on that date (the grade's own, else the sheet's). */
 export type Claim = {
   id: number; sheetId: string; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null;
-  stated: boolean; statedDue: string | null; corrects: string | null; roundDate: string;
+  stated: boolean; statedDue: string | null; corrects: string | null; roundDate: string; dueBy: string;
 };
 /** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects. */
 export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
@@ -86,16 +88,12 @@ export function sumAmounts(claims: Claim[]): string {
   return (cents / 100).toFixed(2);
 }
 
-/** A claim's due-by (yyyy-MM-dd): its date plus the sheet's terms in days. */
-export function dueBy(c: Claim, terms: number): string {
-  const d = new Date(`${c.date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + terms);
-  return d.toISOString().slice(0, 10);
-}
+/** A claim's due-by (yyyy-MM-dd), fixed when it was added. */
+export const dueBy = (c: Claim): string => c.dueBy;
 
 /** Whether a claim is overdue: it is open (OPEN or PENDING) and its due-by is before the sheet's `today`. */
-export const isOverdue = (c: Claim, terms: number, today: string) =>
-  isOpen(c) && today !== '' && dueBy(c, terms) < today;
+export const isOverdue = (c: Claim, today: string) =>
+  isOpen(c) && today !== '' && dueBy(c) < today;
 
 /** How many of the selected claims a bulk open opened, and how many it refused (left as they were). */
 export type BulkOpenResult = { opened: number; refused: number };

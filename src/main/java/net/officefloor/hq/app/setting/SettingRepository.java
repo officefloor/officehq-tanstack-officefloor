@@ -19,6 +19,9 @@ public class SettingRepository {
     /** The terms: the number of days after its date by which a claim is due (a whole number). */
     public static final String TERMS = "terms";
 
+    /** A grade's own terms ({@code terms-<grade>}; blank: the sheet's terms). */
+    public static final String TERMS_OF_GRADE = "terms-";
+
     /** The late percent: the share of an overdue claim's figure it gains for every full 30 days
      *  it is overdue (two decimals). */
     public static final String LATE_PCT = "late-pct";
@@ -79,6 +82,12 @@ public class SettingRepository {
         return Integer.parseInt(value == null ? DEFAULT_TERMS : value);
     }
 
+    /** The terms (whole days) of a grade: its own, else the sheet's (a null grade: the sheet's). */
+    public int terms(String sheetId, String grade) {
+        String value = grade == null ? null : find(sheetId, TERMS_OF_GRADE + grade);
+        return value == null ? terms(sheetId) : Integer.parseInt(value);
+    }
+
     /** The sheet's late percent (two decimals). */
     public String latePct(String sheetId) {
         String value = find(sheetId, LATE_PCT);
@@ -99,7 +108,7 @@ public class SettingRepository {
 
     /** What a claim's late charge and rounding go by on the sheet now. */
     public Dues.Late late(String sheetId, LocalDate today) {
-        return new Dues.Late(latePct(sheetId), terms(sheetId), today, policyDate(sheetId, today));
+        return new Dues.Late(latePct(sheetId), today, policyDate(sheetId, today));
     }
 
     /** Set (or replace) the setting's value (null: blank). */

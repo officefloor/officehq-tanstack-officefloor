@@ -47,10 +47,10 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
             <label>
               {key === 'clerk-limit' ? 'Clerk limit' : key === 'floor' ? 'Floor' : key === 'late-pct' ? 'Late percent'
                 : key === 'policy-date' ? 'Policy date' : key === 'period-numbering-from' ? 'Period numbering from'
-                : 'Terms (days)'}{' '}
+                : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (days)` : 'Terms (days)'}{' '}
               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
                 placeholder={key === 'clerk-limit' ? 'No limit' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
-                  : key === 'period-numbering-from' ? 'Off (yyyy-MM-dd)' : undefined}
+                  : key === 'period-numbering-from' ? 'Off (yyyy-MM-dd)' : key.startsWith('terms-') ? "Sheet's terms" : undefined}
                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
             </label>{' '}
             Now: <span data-testid={`setting-${key}-current`}>{current(key)}</span>
@@ -62,7 +62,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {save.isError && (
           <span data-testid="settings-error">
             The clerk limit must be blank, and the floor given, as 0.00 or more with up to two decimals;
-            the terms a whole number of days; the late percent 0.00 or more with up to two decimals; the policy date and period numbering date blank or a date.
+            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the policy date and period numbering date blank or a date.
           </span>
         )}
       </form>

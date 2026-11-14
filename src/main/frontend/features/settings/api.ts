@@ -14,8 +14,11 @@ export type Role = { sheetId: string; user: string; role: string };
  *  figure it gains for every full 30 days it is overdue) and the policy date (yyyy-MM-dd; blank means
  *  the sheet's today: a claim dated before it rounds half up, on or after it half to even) and the
  *  period numbering date (yyyy-MM-dd; blank means off: once the sheet's today is on or after it, a
- *  claim opened is numbered within its period, <period>-<n>, or X-<n> in no period). */
-export const SETTING_KEYS = ['clerk-limit', 'floor', 'terms', 'late-pct', 'policy-date', 'period-numbering-from'] as const;
+ *  claim opened is numbered within its period, <period>-<n>, or X-<n> in no period). A grade's own terms
+ *  (terms-<grade>; blank means the sheet's terms) fix the due-by of a claim added for a person of that
+ *  grade on its date: its date plus those terms, kept when the terms or its date change later. */
+export const SETTING_KEYS = ['clerk-limit', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
+  'period-numbering-from'] as const;
 
 /** A setting's value until it is first set. */
 export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00' };
@@ -49,17 +52,11 @@ export function useFloor(sheetId: string): string {
   return settings.data?.find((s) => s.key === 'floor')?.value || SETTING_DEFAULTS.floor;
 }
 
-/** What a claim's late charge and rounding go by: the sheet's late percent, terms, today and policy
+/** What a claim's late charge and rounding go by: the sheet's late percent, today and policy
  *  date (its today when blank). */
 export function useLate(sheetId: string, today: string): Late {
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
   const pct = settings.data?.find((s) => s.key === 'late-pct')?.value || SETTING_DEFAULTS['late-pct'];
   const policy = settings.data?.find((s) => s.key === 'policy-date')?.value || today;
-  return { pct, terms: useTerms(sheetId), today, policy };
-}
-
-/** The sheet's terms: the number of days after its date by which a claim is due. */
-export function useTerms(sheetId: string): number {
-  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
-  return Number(settings.data?.find((s) => s.key === 'terms')?.value || SETTING_DEFAULTS.terms);
+  return { pct, today, policy };
 }

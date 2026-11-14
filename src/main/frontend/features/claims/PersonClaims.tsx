@@ -14,7 +14,7 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
 /** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
  *  with its status, its due (fixed when settled, else at the rate in force on the claim's date of the
  *  person's grade in force then (`gradeOn`) and at least the sheet's `floor`, or bound by the person's last statement; none when
- *  there is no such rate; an overdue one gains its late charge on top, see `charges`), its due-by (its date plus the sheet's `terms` in days) and whether it is
+ *  there is no such rate; an overdue one gains its late charge on top, see `charges`), its due-by (fixed when it was added) and whether it is
  *  overdue (OPEN and due-by before the sheet's `today`), whether
  *  it is stated,
  *  the period its date falls in (none when no period contains it), who opened it, and buttons that
@@ -24,9 +24,9 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  charge) the number of the SETTLED claim it corrects. Only a DRAFT can be edited:
  *  editing any other claim is refused with an error on the claim. A steward can move a DRAFT, OPEN or
  *  PENDING claim to another person picked beside it (any other refused with an error on the claim). */
-export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, terms, today, charges, selected, onSelect, people }: {
+export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, today, charges, selected, onSelect, people }: {
   sheetId: string; user: string; personId: number; claims: Claim[]; gradeOn: GradeOn; rates: Rate[] | undefined;
-  floor: string; terms: number; today: string; charges: Late;
+  floor: string; today: string; charges: Late;
   /** The claims selected for a bulk action, and how one is selected or unselected. */
   selected: ReadonlySet<number>; onSelect: (id: number, on: boolean) => void;
   /** Everyone on the sheet, the people a claim can be moved to (all but `personId`). */
@@ -162,8 +162,8 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
               <td data-testid="claim-corrects">{c.corrects ?? ''}</td>
               <td data-testid="claim-due">{showDue(claimDue(c, rates, gradeOn, floor, charges))}</td>
               <td>
-                Due by <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
-                overdue <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>
+                Due by <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
+                overdue <span data-testid="claim-overdue">{isOverdue(c, today) ? 'yes' : 'no'}</span>
               </td>
               <td data-testid="claim-status">{c.status}</td>
               <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>
