@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
-import { claimsKey, counts, listClaims } from '../claims/api';
+import { claimsKey, counts, listClaims, liveClaims } from '../claims/api';
 import { listPeople, peopleKey } from '../people/api';
 import { claimDue, listRates, ratesKey, sumDues } from '../rates/api';
 import { addPeriod, closePeriod, listPeriods, periodsKey, type PeriodInput } from './api';
@@ -9,7 +9,7 @@ import { addPeriod, closePeriod, listPeriods, periodsKey, type PeriodInput } fro
 const EMPTY: PeriodInput = { name: '', from: '', to: '' };
 
 /** The sheet's periods: a form that adds one, and each period by from-date with its due-total (the
- *  due of the claims that count whose date falls in it, n/a ones skipped; once closed, the one fixed
+ *  due of the claims that count whose date falls in it, n/a ones and OPEN ones of people on hold skipped; once closed, the one fixed
  *  when it was closed), whether it is closed, and a button that closes it. */
 export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
@@ -49,7 +49,7 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   };
 
   const gradeOf = new Map((people.data ?? []).map((p) => [p.id, p.grade]));
-  const counting = (claims.data ?? []).filter(counts);
+  const counting = liveClaims(claims.data ?? [], people.data).filter(counts);
   const dueTotal = (from: string, to: string) =>
     sumDues(counting.filter((c) => from <= c.date && c.date <= to)
       .map((c) => claimDue(c, rates.data, gradeOf.get(c.personId) ?? '')));

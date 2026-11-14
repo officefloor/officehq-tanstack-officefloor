@@ -8,11 +8,11 @@ export const GRADES: Grade[] = ['A', 'B', 'C'];
 /** `version` is raised by every saved edit; an edit sends the version its form loaded. Their
  *  statements: how many were taken, and the last one's due-total and date (null until the first).
  *  `retiredFrom` is the date they are retired from (null: not retired); with it set at all they
- *  are `retired`, whatever the date. */
+ *  are `retired`, whatever the date. While `held`, their OPEN claims count in no live total. */
 export type Person = {
   id: number; sheetId: string; name: string; grade: Grade; version: number;
   statementCount: number; statedTotal: string | null; statementDate: string | null;
-  retired: boolean; retiredFrom: string | null;
+  retired: boolean; retiredFrom: string | null; held: boolean;
 };
 export type PersonInput = { name: string; grade: string };
 
@@ -45,6 +45,11 @@ export function takeStatement(sheetId: string, by: string, id: number): Promise<
 /** Retire the person from `from` (blank: the sheet's today); refused (rejects) when it is not a date. */
 export function retirePerson(sheetId: string, by: string, id: number, from: string): Promise<Person> {
   return postJson<Person>(`${base(sheetId)}/${id}/retire?by=${encodeURIComponent(by)}`, { from });
+}
+
+/** Put the person on hold, or take them off it when they are held. */
+export function holdPerson(sheetId: string, by: string, id: number): Promise<Person> {
+  return postJson<Person>(`${base(sheetId)}/${id}/hold?by=${encodeURIComponent(by)}`, {});
 }
 
 export type QuickAddInput = { name: string; amount: string };

@@ -41,7 +41,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             BigDecimal due = zero();
             boolean kept = false;
             for (Claim c : all) {
-                if (c.getPersonId() != p.getId() || !c.isCounting()) continue;
+                if (c.getPersonId() != p.getId() || !p.countsLive(c)) continue;
                 claimed = claimed.add(new BigDecimal(c.getAmount()));
                 String pct = rateOn(sheetRates, p.getGrade(), c.getDate());
                 String d = c.due(pct == null ? null : Dues.of(c.getAmount(), pct));

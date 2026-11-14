@@ -47,6 +47,13 @@ export function moveClaim(sheetId: string, by: string, id: number, action: Claim
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED do. */
 export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
 
+/** The claims that count in live totals: all but the OPEN claims of people on hold (their SETTLED
+ *  claims still count). */
+export function liveClaims(claims: Claim[], people: Array<{ id: number; held: boolean }> | undefined): Claim[] {
+  const held = new Set((people ?? []).filter((p) => p.held).map((p) => p.id));
+  return claims.filter((c) => !(c.status === 'OPEN' && held.has(c.personId)));
+}
+
 /** Sum the amounts of the claims that count (see `counts`) exactly (in cents), shown with two decimals. */
 export function sumAmounts(claims: Claim[]): string {
   const cents = claims.filter(counts).reduce((t, c) => t + Math.round(Number(c.amount) * 100), 0);

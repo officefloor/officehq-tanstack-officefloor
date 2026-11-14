@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { claimsKey, listClaims } from '../claims/api';
+import { claimsKey, listClaims, liveClaims } from '../claims/api';
 import { listPeople, peopleKey } from '../people/api';
 import { useSheetToday } from '../sheet/api';
 import { listRates, personDue, rateByGrade, ratesKey, sumDues } from './api';
@@ -10,8 +10,9 @@ export function DueTotal({ sheetId, user }: { sheetId: string; user: string }) {
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
   const byGrade = rateByGrade(rates.data, useSheetToday(sheetId, user));
+  const live = liveClaims(claims.data ?? [], people.data);
   const dues = (people.data ?? []).map((p) =>
-    personDue((claims.data ?? []).filter((c) => c.personId === p.id), rates.data, p.grade, byGrade.get(p.grade)),
+    personDue(live.filter((c) => c.personId === p.id), rates.data, p.grade, byGrade.get(p.grade)),
   );
   return (
     <p>

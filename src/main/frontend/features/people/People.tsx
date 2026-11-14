@@ -3,12 +3,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { PersonClaims } from '../claims/PersonClaims';
-import { claimsKey, listClaims, sumAmounts } from '../claims/api';
+import { claimsKey, listClaims, liveClaims, sumAmounts } from '../claims/api';
 import { listRates, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
 import { useSheetToday } from '../sheet/api';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
-import { GRADES, addPerson, listPeople, peopleKey, retirePerson, takeStatement, updatePerson, type Person, type PersonInput } from './api';
+import { GRADES, addPerson, holdPerson, listPeople, peopleKey, retirePerson, takeStatement, updatePerson, type Person, type PersonInput } from './api';
 
 const EMPTY: PersonInput = { name: '', grade: 'A' };
 
@@ -16,7 +16,9 @@ const EMPTY: PersonInput = { name: '', grade: 'A' };
  *  each with their claimed total, their due-total (the sum of their claims' due figures; n/a
  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
  *  their statements (a button that takes one, the count, the last one's due-total and date), whether
- *  they are retired and from when (with a date and a button that retires them) and their claims.
+ *  they are retired and from when (with a date and a button that retires them), whether they are on
+ *  hold (with a button that holds or releases them; held, their OPEN claims count in no total) and
+ *  their claims.
  *  Retired people are left out of the list unless "show retired" is on; their claims still count. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
@@ -72,10 +74,24 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
   });
 
+  // The person whose last hold or release was refused; cleared by the next action on the row.
+  const holding = useMutation({
+    mutationFn: (id: number) => holdPerson(sheetId, user, id),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    ]),
+  });
+
+  const resetRowActions = () => {
+    statement.reset();
+    retirement.reset();
+    holding.reset();
+  };
+
   const state = (id: number) => {
     stateOnce(() => {
-      statement.reset();
-      retirement.reset();
+      resetRowActions();
       return statement.mutateAsync(id);
     });
   };
@@ -83,9 +99,15 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const retire = (id: number) => {
     const from = retireDates[id] ?? '';
     stateOnce(() => {
-      statement.reset();
-      retirement.reset();
+      resetRowActions();
       return retirement.mutateAsync({ id, from });
+    });
+  };
+
+  const hold = (id: number) => {
+    stateOnce(() => {
+      resetRowActions();
+      return holding.mutateAsync(id);
     });
   };
 
@@ -156,7 +178,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
         <tbody>
           {(people.data ?? []).filter((p) => showRetired || !p.retired).map((p) => {
             const own = (claims.data ?? []).filter((c) => c.personId === p.id);
-            const claimed = sumAmounts(own);
+            const live = liveClaims(own, [p]);
+            const claimed = sumAmounts(live);
             const pct = byGrade.get(p.grade);
             return (
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
@@ -166,7 +189,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   Claimed <span data-testid="person-claimed">{claimed}</span>
                 </td>
                 <td>
-                  Due <span data-testid="person-due-total">{showDue(personDue(own, rates.data, p.grade, pct))}</span>
+                  Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, p.grade, pct))}</span>
                 </td>
                 <td>
                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
@@ -187,6 +210,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   {retirement.isError && retirement.variables?.id === p.id && (
                     <span data-testid="person-error">The person could not be retired: the date must be a date.</span>
                   )}
+                  {holding.isError && holding.variables === p.id && (
+                    <span data-testid="person-error">The person could not be held or released.</span>
+                  )}
                 </td>
                 <td>
                   Retired <span data-testid="person-retired">{p.retired ? 'yes' : 'no'}</span>{' '}
@@ -199,6 +225,13 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   <button type="button" data-testid="person-retire" disabled={retirement.isPending}
                     onClick={() => retire(p.id)}>
                     Retire
+                  </button>
+                </td>
+                <td>
+                  On hold <span data-testid="person-hold">{p.held ? 'yes' : 'no'}</span>{' '}
+                  <button type="button" data-testid="person-hold-toggle" disabled={holding.isPending}
+                    onClick={() => hold(p.id)}>
+                    {p.held ? 'Release' : 'Hold'}
                   </button>
                 </td>
                 <td>

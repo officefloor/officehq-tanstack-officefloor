@@ -1,10 +1,13 @@
 package net.officefloor.hq.app.person;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimStatus;
 
 /** A person on a sheet: a name and a grade (A, B or C), the version raised by each saved edit, and
  *  their statements: how many have been taken, and the last one's due-total and date (none until the
- *  first), and the date they are retired from (null: not retired; set at all, they count as retired). */
+ *  first), and the date they are retired from (null: not retired; set at all, they count as retired),
+ *  and whether they are on hold (their OPEN claims then count in no live total). */
 public class Person {
     private final long id;
     private final String sheetId;
@@ -15,6 +18,7 @@ public class Person {
     private String statedTotal;
     private String statementDate;
     private String retiredFrom;
+    private boolean held;
     /** How many claims the statement this request took bound, for its audit line. */
     private int statedClaims;
 
@@ -48,6 +52,15 @@ public class Person {
     public String getRetiredFrom() { return retiredFrom; }
     public void setRetiredFrom(String retiredFrom) { this.retiredFrom = retiredFrom; }
     public boolean isRetired() { return retiredFrom != null; }
+    public boolean isHeld() { return held; }
+    public void setHeld(boolean held) { this.held = held; }
+
+    /** Whether the claim counts in live totals: it counts by status, and is not an OPEN claim of a
+     *  person on hold. */
+    public boolean countsLive(Claim claim) {
+        return claim.isCounting()
+                && !(held && ClaimStatus.OPEN.name().equals(claim.getStatus()));
+    }
 
     /** Whether a claim on this date is refused: the person is retired from a date before it. */
     public boolean retiredBefore(java.time.LocalDate date) {
