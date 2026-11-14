@@ -8,6 +8,7 @@ import type { Person } from '../people/people';
 import { usePersonError } from '../people/personError';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { useColumnShown } from '../columns/columns';
+import { ExportStatement } from './ExportStatement';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -109,6 +110,7 @@ export function PersonStatement({ person }: { person: Person }) {
       >
         Cancel statement
       </button>
+      <ExportStatement person={person} />
     </td>
   );
 }
