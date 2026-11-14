@@ -30,7 +30,8 @@ public class ValidateSettingsRequest {
             Out<PeriodNumberingFrom> periodNumberingFrom, Out<EntryDate> entryDate, Out<GradeTerms> gradeTerms, Out<Cap> cap,
             Out<ProofThreshold> proofThreshold, Out<NoteThreshold> noteThreshold, Out<ReviewThreshold> reviewThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays,
             Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold, Out<Pot> pot, Out<Parent> parent,
-            Out<FiscalStartMonth> fiscalStartMonth, Out<AlertThreshold> alertThreshold, Out<RoundingSetting> rounding)
+            Out<FiscalStartMonth> fiscalStartMonth, Out<AlertThreshold> alertThreshold, Out<RoundingSetting> rounding,
+            Out<EscalateAfter> escalateAfter)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -53,6 +54,7 @@ public class ValidateSettingsRequest {
         fiscalStartMonth.set(fiscalStartMonth(request.fiscalStartMonth()));
         alertThreshold.set(alertThreshold(request.alertThreshold()));
         rounding.set(rounding(request.rounding(), from(request.roundingFrom(), "rounding")));
+        escalateAfter.set(escalateAfter(request.escalateAfter()));
     }
 
     private static RoundingSetting rounding(String requested, LocalDate from) throws InvalidSettingException {
@@ -157,6 +159,20 @@ public class ValidateSettingsRequest {
             }
         }
         return new PermissionChanges(entries);
+    }
+
+    private static EscalateAfter escalateAfter(String requested) throws InvalidSettingException {
+        if (requested == null) {
+            return new EscalateAfter(false, null);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new EscalateAfter(true, null);
+        }
+        if (!DAYS.matcher(value).matches()) {
+            throw new InvalidSettingException("The escalation gap must be a whole number of days, 0 or more, or blank.");
+        }
+        return new EscalateAfter(true, Integer.parseInt(value));
     }
 
     private static GraceDays graceDays(String requested) throws InvalidSettingException {

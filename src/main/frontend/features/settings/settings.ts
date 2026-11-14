@@ -29,6 +29,8 @@ export type UserRole = { user: string; role: string };
  * roles allowed it, comma separated ('': blank, the standing rule); it is not dated.
  * `graceDays` is the grace days (whole days; '': off — when the sheet's today is changed, an open period whose
  * to-date plus them is before the new today is closed); it is not dated.
+ * `escalateAfter` is the escalation gap (whole days; '': off — reminding a claim whose previous reminder was at least
+ * that many days before the sheet's today escalates it, once per claim); it is not dated.
  * `delegations` is the steward role delegated to user names, in the order made.
  * `alertThreshold` is the alert threshold ('': off); it is not dated.
  * `pot` is the pot ('': none), the pot of each pool that is a member of no pool, shared out among its members when it is balanced; it is not dated.
@@ -37,7 +39,7 @@ export type UserRole = { user: string; role: string };
  * `rounding` is the rounding mode in force on the sheet's today (half-up or half-even; '': none — a claim with none in force on its
  * date rounds by the policy date); it is dated, its values in `history` under rounding.
  */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; entryDate: string; cap: string; proofThreshold: string; noteThreshold: string; reviewThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[]; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; entryDate: string; cap: string; proofThreshold: string; noteThreshold: string; reviewThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[]; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; escalateAfter: string };
 
 /**
  * The steward role delegated by a steward (`by`) to a user name, from a from-date to a to-date (yyyy-MM-dd), both

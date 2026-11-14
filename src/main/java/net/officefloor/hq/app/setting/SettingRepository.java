@@ -45,7 +45,8 @@ public class SettingRepository {
         return new Settings(sheetId, dated.clerkLimitOn(today), dated.floorOn(today), dated.termsOn(today),
                 dated.gradeTermsOn(today), dated.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), entryDate(sheetId),
                 dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId), graceDays(sheetId),
-                today, delegations(sheetId), pot(sheetId), parent(sheetId), fiscalStartMonth(sheetId), alertThreshold(sheetId));
+                today, delegations(sheetId), pot(sheetId), parent(sheetId), fiscalStartMonth(sheetId), alertThreshold(sheetId),
+                escalateAfter(sheetId));
     }
 
     /** The sheet's dated settings: every value recorded, by key and from-date. */
@@ -168,6 +169,18 @@ public class SettingRepository {
     /** Set the sheet's fiscal year start month, 1 to 12. */
     public void saveFiscalStartMonth(String sheetId, int month) {
         jdbc.update("UPDATE sheet SET fiscal_start_month = ? WHERE id = ?", month, sheetId);
+    }
+
+    /** The sheet's escalation gap in days (null: blank, off). */
+    public Integer escalateAfter(String sheetId) {
+        List<Integer> days = jdbc.query("SELECT escalate_after FROM sheet WHERE id = ?",
+                (rs, n) -> (Integer) rs.getObject("escalate_after", Integer.class), sheetId);
+        return days.isEmpty() ? null : days.get(0);
+    }
+
+    /** Set the sheet's escalation gap in days (null: blank, off). */
+    public void saveEscalateAfter(String sheetId, Integer days) {
+        jdbc.update("UPDATE sheet SET escalate_after = ? WHERE id = ?", days, sheetId);
     }
 
     /** The sheet's grace days (null: blank, off). */

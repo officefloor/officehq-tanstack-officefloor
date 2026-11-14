@@ -194,6 +194,18 @@ public class ClaimRepository {
         jdbc.update("UPDATE claim SET reminded_on = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(day), id, sheetId);
     }
 
+    /** Mark the claim escalated. */
+    public void escalate(String sheetId, long id) {
+        jdbc.update("UPDATE claim SET escalated = TRUE WHERE id = ? AND sheet_id = ?", id, sheetId);
+    }
+
+    /** Whether the claim was ever escalated. */
+    public boolean escalated(String sheetId, long id) {
+        List<Boolean> found = jdbc.queryForList("SELECT escalated FROM claim WHERE sheet_id = ? AND id = ?",
+                Boolean.class, sheetId, id);
+        return !found.isEmpty() && Boolean.TRUE.equals(found.get(0));
+    }
+
     /** The day the claim was last reminded, or null. */
     public LocalDate reminded(String sheetId, long id) {
         List<Date> found = jdbc.queryForList("SELECT reminded_on FROM claim WHERE sheet_id = ? AND id = ?", Date.class,
