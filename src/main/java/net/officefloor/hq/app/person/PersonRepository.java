@@ -217,7 +217,7 @@ public class PersonRepository {
      * memberships and plans move to the other (shares added where the other is already a member). Their statements join
      * the other's, before them: the other's count is both counts added, and the other's last statement stays theirs (or,
      * having none, becomes the merged person's). Their grades,
-     * holds, past retirements, watchers and contact are dropped with them.
+     * holds, past retirements, watchers, snapshot lines and contact are dropped with them.
      */
     public void merge(Person from, Person into) {
         String sheetId = from.sheetId();
@@ -259,6 +259,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, gone);
     }
 
@@ -395,6 +396,8 @@ public class PersonRepository {
                 id, person.sheetId(), person.id());
         jdbc.update("UPDATE person_statement SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to,
                 id, person.sheetId(), person.id());
+        jdbc.update("UPDATE person_snapshot SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to,
+                id, person.sheetId(), person.id());
         return id;
     }
 
@@ -409,6 +412,7 @@ public class PersonRepository {
                 gone);
         jdbc.update("DELETE FROM pool_member WHERE person_id = ?", gone);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
