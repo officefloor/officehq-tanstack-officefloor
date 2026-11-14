@@ -6,6 +6,7 @@ import { BulkOpen } from '../claims/BulkOpen';
 import { BulkSettle } from '../claims/BulkSettle';
 import { PersonClaims } from '../claims/PersonClaims';
 import { claimsKey, listClaims, liveClaims, sumAmounts } from '../claims/api';
+import { listPeriods, periodsKey, personPeriodDue } from '../periods/api';
 import { claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, sumDues } from '../rates/api';
 import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
@@ -25,7 +26,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '' };
  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
  *  patrons (names sorted, with a picker that names one more) and backing (their patrons' due-totals
  *  added up, skipping n/a), and
- *  their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
+ *  their due-total for each period (see `personPeriodDue`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
  *  with a checkbox that selects it for a button that opens the selected claims together.
  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
  *  A button exports everyone, retired people included, as a CSV file. */
@@ -34,6 +35,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
+  const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
   const floor = useFloor(sheetId);
   const cap = useCap(sheetId);
   const today = useSheetToday(sheetId, user);
@@ -253,6 +255,12 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap))}</span>{' '}
                   excess <span data-testid="person-excess">{excessOf(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap)}</span>
                 </td>
+                {(periods.data ?? []).map((q) => (
+                  <td key={q.name}>
+                    {q.name} <span data-testid={`person-period-${q.name}-due-total`}>
+                      {personPeriodDue(q, p, claims.data ?? [], people.data, rates.data, floor, charges)}</span>
+                  </td>
+                ))}
                 <td>
                   Overdue <span data-testid="person-overdue-count">{late.count}</span>{' '}
                   totalling <span data-testid="person-overdue-total">{late.total}</span>

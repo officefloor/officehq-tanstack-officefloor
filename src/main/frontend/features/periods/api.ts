@@ -8,6 +8,8 @@ import { sheetKey } from '../sheet/api';
  *  inclusive. No two periods overlap. Once closed, its due-total is the one fixed when it was closed. */
 export type Period = {
   sheetId: string; name: string; from: string; to: string; closed: boolean; closedTotal: string | null;
+  /** Once closed, each person's due-total for it fixed when it was closed, by person id. */
+  personTotals: Record<string, string>;
 };
 export type PeriodInput = { name: string; from: string; to: string };
 
@@ -43,12 +45,19 @@ export function reopenPeriod(sheetId: string, by: string, name: string): Promise
   return postJson<Period>(`${base(sheetId)}/${encodeURIComponent(name)}/reopen?by=${encodeURIComponent(by)}`, {});
 }
 
-/** A period's due-total as its row shows it: once closed, the one fixed when it was closed; else the
- *  due of the live claims that count whose date falls in it (n/a ones skipped). */
+/** A person's due-total for a period: once closed, the one fixed for them when it was closed (0.00
+ *  for a person added later); else the due of their live claims that count whose date falls in it
+ *  (n/a ones skipped). */
+export function personPeriodDue(p: Period, person: Person, claims: Claim[], people: Person[] | undefined,
+  rates: Rate[] | undefined, floor: string, late: Late): string {
+  if (p.closed) return p.personTotals[String(person.id)] ?? '0.00';
+  return sumDues(liveClaims(claims.filter((c) => c.personId === person.id), people).filter(counts)
+    .filter((c) => p.from <= c.date && c.date <= p.to)
+    .map((c) => claimDue(c, rates, (d) => gradeOn(person, d), floor, late)));
+}
+
+/** A period's due-total as its row shows it: the sum of everyone's due-total for it. */
 export function periodDueTotal(p: Period, claims: Claim[], people: Person[] | undefined, rates: Rate[] | undefined,
   floor: string, late: Late): string {
-  if (p.closed && p.closedTotal !== null) return p.closedTotal;
-  const personOf = new Map((people ?? []).map((q) => [q.id, q]));
-  return sumDues(liveClaims(claims, people).filter(counts).filter((c) => p.from <= c.date && c.date <= p.to)
-    .map((c) => claimDue(c, rates, (d) => { const q = personOf.get(c.personId); return q ? gradeOn(q, d) : ''; }, floor, late)));
+  return sumDues((people ?? []).map((q) => personPeriodDue(p, q, claims, people, rates, floor, late)));
 }

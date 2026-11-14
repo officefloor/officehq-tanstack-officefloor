@@ -2,6 +2,8 @@ package net.officefloor.hq.app.period;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.Dues;
@@ -17,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /** Closes a period, fixing its due-total as it is now: the due of the claims that count whose date
  *  falls in it (n/a ones skipped, and OPEN ones dated within a hold of their person, unless bound), as the screen shows them.
- *  Refused when it is already closed. */
+ *  Each person's due-total for it is fixed too, for everyone on the sheet. Refused when it is already closed. */
 public class ClosePeriod {
     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name,
             @RequestParam(name = "by", required = false) String by, PeriodRepository periods,
@@ -35,6 +37,8 @@ public class ClosePeriod {
         String floor = settings.floor(id);
         Dues.Late late = settings.late(id, sheets.today(id));
         BigDecimal total = BigDecimal.ZERO.setScale(2);
+        Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
+        for (Person p : people.list(id)) personTotals.put(p.getId(), BigDecimal.ZERO.setScale(2));
         for (Claim c : claims.list(id)) {
             if (!c.isCounting() || !found.contains(c.getDate())) continue;
             Person person = people.find(id, c.getPersonId());
@@ -42,8 +46,11 @@ public class ClosePeriod {
             Rate rate = person == null ? null
                     : rates.find(id, person.gradeOn(c.getDate()), LocalDate.parse(c.getDate()));
             String due = Dues.shown(c, rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor, late.rounding(c.getRoundDate())), late);
-            if (due != null) total = total.add(new BigDecimal(due));
+            if (due != null) {
+                total = total.add(new BigDecimal(due));
+                if (person != null) personTotals.merge(person.getId(), new BigDecimal(due), BigDecimal::add);
+            }
         }
-        period.set(periods.close(found, total, by == null ? "" : by));
+        period.set(periods.close(found, total, personTotals, by == null ? "" : by));
     }
 }
