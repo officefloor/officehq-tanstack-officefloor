@@ -1,0 +1,297 @@
+diff --git a/src/main/frontend/features/claims/PersonClaims.tsx b/src/main/frontend/features/claims/PersonClaims.tsx
+index 17dea50b8..575295e99 100644
+--- a/src/main/frontend/features/claims/PersonClaims.tsx
++++ b/src/main/frontend/features/claims/PersonClaims.tsx
+@@ -4,22 +4,23 @@ import { HttpError } from '../../api/http';
+ import { useSubmitOnce } from '../../forms/useSubmitOnce';
+ import { listPeriods, periodOf, periodsKey } from '../periods/api';
+ import { claimDue, showDue, type Rate } from '../rates/api';
+-import { addClaim, claimsKey, moveClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
++import { addClaim, claimsKey, dueBy, isOverdue, moveClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
+ 
+ const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
+ 
+ /** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
+  *  with its status, its due (fixed when settled, else at the person's `grade`'s rate in force on the
+  *  claim's date and at least the sheet's `floor`, or bound by the person's last statement; none when
+- *  there is no such rate), whether
++ *  there is no such rate), its due-by (its date plus the sheet's `terms` in days) and whether it is
++ *  overdue (OPEN and due-by before the sheet's `today`), whether
+  *  it is stated,
+  *  the period its date falls in (none when no period contains it), who opened it, and buttons that
+  *  change its status (the user who opened a claim cannot settle it, nor a clerk one whose due is
+  *  above the sheet's clerk limit). Only a DRAFT can be edited:
+  *  editing any other claim is refused with an error on the claim. */
+-export function PersonClaims({ sheetId, user, personId, claims, grade, rates, floor }: {
++export function PersonClaims({ sheetId, user, personId, claims, grade, rates, floor, terms, today }: {
+   sheetId: string; user: string; personId: number; claims: Claim[]; grade: string; rates: Rate[] | undefined;
+-  floor: string;
++  floor: string; terms: number; today: string;
+ }) {
+   const queryClient = useQueryClient();
+   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
+@@ -116,6 +117,10 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates, fl
+               <td data-testid="claim-date">{c.date}</td>
+               <td data-testid="claim-note">{c.note}</td>
+               <td data-testid="claim-due">{showDue(claimDue(c, rates, grade, floor))}</td>
++              <td>
++                Due by <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
++                overdue <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>
++              </td>
+               <td data-testid="claim-status">{c.status}</td>
+               <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>
+               <td>
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index 0cd0cedf3..c022bc8c5 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -59,3 +59,14 @@ export function sumAmounts(claims: Claim[]): string {
+   const cents = claims.filter(counts).reduce((t, c) => t + Math.round(Number(c.amount) * 100), 0);
+   return (cents / 100).toFixed(2);
+ }
++
++/** A claim's due-by (yyyy-MM-dd): its date plus the sheet's terms in days. */
++export function dueBy(c: Claim, terms: number): string {
++  const d = new Date(`${c.date}T00:00:00Z`);
++  d.setUTCDate(d.getUTCDate() + terms);
++  return d.toISOString().slice(0, 10);
++}
++
++/** Whether a claim is overdue: it is OPEN and its due-by is before the sheet's `today`. */
++export const isOverdue = (c: Claim, terms: number, today: string) =>
++  c.status === 'OPEN' && today !== '' && dueBy(c, terms) < today;
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 5df3a9ea1..96f2ea432 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -4,8 +4,8 @@ import { HttpError } from '../../api/http';
+ import { useSubmitOnce } from '../../forms/useSubmitOnce';
+ import { PersonClaims } from '../claims/PersonClaims';
+ import { claimsKey, listClaims, liveClaims, sumAmounts } from '../claims/api';
+-import { listRates, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
+-import { useFloor } from '../settings/api';
++import { claimDue, listRates, overdue, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
++import { useFloor, useTerms } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+ import { QuickAdd } from './QuickAdd';
+ import { ShowRetired, useShowRetired } from './ShowRetired';
+@@ -19,7 +19,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A' };
+  *  their statements (a button that takes one, the count, the last one's due-total and date), whether
+  *  they are retired and from when (with a date and a button that retires them), whether they are on
+  *  hold (with a button that holds or releases them; held, their OPEN claims count in no total) and
+- *  their claims.
++ *  their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims.
+  *  Retired people are left out of the list unless "show retired" is on; their claims still count. */
+ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const queryClient = useQueryClient();
+@@ -27,7 +27,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
+   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
+   const floor = useFloor(sheetId);
+-  const byGrade = rateByGrade(rates.data, useSheetToday(sheetId, user));
++  const terms = useTerms(sheetId);
++  const today = useSheetToday(sheetId, user);
++  const byGrade = rateByGrade(rates.data, today);
+   const [form, setForm] = useState<PersonInput>(EMPTY);
+   // The person being edited and the version of them the form loaded.
+   const [editing, setEditing] = useState<{ id: number; version: number } | null>(null);
+@@ -183,6 +185,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+             const live = liveClaims(own, [p]);
+             const claimed = sumAmounts(live);
+             const pct = byGrade.get(p.grade);
++            const late = overdue(live, terms, today, (c) => claimDue(c, rates.data, p.grade, floor));
+             return (
+               <tr key={p.id} data-testid={`person-row-${p.id}`}>
+                 <td data-testid="person-name">{p.name}</td>
+@@ -193,6 +196,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                 <td>
+                   Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, p.grade, pct, floor))}</span>
+                 </td>
++                <td>
++                  Overdue <span data-testid="person-overdue-count">{late.count}</span>{' '}
++                  totalling <span data-testid="person-overdue-total">{late.total}</span>
++                </td>
+                 <td>
+                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
+                     Edit
+@@ -237,7 +244,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   </button>
+                 </td>
+                 <td>
+-                  <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} grade={p.grade} rates={rates.data} floor={floor} />
++                  <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} grade={p.grade} rates={rates.data} floor={floor}
++                    terms={terms} today={today} />
+                 </td>
+               </tr>
+             );
+diff --git a/src/main/frontend/features/rates/Overdue.tsx b/src/main/frontend/features/rates/Overdue.tsx
+new file mode 100644
+index 000000000..533652087
+--- /dev/null
++++ b/src/main/frontend/features/rates/Overdue.tsx
+@@ -0,0 +1,26 @@
++import { useQuery } from '@tanstack/react-query';
++import { claimsKey, listClaims, liveClaims } from '../claims/api';
++import { listPeople, peopleKey } from '../people/api';
++import { useFloor, useTerms } from '../settings/api';
++import { useSheetToday } from '../sheet/api';
++import { claimDue, listRates, overdue, ratesKey } from './api';
++
++/** The sheet's overdue claims: how many of the claims that count are OPEN past their due-by, and
++ *  their due added up. */
++export function Overdue({ sheetId, user }: { sheetId: string; user: string }) {
++  const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
++  const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
++  const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
++  const floor = useFloor(sheetId);
++  const terms = useTerms(sheetId);
++  const today = useSheetToday(sheetId, user);
++  const grades = new Map((people.data ?? []).map((p) => [p.id, p.grade]));
++  const live = liveClaims(claims.data ?? [], people.data).filter((c) => grades.has(c.personId));
++  const late = overdue(live, terms, today, (c) => claimDue(c, rates.data, grades.get(c.personId) ?? '', floor));
++  return (
++    <p>
++      Overdue <span data-testid="rollup-overdue-count">{late.count}</span>{' '}
++      totalling <span data-testid="rollup-overdue-total">{late.total}</span>
++    </p>
++  );
++}
+diff --git a/src/main/frontend/features/rates/api.ts b/src/main/frontend/features/rates/api.ts
+index 0d7844787..03be094cf 100644
+--- a/src/main/frontend/features/rates/api.ts
++++ b/src/main/frontend/features/rates/api.ts
+@@ -1,5 +1,5 @@
+ import { getJson, postJson } from '../../api/http';
+-import { counts, type Claim } from '../claims/api';
++import { counts, isOverdue, type Claim } from '../claims/api';
+ import { sheetKey } from '../sheet/api';
+ 
+ /** A grade's rate on the sheet: a percent as two-decimal text, in force from its from-date
+@@ -78,6 +78,13 @@ export function personDue(claims: Claim[], rates: Rate[] | undefined, grade: str
+   return sumDues(own.map((c) => claimDue(c, rates, grade, floor)));
+ }
+ 
++/** The overdue claims among those that count (`claims`, the live ones): their count and the sum
++ *  of their due figures (n/a ones skipped). */
++export function overdue(claims: Claim[], terms: number, today: string, dueOfClaim: (c: Claim) => string | null) {
++  const late = claims.filter((c) => isOverdue(c, terms, today));
++  return { count: late.length, total: sumDues(late.map(dueOfClaim)) };
++}
++
+ /** Add up two-decimal dues, skipping n/a. */
+ export function sumDues(dues: Array<string | null>): string {
+   return formatCents(dues.reduce<bigint>((t, d) => (d === null ? t : t + hundredths(d)), 0n));
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index b7d773de1..cf01eaea9 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -1,8 +1,10 @@
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { DueTotal } from './DueTotal';
++import { Overdue } from './Overdue';
+ import { Rates } from './Rates';
+ 
+ export const contributions = [
+   SheetBody.fill({ order: 5, Component: Rates }),
+   SheetBody.fill({ order: 25, Component: DueTotal }),
++  SheetBody.fill({ order: 26, Component: Overdue }),
+ ];
+diff --git a/src/main/frontend/features/settings/Settings.tsx b/src/main/frontend/features/settings/Settings.tsx
+index cd3aae01b..f60e63b0f 100644
+--- a/src/main/frontend/features/settings/Settings.tsx
++++ b/src/main/frontend/features/settings/Settings.tsx
+@@ -45,7 +45,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+         {SETTING_KEYS.map((key) => (
+           <div key={key}>
+             <label>
+-              {key === 'clerk-limit' ? 'Clerk limit' : 'Floor'}{' '}
++              {key === 'clerk-limit' ? 'Clerk limit' : key === 'floor' ? 'Floor' : 'Terms (days)'}{' '}
+               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
+                 placeholder={key === 'clerk-limit' ? 'No limit' : undefined}
+                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
+@@ -58,7 +58,8 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+         </button>
+         {save.isError && (
+           <span data-testid="settings-error">
+-            The clerk limit must be blank, and the floor given, as 0.00 or more with up to two decimals.
++            The clerk limit must be blank, and the floor given, as 0.00 or more with up to two decimals;
++            the terms a whole number of days.
+           </span>
+         )}
+       </form>
+diff --git a/src/main/frontend/features/settings/api.ts b/src/main/frontend/features/settings/api.ts
+index 9ade5b032..98ab061e7 100644
+--- a/src/main/frontend/features/settings/api.ts
++++ b/src/main/frontend/features/settings/api.ts
+@@ -7,12 +7,13 @@ export type Setting = { sheetId: string; key: string; value: string };
+ /** The role a user name has on the sheet; a name not listed is a clerk. */
+ export type Role = { sheetId: string; user: string; role: string };
+ 
+-/** The settings the screen offers: the clerk limit (two decimals; blank means no limit) and the
+- *  floor (two decimals; the least a claim's live due can be). */
+-export const SETTING_KEYS = ['clerk-limit', 'floor'] as const;
++/** The settings the screen offers: the clerk limit (two decimals; blank means no limit), the
++ *  floor (two decimals; the least a claim's live due can be) and the terms (whole days after its
++ *  date by which a claim is due). */
++export const SETTING_KEYS = ['clerk-limit', 'floor', 'terms'] as const;
+ 
+ /** A setting's value until it is first set. */
+-export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00' };
++export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14' };
+ 
+ const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}`;
+ 
+@@ -42,3 +43,9 @@ export function useFloor(sheetId: string): string {
+   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+   return settings.data?.find((s) => s.key === 'floor')?.value || SETTING_DEFAULTS.floor;
+ }
++
++/** The sheet's terms: the number of days after its date by which a claim is due. */
++export function useTerms(sheetId: string): number {
++  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
++  return Number(settings.data?.find((s) => s.key === 'terms')?.value || SETTING_DEFAULTS.terms);
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 44ac7024f..fd885912a 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -14,6 +14,12 @@ public class SettingRepository {
+     /** The floor: the least a claim's live due can be (two decimals). */
+     public static final String FLOOR = "floor";
+ 
++    /** The terms: the number of days after its date by which a claim is due (a whole number). */
++    public static final String TERMS = "terms";
++
++    /** The terms until they are first set. */
++    public static final String DEFAULT_TERMS = "14";
++
+     /** The floor until it is first set. */
+     public static final String DEFAULT_FLOOR = "1.00";
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index bdbdf5ce2..3649dfdfc 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -9,6 +9,9 @@ public class ValidateSetting {
+     /** 0 or more, with up to two decimals. */
+     private static final Pattern MONEY = Pattern.compile("(\\d+(\\.\\d{0,2})?|\\.\\d{1,2})");
+ 
++    /** A whole number of days, 0 or more. */
++    private static final Pattern DAYS = Pattern.compile("\\d{1,6}");
++
+     public void validate(@RequestBody SettingRequest request, Out<SettingRequest> body)
+             throws InvalidSettingException {
+         String key = request == null || request.key() == null ? "" : request.key().trim();
+@@ -21,6 +24,12 @@ public class ValidateSetting {
+             if (!MONEY.matcher(value).matches()) {
+                 throw new InvalidSettingException("The floor is 0.00 or more with up to two decimals");
+             }
++        } else if (SettingRepository.TERMS.equals(key)) {
++            if (!DAYS.matcher(value).matches()) {
++                throw new InvalidSettingException("The terms are a whole number of days, 0 or more");
++            }
++            body.set(new SettingRequest(key, String.valueOf(Integer.parseInt(value))));
++            return;
+         } else {
+             throw new InvalidSettingException("Unknown setting: " + key);
+         }
