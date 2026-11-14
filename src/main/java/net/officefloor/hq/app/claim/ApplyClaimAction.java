@@ -37,7 +37,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * its person's grade's own, when that grade has one then, else the sheet's — is refused settling or approving — before the clerk limit is considered, so it never goes PENDING.
  * A claim with an empty note whose due (as shown now) is above the sheet's note threshold in force on its date is refused opening.
  * Opening a claim due by a date in a period with a cap is refused while its person already has that many OPEN or PENDING
- * claims due by a date in that period. Only a steward — or the claim's person's approver — approves a PENDING claim (fixing its due at its figure —
+ * claims due by a date in that period. Opening a claim is refused while its person already has the sheet's maximum of
+ * OPEN or PENDING claims (any period). Only a steward — or the claim's person's approver — approves a PENDING claim (fixing its due at its figure —
  * the one its statement bound it to, if any — plus any late charge, at that moment) — not the user who opened it — or rejects it, with a reason, back to OPEN.
  * Only a steward re-settles a SETTLED claim, fixing its due again at the figure it would have today as an open claim
  * bound by no statement (today's rates, grades, floor and late charge); its previous due is kept for the audit.
@@ -138,6 +139,7 @@ public class ApplyClaimAction {
         }
         if (found == ClaimAction.OPEN) {
             checkCap(claim, periods, claims);
+            checkMaxOpen(claim, settings, claims);
         }
         if ((found == ClaimAction.SETTLE || found == ClaimAction.APPROVE) && !hasProofs(claim, settings, claims)
                 && settings.dated(claim.sheetId()).needsProof(proofGrade(claim, people), claim.date(), due)) {
@@ -175,6 +177,21 @@ public class ApplyClaimAction {
         if (open >= period.cap()) {
             throw new InvalidClaimException("The person already has " + period.cap() + " open claims in period "
                     + period.name() + ": its cap.");
+        }
+    }
+
+    /** Refuses opening the claim when its person already has the sheet's maximum of OPEN and PENDING claims. */
+    private static void checkMaxOpen(Claim claim, SettingRepository settings, ClaimRepository claims) throws InvalidClaimException {
+        Integer max = settings.maxOpen(claim.sheetId());
+        if (max == null) {
+            return;
+        }
+        long open = claims.findForPerson(claim.sheetId(), claim.personId()).stream()
+                .filter((c) -> !c.id().equals(claim.id())
+                        && (c.status() == ClaimStatus.OPEN || c.status() == ClaimStatus.PENDING))
+                .count();
+        if (open >= max) {
+            throw new InvalidClaimException("The person already has " + max + " open claims: the sheet's maximum.");
         }
     }
 

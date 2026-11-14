@@ -39,7 +39,7 @@ public class ValidateSettingsRequest {
             Out<FiscalStartMonth> fiscalStartMonth, Out<AlertThreshold> alertThreshold, Out<RoundingSetting> rounding,
             Out<EscalateAfter> escalateAfter, Out<ReviewSla> reviewSla, Out<ProofKinds> proofKinds,
             Out<DefaultGrade> defaultGrade, Out<GradeClerkLimit> gradeClerkLimit, Out<ScoreThresholds> scoreThresholds,
-            Out<ScoreLog> scoreLog)
+            Out<ScoreLog> scoreLog, Out<MaxOpen> maxOpen)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -70,6 +70,7 @@ public class ValidateSettingsRequest {
         scoreThresholds.set(new ScoreThresholds(scoreThreshold(request.scoreMid(), "mid"),
                 scoreThreshold(request.scoreHigh(), "high")));
         scoreLog.set(scoreLog(request.scoreLog()));
+        maxOpen.set(maxOpen(request.maxOpen()));
     }
 
     private static ScoreLog scoreLog(String requested) throws InvalidSettingException {
@@ -250,6 +251,20 @@ public class ValidateSettingsRequest {
             throw new InvalidSettingException("The review SLA must be a whole number of days, 0 or more, or blank.");
         }
         return new ReviewSla(true, Integer.parseInt(value));
+    }
+
+    private static MaxOpen maxOpen(String requested) throws InvalidSettingException {
+        if (requested == null) {
+            return new MaxOpen(false, null);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new MaxOpen(true, null);
+        }
+        if (!DAYS.matcher(value).matches()) {
+            throw new InvalidSettingException("The maximum of open claims must be a whole number, 0 or more, or blank.");
+        }
+        return new MaxOpen(true, Integer.parseInt(value));
     }
 
     private static EscalateAfter escalateAfter(String requested) throws InvalidSettingException {

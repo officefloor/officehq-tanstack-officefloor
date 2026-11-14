@@ -47,7 +47,7 @@ public class SettingRepository {
                 dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId), graceDays(sheetId),
                 today, delegations(sheetId), pot(sheetId), parent(sheetId), fiscalStartMonth(sheetId), alertThreshold(sheetId),
                 escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId), defaultGrade(sheetId),
-                scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId));
+                scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId), maxOpen(sheetId));
     }
 
     /** The sheet's dated settings: every value recorded, by key and from-date. */
@@ -184,6 +184,18 @@ public class SettingRepository {
     /** Set the sheet's fiscal year start month, 1 to 12. */
     public void saveFiscalStartMonth(String sheetId, int month) {
         jdbc.update("UPDATE sheet SET fiscal_start_month = ? WHERE id = ?", month, sheetId);
+    }
+
+    /** The sheet's maximum of OPEN and PENDING claims per person (null: blank, none). */
+    public Integer maxOpen(String sheetId) {
+        List<Integer> max = jdbc.query("SELECT max_open FROM sheet WHERE id = ?",
+                (rs, n) -> (Integer) rs.getObject("max_open", Integer.class), sheetId);
+        return max.isEmpty() ? null : max.get(0);
+    }
+
+    /** Set the sheet's maximum of OPEN and PENDING claims per person (null: blank, none). */
+    public void saveMaxOpen(String sheetId, Integer max) {
+        jdbc.update("UPDATE sheet SET max_open = ? WHERE id = ?", max, sheetId);
     }
 
     /** The sheet's escalation gap in days (null: blank, off). */

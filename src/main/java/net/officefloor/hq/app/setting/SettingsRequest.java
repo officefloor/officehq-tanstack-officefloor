@@ -21,6 +21,7 @@ import java.util.Map;
  * The proof kinds are receipt or photo, comma separated (blank: none); they are not dated.
  * The score thresholds (mid, high) are whole numbers (blank: none); they are not dated.
  * The score log is "on" or blank; it is not dated.
+ * The maximum of open claims per person is a whole number, 0 or more (blank: none); it is not dated.
  * The default grade is A, B or C (blank: A); it is not dated.
  * The grade clerk limits have two decimals at most, by grade, each only for a grade it carries (blank: none, the sheet's),
  * recorded from their from-date by grade (left out or blank: the sheet's today).
@@ -44,5 +45,6 @@ public record SettingsRequest(@Size(max = 30) String clerkLimit, @Size(max = 30)
         @Size(max = 10) String defaultGrade,
         @Size(max = 10) Map<String, @Size(max = 30) String> gradeClerkLimit,
         @Size(max = 10) Map<String, @Size(max = 30) String> gradeClerkLimitFrom,
-        @Size(max = 30) String scoreMid, @Size(max = 30) String scoreHigh, @Size(max = 30) String scoreLog) {
+        @Size(max = 30) String scoreMid, @Size(max = 30) String scoreHigh, @Size(max = 30) String scoreLog,
+        @Size(max = 30) String maxOpen) {
 }

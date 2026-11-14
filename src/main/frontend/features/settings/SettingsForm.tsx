@@ -64,6 +64,7 @@ type SettingsInput = {
   scoreMid?: string;
   scoreHigh?: string;
   scoreLog?: string;
+  maxOpen?: string;
   proofKinds?: string;
   defaultGrade?: string;
   pot?: string;
@@ -95,6 +96,7 @@ type Touched = {
   scoreMid: boolean;
   scoreHigh: boolean;
   scoreLog: boolean;
+  maxOpen: boolean;
   proofKinds: boolean;
   defaultGrade: boolean;
   pot: boolean;
@@ -122,6 +124,7 @@ const UNTOUCHED: Touched = {
   scoreMid: false,
   scoreHigh: false,
   scoreLog: false,
+  maxOpen: false,
   proofKinds: false,
   defaultGrade: false,
   pot: false,
@@ -166,6 +169,7 @@ export function SettingsForm() {
   const [scoreMid, setScoreMid] = useState('');
   const [scoreHigh, setScoreHigh] = useState('');
   const [scoreLog, setScoreLog] = useState('');
+  const [maxOpen, setMaxOpen] = useState('');
   const [proofKinds, setProofKinds] = useState('');
   const [defaultGrade, setDefaultGrade] = useState('');
   const [pot, setPot] = useState('');
@@ -210,6 +214,7 @@ export function SettingsForm() {
       setScoreMid('');
       setScoreHigh('');
       setScoreLog('');
+      setMaxOpen('');
       setProofKinds('');
       setDefaultGrade('');
       setPot('');
@@ -481,6 +486,14 @@ export function SettingsForm() {
       }
       input.scoreLog = value;
     }
+    if (touched.maxOpen) {
+      const value = maxOpen.trim();
+      if (value !== '' && !DAYS.test(value)) {
+        setError('Type a maximum of open claims per person as a whole number, 0 or more, or leave it blank for none.');
+        return;
+      }
+      input.maxOpen = value;
+    }
     if (touched.proofKinds) {
       const value = proofKinds.trim();
       if (value !== '' && !PROOF_KIND_LIST.test(value)) {
@@ -556,6 +569,7 @@ export function SettingsForm() {
       input.scoreMid === undefined &&
       input.scoreHigh === undefined &&
       input.scoreLog === undefined &&
+      input.maxOpen === undefined &&
       input.proofKinds === undefined &&
       input.defaultGrade === undefined &&
       input.pot === undefined &&
@@ -655,6 +669,10 @@ export function SettingsForm() {
       </p>
       <p>
         Score log: <span data-testid="setting-score-log-current">{settings?.scoreLog ?? ''}</span>
+      </p>
+      <p>
+        Max open claims per person:{' '}
+        <span data-testid="setting-max-open-current">{settings?.maxOpen ?? ''}</span>
       </p>
       <p>
         Proof kinds: <span data-testid="setting-proof-kinds-current">{settings?.proofKinds ?? ''}</span>
@@ -905,6 +923,17 @@ export function SettingsForm() {
           onChange={(e) => {
             setEscalateAfter(e.target.value);
             setTouched((t) => ({ ...t, escalateAfter: true }));
+            setError('');
+          }}
+        />
+        <input
+          data-testid="setting-max-open"
+          placeholder="Most OPEN or PENDING claims a person may have (blank: none)"
+          value={maxOpen}
+          onFocus={() => setTouched((t) => ({ ...t, maxOpen: true }))}
+          onChange={(e) => {
+            setMaxOpen(e.target.value);
+            setTouched((t) => ({ ...t, maxOpen: true }));
             setError('');
           }}
         />
