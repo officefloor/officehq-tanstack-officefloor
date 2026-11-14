@@ -14,7 +14,7 @@ public class ValidateRoleRequest {
         }
         Role found = Role.of(request.role());
         if (found == null) {
-            throw new InvalidSettingException("The role must be clerk, steward or viewer.");
+            throw new InvalidSettingException("The role must be clerk, steward, viewer or restricted.");
         }
         role.set(new UserRole(sheetId, user, found));
     }

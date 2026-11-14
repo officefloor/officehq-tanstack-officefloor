@@ -8,7 +8,8 @@ import type { Claim } from '../claims/claims';
 import { gradeOn } from '../people/people';
 import type { GradeFrom } from '../people/people';
 
-/** A role given to a user name: clerk, steward or viewer (sees everything, changes nothing). A name with none given is a clerk. */
+/** A role given to a user name: clerk, steward, viewer (sees everything, changes nothing) or restricted (a clerk who sees on the
+ * people list only the people of their crews and themselves). A name with none given is a clerk. */
 export type UserRole = { user: string; role: string };
 
 /**
@@ -75,7 +76,7 @@ export const DEFAULT_TERMS = 14;
 export const DEFAULT_LATE_PCT = '0.00';
 
 /** The roles a user name can be given. */
-export const ROLES = ['clerk', 'steward', 'viewer'];
+export const ROLES = ['clerk', 'steward', 'viewer', 'restricted'];
 
 /** The actions the permission matrix covers. */
 export const PERMISSION_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'];

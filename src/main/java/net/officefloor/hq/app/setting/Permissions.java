@@ -44,7 +44,7 @@ public record Permissions(Map<String, String> set) {
         Set<Role> parsed = EnumSet.noneOf(Role.class);
         for (String label : roles.split(",", -1)) {
             Role role = Role.of(label);
-            if (role == null || role == Role.VIEWER) {
+            if (role == null || role == Role.VIEWER || role == Role.RESTRICTED) {
                 return null;
             }
             parsed.add(role);
@@ -58,10 +58,11 @@ public record Permissions(Map<String, String> set) {
                 .collect(Collectors.joining(","));
     }
 
-    /** Whether the role may take the action. */
+    /** Whether the role may take the action: a restricted user takes it as a clerk. */
     public boolean allows(String action, Role role) {
         String roles = set.get(action);
-        return (roles == null ? standing(action) : parse(roles)).contains(role);
+        Role as = role == Role.RESTRICTED ? Role.CLERK : role;
+        return (roles == null ? standing(action) : parse(roles)).contains(as);
     }
 
     /** Each action's entry as shown, by action ("": blank, the standing rule). */
