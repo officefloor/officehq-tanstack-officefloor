@@ -1,0 +1,112 @@
+diff --git a/src/main/frontend/features/plans/PersonPlans.tsx b/src/main/frontend/features/plans/PersonPlans.tsx
+index c699c3866..7bbf35319 100644
+--- a/src/main/frontend/features/plans/PersonPlans.tsx
++++ b/src/main/frontend/features/plans/PersonPlans.tsx
+@@ -11,8 +11,8 @@ import type { Plan } from './plans';
+ type PlanFields = { amount: string; start: string; every: string; day: string; end: string };
+ const EMPTY: PlanFields = { amount: '', start: '', every: '', day: '', end: '' };
+ 
+-// A person's plans (each its amount, start, interval or day of the month, end and how many claims it has made so far)
+-// and the form that adds one: an amount, a start (blank: the sheet's today), every N days or a day of the month (1 to
++// A person's plans (each its amount, start, interval or day of the month, end, how many claims it has made so far and
++// its next five dates after the sheet's today) and the form that adds one: an amount, a start (blank: the sheet's today), every N days or a day of the month (1 to
+ // 31), and an end. The server refuses a bad amount, interval or day, both an interval and a day, or an end before the
+ // start.
+ export function PersonPlans({ person }: { person: Person }) {
+@@ -52,7 +52,8 @@ export function PersonPlans({ person }: { person: Person }) {
+       {mine.map((p) => (
+         <div key={p.id} data-testid={`plan-row-${p.id}`}>
+           {p.amount} from {p.start} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end}, made{' '}
+-          <span data-testid="plan-generated">{p.generated}</span>
++          <span data-testid="plan-generated">{p.generated}</span>, next{' '}
++          <span data-testid="plan-next-dates">{p.nextDates}</span>
+         </div>
+       ))}
+       <input data-testid="plan-form-amount" placeholder="amount" size={7} value={fields.amount} onChange={change('amount')} />
+diff --git a/src/main/frontend/features/plans/plans.ts b/src/main/frontend/features/plans/plans.ts
+index 9d2e00b72..61e655c13 100644
+--- a/src/main/frontend/features/plans/plans.ts
++++ b/src/main/frontend/features/plans/plans.ts
+@@ -3,7 +3,8 @@ import { getJson } from '../../api/http';
+ import { sheetKey, useCurrentSheet } from '../session/session';
+ 
+ /** A person's plan: an amount (two decimals) every `every` days, or monthly on `day` of the month (one of them is set),
+- *  from `start` to `end`, and how many claims it has made. */
++ *  from `start` to `end`, how many claims it has made, and its next five dates after the sheet's today (comma
++ *  separated). */
+ export type Plan = {
+   id: number;
+   personId: number;
+@@ -13,6 +14,7 @@ export type Plan = {
+   day: number | null;
+   end: string;
+   generated: number;
++  nextDates: string;
+ };
+ 
+ /** The query key for the sheet's plans; under sheetKey, so re-loading the sheet re-reads them. */
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java b/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
+index 05cddbea9..e4b2b9a1e 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
+@@ -1,10 +1,16 @@
+ package net.officefloor.hq.app.plan;
+ 
+-/** A plan as the screen reads it: the amount with two decimals, dates as yyyy-mm-dd. */
++import java.time.LocalDate;
++import java.util.stream.Collectors;
++
++/** A plan as the screen reads it: the amount with two decimals, dates as yyyy-mm-dd; {@code nextDates} is its first
++ * five dates after the sheet's {@code today} and on or before its end, comma and space separated. */
+ public record PlanResponse(long id, long personId, String amount, String start, Integer every, Integer day, String end,
+-        int generated) {
+-    public static PlanResponse from(Plan p) {
++        int generated, String nextDates) {
++    public static PlanResponse from(Plan p, LocalDate today) {
++        String next = p.dates(p.end()).stream().filter(d -> d.isAfter(today)).limit(5).map(LocalDate::toString)
++                .collect(Collectors.joining(", "));
+         return new PlanResponse(p.id(), p.personId(), p.amount().setScale(2).toPlainString(), p.start().toString(),
+-                p.every(), p.day(), p.end().toString(), p.generated());
++                p.every(), p.day(), p.end().toString(), p.generated(), next);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlan.java b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlan.java
+index a6ef32ae9..f13ee3313 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlan.java
++++ b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlan.java
+@@ -1,11 +1,13 @@
+ package net.officefloor.hq.app.plan;
+ 
++import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+ /** The plan just saved. */
+ public class RespondWithPlan {
+-    public void respond(@Val Plans saved, ObjectResponse<PlanResponse> response) {
+-        response.send(PlanResponse.from(saved.list().get(0)));
++    public void respond(@Val Plans saved, SheetRepository sheets, ObjectResponse<PlanResponse> response) {
++        Plan plan = saved.list().get(0);
++        response.send(PlanResponse.from(plan, sheets.today(plan.sheetId())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+index 6d4c141f9..0b2e38a9e 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
++++ b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+@@ -1,12 +1,13 @@
+ package net.officefloor.hq.app.plan;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+ /** The sheet's plans as the screen reads them, in the order they were added. */
+ public class RespondWithPlans {
+-    public void respond(@Val Plans plans, ObjectResponse<List<PlanResponse>> response) {
+-        response.send(plans.list().stream().map(PlanResponse::from).toList());
++    public void respond(@Val Sheet sheet, @Val Plans plans, ObjectResponse<List<PlanResponse>> response) {
++        response.send(plans.list().stream().map(p -> PlanResponse.from(p, sheet.today())).toList());
+     }
+ }
