@@ -1,0 +1,277 @@
+diff --git a/src/main/frontend/features/snapshots/PersonSnapshots.tsx b/src/main/frontend/features/snapshots/PersonSnapshots.tsx
+new file mode 100644
+index 000000000..50cd37c4a
+--- /dev/null
++++ b/src/main/frontend/features/snapshots/PersonSnapshots.tsx
+@@ -0,0 +1,17 @@
++import type { Person } from '../people/people';
++import { useSnapshots } from './snapshots';
++
++// A person's snapshot lines, oldest first: one per SNAPSHOT written for them, as the day being left and their
++// due-total on it.
++export function PersonSnapshots({ person }: { person: Person }) {
++  const snapshots = (useSnapshots().data ?? []).filter((s) => s.personId === person.id);
++  return (
++    <td>
++      {snapshots.map((s, i) => (
++        <div key={i} data-testid="person-snapshot-line">
++          {s.day} {s.dueTotal}
++        </div>
++      ))}
++    </td>
++  );
++}
+diff --git a/src/main/frontend/features/snapshots/snapshots.slot.tsx b/src/main/frontend/features/snapshots/snapshots.slot.tsx
+new file mode 100644
+index 000000000..0a4e02161
+--- /dev/null
++++ b/src/main/frontend/features/snapshots/snapshots.slot.tsx
+@@ -0,0 +1,7 @@
++import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
++import { PersonSnapshots } from './PersonSnapshots';
++
++export const contributions = [
++  PersonColumnHeads.fill({ order: 15.1, Component: () => <th>Snapshots</th> }),
++  PersonColumns.fill({ order: 15.1, Component: PersonSnapshots }),
++];
+diff --git a/src/main/frontend/features/snapshots/snapshots.ts b/src/main/frontend/features/snapshots/snapshots.ts
+new file mode 100644
+index 000000000..62cb3ed51
+--- /dev/null
++++ b/src/main/frontend/features/snapshots/snapshots.ts
+@@ -0,0 +1,19 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { sheetKey, useCurrentSheet } from '../session/session';
++
++/** That the person `personId`'s due-total stood at `dueTotal` (as shown) as the sheet left `day`. */
++export type Snapshot = { personId: number; day: string; dueTotal: string };
++
++/** The query key for the sheet's snapshots; under sheetKey, so re-loading the sheet or moving its today re-reads them. */
++export const snapshotsKey = (sheet: string) => [...sheetKey(sheet), 'snapshots'] as const;
++
++/** Every person's snapshot lines on the sheet, by person and oldest first. */
++export function useSnapshots() {
++  const [sheet] = useCurrentSheet();
++  return useQuery({
++    queryKey: snapshotsKey(sheet),
++    queryFn: () => getJson<Snapshot[]>(`/api/sheets/${encodeURIComponent(sheet)}/snapshots`),
++    enabled: !!sheet,
++  });
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 5fb11c20c..94315e5c3 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -217,7 +217,7 @@ public class PersonRepository {
+      * memberships and plans move to the other (shares added where the other is already a member). Their statements join
+      * the other's, before them: the other's count is both counts added, and the other's last statement stays theirs (or,
+      * having none, becomes the merged person's). Their grades,
+-     * holds, past retirements, watchers and contact are dropped with them.
++     * holds, past retirements, watchers, snapshot lines and contact are dropped with them.
+      */
+     public void merge(Person from, Person into) {
+         String sheetId = from.sheetId();
+@@ -259,6 +259,7 @@ public class PersonRepository {
+         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
++        jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, gone);
+     }
+ 
+@@ -395,6 +396,8 @@ public class PersonRepository {
+                 id, person.sheetId(), person.id());
+         jdbc.update("UPDATE person_statement SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to,
+                 id, person.sheetId(), person.id());
++        jdbc.update("UPDATE person_snapshot SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to,
++                id, person.sheetId(), person.id());
+         return id;
+     }
+ 
+@@ -409,6 +412,7 @@ public class PersonRepository {
+                 gone);
+         jdbc.update("DELETE FROM pool_member WHERE person_id = ?", gone);
+         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
++        jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+         jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+diff --git a/src/main/java/net/officefloor/hq/app/snapshot/LoadSnapshots.java b/src/main/java/net/officefloor/hq/app/snapshot/LoadSnapshots.java
+new file mode 100644
+index 000000000..fbf138d94
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/snapshot/LoadSnapshots.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.snapshot;
++
++import java.util.List;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++public class LoadSnapshots {
++    public void load(@Val Sheet sheet, SnapshotRepository repository, Out<List<Snapshot>> snapshots) {
++        snapshots.set(repository.findAll(sheet.id()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/snapshot/RespondWithSnapshots.java b/src/main/java/net/officefloor/hq/app/snapshot/RespondWithSnapshots.java
+new file mode 100644
+index 000000000..7a02c9478
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/snapshot/RespondWithSnapshots.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.snapshot;
++
++import java.util.List;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithSnapshots {
++    public void respond(@Val List<Snapshot> snapshots, ObjectResponse<List<SnapshotResponse>> response) {
++        response.send(snapshots.stream().map(SnapshotResponse::from).toList());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/snapshot/SaveSnapshots.java b/src/main/java/net/officefloor/hq/app/snapshot/SaveSnapshots.java
+new file mode 100644
+index 000000000..e191a56e3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/snapshot/SaveSnapshots.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.snapshot;
++
++import java.util.Map;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupBefore;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++
++/** Before the sheet's today changes, keeps one snapshot line per person: the day being left and their due-total on it. */
++public class SaveSnapshots {
++    public void save(@Val Sheet sheet, @Val RollupBefore before, SnapshotRepository repository) {
++        for (Map.Entry<Long, Rollup.Figures> person : before.rollup().people().entrySet()) {
++            repository.save(new Snapshot(sheet.id(), person.getKey(), sheet.today(), person.getValue().dueTotal()));
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/snapshot/Snapshot.java b/src/main/java/net/officefloor/hq/app/snapshot/Snapshot.java
+new file mode 100644
+index 000000000..5c15d40e3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/snapshot/Snapshot.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.snapshot;
++
++import java.time.LocalDate;
++
++/** That the person {@code personId}'s due-total (as shown) stood at {@code dueTotal} as the sheet left {@code day}. */
++public record Snapshot(String sheetId, long personId, LocalDate day, String dueTotal) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/snapshot/SnapshotRepository.java b/src/main/java/net/officefloor/hq/app/snapshot/SnapshotRepository.java
+new file mode 100644
+index 000000000..c8c0270ee
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/snapshot/SnapshotRepository.java
+@@ -0,0 +1,30 @@
++package net.officefloor.hq.app.snapshot;
++
++import java.sql.Date;
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++@Repository
++public class SnapshotRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public SnapshotRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The sheet's people's snapshots, by person and then oldest first. */
++    public List<Snapshot> findAll(String sheetId) {
++        return jdbc.query("SELECT sheet_id, person_id, left_day, due_total FROM person_snapshot WHERE sheet_id = ?"
++                + " ORDER BY person_id, id",
++                (rs, n) -> new Snapshot(rs.getString("sheet_id"), rs.getLong("person_id"),
++                        rs.getDate("left_day").toLocalDate(), rs.getString("due_total")),
++                sheetId);
++    }
++
++    public void save(Snapshot snapshot) {
++        jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, left_day, due_total) VALUES (?, ?, ?, ?)",
++                snapshot.sheetId(), snapshot.personId(), Date.valueOf(snapshot.day()), snapshot.dueTotal());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/snapshot/SnapshotResponse.java b/src/main/java/net/officefloor/hq/app/snapshot/SnapshotResponse.java
+new file mode 100644
+index 000000000..8a0ff86e5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/snapshot/SnapshotResponse.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.snapshot;
++
++/** A person's snapshot line, as the screen reads it: the day being left (ISO) and their due-total on it. */
++public record SnapshotResponse(long personId, String day, String dueTotal) {
++
++    public static SnapshotResponse from(Snapshot snapshot) {
++        return new SnapshotResponse(snapshot.personId(), snapshot.day().toString(), snapshot.dueTotal());
++    }
++}
+diff --git a/src/main/resources/db/migration/V80__person_snapshot.sql b/src/main/resources/db/migration/V80__person_snapshot.sql
+new file mode 100644
+index 000000000..ced7855ac
+--- /dev/null
++++ b/src/main/resources/db/migration/V80__person_snapshot.sql
+@@ -0,0 +1,10 @@
++-- A person's snapshot lines: one per SNAPSHOT written for them as the sheet's today moved on, with the day being left
++-- and their due-total on it as shown (two decimals, or n/a).
++CREATE TABLE person_snapshot (
++    id BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id VARCHAR(100) NOT NULL REFERENCES sheet (id),
++    person_id BIGINT NOT NULL REFERENCES person (id),
++    left_day DATE NOT NULL,
++    due_total VARCHAR(20) NOT NULL
++);
++CREATE INDEX person_snapshot_sheet ON person_snapshot (sheet_id, person_id, id);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/snapshots.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/snapshots.GET.yml
+new file mode 100644
+index 000000000..c8e9fe5e5
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/snapshots.GET.yml
+@@ -0,0 +1,12 @@
++# The sheet's people's snapshot lines: one entry per SNAPSHOT written for a person, by person and oldest first.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: snapshots
++snapshots:
++  class: net.officefloor.hq.app.snapshot.LoadSnapshots
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.snapshot.RespondWithSnapshots
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index 2765aa826..ea088b2d6 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -1,5 +1,6 @@
+ # Change the sheet's today; a blank date resets it to the real date. The sheet is kept as it stood at the end of the
+-# old today first (a statement can be taken as of it), and each person's due-total on it is recorded as SNAPSHOT, in list order. Once it is set, every open period whose to-date
++# old today first (a statement can be taken as of it), and each person's due-total on it is recorded as SNAPSHOT, in list order, and kept as
++# the person's snapshot line. Once it is set, every open period whose to-date
+ # plus the sheet's grace days (blank: off) is before the new today is closed, in order of their to-dates, as a close by hand would. Every claim lock on the sheet is released.
+ archived:
+   class: net.officefloor.hq.app.sheet.CheckNotArchived
+@@ -21,6 +22,10 @@ before:
+ snapshot:
+   class: net.officefloor.hq.app.rollup.AuditSnapshot
+   govern: [ transaction ]
++  next: keep
++keep:
++  class: net.officefloor.hq.app.snapshot.SaveSnapshots
++  govern: [ transaction ]
+   next: day
+ day:
+   class: net.officefloor.hq.app.asof.RecordSheetDay
