@@ -1,0 +1,382 @@
+diff --git a/src/main/frontend/features/paste/PasteClaims.tsx b/src/main/frontend/features/paste/PasteClaims.tsx
+index a1b46d266..92c3108fa 100644
+--- a/src/main/frontend/features/paste/PasteClaims.tsx
++++ b/src/main/frontend/features/paste/PasteClaims.tsx
+@@ -12,8 +12,9 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ type PasteResult = { added: number };
+ 
+ // The paste box: lines of name,amount,date,note (the note may hold commas, a blank date is the sheet's entry date,
+-// else its today, the note may be left off), each a DRAFT claim for the named person on the sheet. The server
+-// checks every line with the claim form's rules first, so one refused line adds nothing.
++// else its today, the note may be left off), each a claim for the named person on the sheet, opened as the open
++// button would. A line matching a DRAFT of theirs (same date and note) updates it to its amount and opens it instead.
++// The server refuses the whole paste when any line is refused, so one refused line changes nothing.
+ // A note ending " #<reference>" gives the claim that external reference instead.
+ export function PasteClaims() {
+   const [user] = useCurrentUser();
+@@ -41,8 +42,10 @@ export function PasteClaims() {
+       queryClient.setQueryData(peopleKey(sheet), people);
+       queryClient.setQueryData(claimsKey(sheet), claims);
+       setAdded(result.added);
++      // Opening moves the figures and numbers shown elsewhere on the screen.
++      void queryClient.invalidateQueries();
+     },
+-    onError: () => setError('Nothing was added: every line must be a claim the claim form takes, for a name on the sheet.'),
++    onError: () => setError('Nothing was pasted: every line must be a claim the claim form takes and the open button opens, for a name on the sheet.'),
+   });
+ 
+   if (!user || !sheet) return null;
+@@ -76,7 +79,7 @@ export function PasteClaims() {
+       {added !== undefined && (
+         <>
+           {' '}
+-          Added <span data-testid="paste-added">{added}</span>
++          Pasted <span data-testid="paste-added">{added}</span>
+         </>
+       )}
+       {error && <span data-testid="paste-error">{error}</span>}
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index 55bcd0945..13bed455a 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -48,11 +48,42 @@ public class Audit {
+         this.settings = settings;
+     }
+ 
++    /** The records this thread is holding back until its change is known to go through (null: none held). */
++    private final ThreadLocal<List<String>> held = new ThreadLocal<>();
++
+     /** Append one audit record. Tests assert the exact line(s) in the file. */
+     public synchronized void record(String entry) {
++        List<String> holding = held.get();
++        if (holding != null) {
++            holding.add(entry + forDelegator(entry));
++            return;
++        }
+         write(entry + forDelegator(entry));
+     }
+ 
++    /**
++     * Runs a change whose steps may each record before a later one refuses it: its records are written, in order, only
++     * once it has gone through; a refused change writes none.
++     */
++    public <E extends Exception> void holding(Change<E> change) throws E {
++        List<String> holding = new ArrayList<>();
++        held.set(holding);
++        try {
++            change.run();
++        } finally {
++            held.remove();
++        }
++        synchronized (this) {
++            holding.forEach(this::write);
++        }
++    }
++
++    /** A change run by {@link #holding}. */
++    @FunctionalInterface
++    public interface Change<E extends Exception> {
++        void run() throws E;
++    }
++
+     /** " for=<steward>" when the record is a change by a user acting as a steward by delegation, else "". */
+     private String forDelegator(String entry) {
+         Matcher head = HEAD.matcher(entry);
+diff --git a/src/main/java/net/officefloor/hq/app/paste/FindPastedPeople.java b/src/main/java/net/officefloor/hq/app/paste/FindPastedPeople.java
+index 29d5e08fa..6b1717a17 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/FindPastedPeople.java
++++ b/src/main/java/net/officefloor/hq/app/paste/FindPastedPeople.java
+@@ -1,8 +1,11 @@
+ package net.officefloor.hq.app.paste;
+ 
++import java.time.LocalDate;
+ import java.util.ArrayList;
+ import java.util.List;
+ import net.officefloor.hq.app.claim.CheckClaimInputNotRetired;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimStatus;
+ import net.officefloor.hq.app.claim.CheckClaimInputPeriodOpen;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.claim.InvalidClaimException;
+@@ -18,7 +21,9 @@ import net.officefloor.plugin.variable.Val;
+ /**
+  * Finds each line's person by name (as names are compared: ignoring case) and checks its claim against them with the
+  * claim form's rules: no claim after the person's retirement date, none due by (its date plus the terms it would get) inside a closed period, no external reference another claim on the sheet has. Any line refused
+- * refuses the whole paste, before anything is written.
++ * refuses the whole paste, before anything is written. A line naming a date (blank: the sheet's entry date, else its
++ * today) and note that match one of its person's claims as they stand before the paste (void and deleted claims never
++ * match) updates the newest such DRAFT instead of adding a claim; a line whose matches include no DRAFT is refused.
+  */
+ public class FindPastedPeople {
+     public void find(@Val PastedLines pasted, @Val Sheet sheet, PersonRepository people, SheetRepository sheets,
+@@ -41,9 +46,28 @@ public class FindPastedPeople {
+             } catch (InvalidClaimException e) {
+                 throw new InvalidClaimException("Line " + number + ": " + e.getMessage());
+             }
+-            found.add(new PastedLine(line.name(), line.input(), person));
++            found.add(new PastedLine(line.name(), line.input(), person,
++                    draftMatched(line, person, number, sheets, claims)));
+         }
+         pasted.lines().clear();
+         pasted.lines().addAll(found);
+     }
++
++    /** The id of the newest DRAFT the line updates, or null when it matches no claim (it adds one). */
++    private static Long draftMatched(PastedLine line, Person person, int number, SheetRepository sheets,
++            ClaimRepository claims) throws InvalidClaimException {
++        LocalDate date = line.input().date() != null ? line.input().date() : sheets.entryDate(person.sheetId());
++        String note = line.input().note() == null ? "" : line.input().note();
++        List<Claim> matches = claims.findForPerson(person.sheetId(), person.id()).stream()
++                .filter((c) -> c.status() != ClaimStatus.VOID && c.status() != ClaimStatus.DELETED
++                        && c.date().equals(date) && note.equals(c.note() == null ? "" : c.note()))
++                .toList();
++        if (matches.isEmpty()) {
++            return null;
++        }
++        // Newest first, so the first DRAFT is the newest.
++        return matches.stream().filter((c) -> c.status() == ClaimStatus.DRAFT).map(Claim::id).findFirst()
++                .orElseThrow(() -> new InvalidClaimException("Line " + number + ": " + person.name()
++                        + "'s claim on " + date + " with that note is no longer a DRAFT."));
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/paste/PastedLine.java b/src/main/java/net/officefloor/hq/app/paste/PastedLine.java
+index 380ca7ad0..949628c9f 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/PastedLine.java
++++ b/src/main/java/net/officefloor/hq/app/paste/PastedLine.java
+@@ -3,6 +3,14 @@ package net.officefloor.hq.app.paste;
+ import net.officefloor.hq.app.claim.ClaimInput;
+ import net.officefloor.hq.app.person.Person;
+ 
+-/** One pasted line: the name it typed, its claim as the claim form validates it, and (once found) its person. */
+-public record PastedLine(String name, ClaimInput input, Person person) {
++/**
++ * One pasted line: the name it typed, its claim as the claim form validates it, (once found) its person and the id of
++ * the DRAFT claim of theirs it updates (null: it adds a claim).
++ */
++public record PastedLine(String name, ClaimInput input, Person person, Long draft) {
++
++    /** A line not yet found on the sheet. */
++    public PastedLine(String name, ClaimInput input) {
++        this(name, input, null, null);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/paste/SavePastedClaims.java b/src/main/java/net/officefloor/hq/app/paste/SavePastedClaims.java
+index 89c6c0a87..e519e540f 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/SavePastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/paste/SavePastedClaims.java
+@@ -3,50 +3,144 @@ package net.officefloor.hq.app.paste;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.ApplyClaimAction;
++import net.officefloor.hq.app.claim.AuditClaimAction;
++import net.officefloor.hq.app.claim.AuditClaimEdited;
++import net.officefloor.hq.app.claim.CheckClaimDraft;
++import net.officefloor.hq.app.claim.CheckClaimLinesAmount;
++import net.officefloor.hq.app.claim.CheckClaimNotLocked;
++import net.officefloor.hq.app.claim.CheckClaimPeriodOpen;
+ import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimAction;
++import net.officefloor.hq.app.claim.ClaimActionRequest;
+ import net.officefloor.hq.app.claim.ClaimDueNow;
++import net.officefloor.hq.app.claim.ClaimLineRepository;
++import net.officefloor.hq.app.claim.ClaimLockRepository;
+ import net.officefloor.hq.app.claim.ClaimLogLine;
+ import net.officefloor.hq.app.claim.ClaimLogRepository;
++import net.officefloor.hq.app.claim.ClaimNumber;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.claim.ClaimStatus;
++import net.officefloor.hq.app.claim.InvalidClaimException;
+ import net.officefloor.hq.app.claim.LateEntries;
++import net.officefloor.hq.app.claim.LogClaimStatus;
+ import net.officefloor.hq.app.claim.NewDueBy;
++import net.officefloor.hq.app.claim.PreviousDue;
+ import net.officefloor.hq.app.holiday.HolidayRepository;
++import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupLines;
++import net.officefloor.hq.app.rollup.RollupService;
+ import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.hq.app.voidreason.VoidReasonRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+- * Adds a DRAFT claim per pasted line, in order, each as the claim form's add does: due-by fixed from its date and
+- * its person's grade's terms, its DRAFT status logged, and recorded as CLAIM_ADDED (with its reference, if any) (and LATE_ENTRY when its period is soft-closed).
++ * Takes each pasted line in order, and opens its claim as the open button would. A line matching a DRAFT updates it as
++ * the claim's editor would, to the line's amount (recorded as CLAIM_EDITED when the amount changes); any other line
++ * adds a DRAFT claim as the claim form's add does: due-by fixed from its date and its person's grade's terms, its
++ * DRAFT status logged, and recorded as CLAIM_ADDED (with its reference, if any) (and LATE_ENTRY when its period is
++ * soft-closed). Then the claim is opened by the user: numbered, logged, recorded as CLAIM_OPENED and followed by the
++ * rollup lines it moved. Any line the editor or the open button would refuse refuses the whole paste: the transaction
++ * is rolled back and no record is written.
+  */
+ public class SavePastedClaims {
+     public void save(@Val PastedLines pasted, @RequestParam("user") String user, SheetRepository sheets,
+             SettingRepository settings, HolidayRepository holidays, PersonRepository people, RateRepository rates,
+-            ClaimRepository claims, ClaimLogRepository logs, Audit audit, LateEntries lateEntries, Out<PasteResult> result) {
+-        int added = 0;
+-        for (PastedLine line : pasted.lines()) {
+-            Person person = line.person();
+-            LocalDate date = line.input().date() != null ? line.input().date() : sheets.entryDate(person.sheetId());
+-            LocalDate dueBy = NewDueBy.of(date, person, settings, holidays);
+-            Claim claim = claims.save(new Claim(null, person.sheetId(), person.id(), line.input().amount(), date,
+-                    line.input().note(), ClaimStatus.DRAFT, null, null, null, false, null, line.input().corrects(),
+-                    dueBy));
+-            BigDecimal due = ClaimDueNow.of(claim, sheets, people, rates, settings, claims);
+-            logs.append(claim.sheetId(), new ClaimLogLine(claim.id(), claim.status(), user,
+-                    sheets.today(claim.sheetId()), due == null ? "n/a" : due.setScale(2).toPlainString()));
++            PeriodRepository periods, VoidReasonRepository voidReasons, ClaimRepository claims, ClaimLogRepository logs,
++            ClaimLockRepository locks, ClaimLineRepository claimLines, RollupService rollups, Audit audit,
++            LateEntries lateEntries, Out<PasteResult> result) throws InvalidClaimException {
++        int[] done = { 0 };
++        audit.holding(() -> {
++            int number = 0;
++            for (PastedLine line : pasted.lines()) {
++                number++;
++                Person person = line.person();
++                Rollup before = rollups.compute(person.sheetId());
++                try {
++                    Claim draft = line.draft() == null
++                            ? add(line, person, user, sheets, settings, holidays, people, rates, claims, logs, audit,
++                                    lateEntries)
++                            : edit(line, person, user, claims, locks, claimLines, periods, people, audit);
++                    open(draft, user, sheets, people, rates, settings, periods, voidReasons, claims, logs, audit);
++                } catch (InvalidClaimException e) {
++                    throw new InvalidClaimException("Line " + number + ": " + e.getMessage());
++                }
++                RollupLines.record(before, rollups.compute(person.sheetId()), person.sheetId(), user, audit);
++                done[0]++;
++            }
++        });
++        result.set(new PasteResult(done[0]));
++    }
++
++    private static Claim add(PastedLine line, Person person, String user, SheetRepository sheets,
++            SettingRepository settings, HolidayRepository holidays, PersonRepository people, RateRepository rates,
++            ClaimRepository claims, ClaimLogRepository logs, Audit audit, LateEntries lateEntries) {
++        LocalDate date = line.input().date() != null ? line.input().date() : sheets.entryDate(person.sheetId());
++        LocalDate dueBy = NewDueBy.of(date, person, settings, holidays);
++        Claim claim = claims.save(new Claim(null, person.sheetId(), person.id(), line.input().amount(), date,
++                line.input().note(), ClaimStatus.DRAFT, null, null, null, false, null, line.input().corrects(),
++                dueBy));
++        BigDecimal due = ClaimDueNow.of(claim, sheets, people, rates, settings, claims);
++        logs.append(claim.sheetId(), new ClaimLogLine(claim.id(), claim.status(), user,
++                sheets.today(claim.sheetId()), due == null ? "n/a" : due.setScale(2).toPlainString()));
++        claims.saveRef(claim, line.input().ref());
++        audit.record("CLAIM_ADDED sheet=" + claim.sheetId() + " by=" + user + " person=" + person.name()
++                + " amount=" + claim.amount().setScale(2).toPlainString() + " date=" + claim.date()
++                + Claim.auditRef(line.input().ref()));
++        lateEntries.mark(claim, person, user);
++        return claim;
++    }
++
++    /** The matched DRAFT, edited to the line's amount as the claim's editor would (when the amount changes). */
++    private static Claim edit(PastedLine line, Person person, String user, ClaimRepository claims,
++            ClaimLockRepository locks, ClaimLineRepository claimLines, PeriodRepository periods,
++            PersonRepository people, Audit audit) throws InvalidClaimException {
++        Claim claim = claims.find(person.sheetId(), line.draft());
++        if (claim == null) {
++            throw new InvalidClaimException("The claim it matched is no longer on the sheet.");
++        }
++        new CheckClaimNotLocked().check(claim, user, locks);
++        new CheckClaimDraft().check(claim);
++        new CheckClaimPeriodOpen().check(claim, periods);
++        new CheckClaimLinesAmount().check(claim, line.input(), claimLines);
++        if (line.input().ref() != null) {
+             claims.saveRef(claim, line.input().ref());
+-            audit.record("CLAIM_ADDED sheet=" + claim.sheetId() + " by=" + user + " person=" + person.name()
+-                    + " amount=" + claim.amount().setScale(2).toPlainString() + " date=" + claim.date()
+-                    + Claim.auditRef(line.input().ref()));
+-            lateEntries.mark(claim, person, user);
+-            added++;
+         }
+-        result.set(new PasteResult(added));
++        if (claim.amount().compareTo(line.input().amount()) == 0) {
++            return claim;
++        }
++        Claim edited = claims.save(new Claim(claim.id(), claim.sheetId(), claim.personId(), line.input().amount(),
++                claim.date(), claim.note(), claim.status(), claim.number(), claim.due(), claim.openedBy(),
++                claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil(),
++                claim.proofs(), claim.splitFrom()));
++        claims.markEdited(edited.sheetId(), edited.id(), user);
++        new AuditClaimEdited().audit(edited, people, user, audit);
++        return edited;
++    }
++
++    /** Opens the DRAFT exactly as the open button does: refused on the same terms. */
++    private static void open(Claim draft, String user, SheetRepository sheets, PersonRepository people,
++            RateRepository rates, SettingRepository settings, PeriodRepository periods,
++            VoidReasonRepository voidReasons, ClaimRepository claims, ClaimLogRepository logs, Audit audit)
++            throws InvalidClaimException {
++        new CheckClaimPeriodOpen().check(draft, periods);
++        ClaimActionRequest request = new ClaimActionRequest("", "");
++        ClaimAction[] action = new ClaimAction[1];
++        ClaimNumber[] number = new ClaimNumber[1];
++        PreviousDue[] previous = new PreviousDue[1];
++        Claim[] updated = new Claim[1];
++        new ApplyClaimAction().apply("open", user, draft, request, sheets, people, rates, settings, periods,
++                voidReasons, claims, logs, (v) -> action[0] = v, (v) -> number[0] = v, (v) -> previous[0] = v,
++                (v) -> updated[0] = v);
++        Claim opened = claims.save(updated[0]);
++        new LogClaimStatus().log(opened, user, sheets, people, rates, settings, claims, logs);
++        new AuditClaimAction().audit(action[0], number[0], opened, request, previous[0], people, user, audit);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/paste/ValidatePasteRequest.java b/src/main/java/net/officefloor/hq/app/paste/ValidatePasteRequest.java
+index a8bbd2183..6786088e4 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/ValidatePasteRequest.java
++++ b/src/main/java/net/officefloor/hq/app/paste/ValidatePasteRequest.java
+@@ -65,7 +65,7 @@ public class ValidatePasteRequest {
+                 throw new InvalidClaimException("Line " + number + ": the reference " + input[0].ref()
+                         + " is already given by an earlier line.");
+             }
+-            lines.add(new PastedLine(name, input[0], null));
++            lines.add(new PastedLine(name, input[0]));
+         }
+         if (lines.isEmpty()) {
+             throw new InvalidClaimException("Paste at least one line of name,amount,date,note.");
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
+index 92bbc1a40..4d4b6d427 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
+@@ -2,7 +2,13 @@
+ # today; the note may be absent), in order, for the person on the sheet with that name (ignoring case). Every line
+ # is checked first with the claim form's rules (and its name must be on the sheet); any line refused refuses the
+ # whole paste (400) and nothing is added. A note ending " #<reference>" gives the claim that external reference (not
+-# part of the note); one another claim on the sheet has, or an earlier line has, ignoring case, refuses the paste. Answers how many claims were added.
++# part of the note); one another claim on the sheet has, or an earlier line has, ignoring case, refuses the paste.
++# A line whose person, date and note match one of their claims as they stood before the paste (void and deleted claims
++# never match; lines never match each other) updates the newest such DRAFT to its amount instead of adding a claim
++# (CLAIM_EDITED when the amount changes); a line whose matches include no DRAFT refuses the paste.
++# Each line's claim is then opened by the user exactly as the open button would (CLAIM_OPENED, then its rollup lines),
++# in paste order; any refusal the open button would give refuses the whole paste and writes nothing.
++# Answers how many lines went through.
+ archived:
+   class: net.officefloor.hq.app.sheet.CheckNotArchived
+   next: viewer
+@@ -19,18 +25,10 @@ load:
+ people:
+   class: net.officefloor.hq.app.paste.FindPastedPeople
+   govern: [ transaction ]
+-  next: before
+-before:
+-  class: net.officefloor.hq.app.rollup.SnapshotRollup
+-  govern: [ transaction ]
+   next: save
+ save:
+   class: net.officefloor.hq.app.paste.SavePastedClaims
+   govern: [ transaction ]
+-  next: rollup
+-rollup:
+-  class: net.officefloor.hq.app.rollup.AuditRollup
+-  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.paste.RespondWithPasteResult
