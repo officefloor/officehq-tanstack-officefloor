@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
+import { BulkOpen } from '../claims/BulkOpen';
 import { PersonClaims } from '../claims/PersonClaims';
 import { claimsKey, listClaims, liveClaims, sumAmounts } from '../claims/api';
 import { claimDue, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, sumDues } from '../rates/api';
@@ -22,7 +23,8 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '' };
  *  hold (with a button that holds or releases them; held, their OPEN claims count in no total), their
  *  patrons (names sorted, with a picker that names one more) and backing (their patrons' due-totals
  *  added up, skipping n/a), and
- *  their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims.
+ *  their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
+ *  with a checkbox that selects it for a button that opens the selected claims together.
  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
  *  A button exports everyone, retired people included, as a CSV file. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
@@ -43,6 +45,13 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const [retireDates, setRetireDates] = useState<Record<number, string>>({});
   // The patron picked on each person's row (blank: none picked).
   const [patronPicks, setPatronPicks] = useState<Record<number, string>>({});
+  // The claims selected for a bulk action.
+  const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
+  const select = (id: number, on: boolean) => setSelected((s) => {
+    const next = new Set(s);
+    if (on) next.add(id); else next.delete(id);
+    return next;
+  });
 
   const save = useMutation({
     mutationFn: async (v: { editing: { id: number; version: number } | null; input: PersonInput }) => {
@@ -212,6 +221,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       <QuickAdd sheetId={sheetId} user={user} />
       <ShowRetired />{' '}
       <ExportPeople rows={() => everyone.map((p) => [p.name, gradeOn(p, today), p.retiredFrom ?? '', showDue(dueOf.get(p.id) ?? null)])} />
+      <BulkOpen sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
       <table>
         <tbody>
@@ -305,7 +315,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                 </td>
                 <td>
                   <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} gradeOn={(d) => gradeOn(p, d)} rates={rates.data} floor={floor}
-                    terms={terms} today={today} charges={charges} />
+                    terms={terms} today={today} charges={charges} selected={selected} onSelect={select} />
                 </td>
               </tr>
             );

@@ -16,12 +16,14 @@ const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
  *  it is stated,
  *  the period its date falls in (none when no period contains it), who opened it, and buttons that
  *  change its status (the user who opened a claim cannot settle it, nor a clerk one whose due is
- *  above the sheet's clerk limit), and for a correction (a negative amount, no floor and no late
+ *  above the sheet's clerk limit), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
  *  charge) the number of the SETTLED claim it corrects. Only a DRAFT can be edited:
  *  editing any other claim is refused with an error on the claim. */
-export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, terms, today, charges }: {
+export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, terms, today, charges, selected, onSelect }: {
   sheetId: string; user: string; personId: number; claims: Claim[]; gradeOn: GradeOn; rates: Rate[] | undefined;
   floor: string; terms: number; today: string; charges: Late;
+  /** The claims selected for a bulk action, and how one is selected or unselected. */
+  selected: ReadonlySet<number>; onSelect: (id: number, on: boolean) => void;
 }) {
   const queryClient = useQueryClient();
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
@@ -115,6 +117,10 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
         <tbody>
           {claims.map((c) => (
             <tr key={c.id} data-testid={`claim-row-${c.id}`}>
+              <td>
+                <input type="checkbox" data-testid="claim-select" checked={selected.has(c.id)}
+                  onChange={(e) => onSelect(c.id, e.target.checked)} />
+              </td>
               <td data-testid="claim-number">{c.number ?? ''}</td>
               <td data-testid="claim-amount">{Number(c.amount).toFixed(2)}</td>
               <td data-testid="claim-date">{c.date}</td>

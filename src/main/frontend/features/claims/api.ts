@@ -77,3 +77,12 @@ export function dueBy(c: Claim, terms: number): string {
 /** Whether a claim is overdue: it is OPEN and its due-by is before the sheet's `today`. */
 export const isOverdue = (c: Claim, terms: number, today: string) =>
   c.status === 'OPEN' && today !== '' && dueBy(c, terms) < today;
+
+/** How many of the selected claims a bulk open opened, and how many it refused (left as they were). */
+export type BulkOpenResult = { opened: number; refused: number };
+
+/** Open the selected claims together, numbered in list order (people in added order, newest claim
+ *  first within a person); each that cannot be opened is left as it is and counted as refused. */
+export function bulkOpenClaims(sheetId: string, by: string, claimIds: number[]): Promise<BulkOpenResult> {
+  return postJson<BulkOpenResult>(`${sheetBase(sheetId)}/bulk-open?by=${encodeURIComponent(by)}`, { claimIds });
+}
