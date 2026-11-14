@@ -1,0 +1,204 @@
+diff --git a/src/main/frontend/features/counters/ConsolidatedFigures.tsx b/src/main/frontend/features/counters/ConsolidatedFigures.tsx
+index c2c4275c9..1eaa942ac 100644
+--- a/src/main/frontend/features/counters/ConsolidatedFigures.tsx
++++ b/src/main/frontend/features/counters/ConsolidatedFigures.tsx
+@@ -8,32 +8,46 @@ import { GRADES, liveHolds, usePeople } from '../people/people';
+ import { useGradeCodes } from '../grades/grades';
+ import type { Person } from '../people/people';
+ import { personOverdue } from '../overdue/overdue';
+-import { personDue, total, trimmedTotal, useRates } from '../rates/rates';
++import { personDue, personSplit, total, trimmedTotal, useRates } from '../rates/rates';
+ import type { Rate } from '../rates/rates';
+ import { sheetKey, useCurrentSheet } from '../session/session';
+ import type { SheetInfo } from '../session/session';
+ import { dueRules, useDueRules } from '../settings/settings';
+ import type { DueRules, Settings } from '../settings/settings';
++import { cutTotal, personCuts, usePools } from '../pools/pools';
+ import type { Pool } from '../pools/pools';
+ import { nameKey, STATUSES } from './HeaderCounters';
+ 
+ /**
+- * One sheet's figures: each person's names (their name and aliases, as names are compared), each person's due-total
+- * and overdue-total, per grade the due-totals of the people on it (retired people left out) added up, and per status
++ * One sheet's figures: each person's names (their name and aliases, as names are compared), each person's due-total,
++ * overdue-total, settled-total, open-total and cut total, per grade the due-totals of the people on it (retired people left out) added up, and per status
+  * how many claims have it, and how many overdue claims count (as the rollup's overdue count).
+  */
+ export type Figures = {
+   names: string[][];
+   dues: string[];
+   overdues: string[];
++  settleds: string[];
++  opens: string[];
++  cuts: string[];
+   grades: Record<string, string>;
+   statuses: Record<string, number>;
+   overdueCount: number;
+ };
+ 
+ /** A sheet's figures, worked out from its people, aliases, claims and rates by its rules. */
+-export function sheetFigures(people: Person[], aliases: Alias[], claims: Claim[], rates: Rate[], rules: DueRules): Figures {
++export function sheetFigures(
++  people: Person[],
++  aliases: Alias[],
++  claims: Claim[],
++  rates: Rate[],
++  rules: DueRules,
++  pools: Pool[],
++): Figures {
+   const mine = (id: number) => claims.filter((c) => c.personId === id);
++  const splits = people.map((p) =>
++    personSplit(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules, { personId: p.id, claims, people }),
++  );
+   const current = people.filter((p) => !p.retired);
+   const gradeDue = (g: string) =>
+     total(
+@@ -47,6 +61,9 @@ export function sheetFigures(people: Person[], aliases: Alias[], claims: Claim[]
+     ),
+     dues: people.map((p) => personDue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules, { personId: p.id, claims, people })),
+     overdues: people.map((p) => personOverdue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules).total),
++    settleds: splits.map((s) => s.settled),
++    opens: splits.map((s) => s.open),
++    cuts: people.map((p) => cutTotal(personCuts(pools, p.id))),
+     // A, B, C and every grade a person here is on, so a grade added on any sheet of the tree is counted
+     grades: Object.fromEntries([...new Set([...GRADES, ...current.map((p) => p.grade)])].map((g) => [g, gradeDue(g)])),
+     statuses: Object.fromEntries(STATUSES.map((s) => [s, claims.filter((c) => c.status === s).length])),
+@@ -72,7 +89,7 @@ async function figuresOf(sheet: string): Promise<Figures> {
+     getJson<Settings>(`${path}/settings`),
+     getJson<Pool[]>(`${path}/pools`),
+   ]);
+-  return sheetFigures(people, aliases, claims, rates, dueRules(settings, info.today, claims, pools));
++  return sheetFigures(people, aliases, claims, rates, dueRules(settings, info.today, claims, pools), pools);
+ }
+ 
+ /**
+@@ -107,7 +124,7 @@ function distinctPeople(names: string[][]): number {
+ }
+ 
+ // The consolidated figures over the sheet and all its descendants: the people counted once over the tree (people
+-// whose names or aliases match are one), and the due-total and overdue-total of every person of the tree added up,
++// whose names or aliases match are one), and the due-total, overdue-total, settled-total, open-total and cut total of every person of the tree added up,
+ // trimmed once of the single highest and lowest over the whole tree; per grade, the due-totals of the people on it
+ // (retired people left out), and per status, the count of claims with it, each added up over the tree. A sheet with no children shows its own. While the
+ // screen shows the sheet as of a date, every sheet of the tree is taken as it stood at the end of that day.
+@@ -120,13 +137,17 @@ export function ConsolidatedFigures() {
+   const aliases = useAliases().data ?? [];
+   const stored = useStoredFigures(asOf).data ?? [];
+   const grades = useGradeCodes();
++  const pools = usePools().data ?? [];
+ 
+-  const all: Figures[] = [sheetFigures(people, aliases, claims, rates, rules), ...stored];
++  const all: Figures[] = [sheetFigures(people, aliases, claims, rates, rules, pools), ...stored];
+   return (
+     <p data-testid="consolidated-figures">
+       Consolidated — People: <strong data-testid="consolidated-people-count">{distinctPeople(all.flatMap((f) => f.names))}</strong>
+       {' · '}Due: <strong data-testid="consolidated-due-total">{trimmedTotal(all.flatMap((f) => f.dues))}</strong>
+       {' · '}Overdue: <strong data-testid="consolidated-overdue-total">{trimmedTotal(all.flatMap((f) => f.overdues))}</strong>
++      {' · '}Settled: <strong data-testid="consolidated-settled-total">{trimmedTotal(all.flatMap((f) => f.settleds))}</strong>
++      {' · '}Open: <strong data-testid="consolidated-open-total">{trimmedTotal(all.flatMap((f) => f.opens))}</strong>
++      {' · '}Cut: <strong data-testid="consolidated-cut-total">{trimmedTotal(all.flatMap((f) => f.cuts))}</strong>
+       {grades.map((g) => (
+         <span key={g}>
+           {' · '}
+diff --git a/src/main/frontend/features/dashboard/StewardDashboard.tsx b/src/main/frontend/features/dashboard/StewardDashboard.tsx
+index 9c95a5486..4139918c1 100644
+--- a/src/main/frontend/features/dashboard/StewardDashboard.tsx
++++ b/src/main/frontend/features/dashboard/StewardDashboard.tsx
+@@ -3,6 +3,7 @@ import { useAliases } from '../aliases/aliases';
+ import { useClaims } from '../claims/claims';
+ import { sheetFigures, useStoredFigures } from '../counters/ConsolidatedFigures';
+ import { usePeople } from '../people/people';
++import { usePools } from '../pools/pools';
+ import { useRates } from '../rates/rates';
+ import { useCurrentUser } from '../session/session';
+ import { useDueRules, useSettings } from '../settings/settings';
+@@ -28,10 +29,11 @@ export function StewardDashboard() {
+   const rates = useRates().data ?? [];
+   const rules = useDueRules();
+   const aliases = useAliases().data ?? [];
++  const pools = usePools().data ?? [];
+   const stored = useStoredFigures(currentAsOf()).data ?? [];
+ 
+   const steward = actsAsSteward(settings, user ?? '', rules.today);
+-  const all = [sheetFigures(people, aliases, claims, rates, rules), ...stored];
++  const all = [sheetFigures(people, aliases, claims, rates, rules, pools), ...stored];
+   const pending = all.reduce((n, f) => n + f.statuses.PENDING, 0);
+   const review = all.reduce((n, f) => n + f.statuses.REVIEW, 0);
+   const overdue = all.reduce((n, f) => n + f.overdueCount, 0);
+diff --git a/src/main/frontend/features/pools/CutTotals.tsx b/src/main/frontend/features/pools/CutTotals.tsx
+index 348b26a38..aa36c804c 100644
+--- a/src/main/frontend/features/pools/CutTotals.tsx
++++ b/src/main/frontend/features/pools/CutTotals.tsx
+@@ -1,6 +1,7 @@
+ import type { Person } from '../people/people';
+ import { usePeople } from '../people/people';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { trimmedTotal } from '../rates/rates';
+ import { cutTotal, personCuts, usePools } from './pools';
+ 
+ // A person's cut total: their cuts across every pool they are a member of, added up.
+@@ -9,7 +10,8 @@ export function PersonCutTotal({ person }: { person: Person }) {
+   return <td data-testid="person-cut-total">{cutTotal(personCuts(pools, person.id))}</td>;
+ }
+ 
+-// The sheet's cut total: everyone's cut total added up.
++// The sheet's cut total: everyone's cut total added up, leaving out the single highest and lowest person's figure
++// when three or more have one.
+ export function CutTotal() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+@@ -20,7 +22,7 @@ export function CutTotal() {
+ 
+   return (
+     <p>
+-      Cut total: <strong data-testid="rollup-cut-total">{cutTotal(people.map((p) => cutTotal(personCuts(pools, p.id))))}</strong>
++      Cut total: <strong data-testid="rollup-cut-total">{trimmedTotal(people.map((p) => cutTotal(personCuts(pools, p.id))))}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/split/SplitTotals.tsx b/src/main/frontend/features/split/SplitTotals.tsx
+index b48e4dec2..f8c8343a5 100644
+--- a/src/main/frontend/features/split/SplitTotals.tsx
++++ b/src/main/frontend/features/split/SplitTotals.tsx
+@@ -1,10 +1,11 @@
+ import { useClaims } from '../claims/claims';
+ import { liveHolds, usePeople } from '../people/people';
+-import { personSplit, total, useRates } from '../rates/rates';
++import { personSplit, trimmedTotal, useRates } from '../rates/rates';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { useDueRules } from '../settings/settings';
+ 
+-// The sheet's settled-total and open-total: everyone's added up (not trimmed).
++// The sheet's settled-total and open-total: everyone's added up, leaving out the single highest and
++// lowest person's figure when three or more have one.
+ export function SplitTotals() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+@@ -24,8 +25,8 @@ export function SplitTotals() {
+   );
+   return (
+     <p>
+-      Settled total: <strong data-testid="rollup-settled-total">{total(each.map((s) => s.settled))}</strong>, open
+-      total: <strong data-testid="rollup-open-total">{total(each.map((s) => s.open))}</strong>
++      Settled total: <strong data-testid="rollup-settled-total">{trimmedTotal(each.map((s) => s.settled))}</strong>, open
++      total: <strong data-testid="rollup-open-total">{trimmedTotal(each.map((s) => s.open))}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 364bd69ac..768dc4a9c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -119,11 +119,9 @@ public class ClaimRepository {
+ 
+     /**
+      * Move the claim to another person: it loses any figure a statement bound it to (live again) and is listed as
+-     * their newest claim; any share of it that person held goes. The claim as stored.
++     * their newest claim; its shares stay as they are (one that person held included). The claim as stored.
+      */
+     public Claim reassign(Claim claim, long personId) {
+-        jdbc.update("DELETE FROM claim_share WHERE sheet_id = ? AND claim_id = ? AND person_id = ?", claim.sheetId(),
+-                claim.id(), personId);
+         jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL,"
+                 + " listed = NEXT VALUE FOR claim_listed_seq WHERE id = ? AND sheet_id = ?",
+                 personId, claim.id(), claim.sheetId());
