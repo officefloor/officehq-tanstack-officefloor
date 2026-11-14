@@ -18,9 +18,10 @@ import java.util.Objects;
  * a cut, each is 0.00; when every member in the pool is retired, there are no cuts). Otherwise a member's cut is "" (none). A member is a
  * person ({@code personId}) or another pool ({@code poolId}); the pool's pot is the sheet's when it is a member of no
  * pool, else its cut in the pool above (null: none). A crew's pool ({@code crew}) has the crew's id negated as its id.
- * Each member also has its cut at the end of each period whose to-date is on or before the sheet's today
- * ({@code periodCuts}, earliest first), worked out the same way from the pool, its members, the pot and the holds as
- * they were then with that day as the sheet's today ("" when there was none).
+ * Each member also has its cut for each period ({@code periodCuts}, in the periods' order): for a closed or soft-closed
+ * period, its cut as it stood when the period was closed (whatever its to-date); for an open one whose to-date is on or
+ * before the sheet's today, worked out the same way from the pool, its members, the pot and the holds as they were at
+ * its end with that day as the sheet's today ("" when there was none).
  */
 public record PoolResponse(long id, String name, List<Member> members, String totalShare, boolean balanced,
         boolean crew) {
@@ -50,11 +51,16 @@ public record PoolResponse(long id, String name, List<Member> members, String to
         return new PoolResponse(pool.id(), pool.name(), members, total.toPlainString(), balanced, pool.id() < 0);
     }
 
-    /** The member's cut at the end of each period of the history: "" when the pool or the member was not there then. */
+    /**
+     * The member's cut for each period of the history: its fixed cut for a closed or soft-closed one, else its cut at
+     * the period's end; "" when the pool or the member was not there then.
+     */
     private static List<PeriodCut> periodCuts(Pool pool, PoolMember member, PoolHistory history) {
         List<PeriodCut> cuts = new ArrayList<>();
         for (PoolHistory.Ended ended : history.periods()) {
-            cuts.add(new PeriodCut(ended.period(), cutThen(pool, member, ended.pools())));
+            cuts.add(new PeriodCut(ended.period(), ended.fixed() != null
+                    ? ended.fixed().getOrDefault(PoolRepository.cutKey(pool.id(), member.personId(), member.poolId()), "")
+                    : cutThen(pool, member, ended.pools())));
         }
         return cuts;
     }

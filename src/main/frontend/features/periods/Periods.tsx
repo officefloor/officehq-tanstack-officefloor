@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
+import { poolsKey } from '../pools/pools';
 import { useRates } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { useDueRules, useSettings } from '../settings/settings';
@@ -98,7 +99,9 @@ export function Periods() {
         {},
       ),
     onSuccess: async () => {
+      // a close or soft-close fixes the pools' cuts for the period, a reopen makes them live again
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheet) });
+      await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
     },
     onError: (_e, { name, action }) =>
       setRowError({

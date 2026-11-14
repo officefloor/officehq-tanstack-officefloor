@@ -6,9 +6,10 @@ import { sheetKey, useCurrentSheet } from '../session/session';
  * A pool's member: a person (personId) or another pool (poolId), its name, its share percent (two decimals), whether
  * it is a person with a retirement date set and its cut of the pool's pot ('': none — the pool is unbalanced, or has
  * no pot, or every member in it is retired, or the member's dates leave out the sheet's today) and its membership's
- * from-date and to-date (null: no start / no end), and its cut at the end of each period whose to-date is on or before
- * the sheet's today (periodCuts, earliest first; '': none), from the pool, its members, the pot and the holds as they
- * were then. A pool that is a member of none has the sheet's pot; one that is a member of another, its cut there.
+ * from-date and to-date (null: no start / no end), and its cut for each period (periodCuts, in the periods' order;
+ * '': none): for a closed or soft-closed period, fixed as it stood when the period was closed (whatever its to-date);
+ * for an open one whose to-date is on or before the sheet's today, from the pool, its members, the pot and the holds as
+ * they were at its end. A pool that is a member of none has the sheet's pot; one that is a member of another, its cut there.
  */
 export type PoolMember = {
   personId: number | null;

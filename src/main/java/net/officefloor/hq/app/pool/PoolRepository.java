@@ -182,4 +182,37 @@ public class PoolRepository {
                 member.from() == null ? null : Date.valueOf(member.from()),
                 member.to() == null ? null : Date.valueOf(member.to()), poolId);
     }
+
+    /** The key a member's fixed cut is kept under: its pool, and the person or pool it is. */
+    public static String cutKey(long poolId, Long personId, Long memberPoolId) {
+        return poolId + ":" + (personId == null ? "" : personId) + ":" + (memberPoolId == null ? "" : memberPoolId);
+    }
+
+    /** Fix the period's cuts (by {@link #cutKey}; "": none), replacing any fixed before. */
+    public void saveFixedCuts(String sheetId, String period, Map<String, String> cuts) {
+        clearFixedCuts(sheetId, period);
+        cuts.forEach((key, cut) -> {
+            String[] k = key.split(":", -1);
+            jdbc.update("INSERT INTO period_pool_cut (sheet_id, period_name, pool_id, person_id, member_pool_id, cut)"
+                    + " VALUES (?, ?, ?, ?, ?, ?)", sheetId, period, Long.parseLong(k[0]),
+                    k[1].isEmpty() ? null : Long.parseLong(k[1]), k[2].isEmpty() ? null : Long.parseLong(k[2]), cut);
+        });
+    }
+
+    /** Make the period's cuts live again. */
+    public void clearFixedCuts(String sheetId, String period) {
+        jdbc.update("DELETE FROM period_pool_cut WHERE sheet_id = ? AND period_name = ?", sheetId, period);
+    }
+
+    /** The sheet's fixed cuts: by period name, each by {@link #cutKey}. */
+    public Map<String, Map<String, String>> fixedCuts(String sheetId) {
+        Map<String, Map<String, String>> fixed = new LinkedHashMap<>();
+        jdbc.query("SELECT period_name, pool_id, person_id, member_pool_id, cut FROM period_pool_cut WHERE sheet_id = ?",
+                rs -> {
+                    fixed.computeIfAbsent(rs.getString("period_name"), k -> new LinkedHashMap<>()).put(
+                            cutKey(rs.getLong("pool_id"), rs.getObject("person_id", Long.class),
+                                    rs.getObject("member_pool_id", Long.class)), rs.getString("cut"));
+                }, sheetId);
+        return fixed;
+    }
 }
