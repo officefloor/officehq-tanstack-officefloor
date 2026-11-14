@@ -89,7 +89,16 @@ export function PersonClaims({ person }: { person: Person }) {
         queryClient.invalidateQueries({ queryKey: tagsKey(sheet) }),
       ]);
     },
-    onError: () => setError('That claim could not be saved.'),
+    // A refused save changes nothing: the editor is closed (its lock released) so the form is back to adding, and
+    // the refusal shows until the form is changed or submitted again.
+    onError: () => {
+      if (editing !== undefined) {
+        release(editing);
+        setEditing(undefined);
+        setForm(EMPTY);
+      }
+      setError('That claim could not be saved.');
+    },
   });
 
   // A DRAFT claim from the chosen template: its amount and note as they are now, with no date, by the claim form's
