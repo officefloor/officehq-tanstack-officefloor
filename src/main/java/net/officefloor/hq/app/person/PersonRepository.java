@@ -346,6 +346,13 @@ public class PersonRepository {
         return to + 1;
     }
 
+    /** The sheet's today when the person arrived on it by transfer, or null when they were not transferred here. */
+    public LocalDate arrivedOn(String sheetId, long personId) {
+        List<LocalDate> found = jdbc.query("SELECT arrived_on FROM person WHERE sheet_id = ? AND id = ?",
+                (rs, n) -> rs.getObject("arrived_on", LocalDate.class), sheetId, personId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     /** The sheet the person was transferred from, or null when they were not transferred here. */
     public String origin(String sheetId, long personId) {
         List<String> found = jdbc.queryForList("SELECT origin FROM person WHERE sheet_id = ? AND id = ?", String.class,
@@ -437,6 +444,8 @@ public class PersonRepository {
         changed.put("sheet_id", to);
         changed.put("name", name);
         changed.put("origin", person.sheetId());
+        List<Date> today = jdbc.query("SELECT today FROM sheet WHERE id = ?", (rs, n) -> rs.getDate("today"), to);
+        changed.put("arrived_on", today.isEmpty() || today.get(0) == null ? LocalDate.now() : today.get(0).toLocalDate());
         changed.put("position", jdbc.queryForObject("SELECT " + NEXT_POSITION, Long.class, to));
         long id = RowCopy.copy(jdbc, "person", person.id(), changed);
         String tags = tags(to, id);

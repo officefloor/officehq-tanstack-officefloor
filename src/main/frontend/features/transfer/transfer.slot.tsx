@@ -1,6 +1,7 @@
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import type { Person } from '../people/people';
 import { PersonTransfer } from './PersonTransfer';
+import { PersonTransferUndo } from './PersonTransferUndo';
 
 // The sheet a transferred person came from (blank for anyone not transferred here).
 function PersonOrigin({ person }: { person: Person }) {
@@ -12,4 +13,6 @@ export const contributions = [
   PersonColumns.fill({ order: 18.55, Component: PersonOrigin }),
   PersonColumnHeads.fill({ order: 18.6, Component: () => <th>Transfer</th> }),
   PersonColumns.fill({ order: 18.6, Component: PersonTransfer }),
+  PersonColumnHeads.fill({ order: 18.65, Component: () => <th>Undo transfer</th> }),
+  PersonColumns.fill({ order: 18.65, Component: PersonTransferUndo }),
 ];
