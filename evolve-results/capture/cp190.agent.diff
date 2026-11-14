@@ -1,0 +1,252 @@
+diff --git a/src/main/frontend/features/claims/BulkVoid.tsx b/src/main/frontend/features/claims/BulkVoid.tsx
+new file mode 100644
+index 000000000..10387b8e9
+--- /dev/null
++++ b/src/main/frontend/features/claims/BulkVoid.tsx
+@@ -0,0 +1,92 @@
++import { useState } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { usePeople } from '../people/people';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { claimsKey, useClaims } from './claims';
++import type { Claim } from './claims';
++import { useSelectedClaims } from './selection';
++import { useOneAtATime } from '../../query/useOneAtATime';
++import { useVoidReasons } from '../voidreasons/voidReasons';
++
++// Voids every ticked claim, one after another in list order (people in their order, each one's
++// claims newest first), as the signed-in user. Each goes through the claim's own void, so it is
++// voided by exactly its rules (role, a settled claim only by a steward within 7 days, the reason
++// while the sheet has void reasons) and audited the same; one the server refuses is left as it is
++// and counted as refused. While the sheet has void reasons, each void sends the reason chosen
++// beside the button (none chosen: the server refuses it).
++export function BulkVoid() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const people = usePeople().data ?? [];
++  const claims = useClaims().data ?? [];
++  const voidReasons = useVoidReasons().data ?? [];
++  const [selected, , clear] = useSelectedClaims();
++  const [reason, setReason] = useState('');
++  const [result, setResult] = useState<{ voided: number; refused: number } | undefined>(undefined);
++  const [busy, setBusy] = useState(false);
++  const queryClient = useQueryClient();
++  const once = useOneAtATime();
++
++  if (!user || !sheet) return null;
++
++  const run = async () => {
++    setResult(undefined);
++    setBusy(true);
++    const ordered = people.flatMap((p) => claims.filter((c) => c.personId === p.id && selected.has(c.id)));
++    let voided = 0;
++    let refused = 0;
++    try {
++      for (const c of ordered) {
++        try {
++          await postJson<Claim>(
++            `/api/sheets/${encodeURIComponent(sheet)}/claims/${c.id}/void?user=${encodeURIComponent(user)}`,
++            { reason },
++          );
++          voided++;
++        } catch {
++          refused++;
++        }
++      }
++      // A ticked claim no longer listed (gone from the sheet) cannot be voided.
++      refused += selected.size - ordered.length;
++      clear();
++      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
++    } finally {
++      setBusy(false);
++      setResult({ voided, refused });
++    }
++  };
++
++  return (
++    <p>
++      {voidReasons.length > 0 && (
++        <>
++          <select
++            data-testid="bulk-void-reason"
++            aria-label="Void reason for selected claims"
++            value={reason}
++            onChange={(e) => setReason(e.target.value)}
++          >
++            <option value="">void reason…</option>
++            {voidReasons.map((r) => (
++              <option key={r} value={r}>
++                {r}
++              </option>
++            ))}
++          </select>{' '}
++        </>
++      )}
++      <button type="button" data-testid="bulk-void" disabled={busy} onClick={() => once(run)}>
++        Void selected claims
++      </button>
++      {result && (
++        <>
++          {' '}
++          Voided <span data-testid="bulk-voided">{result.voided}</span>, refused{' '}
++          <span data-testid="bulk-void-refused">{result.refused}</span>
++        </>
++      )}
++    </p>
++  );
++}
+diff --git a/src/main/frontend/features/claims/ClaimSelect.tsx b/src/main/frontend/features/claims/ClaimSelect.tsx
+index f1ab9277e..4559617a4 100644
+--- a/src/main/frontend/features/claims/ClaimSelect.tsx
++++ b/src/main/frontend/features/claims/ClaimSelect.tsx
+@@ -1,7 +1,7 @@
+ import type { Claim } from './claims';
+ import { useSelectedClaims } from './selection';
+ 
+-// The checkbox that ticks a claim for a bulk action (BulkOpen).
++// The checkbox that ticks a claim for a bulk action (BulkOpen, BulkVoid and the others).
+ export function ClaimSelect({ claim }: { claim: Claim }) {
+   const [selected, set] = useSelectedClaims();
+   return (
+diff --git a/src/main/frontend/features/claims/ClaimedTotal.tsx b/src/main/frontend/features/claims/ClaimedTotal.tsx
+index 18a3cb010..ce1ae429f 100644
+--- a/src/main/frontend/features/claims/ClaimedTotal.tsx
++++ b/src/main/frontend/features/claims/ClaimedTotal.tsx
+@@ -1,19 +1,22 @@
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { useSheetToday } from '../session/sheetToday';
+ import { claimed, useClaims } from './claims';
++import { usePeople } from '../people/people';
+ 
+-// The sheet's claimed-total: everyone's counting claims added up (corrections left out; held ones count).
++// The sheet's claimed-total: everyone's counting claims added up (corrections left out; held ones count; not
++// a retired person's once their retirement date is reached).
+ export function ClaimedTotal() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const claims = useClaims();
+   const today = useSheetToday();
++  const people = usePeople().data ?? [];
+ 
+   if (!user || !sheet) return null;
+ 
+   return (
+     <p>
+-      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], today)}</strong>
++      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], today, people)}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/claims/PersonClaimed.tsx b/src/main/frontend/features/claims/PersonClaimed.tsx
+index 9531bd10b..04345ac19 100644
+--- a/src/main/frontend/features/claims/PersonClaimed.tsx
++++ b/src/main/frontend/features/claims/PersonClaimed.tsx
+@@ -3,10 +3,11 @@ import { useSheetToday } from '../session/sheetToday';
+ import { claimed, useClaims } from './claims';
+ import { useColumnShown } from '../columns/columns';
+ 
+-// What a person has claimed: the sum of their counting claims' amounts (not corrections; held ones count).
++// What a person has claimed: the sum of their counting claims' amounts (not corrections; held ones count, a retired
++// person's none once their retirement date is reached).
+ export function PersonClaimed({ person }: { person: Person }) {
+   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
+   const today = useSheetToday();
+   if (!useColumnShown('claimed')) return null;
+-  return <td data-testid="person-claimed">{claimed(claims, today)}</td>;
++  return <td data-testid="person-claimed">{claimed(claims, today, [person])}</td>;
+ }
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index fdb0420fc..dd032d70c 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { covers, liveHolds } from '../people/people';
++import { covers, liveHolds, retiredOn } from '../people/people';
+ import type { Hold } from '../people/people';
+ import { sheetKey, useCurrentSheet } from '../session/session';
+ 
+@@ -151,8 +151,12 @@ export function useLastBatch() {
+   });
+ }
+ 
+-/** The sum of the counted claims' amounts (held ones too), leaving out corrections, with two decimals; added in cents so it is exact. */
+-export function claimed(claims: Claim[], today: string): string {
+-  const cents = claims.filter((c) => !c.corrects && countsClaimed(c, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
++/**
++ * The sum of the counted claims' amounts (held ones too), leaving out corrections and the claims of people whose retirement
++ * date has been reached on `today`, with two decimals; added in cents so it is exact.
++ */
++export function claimed(claims: Claim[], today: string, people: { id: number; retiredFrom: string | null }[]): string {
++  const retired = new Set(people.filter((p) => retiredOn(p, today)).map((p) => p.id));
++  const cents = claims.filter((c) => !c.corrects && !retired.has(c.personId) && countsClaimed(c, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+   return (cents / 100).toFixed(2);
+ }
+diff --git a/src/main/frontend/features/claims/home.slot.tsx b/src/main/frontend/features/claims/home.slot.tsx
+index b6a4e1cda..fc3777ce8 100644
+--- a/src/main/frontend/features/claims/home.slot.tsx
++++ b/src/main/frontend/features/claims/home.slot.tsx
+@@ -3,6 +3,7 @@ import { BulkOpen } from './BulkOpen';
+ import { BulkReassign } from './BulkReassign';
+ import { BulkRedate } from './BulkRedate';
+ import { BulkSettle } from './BulkSettle';
++import { BulkVoid } from './BulkVoid';
+ import { ClaimedTotal } from './ClaimedTotal';
+ 
+ export const contributions = [
+@@ -10,5 +11,6 @@ export const contributions = [
+   HomeMain.fill({ order: 26, Component: BulkSettle }),
+   HomeMain.fill({ order: 27, Component: BulkReassign }),
+   HomeMain.fill({ order: 28, Component: BulkRedate }),
++  HomeMain.fill({ order: 29, Component: BulkVoid }),
+   HomeMain.fill({ order: 30, Component: ClaimedTotal }),
+ ];
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 8461b983a..975b261f1 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -30,7 +30,11 @@ export const covers = (h: Hold, date: string) => (h.from === null || h.from <= d
+  * hold's would (settled ones, and ones a statement binds, still count).
+  */
+ export const liveHolds = (p: { holds: Hold[]; retiredFrom: string | null }, today: string): Hold[] =>
+-  p.retiredFrom !== null && today !== '' && today >= p.retiredFrom ? [...p.holds, { from: null, to: null }] : p.holds;
++  retiredOn(p, today) ? [...p.holds, { from: null, to: null }] : p.holds;
++
++/** Whether the person's retirement date has been reached on the sheet's `today` (on or after it). */
++export const retiredOn = (p: { retiredFrom: string | null }, today: string): boolean =>
++  p.retiredFrom !== null && today !== '' && today >= p.retiredFrom;
+ 
+ /**
+  * A person on the sheet as the store holds them; `grade` is the one in force on the sheet's today and
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 2821e2fbb..75edb22e8 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -168,10 +168,10 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
+ 
+     /**
+      * Whether the claim counts toward this person's claimed on the given today: as {@link #counts}, but a hold (theirs
+-     * or the claim's own) does not take it out.
++     * or the claim's own) does not take it out; once their retirement date is reached, none of theirs does.
+      */
+     public boolean countsClaimed(Claim claim, LocalDate today) {
+-        return !claim.deferred(today) && claim.counts(false);
++        return !retiredOn(today) && !claim.deferred(today) && claim.counts(false);
+     }
+ 
+     /**
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+index b17d693f8..1eb0151d3 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+@@ -21,7 +21,7 @@ import org.springframework.stereotype.Service;
+ 
+ /**
+  * Works out a sheet's figures as the screen shows them: a person's claimed is their counting claims' amounts
+- * added up (a held claim's too: a hold leaves out only the due figures), leaving out corrections; their due-total those claims' dues (live figures rounded by its policy date, plus
++ * added up (a held claim's too: a hold leaves out only the due figures; none once their retirement date is reached), leaving out corrections; their due-total those claims' dues (live figures rounded by its policy date, plus
+  * any late charge, at the late percent in force on each 30-day boundary, on the overdue ones, then raised to the floor in force on each claim's date) added up, at most the cap in force on the sheet's today; n/a when their grade on the sheet's today has no
+  * rate there and no counting claim has a figure (kept, or at the rate for the grade in force on its date). Their overdue-total
+  * is the dues of their overdue counting claims added up (skipping n/a, not capped). The sheet's totals add these up, skipping n/a;
