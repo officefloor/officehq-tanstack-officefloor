@@ -1,0 +1,320 @@
+diff --git a/src/main/frontend/features/claims/ClaimStatus.tsx b/src/main/frontend/features/claims/ClaimStatus.tsx
+index aca56f138..f67d6f6c9 100644
+--- a/src/main/frontend/features/claims/ClaimStatus.tsx
++++ b/src/main/frontend/features/claims/ClaimStatus.tsx
+@@ -29,7 +29,7 @@ const ACTIONS: Array<{ action: Action; label: string }> = [
+ const REFUSED: Partial<Record<Action, string>> = {
+   open: ' (your role may not be allowed to open a claim)',
+   review: ' (only a steward reviews a claim in REVIEW, which opens it)',
+-  settle: ' (the user who opened it cannot settle it, one whose due is above the proof threshold needs a proof, of each proof kind set, and your role may not be allowed to settle)',
++  settle: ' (a date to settle as of must be on or before today, when the claim existed; the user who opened it cannot settle it, one whose due is above the proof threshold needs a proof, of each proof kind set, and your role may not be allowed to settle)',
+   void: ' (your role may not be allowed to void a claim; only a steward voids a settled claim, within 7 days of its settlement; while the sheet has void reasons, choose one)',
+   approve: ' (only a steward approves a pending claim, and not the user who opened it; one whose due is above the proof threshold needs a proof, of each proof kind set)',
+   reject: ' (only a steward rejects a pending claim, and a reason is required)',
+@@ -40,7 +40,8 @@ const REFUSED: Partial<Record<Action, string>> = {
+ 
+ // A claim's status and the buttons that change it. Every button is shown; the server refuses a
+ // change the status does not allow, and the refusal shows as the claim's error. A clerk's settle
+-// above the clerk limit makes the claim PENDING; a reject sends the reason typed beside it. A role
++// above the clerk limit makes the claim PENDING; a settle sends the as-of date typed beside it (blank: now), fixing
++// the due as it stood at the end of that day; a reject sends the reason typed beside it. A role
+ // allowed to reassign (standing rule: a steward) moves a DRAFT, OPEN or PENDING claim to the person chosen beside the
+ // Move button. A steward re-settles a SETTLED claim, freezing it again at today's figure. An OPEN claim is deferred to the
+ // date typed beside the Defer button. The Add proof button raises the claim's proofs count by one, of the kind chosen
+@@ -57,6 +58,7 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
+   const [sheet] = useCurrentSheet();
+   const [error, setError] = useClaimError(claim.id);
+   const [reason, setReason] = useState('');
++  const [settleOn, setSettleOn] = useState('');
+   const [voidReason, setVoidReason] = useState('');
+   const voidReasons = useVoidReasons().data ?? [];
+   const [moveTo, setMoveTo] = useState('');
+@@ -73,11 +75,18 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
+     mutationFn: (action: Action) =>
+       postJson<Claim>(
+         `/api/sheets/${encodeURIComponent(sheet)}/claims/${claim.id}/${action}?user=${encodeURIComponent(user)}`,
+-        action === 'reject' ? { reason } : action === 'void' ? { reason: voidReason } : {},
++        action === 'reject'
++          ? { reason }
++          : action === 'void'
++            ? { reason: voidReason }
++            : action === 'settle'
++              ? { on: settleOn.trim() }
++              : {},
+       ),
+     onSuccess: async (_c, action) => {
+       if (action === 'reject') setReason('');
+       if (action === 'void') setVoidReason('');
++      if (action === 'settle') setSettleOn('');
+       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+     },
+     onError: (_e, action) => setError(`This ${claim.status} claim cannot be changed by ${action}${REFUSED[action] ?? ''}.`),
+@@ -172,18 +181,31 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
+     <>
+       <span data-testid="claim-status">{claim.status}</span>{' '}
+       {ACTIONS.map(({ action, label }) => (
+-        <button
+-          key={action}
+-          type="button"
+-          data-testid={`claim-${action}`}
+-          disabled={change.isPending}
+-          onClick={() => {
+-            setError('');
+-            once(() => change.mutateAsync(action));
+-          }}
+-        >
+-          {label}
+-        </button>
++        <span key={action}>
++          <button
++            type="button"
++            data-testid={`claim-${action}`}
++            disabled={change.isPending}
++            onClick={() => {
++              setError('');
++              once(() => change.mutateAsync(action));
++            }}
++          >
++            {label}
++          </button>
++          {action === 'settle' && (
++            <input
++              data-testid="claim-settle-date"
++              aria-label="Settle as of"
++              placeholder="as of yyyy-mm-dd"
++              value={settleOn}
++              onChange={(e) => {
++                setSettleOn(e.target.value);
++                setError('');
++              }}
++            />
++          )}
++        </span>
+       ))}
+       <input
+         data-testid="claim-reject-reason"
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfReader.java b/src/main/java/net/officefloor/hq/app/asof/AsOfReader.java
+new file mode 100644
+index 000000000..4c9386ea7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfReader.java
+@@ -0,0 +1,49 @@
++package net.officefloor.hq.app.asof;
++
++import java.time.LocalDate;
++import java.util.concurrent.ExecutionException;
++import java.util.concurrent.ExecutorService;
++import java.util.concurrent.Executors;
++import java.util.function.Supplier;
++import org.springframework.stereotype.Component;
++
++/**
++ * Reads the sheet as it stood at the end of a date ({@link AsOfView}), with the date standing in for its today, from
++ * within a request that changes the store now: the read runs on a thread of its own, outside the request's
++ * transaction, so every connection it takes is pointed at that date's schema, exactly as a read of the as-of view is.
++ */
++@Component
++public class AsOfReader {
++
++    private final SheetDayRepository days;
++    private final ExecutorService threads = Executors.newCachedThreadPool((r) -> {
++        Thread t = new Thread(r, "as-of-read");
++        t.setDaemon(true);
++        return t;
++    });
++
++    public AsOfReader(SheetDayRepository days) {
++        this.days = days;
++    }
++
++    /** The read's result, made against the sheet as it stood at the end of the date. */
++    public <T> T read(String sheetId, LocalDate date, Supplier<T> read) {
++        String schema = days.schemaAsOf(sheetId, date);
++        try {
++            return threads.submit(() -> {
++                AsOfView.set(new AsOfView(schema, date));
++                try {
++                    return read.get();
++                } finally {
++                    AsOfView.set(null);
++                }
++            }).get();
++        } catch (InterruptedException e) {
++            Thread.currentThread().interrupt();
++            throw new IllegalStateException("Interrupted reading sheet " + sheetId + " as of " + date, e);
++        } catch (ExecutionException e) {
++            throw e.getCause() instanceof RuntimeException r ? r
++                    : new IllegalStateException("Could not read sheet " + sheetId + " as of " + date, e.getCause());
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+index 475443e2f..02cfbf585 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+@@ -3,6 +3,8 @@ package net.officefloor.hq.app.claim;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.util.List;
++import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.asof.AsOfReader;
+ import net.officefloor.hq.app.period.Period;
+ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.Person;
+@@ -25,6 +27,8 @@ import org.springframework.web.bind.annotation.RequestParam;
+  * Opening, settling and voiding are refused (400) to a role the sheet's permission matrix does not allow them.
+  * Opening records the user who opened it; that user cannot settle it (four eyes). Nor can the user who last edited
+  * it (through its editor or its row's amount entry) settle or approve it. A deferred claim cannot be settled.
++ * Settled as of a date (on or before the sheet's today; refused after it, or when the claim did not exist then),
++ * the due fixed is the claim's due as it stood at the end of that date, as the as-of view works it out.
+  * Settling fixes the claim's due at the greater of the sheet's floor in force on its date and its figure — at its person's grade's rate in force on the claim's date,
+  * rounded by its policy date, or, when a statement bound the claim, the figure it was bound to — plus the late charge it has then, if overdue, frozen in; with no
+  * figure it stays live. A clerk settling a claim whose due is above the clerk limit in force (its person's grade's own on the sheet's today, when it has one, else the sheet's) (a due of n/a is within any
+@@ -54,7 +58,7 @@ public class ApplyClaimAction {
+     public void apply(@PathVariable("action") String action, @RequestParam("user") String user, @Val Claim claim,
+             @Val ClaimActionRequest request, SheetRepository sheets,
+             PersonRepository people, RateRepository rates, SettingRepository settings, PeriodRepository periods,
+-            VoidReasonRepository voidReasons, ClaimRepository claims, ClaimLogRepository logs, Out<ClaimAction> applied, Out<ClaimNumber> number, Out<PreviousDue> previous, Out<Claim> updated) throws InvalidClaimException {
++            VoidReasonRepository voidReasons, ClaimRepository claims, ClaimLogRepository logs, AsOfReader asOf, Out<ClaimAction> applied, Out<ClaimNumber> number, Out<PreviousDue> previous, Out<Claim> updated) throws InvalidClaimException {
+         ClaimAction found = ClaimAction.of(action);
+         if (found == null) {
+             throw new InvalidClaimException("No such claim action: " + action);
+@@ -122,7 +126,9 @@ public class ApplyClaimAction {
+         if (found == ClaimAction.REJECT && request.reason().isEmpty()) {
+             throw new InvalidClaimException("A reason is required to reject a claim.");
+         }
+-        BigDecimal due = found.settles() ? settledDue(found == ClaimAction.RESETTLE ? claim.asOpenUnbound() : claim, sheets, people, rates, settings, claims) : claim.due();
++        LocalDate on = found == ClaimAction.SETTLE ? settleOn(claim, request, sheets) : null;
++        BigDecimal due = on != null ? settledDueAsOf(claim, on, asOf, sheets, people, rates, settings, claims)
++                : found.settles() ? settledDue(found == ClaimAction.RESETTLE ? claim.asOpenUnbound() : claim, sheets, people, rates, settings, claims) : claim.due();
+         if (found == ClaimAction.OPEN && (claim.note() == null || claim.note().isBlank())
+                 && settings.dated(claim.sheetId()).needsNote(claim.date(),
+                         ClaimDueNow.of(claim, sheets, people, rates, settings, claims))) {
+@@ -198,6 +204,42 @@ public class ApplyClaimAction {
+         return person == null ? null : person.gradeOn(claim.date());
+     }
+ 
++    /** The date the settle is taken as of (null: now); refused after the sheet's today. */
++    private static LocalDate settleOn(Claim claim, ClaimActionRequest request, SheetRepository sheets)
++            throws InvalidClaimException {
++        if (request.on() == null || request.on().isEmpty()) {
++            return null;
++        }
++        LocalDate on;
++        try {
++            on = LocalDate.parse(request.on());
++        } catch (DateTimeParseException e) {
++            throw new InvalidClaimException("Not a date to settle as of: " + request.on());
++        }
++        if (on.isAfter(sheets.today(claim.sheetId()))) {
++            throw new InvalidClaimException("A claim cannot be settled as of a date after the sheet's today.");
++        }
++        return on;
++    }
++
++    /**
++     * The claim's due as it stood at the end of the date, as the as-of view works it out (every change made while the
++     * sheet's today was on or before it, with the date as today); refused when the claim did not exist then.
++     */
++    private static BigDecimal settledDueAsOf(Claim claim, LocalDate on, AsOfReader asOf, SheetRepository sheets,
++            PersonRepository people, RateRepository rates, SettingRepository settings, ClaimRepository claims)
++            throws InvalidClaimException {
++        Object[] then = asOf.read(claim.sheetId(), on, () -> {
++            Claim thenClaim = claims.find(claim.sheetId(), claim.id());
++            return thenClaim == null || thenClaim.status() == ClaimStatus.DELETED ? null
++                    : new Object[] { ClaimDueNow.of(thenClaim, sheets, people, rates, settings, claims) };
++        });
++        if (then == null) {
++            throw new InvalidClaimException("The claim did not exist on " + on + ": it cannot be settled as of then.");
++        }
++        return (BigDecimal) then[0];
++    }
++
+     private static BigDecimal settledDue(Claim claim, SheetRepository sheets, PersonRepository people,
+             RateRepository rates, SettingRepository settings, ClaimRepository claims) {
+         return ClaimDueNow.of(claim, sheets, people, rates, settings, claims);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimAction.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimAction.java
+index d9f110572..ace2f4558 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimAction.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimAction.java
+@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+  * Records the claim's status change, with its person's name; runs only once the change has been allowed.
+- * Settling and approving also record the due fixed (n/a when the grade had no rate); rejecting records its reason;
++ * Settling and approving also record the due fixed (n/a when the grade had no rate); a settle taken as of a date records that date (on=) after its due; rejecting records its reason;
+  * a steward's review records CLAIM_REVIEWED (no number) then CLAIM_OPENED with the number it gave;
+  * re-settling records the previous due and the new one; voiding a SETTLED claim records the frozen due it reverses; voiding with a reason records it last.
+  */
+@@ -31,6 +31,7 @@ public class AuditClaimAction {
+                 + (action == ClaimAction.RESETTLE
+                         ? " old=" + figure(previous.value()) + " new=" + figure(claim.due())
+                         : action.settles() ? " due=" + figure(claim.due()) : "")
++                + (action == ClaimAction.SETTLE && !request.on().isEmpty() ? " on=" + request.on() : "")
+                 + (action == ClaimAction.REJECT ? " reason=" + request.reason() : "")
+                 + (action == ClaimAction.VOID && previous.settled() ? " reversed=" + figure(previous.value()) : "")
+                 + (action == ClaimAction.VOID && !request.reason().isEmpty() ? " reason=" + request.reason() : ""));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckBulkSettle.java b/src/main/java/net/officefloor/hq/app/claim/CheckBulkSettle.java
+index d54f401ab..b824df626 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/CheckBulkSettle.java
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckBulkSettle.java
+@@ -37,7 +37,7 @@ public class CheckBulkSettle {
+             }
+             new CheckClaimPeriodOpen().check(claim, periods);
+             new ApplyClaimAction().apply("settle", user, claim, settle, sheets, people,
+-                    rates, settings, periods, voidReasons, claims, logs, (a) -> {
++                    rates, settings, periods, voidReasons, claims, logs, null, (a) -> {
+                     }, (n) -> {
+                     }, (p) -> {
+                     }, (c) -> {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimActionRequest.java b/src/main/java/net/officefloor/hq/app/claim/ClaimActionRequest.java
+index d806818df..2f68bc9e7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimActionRequest.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimActionRequest.java
+@@ -2,7 +2,12 @@ package net.officefloor.hq.app.claim;
+ 
+ /**
+  * What a status change submits: the reason, for a reject (ignored otherwise; null: none), and the token of the bulk
+- * settle a settle is part of (ignored otherwise; null: taken one at a time).
++ * settle a settle is part of (ignored otherwise; null: taken one at a time), and the date a settle is taken as of
++ * (ignored otherwise; empty: now, the sheet's today).
+  */
+-public record ClaimActionRequest(String reason, String batch) {
++public record ClaimActionRequest(String reason, String batch, String on) {
++
++    public ClaimActionRequest(String reason, String batch) {
++        this(reason, batch, "");
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimActionRequest.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimActionRequest.java
+index 9b7b059cd..022f9a717 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimActionRequest.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimActionRequest.java
+@@ -3,11 +3,12 @@ package net.officefloor.hq.app.claim;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** Reads the status change's body once, trimming its reason and batch token, for later steps. */
++/** Reads the status change's body once, trimming its reason, batch token and as-of date, for later steps. */
+ public class ValidateClaimActionRequest {
+     public void validate(@RequestBody ClaimActionRequest request, Out<ClaimActionRequest> body) {
+         String reason = request == null || request.reason() == null ? "" : request.reason().trim();
+         String batch = request == null || request.batch() == null ? "" : request.batch().trim();
+-        body.set(new ClaimActionRequest(reason, batch));
++        String on = request == null || request.on() == null ? "" : request.on().trim();
++        body.set(new ClaimActionRequest(reason, batch, on));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/paste/SavePastedClaims.java b/src/main/java/net/officefloor/hq/app/paste/SavePastedClaims.java
+index 267a22f0f..6640dc299 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/SavePastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/paste/SavePastedClaims.java
+@@ -161,7 +161,7 @@ public class SavePastedClaims {
+         PreviousDue[] previous = new PreviousDue[1];
+         Claim[] updated = new Claim[1];
+         new ApplyClaimAction().apply("open", user, draft, request, sheets, people, rates, settings, periods,
+-                voidReasons, claims, logs, (v) -> action[0] = v, (v) -> number[0] = v, (v) -> previous[0] = v,
++                voidReasons, claims, logs, null, (v) -> action[0] = v, (v) -> number[0] = v, (v) -> previous[0] = v,
+                 (v) -> updated[0] = v);
+         Claim opened = claims.save(updated[0]);
+         new LogClaimStatus().log(opened, user, sheets, people, rates, settings, claims, logs);
