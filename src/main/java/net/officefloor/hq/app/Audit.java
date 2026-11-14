@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.setting.SettingRepository;
@@ -129,6 +130,23 @@ public class Audit {
             throw new UncheckedIOException(e);
         }
         Collections.reverse(found);
+        return found;
+    }
+
+    /**
+     * The sheet's activity: for every user and every event in the sheet's lines, one line {@code <user> <EVENT> <count>},
+     * sorted by user then event. Reads the file; keeps no record of its own.
+     */
+    public synchronized List<String> activity(String sheetId) {
+        TreeMap<String, TreeMap<String, Integer>> counts = new TreeMap<>();
+        for (String line : lines(sheetId, null)) {
+            Matcher head = HEAD.matcher(line);
+            if (head.find()) {
+                counts.computeIfAbsent(head.group(3), u -> new TreeMap<>()).merge(head.group(1), 1, Integer::sum);
+            }
+        }
+        List<String> found = new ArrayList<>();
+        counts.forEach((user, events) -> events.forEach((event, count) -> found.add(user + " " + event + " " + count)));
         return found;
     }
 
