@@ -9,6 +9,7 @@ import {
   AMOUNT,
   DATE,
   DAYS,
+  WHOLE,
   DEFAULT_FLOOR,
   DEFAULT_LATE_PCT,
   DEFAULT_TERMS,
@@ -60,6 +61,8 @@ type SettingsInput = {
   graceDays?: string;
   escalateAfter?: string;
   reviewSla?: string;
+  scoreMid?: string;
+  scoreHigh?: string;
   proofKinds?: string;
   defaultGrade?: string;
   pot?: string;
@@ -88,6 +91,8 @@ type Touched = {
   graceDays: boolean;
   escalateAfter: boolean;
   reviewSla: boolean;
+  scoreMid: boolean;
+  scoreHigh: boolean;
   proofKinds: boolean;
   defaultGrade: boolean;
   pot: boolean;
@@ -112,6 +117,8 @@ const UNTOUCHED: Touched = {
   graceDays: false,
   escalateAfter: false,
   reviewSla: false,
+  scoreMid: false,
+  scoreHigh: false,
   proofKinds: false,
   defaultGrade: false,
   pot: false,
@@ -153,6 +160,8 @@ export function SettingsForm() {
   const [graceDays, setGraceDays] = useState('');
   const [escalateAfter, setEscalateAfter] = useState('');
   const [reviewSla, setReviewSla] = useState('');
+  const [scoreMid, setScoreMid] = useState('');
+  const [scoreHigh, setScoreHigh] = useState('');
   const [proofKinds, setProofKinds] = useState('');
   const [defaultGrade, setDefaultGrade] = useState('');
   const [pot, setPot] = useState('');
@@ -194,6 +203,8 @@ export function SettingsForm() {
       setGraceDays('');
       setEscalateAfter('');
       setReviewSla('');
+      setScoreMid('');
+      setScoreHigh('');
       setProofKinds('');
       setDefaultGrade('');
       setPot('');
@@ -441,6 +452,22 @@ export function SettingsForm() {
       }
       input.reviewSla = value;
     }
+    if (touched.scoreMid) {
+      const value = scoreMid.trim();
+      if (value !== '' && !WHOLE.test(value)) {
+        setError('Type a mid score threshold as a whole number, or leave it blank.');
+        return;
+      }
+      input.scoreMid = value;
+    }
+    if (touched.scoreHigh) {
+      const value = scoreHigh.trim();
+      if (value !== '' && !WHOLE.test(value)) {
+        setError('Type a high score threshold as a whole number, or leave it blank.');
+        return;
+      }
+      input.scoreHigh = value;
+    }
     if (touched.proofKinds) {
       const value = proofKinds.trim();
       if (value !== '' && !PROOF_KIND_LIST.test(value)) {
@@ -513,6 +540,8 @@ export function SettingsForm() {
       input.graceDays === undefined &&
       input.escalateAfter === undefined &&
       input.reviewSla === undefined &&
+      input.scoreMid === undefined &&
+      input.scoreHigh === undefined &&
       input.proofKinds === undefined &&
       input.defaultGrade === undefined &&
       input.pot === undefined &&
@@ -605,6 +634,10 @@ export function SettingsForm() {
       </p>
       <p>
         Review SLA (days): <span data-testid="setting-review-sla-current">{settings?.reviewSla ?? ''}</span>
+      </p>
+      <p>
+        Score thresholds: mid <span data-testid="setting-score-mid-current">{settings?.scoreMid ?? ''}</span>, high{' '}
+        <span data-testid="setting-score-high-current">{settings?.scoreHigh ?? ''}</span>
       </p>
       <p>
         Proof kinds: <span data-testid="setting-proof-kinds-current">{settings?.proofKinds ?? ''}</span>
@@ -866,6 +899,28 @@ export function SettingsForm() {
           onChange={(e) => {
             setReviewSla(e.target.value);
             setTouched((t) => ({ ...t, reviewSla: true }));
+            setError('');
+          }}
+        />
+        <input
+          data-testid="setting-score-mid"
+          placeholder="Score at or above which a person is MID (whole number; blank: none)"
+          value={scoreMid}
+          onFocus={() => setTouched((t) => ({ ...t, scoreMid: true }))}
+          onChange={(e) => {
+            setScoreMid(e.target.value);
+            setTouched((t) => ({ ...t, scoreMid: true }));
+            setError('');
+          }}
+        />
+        <input
+          data-testid="setting-score-high"
+          placeholder="Score at or above which a person is HIGH (whole number; blank: none)"
+          value={scoreHigh}
+          onFocus={() => setTouched((t) => ({ ...t, scoreHigh: true }))}
+          onChange={(e) => {
+            setScoreHigh(e.target.value);
+            setTouched((t) => ({ ...t, scoreHigh: true }));
             setError('');
           }}
         />

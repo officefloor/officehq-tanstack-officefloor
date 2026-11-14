@@ -25,6 +25,9 @@ public class ValidateSettingsRequest {
     /** The grades terms can be set for. */
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
+    /** A whole number, maybe negative. */
+    private static final Pattern WHOLE = Pattern.compile("-?\\d{1,9}");
+
     /** 0 or more whole days. */
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
 
@@ -35,7 +38,7 @@ public class ValidateSettingsRequest {
             Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold, Out<Pot> pot, Out<Parent> parent,
             Out<FiscalStartMonth> fiscalStartMonth, Out<AlertThreshold> alertThreshold, Out<RoundingSetting> rounding,
             Out<EscalateAfter> escalateAfter, Out<ReviewSla> reviewSla, Out<ProofKinds> proofKinds,
-            Out<DefaultGrade> defaultGrade, Out<GradeClerkLimit> gradeClerkLimit)
+            Out<DefaultGrade> defaultGrade, Out<GradeClerkLimit> gradeClerkLimit, Out<ScoreThresholds> scoreThresholds)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -63,6 +66,8 @@ public class ValidateSettingsRequest {
         proofKinds.set(proofKinds(request.proofKinds()));
         defaultGrade.set(defaultGrade(request.defaultGrade()));
         gradeClerkLimit.set(gradeClerkLimit(request.gradeClerkLimit(), request.gradeClerkLimitFrom()));
+        scoreThresholds.set(new ScoreThresholds(scoreThreshold(request.scoreMid(), "mid"),
+                scoreThreshold(request.scoreHigh(), "high")));
     }
 
     private static RoundingSetting rounding(String requested, LocalDate from) throws InvalidSettingException {
@@ -201,6 +206,20 @@ public class ValidateSettingsRequest {
             }
         }
         return new ProofKinds(true, kinds);
+    }
+
+    private static ScoreThresholds.Threshold scoreThreshold(String requested, String name) throws InvalidSettingException {
+        if (requested == null) {
+            return new ScoreThresholds.Threshold(false, null);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new ScoreThresholds.Threshold(true, null);
+        }
+        if (!WHOLE.matcher(value).matches()) {
+            throw new InvalidSettingException("The " + name + " score threshold must be a whole number, or blank.");
+        }
+        return new ScoreThresholds.Threshold(true, Integer.parseInt(value));
     }
 
     private static ReviewSla reviewSla(String requested) throws InvalidSettingException {

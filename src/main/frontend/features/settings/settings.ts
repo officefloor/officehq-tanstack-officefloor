@@ -39,6 +39,8 @@ export type UserRole = { user: string; role: string };
  * `defaultGrade` is the default grade ('': blank, A), the grade a quick-added person and an imported line with a blank grade
  * take; it is not dated.
  * `delegations` is the steward role delegated to user names, in the order made.
+ * `scoreMid` and `scoreHigh` are the score thresholds (whole numbers; '': blank — while both are set, each person shows a
+ * band); they are not dated.
  * `alertThreshold` is the alert threshold ('': off); it is not dated.
  * `pot` is the pot ('': none), the pot of each pool that is a member of no pool, shared out among its members when it is balanced; it is not dated.
  * `parent` is the parent sheet's id ('': none), whose rates a grade with none of its own in force takes; it is not dated.
@@ -46,7 +48,7 @@ export type UserRole = { user: string; role: string };
  * `rounding` is the rounding mode in force on the sheet's today (half-up or half-even; '': none — a claim with none in force on its
  * date rounds by the policy date); it is dated, its values in `history` under rounding.
  */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; entryDate: string; cap: string; proofThreshold: string; noteThreshold: string; reviewThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[]; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; entryDate: string; cap: string; proofThreshold: string; noteThreshold: string; reviewThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[]; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string; scoreMid: string; scoreHigh: string };
 
 /**
  * The steward role delegated by a steward (`by`) to a user name, from a from-date to a to-date (yyyy-MM-dd), both
@@ -102,6 +104,9 @@ export const AMOUNT = /^(\d{1,13}(\.\d{1,2})?|\.\d{1,2})$/;
 
 /** A percent: 0.00 or more, with at most two decimals. */
 export const PERCENT = /^(\d{1,5}(\.\d{1,2})?|\.\d{1,2})$/;
+
+/** A whole number, maybe negative. */
+export const WHOLE = /^-?\d{1,9}$/;
 
 /** 0 or more whole days. */
 export const DAYS = /^\d{1,5}$/;

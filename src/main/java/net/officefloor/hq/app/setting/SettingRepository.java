@@ -46,7 +46,8 @@ public class SettingRepository {
                 dated.gradeTermsOn(today), dated.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), entryDate(sheetId),
                 dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId), graceDays(sheetId),
                 today, delegations(sheetId), pot(sheetId), parent(sheetId), fiscalStartMonth(sheetId), alertThreshold(sheetId),
-                escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId), defaultGrade(sheetId));
+                escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId), defaultGrade(sheetId),
+                scoreMid(sheetId), scoreHigh(sheetId));
     }
 
     /** The sheet's dated settings: every value recorded, by key and from-date. */
@@ -220,6 +221,30 @@ public class SettingRepository {
     /** Set the sheet's review SLA in days (null: blank, none). */
     public void saveReviewSla(String sheetId, Integer days) {
         jdbc.update("UPDATE sheet SET review_sla = ? WHERE id = ?", days, sheetId);
+    }
+
+    /** The sheet's mid score threshold (null: blank). */
+    public Integer scoreMid(String sheetId) {
+        List<Integer> found = jdbc.query("SELECT score_mid FROM sheet WHERE id = ?",
+                (rs, n) -> (Integer) rs.getObject("score_mid", Integer.class), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** Set the sheet's mid score threshold (null: blank). */
+    public void saveScoreMid(String sheetId, Integer value) {
+        jdbc.update("UPDATE sheet SET score_mid = ? WHERE id = ?", value, sheetId);
+    }
+
+    /** The sheet's high score threshold (null: blank). */
+    public Integer scoreHigh(String sheetId) {
+        List<Integer> found = jdbc.query("SELECT score_high FROM sheet WHERE id = ?",
+                (rs, n) -> (Integer) rs.getObject("score_high", Integer.class), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** Set the sheet's high score threshold (null: blank). */
+    public void saveScoreHigh(String sheetId, Integer value) {
+        jdbc.update("UPDATE sheet SET score_high = ? WHERE id = ?", value, sheetId);
     }
 
     /** The sheet's default grade (null: blank, A). */

@@ -10,3 +10,12 @@ export function score(settled: string, overdueCount: number): string {
   const result = Math.sign(value) * (whole + (up ? 1 : 0));
   return String(result === 0 ? 0 : result);
 }
+
+/** A score's band: HIGH at or above the high threshold, MID at or above the mid one, else LOW; '' while either is blank. */
+export function band(value: string, mid: string, high: string): string {
+  if (mid === '' || high === '') return '';
+  const n = Number(value);
+  if (n >= Number(high)) return 'HIGH';
+  if (n >= Number(mid)) return 'MID';
+  return 'LOW';
+}
