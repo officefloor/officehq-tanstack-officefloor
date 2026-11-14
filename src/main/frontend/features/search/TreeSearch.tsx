@@ -4,7 +4,7 @@ import { useAliases } from '../aliases/aliases';
 import type { Alias } from '../aliases/aliases';
 import { useClaims } from '../claims/claims';
 import type { Claim } from '../claims/claims';
-import { liveHolds, usePeople } from '../people/people';
+import { liveHolds, shownName, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { personDue, useRates } from '../rates/rates';
 import type { Rate } from '../rates/rates';
@@ -30,7 +30,7 @@ async function sheetData(sheet: string): Promise<SheetData> {
   return { people, aliases, claims, rates, rules: dueRules(settings, info.today, claims) };
 }
 
-/** The lines `<sheet id> <name> <due-total>` for the sheet's people whose name or an alias contains the text, ignoring case. */
+/** The lines `<sheet id> <name> (<grade>) <due-total>` for the sheet's people whose name or an alias contains the text, ignoring case. */
 function matches(sheet: string, d: SheetData, text: string): string[] {
   const key = text.toLowerCase();
   const hit = (s: string) => s.toLowerCase().includes(key);
@@ -38,7 +38,7 @@ function matches(sheet: string, d: SheetData, text: string): string[] {
     .filter((p) => hit(p.name) || d.aliases.some((a) => a.personId === p.id && hit(a.alias)))
     .map((p) => {
       const due = personDue(d.claims.filter((c) => c.personId === p.id), d.rates, p.grades, liveHolds(p, d.rules.today), d.rules);
-      return `${sheet} ${p.name} ${due}`;
+      return `${sheet} ${shownName(p)} ${due}`;
     });
 }
 

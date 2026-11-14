@@ -4,7 +4,7 @@ import { PersonError } from './personError';
 import { useClaims } from '../claims/claims';
 import { NA, personDue, useRates } from '../rates/rates';
 import { useDueRules } from '../settings/settings';
-import { liveHolds, nameKey, useEditingPerson, usePeople, usePeopleSort, useShowRetired } from './people';
+import { liveHolds, nameKey, shownName, useEditingPerson, usePeople, usePeopleSort, useShowRetired } from './people';
 import type { Person, SortKey } from './people';
 import { ColumnHead } from '../columns/ColumnHead';
 import { useColumnShown } from '../columns/columns';
@@ -45,7 +45,7 @@ export function PeopleList() {
         {sorted((people.data ?? []).filter((p) => showRetired || !p.retired), sortKey).map((p) => (
           <tr key={p.id} data-testid={`person-row-${p.id}`}>
             <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>
-              {p.name}
+              {shownName(p)}
             </td>
             <td data-testid="person-grade">{p.grade}</td>
             {showTerms && <td data-testid="person-terms">{p.terms ?? ''}</td>}

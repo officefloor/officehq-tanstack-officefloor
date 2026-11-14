@@ -18,6 +18,9 @@ export function gradeOn(grades: GradeFrom[], date: string): string | undefined {
   return found?.grade;
 }
 
+/** A person's name as the screen shows it: `<name> (<grade in force on the sheet's today>)`. */
+export const shownName = (p: { name: string; grade: string }) => `${p.name} (${p.grade})`;
+
 /** A hold on a person, from its from-date to its to-date, both inclusive (yyyy-MM-dd; null: open-ended). */
 export type Hold = { from: string | null; to: string | null };
 

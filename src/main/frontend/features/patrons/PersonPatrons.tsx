@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useOneAtATime } from '../../query/useOneAtATime';
 import { useClaims } from '../claims/claims';
-import { usePeople } from '../people/people';
+import { shownName, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { usePersonError } from '../people/personError';
 import { NA, total } from '../rates/rates';
@@ -29,9 +29,9 @@ export function PersonPatrons({ person }: { person: Person }) {
 
   const names = people
     .filter((p) => ids.includes(p.id))
-    .map((p) => ({ name: p.name, share: mine.find((m) => m.patronId === p.id)?.share ?? '' }))
+    .map((p) => ({ name: p.name, shown: shownName(p), share: mine.find((m) => m.patronId === p.id)?.share ?? '' }))
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map((p) => `${p.name} ${p.share}`);
+    .map((p) => `${p.shown} ${p.share}`);
   const offered = people.filter((p) => p.id !== person.id && !ids.includes(p.id));
 
   const add = useMutation({

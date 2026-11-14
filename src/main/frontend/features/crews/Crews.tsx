@@ -3,7 +3,7 @@ import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { usePeople } from '../people/people';
+import { shownName, usePeople } from '../people/people';
 import { crewDue, crewsKey, useCrews, useDueByPerson } from './crews';
 import type { Crew } from './crews';
 import { poolsKey, usePools } from '../pools/pools';
@@ -110,6 +110,8 @@ function CrewRow({ crew, due }: { crew: Crew; due: string }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const people = usePeople().data ?? [];
+  const lead = crew.lead && people.find((p) => p.id === crew.lead?.id);
+  const leadShown = lead ? shownName(lead) : (crew.lead?.name ?? '');
   const [member, setMember] = useState('');
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
@@ -152,7 +154,7 @@ function CrewRow({ crew, due }: { crew: Crew; due: string }) {
 
   return (
     <li data-testid={`crew-row-${crew.name}`}>
-      <span data-testid="crew-name">{crew.name}</span> lead <span data-testid="crew-lead">{crew.lead?.name ?? ''}</span>{' '}
+      <span data-testid="crew-name">{crew.name}</span> lead <span data-testid="crew-lead">{leadShown}</span>{' '}
       due-total <span data-testid="crew-due-total">{due}</span>
       <ul>
         {crew.members.map((m) => (
