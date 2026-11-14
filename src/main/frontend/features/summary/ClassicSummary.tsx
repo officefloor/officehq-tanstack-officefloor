@@ -1,0 +1,72 @@
+import { counts } from '../claims/claims';
+import type { Claim } from '../claims/claims';
+import { useClaims } from '../claims/claims';
+import { liveHolds, usePeople } from '../people/people';
+import type { Person } from '../people/people';
+import { contains, usePeriods } from '../periods/periods';
+import type { Period } from '../periods/periods';
+import { claimDue, personDue, total, useRates } from '../rates/rates';
+import type { Rate } from '../rates/rates';
+import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { useDueRules } from '../settings/settings';
+import type { DueRules } from '../settings/settings';
+
+// The classic summary, beside the summary. Per period: its due-total counting each claim by its status now (OPEN,
+// PENDING and SETTLED count, as in a person's due-total), a closed period showing the figure fixed when it closed.
+// The sheet's due-total untrimmed: everyone's due-total added up, skipping n/a.
+export function ClassicSummary() {
+  const [user] = useCurrentUser();
+  const [sheet] = useCurrentSheet();
+  const people = usePeople().data ?? [];
+  const claims = useClaims().data ?? [];
+  const periods = usePeriods().data ?? [];
+  const rates = useRates().data ?? [];
+  const rules = useDueRules();
+
+  if (!user || !sheet) return null;
+
+  const dues = people.map((p) =>
+    personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules),
+  );
+  return (
+    <section data-testid="classic-summary">
+      <table>
+        <thead>
+          <tr>
+            <th>Period</th>
+            <th>Due total (classic)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {periods.map((p) => (
+            <tr key={p.name}>
+              <td>{p.name}</td>
+              <td data-testid={`classic-period-${p.name}-due-total`}>{classicPeriodDue(p, claims, people, rates, rules)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p>
+        Due total (classic): <strong data-testid="classic-due-total">{total(dues)}</strong>
+      </p>
+    </section>
+  );
+}
+
+/**
+ * A person's classic due-total for a period: the dues of their claims due by a date in it that count by their status
+ * now, added up; a closed period keeps the figure fixed when it was closed (0.00 for a person added since).
+ */
+function classicPersonPeriodDue(period: Period, person: Person, claims: Claim[], rates: Rate[], rules: DueRules): string {
+  if (period.closed || period.soft) return period.personTotals?.[String(person.id)] ?? '0.00';
+  const holds = liveHolds(person, rules.today);
+  const figures = claims
+    .filter((c) => c.personId === person.id && contains(period, c.dueBy) && counts(c, holds, rules.today))
+    .map((c) => claimDue(c, rates, person.grades, rules));
+  return total(figures);
+}
+
+/** A period's classic due-total: the people's classic due-totals for it, added up. */
+function classicPeriodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], rules: DueRules): string {
+  return total(people.map((p) => classicPersonPeriodDue(period, p, claims, rates, rules)));
+}
