@@ -1,0 +1,197 @@
+diff --git a/src/main/frontend/features/claims/PersonClaims.tsx b/src/main/frontend/features/claims/PersonClaims.tsx
+index 13b90f72f..8e5cc0676 100644
+--- a/src/main/frontend/features/claims/PersonClaims.tsx
++++ b/src/main/frontend/features/claims/PersonClaims.tsx
+@@ -8,8 +8,8 @@ import { addClaim, claimsKey, dueBy, isOverdue, moveClaim, reassignClaim, update
+ 
+ const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
+ 
+-const LABELS: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void', approve: 'Approve', reject: 'Reject' };
+-const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided', approve: 'approved', reject: 'rejected' };
++const LABELS: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void', approve: 'Approve', reject: 'Reject', resettle: 'Re-settle' };
++const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided', approve: 'approved', reject: 'rejected', resettle: 're-settled' };
+ 
+ /** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
+  *  with its status, its due (fixed when settled, else at the rate in force on the claim's date of the
+@@ -23,7 +23,8 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
+  *  or any steward rejects with a reason typed beside it), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
+  *  charge) the number of the SETTLED claim it corrects. Only a DRAFT can be edited:
+  *  editing any other claim is refused with an error on the claim. A steward can move a DRAFT, OPEN or
+- *  PENDING claim to another person picked beside it (any other refused with an error on the claim). */
++ *  PENDING claim to another person picked beside it (any other refused with an error on the claim), and
++ *  re-settle a SETTLED one (anyone else, any other status or a claim in a closed period refused likewise). */
+ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, today, charges, selected, onSelect, people }: {
+   sheetId: string; user: string; personId: number; claims: Claim[]; gradeOn: GradeOn; rates: Rate[] | undefined;
+   floor: string; today: string; charges: Late;
+@@ -175,7 +176,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+                 {(c.log ?? []).map((line, i) => <div key={i} data-testid="claim-log-line">{line}</div>)}
+               </td>
+               <td>
+-                {(['open', 'settle', 'void', 'approve'] as const).map((a) => (
++                {(['open', 'settle', 'void', 'approve', 'resettle'] as const).map((a) => (
+                   <button key={a} type="button" data-testid={`claim-${a}`} disabled={move.isPending}
+                     onClick={() => act(c.id, a)}>
+                     {LABELS[a]}
+@@ -225,6 +226,8 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+                     ? 'Only a steward who did not open a claim can approve it.'
+                     : c.status === 'PENDING' && move.variables.action === 'reject'
+                     ? 'Only a steward can reject a claim.'
++                    : c.status === 'SETTLED' && move.variables.action === 'resettle'
++                    ? 'Only a steward can re-settle a claim.'
+                     : `A ${c.status} claim cannot be ${DONE[move.variables.action]}.`}</span>
+                 )}
+                 {reassign.isError && reassign.variables?.id === c.id && (
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index 20bdb4158..67789b8c6 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -6,7 +6,7 @@ import { sheetKey } from '../sheet/api';
+  *  claim can be voided. */
+ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+ /** A change of a claim's status. */
+-export type ClaimAction = 'open' | 'settle' | 'void' | 'approve' | 'reject';
++export type ClaimAction = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle';
+ 
+ /** Whether a claim is open: OPEN, or PENDING a steward's approval. */
+ export const isOpen = (c: Pick<Claim, 'status'>) => c.status === 'OPEN' || c.status === 'PENDING';
+@@ -61,7 +61,8 @@ export function updateClaim(sheetId: string, by: string, id: number, input: Clai
+ 
+ /** Change a claim's status; refused (rejects) when its status does not allow the change, when the
+  *  user settling or approving it is the one who opened it, when a non-steward approves or rejects it,
+- *  or when a rejection has no `reason`. */
++ *  or when a rejection has no `reason`. A steward's `resettle` freezes a SETTLED claim again at the
++ *  figure it would have today as an open claim bound by no statement. */
+ export function moveClaim(sheetId: string, by: string, id: number, action: ClaimAction, reason = ''): Promise<Claim> {
+   const extra = action === 'reject' ? `&reason=${encodeURIComponent(reason)}` : '';
+   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/${action}?by=${encodeURIComponent(by)}${extra}`, {});
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimResettled.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimResettled.java
+new file mode 100644
+index 000000000..0815bbaef
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimResettled.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Last write step of a re-settle: CLAIM_RESETTLED, the claim line ending with its old and new fixed due. */
++public class RecordClaimResettled {
++    public void record(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
++            @Val Resettlement resettlement, PersonRepository people, Audit audit) {
++        audit.record(RecordClaimStatus.line("CLAIM_RESETTLED", by, claim, people)
++                + " old=" + (resettlement.old() == null ? "n/a" : resettlement.old())
++                + " new=" + (resettlement.now() == null ? "n/a" : resettlement.now()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ResettleClaim.java b/src/main/java/net/officefloor/hq/app/claim/ResettleClaim.java
+new file mode 100644
+index 000000000..638f4880e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ResettleClaim.java
+@@ -0,0 +1,53 @@
++package net.officefloor.hq.app.claim;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.period.PeriodClosedException;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.rate.Rate;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.setting.Role;
++import net.officefloor.hq.app.setting.RoleRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Re-settles a SETTLED claim: its due is fixed again at the figure it would have today as an OPEN claim
++ *  bound by no statement (its amount at its person's grade's rate in force on its date, at least the sheet's
++ *  floor, with its late charge on the sheet's today; with no rate, none). It stays SETTLED and keeps its
++ *  binding. Refused unless the user is a steward, for any other status, and for a claim in a closed period. */
++public class ResettleClaim {
++    public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
++            PersonRepository people, RateRepository rates, PeriodRepository periods,
++            RoleRepository roles, SettingRepository settings, SheetRepository sheets,
++            Out<Resettlement> resettlement) throws ClaimStatusException, PeriodClosedException {
++        periods.requireOpen(claim.getSheetId(), claim.getDate());
++        if (!ClaimStatus.SETTLED.name().equals(claim.getStatus())) {
++            throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be re-settled");
++        }
++        if (!Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
++            throw new ClaimStatusException("Only a steward can re-settle a claim");
++        }
++        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++        Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),
++                LocalDate.parse(claim.getDate()));
++        Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
++        String live = rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
++                settings.floor(claim.getSheetId()), late.rounding(claim.getRoundDate()));
++        // Figured as an open claim with no fixed due and no statement binding it.
++        String old = claim.getSettledDue();
++        boolean stated = claim.isStated();
++        String statedDue = claim.getStatedDue();
++        claim.setStatus(ClaimStatus.OPEN.name());
++        claim.setSettledDue(null);
++        claim.bind(false, null);
++        String due = Dues.shown(claim, live, late);
++        claim.bind(stated, statedDue);
++        claim.setStatus(ClaimStatus.SETTLED.name());
++        claim.setSettledDue(due);
++        resettlement.set(new Resettlement(old, due));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Resettlement.java b/src/main/java/net/officefloor/hq/app/claim/Resettlement.java
+new file mode 100644
+index 000000000..ac2060272
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/Resettlement.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** A re-settled claim's fixed due before and after (null: n/a), for {@link RecordClaimResettled}. */
++public record Resettlement(String old, String now) {
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml
+new file mode 100644
+index 000000000..d0ac6d363
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml
+@@ -0,0 +1,33 @@
++# POST /api/sheets/{sheetId}/claims/{claimId}/resettle — a steward freezes a SETTLED claim again at the figure it
++# would have today as an open claim bound by no statement; refused (409) for anyone else or any other status,
++# and (423) for a claim dated in a closed period.
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: move
++move:
++  class: net.officefloor.hq.app.claim.ResettleClaim
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveClaim
++  govern: [ transaction ]
++  next: log
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.RecordClaimResettled
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
