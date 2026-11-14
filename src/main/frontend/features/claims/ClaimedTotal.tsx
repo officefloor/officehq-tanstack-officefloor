@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { claimsKey, listClaims, sumAmounts } from './api';
 
-/** The sheet's claimed-total: everyone's claims added up. */
+/** The sheet's claimed-total: everyone's OPEN and SETTLED claims added up. */
 export function ClaimedTotal({ sheetId }: { sheetId: string; user: string }) {
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   return (

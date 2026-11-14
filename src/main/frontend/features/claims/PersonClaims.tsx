@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dueOf, showDue } from '../rates/api';
-import { addClaim, claimsKey, updateClaim, type Claim, type ClaimInput } from './api';
+import { addClaim, claimsKey, moveClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
 
 /** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
- *  with its due at the person's grade's rate (`pct`; none when the grade has no rate). */
+ *  with its status, its due at the person's grade's rate (`pct`; none when the grade has no rate)
+ *  and buttons that change its status. */
 export function PersonClaims({ sheetId, user, personId, claims, pct }: {
   sheetId: string; user: string; personId: number; claims: Claim[]; pct: string | undefined;
 }) {
@@ -24,6 +25,17 @@ export function PersonClaims({ sheetId, user, personId, claims, pct }: {
     },
   });
 
+  // The claim whose last status change was refused; cleared by the next action on any claim here.
+  const move = useMutation({
+    mutationFn: (v: { id: number; action: ClaimAction }) => moveClaim(sheetId, user, v.id, v.action),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
+
+  const act = (id: number, action: ClaimAction) => {
+    move.reset();
+    move.mutate({ id, action });
+  };
+
   const change = (patch: Partial<ClaimInput>) => {
     setForm((f) => ({ ...f, ...patch }));
     save.reset();
@@ -33,6 +45,7 @@ export function PersonClaims({ sheetId, user, personId, claims, pct }: {
     setForm({ amount: c.amount, date: c.date, note: c.note });
     setEditing(c.id);
     save.reset();
+    move.reset();
   };
 
   const cancel = () => {
@@ -71,7 +84,14 @@ export function PersonClaims({ sheetId, user, personId, claims, pct }: {
               <td data-testid="claim-date">{c.date}</td>
               <td data-testid="claim-note">{c.note}</td>
               <td data-testid="claim-due">{showDue(dueOf(c.amount, pct))}</td>
+              <td data-testid="claim-status">{c.status}</td>
               <td>
+                {(['open', 'settle', 'void'] as const).map((a) => (
+                  <button key={a} type="button" data-testid={`claim-${a}`} disabled={move.isPending}
+                    onClick={() => act(c.id, a)}>
+                    {a === 'open' ? 'Open' : a === 'settle' ? 'Settle' : 'Void'}
+                  </button>
+                ))}{' '}
                 <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                   Edit
                 </button>
@@ -79,6 +99,10 @@ export function PersonClaims({ sheetId, user, personId, claims, pct }: {
                   <button type="button" data-testid="claim-cancel" onClick={cancel}>
                     Cancel
                   </button>
+                )}
+                {move.isError && move.variables?.id === c.id && (
+                  <span data-testid="claim-error">A {c.status} claim cannot be {move.variables.action === 'open'
+                    ? 'opened' : move.variables.action === 'settle' ? 'settled' : 'voided'}.</span>
                 )}
               </td>
             </tr>

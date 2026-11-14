@@ -1,8 +1,15 @@
 import { getJson, postJson, putJson } from '../../api/http';
 import { sheetKey } from '../sheet/api';
 
-/** A claim: its amount as two-decimal text, its date (yyyy-MM-dd) and its note. */
-export type Claim = { id: number; sheetId: string; personId: number; amount: string; date: string; note: string };
+/** A claim's status: DRAFT, opened to OPEN, settled to SETTLED; a DRAFT or OPEN claim can be voided. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+/** A change of a claim's status. */
+export type ClaimAction = 'open' | 'settle' | 'void';
+
+/** A claim: its amount as two-decimal text, its date (yyyy-MM-dd), its note and its status. */
+export type Claim = {
+  id: number; sheetId: string; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
+};
 export type ClaimInput = { amount: string; date: string; note: string };
 
 const sheetBase = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}`;
@@ -25,8 +32,16 @@ export function updateClaim(sheetId: string, by: string, id: number, input: Clai
   return putJson<Claim>(`${sheetBase(sheetId)}/claims/${id}?by=${encodeURIComponent(by)}`, input);
 }
 
-/** Sum two-decimal amounts exactly (in cents), shown with two decimals. */
+/** Change a claim's status; refused (rejects) when its status does not allow the change. */
+export function moveClaim(sheetId: string, by: string, id: number, action: ClaimAction): Promise<Claim> {
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/${action}?by=${encodeURIComponent(by)}`, {});
+}
+
+/** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED do. */
+export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
+
+/** Sum the amounts of the claims that count (see `counts`) exactly (in cents), shown with two decimals. */
 export function sumAmounts(claims: Claim[]): string {
-  const cents = claims.reduce((t, c) => t + Math.round(Number(c.amount) * 100), 0);
+  const cents = claims.filter(counts).reduce((t, c) => t + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }
