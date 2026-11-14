@@ -11,6 +11,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { useDueRules, useSettings } from '../settings/settings';
 import type { DueRules } from '../settings/settings';
 import { reviewLate } from '../reviewlate/reviewLate';
+import { pendingLate } from '../pendinglate/pendingLate';
 import { useVoidReasons } from '../voidreasons/voidReasons';
 
 /** The statuses the summary counts claims by; one no claim reaches yet still shows, as 0. */
@@ -30,6 +31,7 @@ export function Summary() {
   const grades = useGradeCodes();
   const voidReasons = useVoidReasons().data ?? [];
   const reviewSla = useSettings().data?.reviewSla ?? '';
+  const pendingSla = useSettings().data?.pendingSla ?? '';
 
   if (!user || !sheet) return null;
 
@@ -105,6 +107,12 @@ export function Summary() {
             <td>REVIEW late</td>
             <td data-testid="summary-review-late-count">
               {claims.filter((c) => reviewLate(c, reviewSla, rules.today)).length}
+            </td>
+          </tr>
+          <tr>
+            <td>PENDING late</td>
+            <td data-testid="summary-pending-late-count">
+              {claims.filter((c) => pendingLate(c, pendingSla, rules.today)).length}
             </td>
           </tr>
         </tbody>

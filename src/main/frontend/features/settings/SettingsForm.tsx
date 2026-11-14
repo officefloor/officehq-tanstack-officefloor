@@ -61,6 +61,7 @@ type SettingsInput = {
   graceDays?: string;
   escalateAfter?: string;
   reviewSla?: string;
+  pendingSla?: string;
   scoreMid?: string;
   scoreHigh?: string;
   scoreLog?: string;
@@ -93,6 +94,7 @@ type Touched = {
   graceDays: boolean;
   escalateAfter: boolean;
   reviewSla: boolean;
+  pendingSla: boolean;
   scoreMid: boolean;
   scoreHigh: boolean;
   scoreLog: boolean;
@@ -121,6 +123,7 @@ const UNTOUCHED: Touched = {
   graceDays: false,
   escalateAfter: false,
   reviewSla: false,
+  pendingSla: false,
   scoreMid: false,
   scoreHigh: false,
   scoreLog: false,
@@ -166,6 +169,7 @@ export function SettingsForm() {
   const [graceDays, setGraceDays] = useState('');
   const [escalateAfter, setEscalateAfter] = useState('');
   const [reviewSla, setReviewSla] = useState('');
+  const [pendingSla, setPendingSla] = useState('');
   const [scoreMid, setScoreMid] = useState('');
   const [scoreHigh, setScoreHigh] = useState('');
   const [scoreLog, setScoreLog] = useState('');
@@ -211,6 +215,7 @@ export function SettingsForm() {
       setGraceDays('');
       setEscalateAfter('');
       setReviewSla('');
+      setPendingSla('');
       setScoreMid('');
       setScoreHigh('');
       setScoreLog('');
@@ -462,6 +467,14 @@ export function SettingsForm() {
       }
       input.reviewSla = value;
     }
+    if (touched.pendingSla) {
+      const value = pendingSla.trim();
+      if (value !== '' && !DAYS.test(value)) {
+        setError('Type a pending SLA of 0 or more whole days, or leave it blank for none.');
+        return;
+      }
+      input.pendingSla = value;
+    }
     if (touched.scoreMid) {
       const value = scoreMid.trim();
       if (value !== '' && !WHOLE.test(value)) {
@@ -566,6 +579,7 @@ export function SettingsForm() {
       input.graceDays === undefined &&
       input.escalateAfter === undefined &&
       input.reviewSla === undefined &&
+      input.pendingSla === undefined &&
       input.scoreMid === undefined &&
       input.scoreHigh === undefined &&
       input.scoreLog === undefined &&
@@ -662,6 +676,9 @@ export function SettingsForm() {
       </p>
       <p>
         Review SLA (days): <span data-testid="setting-review-sla-current">{settings?.reviewSla ?? ''}</span>
+      </p>
+      <p>
+        Pending SLA (days): <span data-testid="setting-pending-sla-current">{settings?.pendingSla ?? ''}</span>
       </p>
       <p>
         Score thresholds: mid <span data-testid="setting-score-mid-current">{settings?.scoreMid ?? ''}</span>, high{' '}
@@ -945,6 +962,17 @@ export function SettingsForm() {
           onChange={(e) => {
             setReviewSla(e.target.value);
             setTouched((t) => ({ ...t, reviewSla: true }));
+            setError('');
+          }}
+        />
+        <input
+          data-testid="setting-pending-sla"
+          placeholder="Days a claim may stay PENDING before it is late (blank: none)"
+          value={pendingSla}
+          onFocus={() => setTouched((t) => ({ ...t, pendingSla: true }))}
+          onChange={(e) => {
+            setPendingSla(e.target.value);
+            setTouched((t) => ({ ...t, pendingSla: true }));
             setError('');
           }}
         />

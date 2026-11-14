@@ -36,6 +36,8 @@ export type UserRole = { user: string; role: string };
  * that many days before the sheet's today escalates it, once per claim); it is not dated.
  * `reviewSla` is the review SLA (whole days; '': none — a REVIEW claim whose review day, the sheet's today when it went to
  * REVIEW, plus that many days is before the sheet's today is late); it is not dated.
+ * `pendingSla` is the pending SLA (whole days; '': none — a PENDING claim whose pending day, the sheet's today when it last
+ * went to PENDING, plus that many days is before the sheet's today is late); it is not dated.
  * `proofKinds` is the proof kinds, comma separated ('': none — while set, a claim whose due is above the proof threshold is
  * settled or approved only once it has a proof of each); it is not dated.
  * `defaultGrade` is the default grade ('': blank, A), the grade a quick-added person and an imported line with a blank grade
@@ -54,7 +56,7 @@ export type UserRole = { user: string; role: string };
  * `rounding` is the rounding mode in force on the sheet's today (half-up or half-even; '': none — a claim with none in force on its
  * date rounds by the policy date); it is dated, its values in `history` under rounding.
  */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; entryDate: string; cap: string; proofThreshold: string; noteThreshold: string; reviewThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[]; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string; scoreMid: string; scoreHigh: string; scoreLog: string; maxOpen: string };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; entryDate: string; cap: string; proofThreshold: string; noteThreshold: string; reviewThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[]; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string; scoreMid: string; scoreHigh: string; scoreLog: string; maxOpen: string; pendingSla: string };
 
 /**
  * The steward role delegated by a steward (`by`) to a user name, from a from-date to a to-date (yyyy-MM-dd), both

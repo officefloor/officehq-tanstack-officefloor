@@ -39,7 +39,7 @@ public class ValidateSettingsRequest {
             Out<FiscalStartMonth> fiscalStartMonth, Out<AlertThreshold> alertThreshold, Out<RoundingSetting> rounding,
             Out<EscalateAfter> escalateAfter, Out<ReviewSla> reviewSla, Out<ProofKinds> proofKinds,
             Out<DefaultGrade> defaultGrade, Out<GradeClerkLimit> gradeClerkLimit, Out<ScoreThresholds> scoreThresholds,
-            Out<ScoreLog> scoreLog, Out<MaxOpen> maxOpen)
+            Out<ScoreLog> scoreLog, Out<MaxOpen> maxOpen, Out<PendingSla> pendingSla)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -71,6 +71,7 @@ public class ValidateSettingsRequest {
                 scoreThreshold(request.scoreHigh(), "high")));
         scoreLog.set(scoreLog(request.scoreLog()));
         maxOpen.set(maxOpen(request.maxOpen()));
+        pendingSla.set(pendingSla(request.pendingSla()));
     }
 
     private static ScoreLog scoreLog(String requested) throws InvalidSettingException {
@@ -251,6 +252,20 @@ public class ValidateSettingsRequest {
             throw new InvalidSettingException("The review SLA must be a whole number of days, 0 or more, or blank.");
         }
         return new ReviewSla(true, Integer.parseInt(value));
+    }
+
+    private static PendingSla pendingSla(String requested) throws InvalidSettingException {
+        if (requested == null) {
+            return new PendingSla(false, null);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new PendingSla(true, null);
+        }
+        if (!DAYS.matcher(value).matches()) {
+            throw new InvalidSettingException("The pending SLA must be a whole number of days, 0 or more, or blank.");
+        }
+        return new PendingSla(true, Integer.parseInt(value));
     }
 
     private static MaxOpen maxOpen(String requested) throws InvalidSettingException {

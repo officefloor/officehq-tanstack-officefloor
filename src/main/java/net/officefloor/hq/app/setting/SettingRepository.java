@@ -46,7 +46,7 @@ public class SettingRepository {
                 dated.gradeTermsOn(today), dated.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), entryDate(sheetId),
                 dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId), graceDays(sheetId),
                 today, delegations(sheetId), pot(sheetId), parent(sheetId), fiscalStartMonth(sheetId), alertThreshold(sheetId),
-                escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId), defaultGrade(sheetId),
+                escalateAfter(sheetId), reviewSla(sheetId), pendingSla(sheetId), proofKinds(sheetId), defaultGrade(sheetId),
                 scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId), maxOpen(sheetId));
     }
 
@@ -233,6 +233,18 @@ public class SettingRepository {
     /** Set the sheet's review SLA in days (null: blank, none). */
     public void saveReviewSla(String sheetId, Integer days) {
         jdbc.update("UPDATE sheet SET review_sla = ? WHERE id = ?", days, sheetId);
+    }
+
+    /** The sheet's pending SLA in days (null: blank, none). */
+    public Integer pendingSla(String sheetId) {
+        List<Integer> days = jdbc.query("SELECT pending_sla FROM sheet WHERE id = ?",
+                (rs, n) -> (Integer) rs.getObject("pending_sla", Integer.class), sheetId);
+        return days.isEmpty() ? null : days.get(0);
+    }
+
+    /** Set the sheet's pending SLA in days (null: blank, none). */
+    public void savePendingSla(String sheetId, Integer days) {
+        jdbc.update("UPDATE sheet SET pending_sla = ? WHERE id = ?", days, sheetId);
     }
 
     /** The sheet's mid score threshold (null: blank). */

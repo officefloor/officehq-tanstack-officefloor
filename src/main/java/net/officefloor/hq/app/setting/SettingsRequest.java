@@ -46,5 +46,5 @@ public record SettingsRequest(@Size(max = 30) String clerkLimit, @Size(max = 30)
         @Size(max = 10) Map<String, @Size(max = 30) String> gradeClerkLimit,
         @Size(max = 10) Map<String, @Size(max = 30) String> gradeClerkLimitFrom,
         @Size(max = 30) String scoreMid, @Size(max = 30) String scoreHigh, @Size(max = 30) String scoreLog,
-        @Size(max = 30) String maxOpen) {
+        @Size(max = 30) String maxOpen, @Size(max = 30) String pendingSla) {
 }
