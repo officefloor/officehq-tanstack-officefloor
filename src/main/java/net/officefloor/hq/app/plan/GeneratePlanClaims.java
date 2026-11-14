@@ -102,7 +102,7 @@ public class GeneratePlanClaims {
                 audit.record("CLAIM_ADDED sheet=" + claim.sheetId() + " by=" + user + " person=" + person.name()
                         + " amount=" + claim.amount().setScale(2).toPlainString() + " date=" + claim.date());
                 lateEntries.mark(claim, person, user);
-                plans.markMade(plan, date);
+                plans.markMade(plan, date, claim);
                 made++;
             }
         }

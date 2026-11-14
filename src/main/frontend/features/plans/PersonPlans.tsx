@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useOneAtATime } from '../../query/useOneAtATime';
+import { claimsKey } from '../claims/claims';
+import { peopleKey } from '../people/people';
 import type { Person } from '../people/people';
 import { usePersonError } from '../people/personError';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
@@ -52,7 +54,7 @@ function PlanPause({ person, plan }: { person: Person; plan: Plan }) {
 }
 
 // A plan's new amount and its save button: the claims it generates from then on are of the new amount, those already
-// generated keep theirs; the plan lists its changes, oldest first. The server refuses a bad amount; the error shows in
+// generated that are still DRAFT are edited to it, any other keeps its own; the plan lists its changes, oldest first. The server refuses a bad amount; the error shows in
 // the plan's row.
 function PlanAmount({ person, plan }: { person: Person; plan: Plan }) {
   const [user] = useCurrentUser();
@@ -70,7 +72,11 @@ function PlanAmount({ person, plan }: { person: Person; plan: Plan }) {
       ),
     onSuccess: async () => {
       setAmount('');
-      await queryClient.invalidateQueries({ queryKey: plansKey(sheet) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: plansKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
     },
     onError: () => setError('The amount was refused: it must be 0.00 or more, with at most two decimals.'),
   });

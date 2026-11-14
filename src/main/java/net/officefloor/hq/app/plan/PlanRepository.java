@@ -5,6 +5,7 @@ import java.sql.PreparedStatement;
 import java.sql.Types;
 import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.claim.Claim;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -95,9 +96,15 @@ public class PlanRepository {
                 (rs, n) -> rs.getDate("plan_date").toLocalDate(), planId);
     }
 
-    /** Records that the plan has made its claim for the date. */
-    public void markMade(Plan plan, LocalDate date) {
-        jdbc.update("INSERT INTO person_plan_date (sheet_id, plan_id, plan_date) VALUES (?, ?, ?)", plan.sheetId(),
-                plan.id(), Date.valueOf(date));
+    /** Records that the plan has made the claim for the date. */
+    public void markMade(Plan plan, LocalDate date, Claim claim) {
+        jdbc.update("INSERT INTO person_plan_date (sheet_id, plan_id, plan_date, claim_id) VALUES (?, ?, ?, ?)",
+                plan.sheetId(), plan.id(), Date.valueOf(date), claim.id());
+    }
+
+    /** The ids of the claims the plan has made, in the order of their dates. */
+    public List<Long> claimsMade(long planId) {
+        return jdbc.queryForList("SELECT claim_id FROM person_plan_date WHERE plan_id = ? AND claim_id IS NOT NULL"
+                + " ORDER BY plan_date", Long.class, planId);
     }
 }
