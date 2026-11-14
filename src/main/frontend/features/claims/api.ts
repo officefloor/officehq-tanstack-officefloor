@@ -24,11 +24,13 @@ export const isBound = (c: Claim) => c.stated && c.statedDue !== null && c.statu
  *  A correction (a negative amount) has the number of the SETTLED claim it corrects (null otherwise).
  *  `roundDate` is the date its live figures round by: its own, or a correction's claim's it corrects.
  *  `dueBy` (yyyy-MM-dd) is fixed when it was added: its date then plus the terms of its person's
- *  grade in force on that date (the grade's own, else the sheet's). */
+ *  grade in force on that date (the grade's own, else the sheet's). `log` is its status log, oldest
+ *  first: `<STATUS> by <user> on <date> due=<due>`, the sheet's today and its due at each change. */
 export type Claim = {
   id: number; sheetId: string; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null;
   stated: boolean; statedDue: string | null; corrects: string | null; roundDate: string; dueBy: string;
+  log: string[];
 };
 /** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects. */
 export type ClaimInput = { amount: string; date: string; note: string; corrects: string };

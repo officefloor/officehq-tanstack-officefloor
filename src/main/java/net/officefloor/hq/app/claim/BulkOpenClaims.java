@@ -28,7 +28,7 @@ public class BulkOpenClaims {
             @RequestParam(name = "by", required = false) String by,
             @RequestBody BulkOpenRequest request, ClaimRepository claims, PeriodRepository periods,
             PersonRepository people, RateRepository rates, SheetRepository sheets,
-            SettingRepository settings, Audit audit, Out<BulkOpenResult> result) {
+            SettingRepository settings, ClaimLogRepository log, Audit audit, Out<BulkOpenResult> result) {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
         Set<Long> selected = new HashSet<>(request == null || request.claimIds() == null
@@ -57,6 +57,7 @@ public class BulkOpenClaims {
             claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
             claim.setOpenedBy(user);
             claims.update(claim);
+            log.record(claim, user);
             opened++;
             Person person = everyone.stream().filter((p) -> p.getId() == claim.getPersonId())
                     .findFirst().orElse(null);

@@ -17,7 +17,7 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  there is no such rate; an overdue one gains its late charge on top, see `charges`), its due-by (fixed when it was added) and whether it is
  *  overdue (OPEN and due-by before the sheet's `today`), whether
  *  it is stated,
- *  the period its date falls in (none when no period contains it), who opened it, and buttons that
+ *  the period its date falls in (none when no period contains it), its status log (oldest first), who opened it, and buttons that
  *  change its status (the user who opened a claim cannot settle it; a clerk settling one whose due is
  *  above the sheet's clerk limit makes it PENDING, which a steward other than its opener approves,
  *  or any steward rejects with a reason typed beside it), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
@@ -171,6 +171,9 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 Stated <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>
               </td>
               <td data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</td>
+              <td>
+                {(c.log ?? []).map((line, i) => <div key={i} data-testid="claim-log-line">{line}</div>)}
+              </td>
               <td>
                 {(['open', 'settle', 'void', 'approve'] as const).map((a) => (
                   <button key={a} type="button" data-testid={`claim-${a}`} disabled={move.isPending}

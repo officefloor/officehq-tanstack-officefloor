@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import java.util.List;
 
 /** A claim of a person: an amount (two decimals, as text), a date (yyyy-MM-dd), a note and a status
  *  (a {@link ClaimStatus} name), and its number on the sheet (given when opened and kept when voided;
@@ -24,6 +25,7 @@ public class Claim {
     private String corrects;
     private String roundDate;
     private String dueBy;
+    private List<String> log = List.of();
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, String number, String settledDue, String openedBy) {
@@ -79,6 +81,10 @@ public class Claim {
      *  person's grade in force on that date. */
     public String getDueBy() { return dueBy; }
     public void setDueBy(String dueBy) { this.dueBy = dueBy; }
+
+    /** Its status log, oldest first (see {@link ClaimLogRepository}). */
+    public List<String> getLog() { return log; }
+    public void setLog(List<String> log) { this.log = log; }
 
     public boolean isStated() { return stated; }
     public String getStatedDue() { return statedDue; }
