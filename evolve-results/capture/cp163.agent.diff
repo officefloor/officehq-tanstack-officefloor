@@ -1,0 +1,180 @@
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 09752c851..3e93eeb65 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -44,7 +44,8 @@ export const liveHolds = (p: { holds: Hold[]; retiredFrom: string | null }, toda
+  * the sheet's tree (its ancestors and descendants) uses their name or any of their aliases as a name or alias.
+  * `origin` is the sheet they were transferred from, null when they were not transferred here. `pastRetirements` are
+  * the retirements they were unretired from, oldest first: a claim dated after one's from and before its to is refused.
+- * `tags` are their tags, sorted (none: empty).
++ * `tags` are their tags, sorted (none: empty). `statements` are their statements still standing, each as
++ * `<statement date> <due-total>`, oldest first.
+  */
+ export type Person = {
+   id: number;
+@@ -65,6 +66,7 @@ export type Person = {
+   origin: string | null;
+   pastRetirements: { from: string; to: string }[];
+   tags: string[];
++  statements: string[];
+ };
+ 
+ /**
+diff --git a/src/main/frontend/features/statements/PersonStatement.tsx b/src/main/frontend/features/statements/PersonStatement.tsx
+index a171b8794..379e8d5e3 100644
+--- a/src/main/frontend/features/statements/PersonStatement.tsx
++++ b/src/main/frontend/features/statements/PersonStatement.tsx
+@@ -11,7 +11,8 @@ import { useColumnShown } from '../columns/columns';
+ 
+ const DATE = /^\d{4}-\d{2}-\d{2}$/;
+ 
+-// A person's statements: how many were taken, the last one's due-total and date, and the button that
++// A person's statements: how many were taken, the last one's due-total and date, one line per statement
++// still standing (oldest first), and the button that
+ // takes one — recording their due-total now and binding each counting claim to its figure now — and the
+ // button a steward cancels the last one with, making the claims it bound live again. A date beside the button takes the
+ // statement as of that day (on or before the sheet's today; blank: now), as the sheet stood at the end of it.
+@@ -65,6 +66,13 @@ export function PersonStatement({ person }: { person: Person }) {
+       {shown.count && <span data-testid="person-statement-count">{person.statementCount}</span>}{' '}
+       {shown.stated && <span data-testid="person-stated-total">{person.statedTotal ?? ''}</span>}{' '}
+       {shown.date && <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>}{' '}
++      <ul>
++        {(person.statements ?? []).map((line, i) => (
++          <li key={i} data-testid="person-statement-line-line">
++            {line}
++          </li>
++        ))}
++      </ul>
+       <input
+         data-testid="person-statement-asof"
+         placeholder="As of yyyy-mm-dd (blank: now)"
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 94315e5c3..886c56e41 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -183,6 +183,31 @@ public class PersonRepository {
+         return find(person.sheetId(), person.id());
+     }
+ 
++    /**
++     * The statements still standing of each person on the sheet, each as {@code <statement date> <due-total>}, oldest
++     * first (by date, then in the order taken).
++     */
++    public Map<Long, List<String>> statementLinesAll(String sheetId) {
++        Map<Long, List<String>> found = new HashMap<>();
++        jdbc.query("SELECT person_id, stated_total, statement_date FROM person_statement WHERE sheet_id = ?"
++                + " ORDER BY statement_date, seq", (rs) -> {
++                    found.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(statementLine(rs));
++                }, sheetId);
++        return found;
++    }
++
++    /** The person's statements still standing, as {@link #statementLinesAll} gives them. */
++    public List<String> statementLines(String sheetId, long personId) {
++        return jdbc.query("SELECT stated_total, statement_date FROM person_statement WHERE sheet_id = ? AND person_id = ?"
++                + " ORDER BY statement_date, seq", (rs, n) -> statementLine(rs), sheetId, personId);
++    }
++
++    private static String statementLine(ResultSet rs) throws SQLException {
++        LocalDate date = rs.getObject("statement_date", LocalDate.class);
++        String total = rs.getString("stated_total");
++        return (date == null ? "" : date.toString()) + " " + (total == null ? "n/a" : total);
++    }
++
+     /** Retire the person from this date; the person as stored. Not an edit, so it leaves the version alone. */
+     public Person retire(Person person, LocalDate from) {
+         jdbc.update("UPDATE person SET retired_from = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(from), person.id(),
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index d3628ddcf..0a88509e6 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -10,12 +10,14 @@ import java.util.List;
+  * {@code contact} their contact, null when they have none. {@code clashing} is whether another sheet of the sheet's
+  * tree uses their name or any of their aliases as a name or alias. {@code origin} is the sheet they were transferred
+  * from, null when they were not transferred here. {@code pastRetirements} are the retirements they were unretired
+- * from, oldest first. {@code tags} their tags, sorted (none: empty).
++ * from, oldest first. {@code tags} their tags, sorted (none: empty). {@code statements} each statement still standing as
++ * {@code <statement date> <due-total>}, oldest first.
+  */
+ public record PersonResponse(long id, String name, String grade, int version, int statementCount, String statedTotal,
+         String statementDate, boolean retired, String retiredFrom, boolean held,
+         List<Grade> grades, List<HoldDates> holds, Integer terms, String contact,
+-        boolean clashing, String origin, List<RetirementDates> pastRetirements, List<String> tags) {
++        boolean clashing, String origin, List<RetirementDates> pastRetirements, List<String> tags,
++        List<String> statements) {
+ 
+ 
+     /** A grade recorded for the person, from its from-date (yyyy-mm-dd; null: from the beginning of time). */
+@@ -30,7 +32,8 @@ public record PersonResponse(long id, String name, String grade, int version, in
+     public record RetirementDates(String from, String to) {
+     }
+ 
+-    public static PersonResponse from(Person person, boolean clashing, String origin, String tags) {
++    public static PersonResponse from(Person person, boolean clashing, String origin, String tags,
++            List<String> statements) {
+         return new PersonResponse(person.id(), person.name(), person.grade(), person.version(), person.statementCount(),
+                 person.statedTotal(), person.statementDate() == null ? null : person.statementDate().toString(),
+                 person.retired(), person.retiredFrom() == null ? null : person.retiredFrom().toString(),
+@@ -40,6 +43,6 @@ public record PersonResponse(long id, String name, String grade, int version, in
+                         h.to() == null ? null : h.to().toString())).toList(), person.terms(),
+                 person.contact(), clashing, origin, person.pastRetirements().stream()
+                         .map((r) -> new RetirementDates(r.from().toString(), r.to().toString())).toList(),
+-                tags == null ? List.of() : List.of(tags.split(",")));
++                tags == null ? List.of() : List.of(tags.split(",")), statements);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithMerge.java b/src/main/java/net/officefloor/hq/app/person/RespondWithMerge.java
+index 97b2fff8f..514053d06 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithMerge.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithMerge.java
+@@ -9,6 +9,7 @@ public class RespondWithMerge {
+             ObjectResponse<PersonResponse> response) {
+         Person into = people.find(merge.into().sheetId(), merge.into().id());
+         response.send(PersonResponse.from(into, tree.clashing(into, people.aliases(into.sheetId(), into.id())),
+-                people.origin(into.sheetId(), into.id()), people.tags(into.sheetId(), into.id())));
++                people.origin(into.sheetId(), into.id()), people.tags(into.sheetId(), into.id()),
++                people.statementLines(into.sheetId(), into.id())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+index e28521e2d..30ec226ee 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+@@ -22,9 +22,10 @@ public class RespondWithPeople {
+         }
+         Map<Long, String> origins = repository.origins(sheet.id());
+         Map<Long, String> tags = repository.tagsAll(sheet.id());
++        Map<Long, List<String>> statements = repository.statementLinesAll(sheet.id());
+         response.send(people.stream().map((p) -> PersonResponse.from(p,
+                 NameTree.clashing(taken, p.name(), byPerson.getOrDefault(p.id(), List.of())), origins.get(p.id()),
+-                tags.get(p.id())))
++                tags.get(p.id()), statements.getOrDefault(p.id(), List.of())))
+                 .toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java
+index 6cf2df6f8..a47a1cd89 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java
+@@ -7,6 +7,7 @@ public class RespondWithPerson {
+     public void respond(@Val Person person, PersonRepository people, NameTree tree,
+             ObjectResponse<PersonResponse> response) {
+         response.send(PersonResponse.from(person, tree.clashing(person, people.aliases(person.sheetId(), person.id())),
+-                people.origin(person.sheetId(), person.id()), people.tags(person.sheetId(), person.id())));
++                people.origin(person.sheetId(), person.id()), people.tags(person.sheetId(), person.id()),
++                people.statementLines(person.sheetId(), person.id())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithTransfer.java b/src/main/java/net/officefloor/hq/app/person/RespondWithTransfer.java
+index d3239c0cb..48ebb2cbb 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithTransfer.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithTransfer.java
+@@ -9,6 +9,7 @@ public class RespondWithTransfer {
+             ObjectResponse<PersonResponse> response) {
+         Person person = transferred.person();
+         response.send(PersonResponse.from(person, tree.clashing(person, people.aliases(person.sheetId(), person.id())),
+-                people.origin(person.sheetId(), person.id()), people.tags(person.sheetId(), person.id())));
++                people.origin(person.sheetId(), person.id()), people.tags(person.sheetId(), person.id()),
++                people.statementLines(person.sheetId(), person.id())));
+     }
+ }
