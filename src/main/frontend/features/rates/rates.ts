@@ -13,9 +13,10 @@ import type { DueRules } from '../settings/settings';
  * A grade's rate as the store holds it: a percent with two decimals, in force from its from-date
  * (yyyy-MM-dd; null: from the beginning of time) until the grade's next rate takes over, or through its
  * to-date (null: no end), whichever comes first. `sheet` is the sheet it is set on: the sheet's own rates come
- * first, then those it inherits from its parent, its parent's parent and so on (up to three levels up).
+ * first, then those it inherits from its parent, its parent's parent and so on (up to three levels up). A rate is kept
+ * as versions, one per time it was set for its grade and from-date: this is the newest (in force), `version` how many.
  */
-export type Rate = { grade: string; rate: string; from: string | null; to: string | null; sheet: string };
+export type Rate = { grade: string; rate: string; from: string | null; to: string | null; sheet: string; version: number };
 
 /** The fields the rate form submits; a blank from-date is from the beginning of time, a blank to-date no end. */
 export type RateInput = { grade: string; rate: string; from: string; to: string };
@@ -245,7 +246,7 @@ export function ratePreview(
   rate: string,
   rules: DueRules,
 ): { count: number; diff: string } {
-  const candidate: Rate[] = [...rates.filter((r) => r.grade !== grade), { grade, rate, from: null, to: null, sheet: '' }];
+  const candidate: Rate[] = [...rates.filter((r) => r.grade !== grade), { grade, rate, from: null, to: null, sheet: '', version: 1 }];
   const cents = (d: string) => (d === NA ? 0 : hundredths(d));
   let count = 0;
   let diff = 0;

@@ -11,9 +11,10 @@ import java.util.List;
 /**
  * A rate a sheet has for a grade: a percent with two decimals, in force from {@code from} (null: from
  * the beginning of time) until the grade's next rate takes over, or through {@code to} (null: no end), whichever
- * comes first.
+ * comes first. A rate is kept as versions, one per time it was set for its grade and from-date: this is the newest
+ * (the one in force), {@code version} its number (from 1), so how many versions it has.
  */
-public record Rate(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to) {
+public record Rate(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to, int version) {
 
     /**
      * The grade's rate in force on the date: the one with the latest from-date on or before it, unless its to-date

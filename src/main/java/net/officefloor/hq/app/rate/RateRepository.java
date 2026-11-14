@@ -39,7 +39,7 @@ public class RateRepository {
 
     /** The sheet's own rates, by grade and then from-date (from the start first). */
     public List<Rate> findOwn(String sheetId) {
-        return jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date FROM rate WHERE sheet_id = ?"
+        return jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version FROM rate WHERE sheet_id = ?"
                 + " ORDER BY grade, from_date NULLS FIRST", RateRepository::map, sheetId);
     }
 
@@ -48,22 +48,36 @@ public class RateRepository {
         return parent.isEmpty() ? null : parent.get(0);
     }
 
-    /** Set the grade's rate for its from-date, replacing any it had (and its to-date) for that from-date; the rate as stored. */
+    /**
+     * Set the grade's rate for its from-date as a new version: one it had for that from-date is kept as an older
+     * version, and the new one (with its to-date) is in force; the rate as stored, with its version number.
+     */
     public Rate save(Rate rate) {
-        int updated = rate.from() == null
-                ? jdbc.update("UPDATE rate SET rate = ?, to_date = ? WHERE sheet_id = ? AND grade = ? AND from_date IS NULL",
-                        rate.rate(), rate.to(), rate.sheetId(), rate.grade())
-                : jdbc.update("UPDATE rate SET rate = ?, to_date = ? WHERE sheet_id = ? AND grade = ? AND from_date = ?",
-                        rate.rate(), rate.to(), rate.sheetId(), rate.grade(), rate.from());
-        if (updated == 0) {
-            jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
-                    rate.sheetId(), rate.grade(), rate.rate(), rate.from(), rate.to());
+        String where = rate.from() == null ? " WHERE sheet_id = ? AND grade = ? AND from_date IS NULL"
+                : " WHERE sheet_id = ? AND grade = ? AND from_date = ?";
+        Object[] key = rate.from() == null ? new Object[] { rate.sheetId(), rate.grade() }
+                : new Object[] { rate.sheetId(), rate.grade(), rate.from() };
+        List<Integer> current = jdbc.queryForList("SELECT version FROM rate" + where, Integer.class, key);
+        Rate stored = new Rate(rate.sheetId(), rate.grade(), rate.rate(), rate.from(), rate.to(),
+                current.isEmpty() ? 1 : current.get(0) + 1);
+        if (current.isEmpty()) {
+            jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version) VALUES (?, ?, ?, ?, ?, ?)",
+                    stored.sheetId(), stored.grade(), stored.rate(), stored.from(), stored.to(), stored.version());
+        } else {
+            Object[] args = new Object[key.length + 3];
+            args[0] = stored.rate();
+            args[1] = stored.to();
+            args[2] = stored.version();
+            System.arraycopy(key, 0, args, 3, key.length);
+            jdbc.update("UPDATE rate SET rate = ?, to_date = ?, version = ?" + where, args);
         }
-        return rate;
+        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, rate, to_date) VALUES (?, ?, ?, ?, ?, ?)",
+                stored.sheetId(), stored.grade(), stored.from(), stored.version(), stored.rate(), stored.to());
+        return stored;
     }
 
     private static Rate map(ResultSet rs, int n) throws SQLException {
         return new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("rate").setScale(2),
-                rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class));
+                rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class), rs.getInt("version"));
     }
 }

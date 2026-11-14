@@ -16,7 +16,7 @@ const EMPTY: RateInput = { grade: 'A', rate: '', from: '', to: '' };
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Each grade's rate in force on the sheet's today (n/a when none is), every rate the sheet has with
-// its from- and to-date, and the form that sets one. The rate in force may be inherited from a parent sheet;
+// its from- and to-date and version count, and the form that sets one. The rate in force may be inherited from a parent sheet;
 // the list shows only the sheet's own.
 export function Rates() {
   const [user] = useCurrentUser();
@@ -95,6 +95,7 @@ export function Rates() {
             <th>From</th>
             <th>To</th>
             <th>Rate %</th>
+            <th>Versions</th>
           </tr>
         </thead>
         <tbody>
@@ -104,6 +105,7 @@ export function Rates() {
               <td data-testid="rate-from">{r.from ?? 'start'}</td>
               <td data-testid="rate-to">{r.to ?? ''}</td>
               <td data-testid="rate-pct">{r.rate}</td>
+              <td data-testid="rate-version">{r.version}</td>
             </tr>
           ))}
         </tbody>
