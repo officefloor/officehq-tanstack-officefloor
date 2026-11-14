@@ -11,7 +11,8 @@ import { useColumnShown } from '../columns/columns';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-// A person's statements: how many were taken, the last one's due-total and date, and the button that
+// A person's statements: how many were taken, the last one's due-total and date, one line per statement
+// still standing (oldest first), and the button that
 // takes one — recording their due-total now and binding each counting claim to its figure now — and the
 // button a steward cancels the last one with, making the claims it bound live again. A date beside the button takes the
 // statement as of that day (on or before the sheet's today; blank: now), as the sheet stood at the end of it.
@@ -65,6 +66,13 @@ export function PersonStatement({ person }: { person: Person }) {
       {shown.count && <span data-testid="person-statement-count">{person.statementCount}</span>}{' '}
       {shown.stated && <span data-testid="person-stated-total">{person.statedTotal ?? ''}</span>}{' '}
       {shown.date && <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>}{' '}
+      <ul>
+        {(person.statements ?? []).map((line, i) => (
+          <li key={i} data-testid="person-statement-line-line">
+            {line}
+          </li>
+        ))}
+      </ul>
       <input
         data-testid="person-statement-asof"
         placeholder="As of yyyy-mm-dd (blank: now)"

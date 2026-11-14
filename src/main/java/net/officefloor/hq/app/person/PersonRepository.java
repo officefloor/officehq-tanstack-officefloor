@@ -183,6 +183,31 @@ public class PersonRepository {
         return find(person.sheetId(), person.id());
     }
 
+    /**
+     * The statements still standing of each person on the sheet, each as {@code <statement date> <due-total>}, oldest
+     * first (by date, then in the order taken).
+     */
+    public Map<Long, List<String>> statementLinesAll(String sheetId) {
+        Map<Long, List<String>> found = new HashMap<>();
+        jdbc.query("SELECT person_id, stated_total, statement_date FROM person_statement WHERE sheet_id = ?"
+                + " ORDER BY statement_date, seq", (rs) -> {
+                    found.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(statementLine(rs));
+                }, sheetId);
+        return found;
+    }
+
+    /** The person's statements still standing, as {@link #statementLinesAll} gives them. */
+    public List<String> statementLines(String sheetId, long personId) {
+        return jdbc.query("SELECT stated_total, statement_date FROM person_statement WHERE sheet_id = ? AND person_id = ?"
+                + " ORDER BY statement_date, seq", (rs, n) -> statementLine(rs), sheetId, personId);
+    }
+
+    private static String statementLine(ResultSet rs) throws SQLException {
+        LocalDate date = rs.getObject("statement_date", LocalDate.class);
+        String total = rs.getString("stated_total");
+        return (date == null ? "" : date.toString()) + " " + (total == null ? "n/a" : total);
+    }
+
     /** Retire the person from this date; the person as stored. Not an edit, so it leaves the version alone. */
     public Person retire(Person person, LocalDate from) {
         jdbc.update("UPDATE person SET retired_from = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(from), person.id(),

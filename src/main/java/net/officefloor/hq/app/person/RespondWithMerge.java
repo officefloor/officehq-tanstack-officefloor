@@ -9,6 +9,7 @@ public class RespondWithMerge {
             ObjectResponse<PersonResponse> response) {
         Person into = people.find(merge.into().sheetId(), merge.into().id());
         response.send(PersonResponse.from(into, tree.clashing(into, people.aliases(into.sheetId(), into.id())),
-                people.origin(into.sheetId(), into.id()), people.tags(into.sheetId(), into.id())));
+                people.origin(into.sheetId(), into.id()), people.tags(into.sheetId(), into.id()),
+                people.statementLines(into.sheetId(), into.id())));
     }
 }

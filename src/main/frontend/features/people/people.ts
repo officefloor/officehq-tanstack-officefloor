@@ -44,7 +44,8 @@ export const liveHolds = (p: { holds: Hold[]; retiredFrom: string | null }, toda
  * the sheet's tree (its ancestors and descendants) uses their name or any of their aliases as a name or alias.
  * `origin` is the sheet they were transferred from, null when they were not transferred here. `pastRetirements` are
  * the retirements they were unretired from, oldest first: a claim dated after one's from and before its to is refused.
- * `tags` are their tags, sorted (none: empty).
+ * `tags` are their tags, sorted (none: empty). `statements` are their statements still standing, each as
+ * `<statement date> <due-total>`, oldest first.
  */
 export type Person = {
   id: number;
@@ -65,6 +66,7 @@ export type Person = {
   origin: string | null;
   pastRetirements: { from: string; to: string }[];
   tags: string[];
+  statements: string[];
 };
 
 /**

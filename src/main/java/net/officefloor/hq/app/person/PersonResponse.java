@@ -10,12 +10,14 @@ import java.util.List;
  * {@code contact} their contact, null when they have none. {@code clashing} is whether another sheet of the sheet's
  * tree uses their name or any of their aliases as a name or alias. {@code origin} is the sheet they were transferred
  * from, null when they were not transferred here. {@code pastRetirements} are the retirements they were unretired
- * from, oldest first. {@code tags} their tags, sorted (none: empty).
+ * from, oldest first. {@code tags} their tags, sorted (none: empty). {@code statements} each statement still standing as
+ * {@code <statement date> <due-total>}, oldest first.
  */
 public record PersonResponse(long id, String name, String grade, int version, int statementCount, String statedTotal,
         String statementDate, boolean retired, String retiredFrom, boolean held,
         List<Grade> grades, List<HoldDates> holds, Integer terms, String contact,
-        boolean clashing, String origin, List<RetirementDates> pastRetirements, List<String> tags) {
+        boolean clashing, String origin, List<RetirementDates> pastRetirements, List<String> tags,
+        List<String> statements) {
 
 
     /** A grade recorded for the person, from its from-date (yyyy-mm-dd; null: from the beginning of time). */
@@ -30,7 +32,8 @@ public record PersonResponse(long id, String name, String grade, int version, in
     public record RetirementDates(String from, String to) {
     }
 
-    public static PersonResponse from(Person person, boolean clashing, String origin, String tags) {
+    public static PersonResponse from(Person person, boolean clashing, String origin, String tags,
+            List<String> statements) {
         return new PersonResponse(person.id(), person.name(), person.grade(), person.version(), person.statementCount(),
                 person.statedTotal(), person.statementDate() == null ? null : person.statementDate().toString(),
                 person.retired(), person.retiredFrom() == null ? null : person.retiredFrom().toString(),
@@ -40,6 +43,6 @@ public record PersonResponse(long id, String name, String grade, int version, in
                         h.to() == null ? null : h.to().toString())).toList(), person.terms(),
                 person.contact(), clashing, origin, person.pastRetirements().stream()
                         .map((r) -> new RetirementDates(r.from().toString(), r.to().toString())).toList(),
-                tags == null ? List.of() : List.of(tags.split(",")));
+                tags == null ? List.of() : List.of(tags.split(",")), statements);
     }
 }
