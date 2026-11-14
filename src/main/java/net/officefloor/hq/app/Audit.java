@@ -48,9 +48,40 @@ public class Audit {
         this.settings = settings;
     }
 
+    /** The records this thread is holding back until its change is known to go through (null: none held). */
+    private final ThreadLocal<List<String>> held = new ThreadLocal<>();
+
     /** Append one audit record. Tests assert the exact line(s) in the file. */
     public synchronized void record(String entry) {
+        List<String> holding = held.get();
+        if (holding != null) {
+            holding.add(entry + forDelegator(entry));
+            return;
+        }
         write(entry + forDelegator(entry));
+    }
+
+    /**
+     * Runs a change whose steps may each record before a later one refuses it: its records are written, in order, only
+     * once it has gone through; a refused change writes none.
+     */
+    public <E extends Exception> void holding(Change<E> change) throws E {
+        List<String> holding = new ArrayList<>();
+        held.set(holding);
+        try {
+            change.run();
+        } finally {
+            held.remove();
+        }
+        synchronized (this) {
+            holding.forEach(this::write);
+        }
+    }
+
+    /** A change run by {@link #holding}. */
+    @FunctionalInterface
+    public interface Change<E extends Exception> {
+        void run() throws E;
     }
 
     /** " for=<steward>" when the record is a change by a user acting as a steward by delegation, else "". */

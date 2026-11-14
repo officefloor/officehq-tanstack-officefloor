@@ -65,7 +65,7 @@ public class ValidatePasteRequest {
                 throw new InvalidClaimException("Line " + number + ": the reference " + input[0].ref()
                         + " is already given by an earlier line.");
             }
-            lines.add(new PastedLine(name, input[0], null));
+            lines.add(new PastedLine(name, input[0]));
         }
         if (lines.isEmpty()) {
             throw new InvalidClaimException("Paste at least one line of name,amount,date,note.");

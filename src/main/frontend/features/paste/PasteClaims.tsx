@@ -12,8 +12,9 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 type PasteResult = { added: number };
 
 // The paste box: lines of name,amount,date,note (the note may hold commas, a blank date is the sheet's entry date,
-// else its today, the note may be left off), each a DRAFT claim for the named person on the sheet. The server
-// checks every line with the claim form's rules first, so one refused line adds nothing.
+// else its today, the note may be left off), each a claim for the named person on the sheet, opened as the open
+// button would. A line matching a DRAFT of theirs (same date and note) updates it to its amount and opens it instead.
+// The server refuses the whole paste when any line is refused, so one refused line changes nothing.
 // A note ending " #<reference>" gives the claim that external reference instead.
 export function PasteClaims() {
   const [user] = useCurrentUser();
@@ -41,8 +42,10 @@ export function PasteClaims() {
       queryClient.setQueryData(peopleKey(sheet), people);
       queryClient.setQueryData(claimsKey(sheet), claims);
       setAdded(result.added);
+      // Opening moves the figures and numbers shown elsewhere on the screen.
+      void queryClient.invalidateQueries();
     },
-    onError: () => setError('Nothing was added: every line must be a claim the claim form takes, for a name on the sheet.'),
+    onError: () => setError('Nothing was pasted: every line must be a claim the claim form takes and the open button opens, for a name on the sheet.'),
   });
 
   if (!user || !sheet) return null;
@@ -76,7 +79,7 @@ export function PasteClaims() {
       {added !== undefined && (
         <>
           {' '}
-          Added <span data-testid="paste-added">{added}</span>
+          Pasted <span data-testid="paste-added">{added}</span>
         </>
       )}
       {error && <span data-testid="paste-error">{error}</span>}
