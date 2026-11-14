@@ -102,8 +102,14 @@ public class Person {
     /** Whether the claim counts in live totals: it counts by status, and is not an open (OPEN or
      *  PENDING) claim dated within one of their holds that no statement bound, nor a deferred one. */
     public boolean countsLive(Claim claim) {
-        return claim.isCounting() && !claim.isDeferred()
-                && !(ClaimStatus.isOpen(claim.getStatus()) && !claim.isStated()
+        return claim.isCounting() && !leftOutLive(claim);
+    }
+
+    /** Whether the live rules leave the claim out whatever its status counts: it is deferred, or an
+     *  open (OPEN or PENDING) claim dated within one of their holds that no statement bound. */
+    public boolean leftOutLive(Claim claim) {
+        return claim.isDeferred()
+                || (ClaimStatus.isOpen(claim.getStatus()) && !claim.isStated()
                         && holds.stream().anyMatch((h) -> h.covers(claim.getDate())));
     }
 

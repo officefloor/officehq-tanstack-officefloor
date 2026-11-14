@@ -1,5 +1,5 @@
 import { getJson, postJson } from '../../api/http';
-import { counts, liveClaims, type Claim } from '../claims/api';
+import { liveClaims, type Claim, type ClaimStatus } from '../claims/api';
 import { gradeOn, type Person } from '../people/api';
 import { claimDue, sumDues, type Late, type Rate } from '../rates/api';
 import type { DatedOn } from '../settings/api';
@@ -46,13 +46,33 @@ export function reopenPeriod(sheetId: string, by: string, name: string): Promise
   return postJson<Period>(`${base(sheetId)}/${encodeURIComponent(name)}/reopen?by=${encodeURIComponent(by)}`, {});
 }
 
+/** A claim's status at the end of a day (yyyy-MM-dd), as its status log records it: the last status
+ *  logged on or before that day; null when it was added after it. A claim with no log (added before
+ *  the log) has its status now. */
+export function statusOn(c: Claim, date: string): ClaimStatus | null {
+  if (c.log.length === 0) return c.status;
+  let status: ClaimStatus | null = null;
+  for (const line of c.log) {
+    const m = / on (\d{4}-\d{2}-\d{2}) due=[^ ]*$/.exec(line);
+    if (m && m[1] <= date) status = line.slice(0, line.indexOf(' ')) as ClaimStatus;
+  }
+  return status;
+}
+
+/** Whether a claim counted at the end of a day: its status then was OPEN, PENDING or SETTLED. */
+export const countedOn = (c: Claim, date: string) => {
+  const s = statusOn(c, date);
+  return s === 'OPEN' || s === 'PENDING' || s === 'SETTLED';
+};
+
 /** A person's due-total for a period: once closed, the one fixed for them when it was closed (0.00
- *  for a person added later); else the due of their live claims that count whose date falls in it
- *  (n/a ones skipped). */
+ *  for a person added later); else the due as shown now of their claims dated in it that counted by
+ *  their status at the end of its last day (see `statusOn`), less those the live rules leave out
+ *  (deferred, held; see `liveClaims`), n/a ones skipped. */
 export function personPeriodDue(p: Period, person: Person, claims: Claim[], people: Person[] | undefined,
   rates: Rate[] | undefined, floor: DatedOn, late: Late): string {
   if (p.closed) return p.personTotals[String(person.id)] ?? '0.00';
-  return sumDues(liveClaims(claims.filter((c) => c.personId === person.id), people).filter(counts)
+  return sumDues(liveClaims(claims.filter((c) => c.personId === person.id), people).filter((c) => countedOn(c, p.to))
     .filter((c) => p.from <= c.date && c.date <= p.to)
     .map((c) => claimDue(c, rates, (d) => gradeOn(person, d), floor, late)));
 }

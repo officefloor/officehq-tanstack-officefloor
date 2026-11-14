@@ -5,7 +5,9 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Dues;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -18,13 +20,15 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** Closes a period, fixing its due-total as it is now: the due of the claims that count whose date
- *  falls in it (n/a ones skipped, and OPEN ones dated within a hold of their person, unless bound), as the screen shows them.
+/** Closes a period, fixing its due-total as it is now: the due, as the screen shows it now, of the claims
+ *  whose date falls in it that counted by their status at the end of its last day as their status log
+ *  records it (n/a ones skipped, and those the live rules leave out: deferred, or OPEN ones dated within
+ *  a hold of their person, unless bound).
  *  Each person's due-total for it is fixed too, for everyone on the sheet. Refused when it is already closed. */
 public class ClosePeriod {
     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name,
             @RequestParam(name = "by", required = false) String by, PeriodRepository periods,
-            ClaimRepository claims, PersonRepository people, RateRepository rates,
+            ClaimRepository claims, ClaimLogRepository log, PersonRepository people, RateRepository rates,
             SettingRepository settings, SheetRepository sheets,
             Out<Period> period) throws InvalidPeriodException, PeriodClosedException {
         String id = sheetId.trim();
@@ -40,10 +44,13 @@ public class ClosePeriod {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
         for (Person p : people.list(id)) personTotals.put(p.getId(), BigDecimal.ZERO.setScale(2));
+        Map<Long, String> atEnd = log.statusesOn(id, LocalDate.parse(found.to()));
         for (Claim c : claims.list(id)) {
-            if (!c.isCounting() || !found.contains(c.getDate())) continue;
+            if (!found.contains(c.getDate())) continue;
+            String status = atEnd.containsKey(c.getId()) ? atEnd.get(c.getId()) : c.getStatus();
+            if (status == null || !(ClaimStatus.isOpen(status) || ClaimStatus.SETTLED.name().equals(status))) continue;
             Person person = people.find(id, c.getPersonId());
-            if (person != null && !person.countsLive(c)) continue;
+            if (person != null && person.leftOutLive(c)) continue;
             Rate rate = person == null ? null
                     : rates.find(id, person.gradeOn(c.getDate()), LocalDate.parse(c.getDate()));
             String due = Dues.shown(c, rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor.on(c.getDate()), late.rounding(c.getRoundDate())), late);
