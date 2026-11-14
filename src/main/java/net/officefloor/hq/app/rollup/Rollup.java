@@ -51,7 +51,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 String pct = rateOn(sheetRates, grade, c.getDate());
                 String d = Dues.shown(c, pct == null ? null : Dues.of(c.getAmount(), pct, floor, late.rounding(c.getRoundDate())), late);
                 kept |= c.getSettledDue() != null || c.isBound()
-                        || (pct != null && !grade.equals(p.getGrade()));
+                        || (pct != null && (!grade.equals(p.getGrade()) || c.getDate().compareTo(today) <= 0));
                 if (d != null) due = due.add(new BigDecimal(d));
             }
             boolean na = rateOn(sheetRates, p.getGrade(), today) == null && !kept;
@@ -81,14 +81,14 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
     }
 
     /** The grade's rate in force on the date (yyyy-MM-dd): the one with the latest from-date on or
-     *  before it; null when there is none. */
+     *  before it; null when there is none, or that one ended (its to-date) before the date. */
     private static String rateOn(List<Rate> rates, String grade, String date) {
         Rate found = null;
         for (Rate r : rates) {
             if (!r.grade().equals(grade) || (r.from() != null && r.from().compareTo(date) > 0)) continue;
             if (found == null || nz(found.from()).compareTo(nz(r.from())) < 0) found = r;
         }
-        return found == null ? null : found.pct();
+        return found == null || found.endedBefore(date) ? null : found.pct();
     }
 
     private static String nz(String from) {

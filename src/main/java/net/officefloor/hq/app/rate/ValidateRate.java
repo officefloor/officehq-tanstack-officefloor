@@ -24,15 +24,24 @@ public class ValidateRate {
         if (!PCT.matcher(pct).matches()) {
             throw new InvalidRateException("A percent of 0.00 or more with up to two decimals is required");
         }
-        String fromText = request.from() == null ? "" : request.from().trim();
-        LocalDate from = null;
-        if (!fromText.isEmpty()) {
-            try {
-                from = LocalDate.parse(fromText);
-            } catch (DateTimeParseException e) {
-                throw new InvalidRateException("Not a date: " + fromText);
-            }
+        LocalDate from = date(request.from());
+        LocalDate to = date(request.to());
+        if (from != null && to != null && to.isBefore(from)) {
+            throw new InvalidRateException("The to-date is before the from-date");
         }
-        body.set(new ValidRate(grade, new BigDecimal(pct).setScale(2), from));
+        body.set(new ValidRate(grade, new BigDecimal(pct).setScale(2), from, to));
+    }
+
+    /** A blank date is null. */
+    private static LocalDate date(String given) throws InvalidRateException {
+        String text = given == null ? "" : given.trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(text);
+        } catch (DateTimeParseException e) {
+            throw new InvalidRateException("Not a date: " + text);
+        }
     }
 }

@@ -9,6 +9,7 @@ public class RecordRateSet {
     public void record(@RequestParam(name = "by", required = false) String by,
             @Val Rate rate, Audit audit) {
         audit.record("RATE_SET sheet=" + rate.sheetId() + " by=" + (by == null ? "" : by)
-                + " grade=" + rate.grade() + " rate=" + rate.pct() + (rate.from() == null ? "" : " from=" + rate.from()));
+                + " grade=" + rate.grade() + " rate=" + rate.pct() + (rate.from() == null ? "" : " from=" + rate.from())
+                + (rate.to() == null ? "" : " to=" + rate.to()));
     }
 }

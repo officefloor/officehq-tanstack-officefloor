@@ -3,10 +3,11 @@ import { counts, dueBy, isBound, isCorrection, isOverdue, type Claim } from '../
 import { sheetKey } from '../sheet/api';
 
 /** A grade's rate on the sheet: a percent as two-decimal text, in force from its from-date
- *  (yyyy-MM-dd; null applies from the beginning of time). A grade with no rate is not listed. */
-export type Rate = { sheetId: string; grade: string; pct: string; from: string | null };
-/** A blank `from` sets the rate that applies from the beginning of time. */
-export type RateInput = { grade: string; pct: string; from: string };
+ *  (yyyy-MM-dd; null applies from the beginning of time) through its to-date (null: no end). A grade
+ *  with no rate is not listed. */
+export type Rate = { sheetId: string; grade: string; pct: string; from: string | null; to: string | null };
+/** A blank `from` sets the rate that applies from the beginning of time; a blank `to` has no end. */
+export type RateInput = { grade: string; pct: string; from: string; to: string };
 
 const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/rates`;
 
@@ -19,20 +20,21 @@ export function listRates(sheetId: string): Promise<Rate[]> {
 
 /** Set a grade's rate from a from-date, replacing the one with the same grade and from-date;
  *  refused (rejects) when the percent is missing, negative or has more than two decimals, or the
- *  from-date is not a date. */
+ *  from-date or to-date is not a date, or the to-date is before the from-date. */
 export function setRate(sheetId: string, by: string, input: RateInput): Promise<Rate> {
   return postJson<Rate>(`${base(sheetId)}?by=${encodeURIComponent(by)}`, input);
 }
 
 /** The grade's rate in force on a date (yyyy-MM-dd): the one with the latest from-date on or
- *  before it; undefined (n/a) when the date is before every rate the grade has, or it has none. */
+ *  before it; undefined (n/a) when the date is before every rate the grade has, or it has none, or
+ *  that one ended (its to-date) before the date. */
 export function rateOn(rates: Rate[] | undefined, grade: string, date: string): string | undefined {
   let found: Rate | undefined;
   for (const r of rates ?? []) {
     if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
     if (found === undefined || (found.from ?? '') < (r.from ?? '')) found = r;
   }
-  return found?.pct;
+  return found === undefined || (found.to !== null && found.to < date) ? undefined : found.pct;
 }
 
 /** The rate in force on a date for each grade that has one then. */
@@ -86,12 +88,12 @@ export function lateCharge(c: Claim, figure: string, late: Late): bigint {
 export type GradeOn = (date: string) => string;
 
 /** A claim's due: the one fixed when it was settled (its late charge then frozen in), else its
- *  figure — the one bound by its person's last statement (not while PENDING), else live at the rate in force on the
+ *  figure — the one bound by its person's last statement (not while PENDING; n/a when it bound none), else live at the rate in force on the
  *  claim's date of the grade in force then (`gradeOn`), at least the `floor` — with its late charge
  *  on the sheet's today on top. */
 export function claimDue(c: Claim, rates: Rate[] | undefined, gradeOn: GradeOn, floor: string, late: Late): string | null {
   if (c.settledDue !== null) return c.settledDue;
-  const figure = isBound(c) ? c.statedDue : dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date), floor, roundsHalfUp(c, late));
+  const figure = c.stated && c.status !== 'PENDING' ? c.statedDue : dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date), floor, roundsHalfUp(c, late));
   return figure === null ? null : formatCents(hundredths(figure) + lateCharge(c, figure, late));
 }
 
@@ -106,13 +108,14 @@ function roundPct(product: bigint, halfUp: boolean): bigint {
 
 /** A person's due-total: the sum of their counting claims' due figures (n/a ones skipped); n/a
  *  when their grade today has no rate today (`pct`) and none of those claims keeps a settled or bound
- *  figure, or a live one at a grade no longer in force on the sheet's today. */
+ *  figure, or a live one at a grade no longer in force on the sheet's today or dated on or before it
+ *  (its rate since ended). */
 export function personDue(claims: Claim[], rates: Rate[] | undefined, gradeOn: GradeOn, pct: string | undefined,
   floor: string, late: Late) {
   const own = claims.filter(counts);
   const now = gradeOn(late.today);
   const kept = (c: Claim) => c.settledDue !== null || isBound(c)
-    || (gradeOn(c.date) !== now && rateOn(rates, gradeOn(c.date), c.date) !== undefined);
+    || ((gradeOn(c.date) !== now || c.date <= late.today) && rateOn(rates, gradeOn(c.date), c.date) !== undefined);
   if (pct === undefined && !own.some(kept)) return null;
   return sumDues(own.map((c) => claimDue(c, rates, gradeOn, floor, late)));
 }
