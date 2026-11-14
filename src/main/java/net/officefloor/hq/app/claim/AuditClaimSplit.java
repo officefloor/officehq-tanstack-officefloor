@@ -15,7 +15,7 @@ public class AuditClaimSplit {
         String name = person == null ? "" : person.name();
         audit.record("CLAIM_SPLIT sheet=" + original.sheetId() + " by=" + user + " person=" + name + " amount="
                 + original.amount().setScale(2).toPlainString() + " date=" + original.date()
-                + Claim.auditNumber(original.number()) + " into=" + created.number());
+                + Claim.auditNumber(original.number()) + " into=" + (created.number() == null ? "" : created.number()));
         audit.record(ClaimAction.OPEN.event() + " sheet=" + created.sheetId() + " by=" + user + " person=" + name
                 + " amount=" + created.amount().setScale(2).toPlainString() + " date=" + created.date()
                 + Claim.auditNumber(created.number()));

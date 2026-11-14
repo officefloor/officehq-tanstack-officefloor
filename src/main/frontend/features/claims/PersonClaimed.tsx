@@ -4,7 +4,7 @@ import { claimed, useClaims } from './claims';
 import { useColumnShown } from '../columns/columns';
 
 // What a person has claimed: the sum of their counting claims' amounts (not corrections; held ones count, a retired
-// person's none once their retirement date is reached).
+// person's none once their retirement date is reached, but those a statement binds).
 export function PersonClaimed({ person }: { person: Person }) {
   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
   const today = useSheetToday();

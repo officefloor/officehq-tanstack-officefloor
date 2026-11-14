@@ -169,10 +169,11 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
 
     /**
      * Whether the claim counts toward this person's claimed on the given today: as {@link #counts}, but a hold (theirs
-     * or the claim's own) does not take it out; once their retirement date is reached, none of theirs does.
+     * or the claim's own) does not take it out; once their retirement date is reached, none of theirs does but those a
+     * statement binds.
      */
     public boolean countsClaimed(Claim claim, LocalDate today) {
-        return !retiredOn(today) && !claim.deferred(today) && claim.counts(false);
+        return (!retiredOn(today) || claim.bound()) && !claim.deferred(today) && claim.counts(false);
     }
 
     /**

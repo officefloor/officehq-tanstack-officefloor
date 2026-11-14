@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
+import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
@@ -11,12 +12,13 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Settles the claim just split off, as the settle button does (its checks were made on the original): its due is
- * fixed at its figure now, or, when the user's role may not settle that due (the clerk limit), it goes PENDING,
+ * fixed at its figure now and it is given its number, or, when the user's role may not settle that due (the clerk limit), it goes PENDING,
  * live and unfixed. Publishes the change for the settle's save, log and audit steps, taken one at a time (no batch).
  */
 public class SettleSplitClaim {
     public void settle(@RequestParam("user") String user, @Val Claim claim, SheetRepository sheets,
-            PersonRepository people, RateRepository rates, SettingRepository settings, ClaimRepository claims,
+            PersonRepository people, RateRepository rates, SettingRepository settings, PeriodRepository periods,
+            ClaimRepository claims,
             Out<ClaimAction> applied, Out<ClaimNumber> number, Out<PreviousDue> previous,
             Out<ClaimActionRequest> request, Out<Claim> updated) {
         ClaimAction action = ClaimAction.SETTLE;
@@ -25,10 +27,13 @@ public class SettleSplitClaim {
             action = ClaimAction.PEND;
             due = null;
         }
+        String next = action.settles() && claim.number() == null
+                ? ClaimNumbers.next(claim, sheets, settings, periods)
+                : claim.number();
         applied.set(action);
         previous.set(new PreviousDue(claim.due(), false));
-        number.set(new ClaimNumber(claim.number()));
+        number.set(new ClaimNumber(next));
         request.set(new ClaimActionRequest("", ""));
-        updated.set(claim.withStatus(action.to(), claim.number(), due, claim.openedBy()));
+        updated.set(claim.withStatus(action.to(), next, due, claim.openedBy()));
     }
 }

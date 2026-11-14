@@ -21,8 +21,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Moves the claim to the action's status; refused (400) when the claim's status does not allow it.
- * Opening gives the claim the sheet's next number; a voided claim keeps its number (it is never reused). While the
- * sheet's period numbering from date is set and its today is on or after it, opening instead gives the claim the next
+ * Settling or approving gives an unnumbered claim the sheet's next number (an OPEN, PENDING or REVIEW claim has none;
+ * one numbered before keeps its number); a voided claim keeps its number (it is never reused). While the
+ * sheet's period numbering from date is set and its today is on or after it, settling instead gives the claim the next
  * number within the period containing its due-by (P1-1, P1-2, ...), or within the claims in no period (X-1, ...).
  * Opening, settling and voiding are refused (400) to a role the sheet's permission matrix does not allow them.
  * Opening records the user who opened it; that user cannot settle it (four eyes). Nor can the user who last edited
@@ -45,7 +46,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * While the sheet's void reasons list is not empty, a void is refused (400) without a reason chosen from it; a reason
  * not on the list is always refused.
  * Opening a claim whose due (as shown now) is above the sheet's review threshold in force on its date sends it to REVIEW
- * instead, with no number yet, recording who opened it; only a steward reviews it, which opens it (giving its number).
+ * instead, recording who opened it; only a steward reviews it, which opens it (still with no number).
  * While its person is flagged (the sheet's today on or before the flag's until date), only a steward opens a claim.
  * Deleting sets a DRAFT claim aside as DELETED (counting nowhere); restoring makes it a DRAFT again, only while the
  * sheet's today is the day it was deleted (the status log's latest DELETED date).
@@ -151,10 +152,9 @@ public class ApplyClaimAction {
             found = ClaimAction.PEND;
             due = null;
         }
-        String next = switch (found) {
-            case OPEN, REVIEW -> ClaimNumbers.next(claim, sheets, settings, periods);
-            default -> claim.number();
-        };
+        String next = found.settles() && claim.number() == null
+                ? ClaimNumbers.next(claim, sheets, settings, periods)
+                : claim.number();
         applied.set(found);
         previous.set(new PreviousDue(claim.due(), claim.status() == ClaimStatus.SETTLED));
         number.set(new ClaimNumber(next));
