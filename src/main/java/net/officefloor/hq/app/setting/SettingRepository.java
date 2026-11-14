@@ -67,9 +67,11 @@ public class SettingRepository {
 
     /** The sheet's policy versions, in the order made (the first is number 1). */
     public List<PolicyVersion> policyVersions(String sheetId) {
-        return jdbc.query("SELECT number, setting_key, from_date FROM policy_version WHERE sheet_id = ? ORDER BY number",
+        return jdbc.query("SELECT number, setting_key, from_date, setting_value FROM policy_version WHERE sheet_id = ?"
+                + " ORDER BY number",
                 (rs, n) -> new PolicyVersion(rs.getInt("number"), rs.getString("setting_key"),
-                        rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate()), sheetId);
+                        rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate(),
+                        rs.getString("setting_value")), sheetId);
     }
 
     /**
@@ -78,9 +80,9 @@ public class SettingRepository {
      */
     public void saveDated(String sheetId, String key, LocalDate from, String value) {
         if (POLICY_KEYS.contains(key)) {
-            jdbc.update("INSERT INTO policy_version (sheet_id, number, setting_key, from_date) SELECT ?,"
-                    + " COALESCE(MAX(number), 0) + 1, ?, ? FROM policy_version WHERE sheet_id = ?",
-                    sheetId, key, from == null ? null : Date.valueOf(from), sheetId);
+            jdbc.update("INSERT INTO policy_version (sheet_id, number, setting_key, from_date, setting_value) SELECT ?,"
+                    + " COALESCE(MAX(number), 0) + 1, ?, ?, ? FROM policy_version WHERE sheet_id = ?",
+                    sheetId, key, from == null ? null : Date.valueOf(from), value, sheetId);
         }
         jdbc.update("DELETE FROM setting_from WHERE sheet_id = ? AND setting_key = ? AND from_date = ?",
                 sheetId, key, Date.valueOf(from));

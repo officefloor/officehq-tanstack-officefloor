@@ -67,8 +67,11 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: number
  */
 export type Delegation = { user: string; from: string; to: string; by: string };
 
-/** A policy version: its number, the setting changed and the date it is in force from (yyyy-MM-dd; '': none, it counts always). */
-export type PolicyVersion = { number: number; key: string; from: string };
+/**
+ * A policy version: its number, the setting changed, the date it is in force from (yyyy-MM-dd; '': none, it counts
+ * always) and the value it set ('': blank).
+ */
+export type PolicyVersion = { number: number; key: string; from: string; value: string };
 
 /** A dated setting's value recorded from a date (yyyy-MM-dd); '': blank. */
 export type FromValue = { from: string; value: string };

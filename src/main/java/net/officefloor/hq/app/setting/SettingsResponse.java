@@ -17,8 +17,8 @@ public record SettingsResponse(String clerkLimit, String floor, int terms, Map<S
         String escalateAfter, String reviewSla, String proofKinds, String defaultGrade, String scoreMid, String scoreHigh,
         String scoreLog, String maxOpen, String pendingSla, int policyVersion, List<PolicyVersionResponse> policyVersions) {
 
-    /** A policy version: its number, the setting changed and its from-date ("": none, it counts always). */
-    public record PolicyVersionResponse(int number, String key, String from) {
+    /** A policy version: its number, the setting changed, its from-date ("": none, it counts always) and the value set ("": blank). */
+    public record PolicyVersionResponse(int number, String key, String from, String value) {
     }
 
     public record RoleResponse(String user, String role) {
@@ -72,6 +72,6 @@ public record SettingsResponse(String clerkLimit, String floor, int terms, Map<S
                 settings.pendingSla() == null ? "" : settings.pendingSla().toString(),
                 settings.policyVersions().size(),
                 settings.policyVersions().stream().map((v) -> new PolicyVersionResponse(v.number(), v.key(),
-                        v.from() == null ? "" : v.from().toString())).toList());
+                        v.from() == null ? "" : v.from().toString(), v.value() == null ? "" : v.value())).toList());
     }
 }
