@@ -7,6 +7,7 @@ import { claimsKey, listClaims, liveClaims, sumAmounts } from '../claims/api';
 import { claimDue, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, sumDues } from '../rates/api';
 import { useFloor, useLate, useTerms } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
+import { ExportPeople } from './ExportPeople';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { GRADES, addPatron, addPerson, gradeOn, holdPerson, listPeople, peopleKey, retirePerson, takeStatement, updatePerson, type Person, type PersonInput } from './api';
@@ -22,7 +23,8 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '' };
  *  patrons (names sorted, with a picker that names one more) and backing (their patrons' due-totals
  *  added up, skipping n/a), and
  *  their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims.
- *  Retired people are left out of the list unless "show retired" is on; their claims still count. */
+ *  Retired people are left out of the list unless "show retired" is on; their claims still count.
+ *  A button exports everyone, retired people included, as a CSV file. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
@@ -208,7 +210,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
         )}
       </form>
       <QuickAdd sheetId={sheetId} user={user} />
-      <ShowRetired />
+      <ShowRetired />{' '}
+      <ExportPeople rows={() => everyone.map((p) => [p.name, gradeOn(p, today), p.retiredFrom ?? '', showDue(dueOf.get(p.id) ?? null)])} />
       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
       <table>
         <tbody>
