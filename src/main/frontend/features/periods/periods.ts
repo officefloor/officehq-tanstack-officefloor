@@ -16,6 +16,7 @@ import type { DueRules } from '../settings/settings';
  * (personCarried; empty while open). A soft-closed period (soft; never also closed)
  * keeps its figures fixed the same way, while claims dated in it can still be added and changed. cap is the most OPEN
  * or PENDING claims due by a date in it a person may have when another of theirs is opened (null: none).
+ * personOpenings: the opening balances pasted into it, added up by person id.
  */
 export type Period = {
   name: string;
@@ -27,6 +28,7 @@ export type Period = {
   soft: boolean;
   cap: number | null;
   personCarried: Record<string, string>;
+  personOpenings: Record<string, string>;
 };
 
 /** The fields the period form submits; cap is a whole number of at least 1, or blank for none. */
@@ -104,7 +106,7 @@ export function periodDue(period: Period, claims: Claim[], people: Person[], rat
 /**
  * A person's carried figure for a period: the dues (as shown now) of their claims belonging to a period that ends
  * before this one starts and still OPEN or PENDING at this period's end (by the status log), counted as the period
- * figures count them, added up; 0.00 with none. A closed or soft-closed period keeps the figure fixed when it was
+ * figures count them, added up with the opening balances pasted for them into it; 0.00 with none. A closed or soft-closed period keeps the figure fixed when it was
  * closed (0.00 for a person added since).
  */
 export function personPeriodCarried(period: Period, periods: Period[], person: Person, claims: Claim[], rates: Rate[], rules: DueRules): string {
@@ -118,5 +120,5 @@ export function personPeriodCarried(period: Period, periods: Period[], person: P
       return (then === 'OPEN' || then === 'PENDING') && countsInPeriod(period, c, liveHolds(person, rules.today), rules.today);
     })
     .map((c) => claimDue(c, rates, person.grades, rules));
-  return total(figures);
+  return total([...figures, period.personOpenings?.[String(person.id)] ?? '0.00']);
 }
