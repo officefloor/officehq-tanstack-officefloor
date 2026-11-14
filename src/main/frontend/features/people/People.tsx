@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { HttpError } from '../../api/http';
+import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { PersonClaims } from '../claims/PersonClaims';
 import { claimsKey, listClaims, sumAmounts } from '../claims/api';
 import { listRates, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
@@ -18,17 +20,33 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
   const byGrade = rateByGrade(rates.data, useSheetToday(sheetId, user));
   const [form, setForm] = useState<PersonInput>(EMPTY);
-  const [editing, setEditing] = useState<number | null>(null);
+  // The person being edited and the version of them the form loaded.
+  const [editing, setEditing] = useState<{ id: number; version: number } | null>(null);
 
   const save = useMutation({
-    mutationFn: (v: { id: number | null; input: PersonInput }) =>
-      v.id === null ? addPerson(sheetId, user, v.input) : updatePerson(sheetId, user, v.id, v.input),
+    mutationFn: async (v: { editing: { id: number; version: number } | null; input: PersonInput }) => {
+      if (v.editing === null) return addPerson(sheetId, user, v.input);
+      try {
+        return await updatePerson(sheetId, user, v.editing.id, v.editing.version, v.input);
+      } catch (e) {
+        // Someone else saved the person since the form loaded them: show what is stored now. The
+        // form keeps the version it loaded, so a save goes through once the editor is opened again.
+        if (e instanceof HttpError && e.status === 409) {
+          const now = await queryClient.fetchQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId), staleTime: 0 });
+          const current = now.find((p) => p.id === v.editing?.id);
+          if (current) setForm({ name: current.name, grade: current.grade });
+        }
+        throw e;
+      }
+    },
     onSuccess: () => {
       setForm(EMPTY);
       setEditing(null);
       return queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
     },
   });
+
+  const submitOnce = useSubmitOnce();
 
   const change = (patch: Partial<PersonInput>) => {
     setForm((f) => ({ ...f, ...patch }));
@@ -37,7 +55,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
 
   const open = (p: Person) => {
     setForm({ name: p.name, grade: p.grade });
-    setEditing(p.id);
+    setEditing({ id: p.id, version: p.version });
     save.reset();
   };
 
@@ -53,8 +71,11 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          save.reset();
-          save.mutate({ id: editing, input: form });
+          const v = { editing, input: form };
+          submitOnce(() => {
+            save.reset();
+            return save.mutateAsync(v);
+          });
         }}
       >
         <label>
@@ -79,7 +100,13 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
             Cancel
           </button>
         )}
-        {save.isError && <span data-testid="person-form-error">A person needs a name not already in use.</span>}
+        {save.isError && (
+          <span data-testid="person-form-error">
+            {save.error instanceof HttpError && save.error.status === 409
+              ? 'Someone else saved this person meanwhile: the form shows what is stored now. Open the editor again to edit it.'
+              : 'A person needs a name not already in use.'}
+          </span>
+        )}
       </form>
       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
       <table>

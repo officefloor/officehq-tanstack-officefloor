@@ -11,7 +11,7 @@ import org.springframework.stereotype.Repository;
 public class PersonRepository {
 
     private static final RowMapper<Person> ROW = (rs, n) -> new Person(rs.getLong("id"),
-            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"));
+            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"));
 
     private final JdbcTemplate jdbc;
 
@@ -21,12 +21,12 @@ public class PersonRepository {
 
     /** The sheet's people in the order they were added. */
     public List<Person> list(String sheetId) {
-        return jdbc.query("SELECT id, sheet_id, name, grade FROM person WHERE sheet_id = ? ORDER BY id",
+        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? ORDER BY id",
                 ROW, sheetId);
     }
 
     public Person find(String sheetId, long id) {
-        return jdbc.query("SELECT id, sheet_id, name, grade FROM person WHERE sheet_id = ? AND id = ?",
+        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? AND id = ?",
                 ROW, sheetId, id).stream().findFirst().orElse(null);
     }
 
@@ -50,11 +50,19 @@ public class PersonRepository {
             ps.setString(4, user);
             return ps;
         }, key);
-        return new Person(key.getKey().longValue(), sheetId, name, grade);
+        return new Person(key.getKey().longValue(), sheetId, name, grade, 0);
     }
 
-    public void update(Person person) {
-        jdbc.update("UPDATE person SET name = ?, grade = ? WHERE sheet_id = ? AND id = ?",
-                person.getName(), person.getGrade(), person.getSheetId(), person.getId());
+    /** Save the person over the version it was loaded at, raising the version; false (nothing
+     *  written) when someone else has saved the person since. */
+    public boolean update(Person person) {
+        int n = jdbc.update(
+                "UPDATE person SET name = ?, grade = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
+                person.getName(), person.getGrade(), person.getSheetId(), person.getId(), person.getVersion());
+        if (n == 0) {
+            return false;
+        }
+        person.setVersion(person.getVersion() + 1);
+        return true;
     }
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { GRADES } from '../people/api';
 import { useSheetToday } from '../sheet/api';
 import { listRates, rateByGrade, ratesKey, setRate, type RateInput } from './api';
@@ -22,6 +23,8 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
     },
   });
 
+  const submitOnce = useSubmitOnce();
+
   const change = (patch: Partial<RateInput>) => {
     setForm((f) => ({ ...f, ...patch }));
     save.reset();
@@ -33,8 +36,10 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          save.reset();
-          save.mutate(form);
+          submitOnce(() => {
+            save.reset();
+            return save.mutateAsync(form);
+          });
         }}
       >
         <label>

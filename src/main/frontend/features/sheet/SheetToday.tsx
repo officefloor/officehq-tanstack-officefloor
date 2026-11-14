@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { setSheetToday, sheetKey, type Sheet } from './api';
 
 /** The sheet's today, shown and changeable. Every date on the sheet goes by it. */
@@ -18,12 +19,17 @@ export function SheetToday({ sheet, user }: { sheet: Sheet; user: string }) {
     },
   });
 
+  const submitOnce = useSubmitOnce();
+
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        save.reset();
-        save.mutate(date.trim());
+        const today = date.trim();
+        submitOnce(() => {
+          save.reset();
+          return save.mutateAsync(today);
+        });
       }}
     >
       Today <span data-testid="sheet-today">{sheet.today}</span>{' '}

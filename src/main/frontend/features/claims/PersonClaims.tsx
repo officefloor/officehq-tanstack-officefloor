@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { claimDue, showDue, type Rate } from '../rates/api';
 import { addClaim, claimsKey, moveClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
@@ -26,6 +27,9 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: 
     },
   });
 
+  const submitOnce = useSubmitOnce();
+  const actOnce = useSubmitOnce();
+
   // The claim whose last status change was refused; cleared by the next action on any claim here.
   const move = useMutation({
     mutationFn: (v: { id: number; action: ClaimAction }) => moveClaim(sheetId, user, v.id, v.action),
@@ -33,8 +37,10 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: 
   });
 
   const act = (id: number, action: ClaimAction) => {
-    move.reset();
-    move.mutate({ id, action });
+    actOnce(() => {
+      move.reset();
+      return move.mutateAsync({ id, action });
+    });
   };
 
   const change = (patch: Partial<ClaimInput>) => {
@@ -60,8 +66,11 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: 
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          save.reset();
-          save.mutate({ id: editing, input: form });
+          const v = { id: editing, input: form };
+          submitOnce(() => {
+            save.reset();
+            return save.mutateAsync(v);
+          });
         }}
       >
         <input data-testid="claim-form-amount" placeholder="Amount" value={form.amount}
