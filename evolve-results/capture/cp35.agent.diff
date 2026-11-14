@@ -1,0 +1,441 @@
+diff --git a/src/main/frontend/features/claims/PersonClaims.tsx b/src/main/frontend/features/claims/PersonClaims.tsx
+index 184fd09c3..d62054653 100644
+--- a/src/main/frontend/features/claims/PersonClaims.tsx
++++ b/src/main/frontend/features/claims/PersonClaims.tsx
+@@ -71,7 +71,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+       return;
+     }
+     setEditRefused(null);
+-    setForm({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects === null ? '' : String(c.corrects) });
++    setForm({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
+     setEditing(c.id);
+     save.reset();
+   };
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index c64150087..a9aef92b0 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -7,7 +7,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+ export type ClaimAction = 'open' | 'settle' | 'void';
+ 
+ /** A claim: its amount as two-decimal text, its date (yyyy-MM-dd), its note, its status and its
+- *  number on the sheet (given when opened; null while a draft or once voided), and its settled due
++ *  number on the sheet (given when opened: the sheet-wide 1, 2, ... or, under period numbering,
++ *  <period>-<n> or X-<n>; null while a draft), and its settled due
+  *  (fixed when settled; null otherwise, or when there was no rate then — its due stays live), and who
+  *  opened it (null while a draft; that user cannot settle it), and whether its person's last statement
+  *  bound it, with the figure it bound (null when it had none): a bound claim shows and totals that.
+@@ -15,8 +16,8 @@ export type ClaimAction = 'open' | 'settle' | 'void';
+  *  `roundDate` is the date its live figures round by: its own, or a correction's claim's it corrects. */
+ export type Claim = {
+   id: number; sheetId: string; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
+-  number: number | null; settledDue: string | null; openedBy: string | null;
+-  stated: boolean; statedDue: string | null; corrects: number | null; roundDate: string;
++  number: string | null; settledDue: string | null; openedBy: string | null;
++  stated: boolean; statedDue: string | null; corrects: string | null; roundDate: string;
+ };
+ /** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects. */
+ export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
+diff --git a/src/main/frontend/features/settings/Settings.tsx b/src/main/frontend/features/settings/Settings.tsx
+index a760e1b0b..c156c634f 100644
+--- a/src/main/frontend/features/settings/Settings.tsx
++++ b/src/main/frontend/features/settings/Settings.tsx
+@@ -46,9 +46,11 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+           <div key={key}>
+             <label>
+               {key === 'clerk-limit' ? 'Clerk limit' : key === 'floor' ? 'Floor' : key === 'late-pct' ? 'Late percent'
+-                : key === 'policy-date' ? 'Policy date' : 'Terms (days)'}{' '}
++                : key === 'policy-date' ? 'Policy date' : key === 'period-numbering-from' ? 'Period numbering from'
++                : 'Terms (days)'}{' '}
+               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
+-                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'policy-date' ? 'Today (yyyy-MM-dd)' : undefined}
++                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
++                  : key === 'period-numbering-from' ? 'Off (yyyy-MM-dd)' : undefined}
+                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
+             </label>{' '}
+             Now: <span data-testid={`setting-${key}-current`}>{current(key)}</span>
+@@ -60,7 +62,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+         {save.isError && (
+           <span data-testid="settings-error">
+             The clerk limit must be blank, and the floor given, as 0.00 or more with up to two decimals;
+-            the terms a whole number of days; the late percent 0.00 or more with up to two decimals; the policy date blank or a date.
++            the terms a whole number of days; the late percent 0.00 or more with up to two decimals; the policy date and period numbering date blank or a date.
+           </span>
+         )}
+       </form>
+diff --git a/src/main/frontend/features/settings/api.ts b/src/main/frontend/features/settings/api.ts
+index 6a0f07543..3efd2d8c7 100644
+--- a/src/main/frontend/features/settings/api.ts
++++ b/src/main/frontend/features/settings/api.ts
+@@ -12,8 +12,10 @@ export type Role = { sheetId: string; user: string; role: string };
+  *  floor (two decimals; the least a claim's live due can be) and the terms (whole days after its
+  *  date by which a claim is due) and the late percent (two decimals; the share of an overdue claim's
+  *  figure it gains for every full 30 days it is overdue) and the policy date (yyyy-MM-dd; blank means
+- *  the sheet's today: a claim dated before it rounds half up, on or after it half to even). */
+-export const SETTING_KEYS = ['clerk-limit', 'floor', 'terms', 'late-pct', 'policy-date'] as const;
++ *  the sheet's today: a claim dated before it rounds half up, on or after it half to even) and the
++ *  period numbering date (yyyy-MM-dd; blank means off: once the sheet's today is on or after it, a
++ *  claim opened is numbered within its period, <period>-<n>, or X-<n> in no period). */
++export const SETTING_KEYS = ['clerk-limit', 'floor', 'terms', 'late-pct', 'policy-date', 'period-numbering-from'] as const;
+ 
+ /** A setting's value until it is first set. */
+ export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00' };
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddClaim.java b/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
+index 496120064..c330f9ff9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
+@@ -20,7 +20,7 @@ public class AddClaim {
+             throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
+         }
+         periods.requireOpen(person.getSheetId(), date.toString());
+-        Long corrects = Corrections.check(request, person.getSheetId(), person.getId(), claims);
++        String corrects = Corrections.check(request, person.getSheetId(), person.getId(), claims);
+         claim.set(claims.add(person.getSheetId(), person.getId(), request.amount(), date,
+                 request.note(), corrects, user));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index 382004b79..eaaae6aef 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -23,7 +23,7 @@ public class ApplyClaim {
+         if (person != null && person.retiredBefore(date)) {
+             throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
+         }
+-        Long corrects = Corrections.check(request, claim.getSheetId(), claim.getPersonId(), claims);
++        String corrects = Corrections.check(request, claim.getSheetId(), claim.getPersonId(), claims);
+         claim.setAmount(request.amount().toPlainString());
+         claim.setCorrects(corrects);
+         claim.setRoundDate(corrects == null ? null : claims.findByNumber(claim.getSheetId(), corrects).getDate());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+index abc3bedb1..8b49d7549 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+@@ -54,7 +54,7 @@ public class BulkOpenClaims {
+             } catch (ClaimStatusException | PeriodClosedException refused) {
+                 continue;
+             }
+-            claim.setNumber(claims.nextNumber(id));
++            claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
+             claim.setOpenedBy(user);
+             claims.update(claim);
+             opened++;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index ea6bcaa43..1736829d5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
+ 
+ /** A claim of a person: an amount (two decimals, as text), a date (yyyy-MM-dd), a note and a status
+  *  (a {@link ClaimStatus} name), and its number on the sheet (given when opened and kept when voided;
+- *  none while a draft), its settled due (fixed when settled; none otherwise, or when there was no rate), and
++ *  none while a draft: the sheet-wide number, or {@code <period>-<n>} while period numbering is in force), its settled due (fixed when settled; none otherwise, or when there was no rate), and
+  *  who opened it (none while a draft), and whether its person's last statement bound it, with the
+  *  figure it bound (none when it had none): a bound claim shows and totals that figure. A correction (a
+  *  negative amount) keeps the number of the SETTLED claim of its person it corrects (none otherwise). */
+@@ -16,21 +16,21 @@ public class Claim {
+     private String date;
+     private String note;
+     private String status;
+-    private Long number;
++    private String number;
+     private String settledDue;
+     private String openedBy;
+     private boolean stated;
+     private String statedDue;
+-    private Long corrects;
++    private String corrects;
+     private String roundDate;
+ 
+     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
+-            String status, Long number, String settledDue, String openedBy) {
++            String status, String number, String settledDue, String openedBy) {
+         this(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, false, null);
+     }
+ 
+     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
+-            String status, Long number, String settledDue, String openedBy, boolean stated,
++            String status, String number, String settledDue, String openedBy, boolean stated,
+             String statedDue) {
+         this.id = id;
+         this.sheetId = sheetId;
+@@ -57,16 +57,16 @@ public class Claim {
+     public void setNote(String note) { this.note = note; }
+     public String getStatus() { return status; }
+     public void setStatus(String status) { this.status = status; }
+-    public Long getNumber() { return number; }
+-    public void setNumber(Long number) { this.number = number; }
++    public String getNumber() { return number; }
++    public void setNumber(String number) { this.number = number; }
+     public String getSettledDue() { return settledDue; }
+     public void setSettledDue(String settledDue) { this.settledDue = settledDue; }
+ 
+     public String getOpenedBy() { return openedBy; }
+     public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
+ 
+-    public Long getCorrects() { return corrects; }
+-    public void setCorrects(Long corrects) { this.corrects = corrects; }
++    public String getCorrects() { return corrects; }
++    public void setCorrects(String corrects) { this.corrects = corrects; }
+ 
+     /** The date its figures round by (see {@link Dues.Late#rounding}): its own date, or for a
+      *  correction the date of the claim it corrects. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java
+new file mode 100644
+index 000000000..ec797b340
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java
+@@ -0,0 +1,27 @@
++package net.officefloor.hq.app.claim;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.period.Period;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++
++/** The number a claim gets when opened: while the sheet's period numbering is in force (its
++ *  period-numbering-from is a date on or before the sheet's today) the next in the sequence of the
++ *  period its date falls in ({@code <period>-<n>}; {@code X-<n>} in no period), else the sheet's next. */
++public final class ClaimNumbers {
++    private ClaimNumbers() {
++    }
++
++    public static String next(Claim claim, ClaimRepository claims, PeriodRepository periods,
++            SettingRepository settings, SheetRepository sheets) {
++        String sheetId = claim.getSheetId();
++        LocalDate from = settings.periodNumberingFrom(sheetId);
++        if (from == null || sheets.today(sheetId).isBefore(from)) {
++            return claims.nextNumber(sheetId);
++        }
++        String period = periods.list(sheetId).stream().filter((p) -> p.contains(claim.getDate()))
++                .map(Period::name).findFirst().orElse(null);
++        return claims.nextPeriodNumber(sheetId, period);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index da891bb46..0ef269054 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -4,6 +4,7 @@ import java.math.BigDecimal;
+ import java.sql.PreparedStatement;
+ import java.time.LocalDate;
+ import java.util.List;
++import org.springframework.dao.DuplicateKeyException;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+ import org.springframework.jdbc.support.GeneratedKeyHolder;
+@@ -21,15 +22,15 @@ public class ClaimRepository {
+             rs.getString("sheet_id"), rs.getLong("person_id"),
+             rs.getBigDecimal("amount").setScale(2).toPlainString(),
+             rs.getObject("claim_date", LocalDate.class).toString(), rs.getString("note"),
+-            rs.getString("status"), rs.getObject("number", Long.class),
++            rs.getString("status"), rs.getString("number"),
+             rs.getBigDecimal("settled_due") == null ? null
+                     : rs.getBigDecimal("settled_due").setScale(2).toPlainString(),
+             rs.getString("opened_by"), rs.getBoolean("stated"),
+             rs.getBigDecimal("stated_due") == null ? null
+-                    : rs.getBigDecimal("stated_due").setScale(2).toPlainString()), rs.getObject("corrects", Long.class),
++                    : rs.getBigDecimal("stated_due").setScale(2).toPlainString()), rs.getString("corrects"),
+             rs.getObject("round_date", LocalDate.class).toString());
+ 
+-    private static Claim withCorrects(Claim claim, Long corrects, String roundDate) {
++    private static Claim withCorrects(Claim claim, String corrects, String roundDate) {
+         claim.setCorrects(corrects);
+         claim.setRoundDate(roundDate);
+         return claim;
+@@ -53,13 +54,13 @@ public class ClaimRepository {
+     }
+ 
+     /** The claim on the sheet with that number; null when none has it. */
+-    public Claim findByNumber(String sheetId, long number) {
++    public Claim findByNumber(String sheetId, String number) {
+         return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND number = ?",
+                 ROW, sheetId, number).stream().findFirst().orElse(null);
+     }
+ 
+     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+-            Long corrects, String user) {
++            String corrects, String user) {
+         GeneratedKeyHolder key = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+@@ -102,9 +103,27 @@ public class ClaimRepository {
+ 
+     /** The sheet's next claim number, taken in one atomic statement so two claims opened at the same
+      *  moment never get the same one; rolled back with the request when it is refused. */
+-    public long nextNumber(String sheetId) {
+-        return jdbc.queryForObject("SELECT last_claim_number FROM FINAL TABLE ("
++    public String nextNumber(String sheetId) {
++        return String.valueOf(jdbc.queryForObject("SELECT last_claim_number FROM FINAL TABLE ("
+                 + "UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?)",
+-                Long.class, sheetId);
++                Long.class, sheetId));
++    }
++
++    /** The next number in a period's own sequence on the sheet ({@code <period>-<n>}, from 1), or
++     *  for a claim in no period ({@code period} null) in the X sequence ({@code X-<n>}); taken
++     *  atomically as {@link #nextNumber} is. */
++    public String nextPeriodNumber(String sheetId, String period) {
++        String key = period == null ? "" : period;
++        try {
++            jdbc.update("INSERT INTO sheet_period_number (sheet_id, period_key) SELECT ?, ? WHERE NOT EXISTS "
++                    + "(SELECT 1 FROM sheet_period_number WHERE sheet_id = ? AND period_key = ?)",
++                    sheetId, key, sheetId, key);
++        } catch (DuplicateKeyException raced) {
++            // Another request started the sequence at the same moment.
++        }
++        Long n = jdbc.queryForObject("SELECT last_number FROM FINAL TABLE (UPDATE sheet_period_number "
++                + "SET last_number = last_number + 1 WHERE sheet_id = ? AND period_key = ?)",
++                Long.class, sheetId, key);
++        return (period == null ? "X" : period) + "-" + n;
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Corrections.java b/src/main/java/net/officefloor/hq/app/claim/Corrections.java
+index dee25ccc8..392ba230d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Corrections.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Corrections.java
+@@ -8,7 +8,7 @@ public final class Corrections {
+ 
+     /** The number a claim corrects: none for a claim that is not a correction; refused when a
+      *  correction names no SETTLED claim of the person. */
+-    public static Long check(ValidClaim request, String sheetId, long personId, ClaimRepository claims)
++    public static String check(ValidClaim request, String sheetId, long personId, ClaimRepository claims)
+             throws InvalidClaimException {
+         if (!request.isCorrection()) return null;
+         Claim corrected = claims.findByNumber(sheetId, request.corrects());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java b/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
+index f262f0b81..ff6c4bd0c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
+@@ -2,17 +2,20 @@ package net.officefloor.hq.app.claim;
+ 
+ import net.officefloor.hq.app.period.PeriodClosedException;
+ import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** Opens a claim, giving it the sheet's next number and recording who opened it. */
++/** Opens a claim, giving it its number (see {@link ClaimNumbers}) and recording who opened it. */
+ public class OpenClaim {
+     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
+-            ClaimRepository claims, PeriodRepository periods)
++            ClaimRepository claims, PeriodRepository periods, SettingRepository settings,
++            SheetRepository sheets)
+             throws ClaimStatusException, PeriodClosedException {
+         periods.requireOpen(claim.getSheetId(), claim.getDate());
+         claim.setStatus(ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.OPEN).name());
+-        claim.setNumber(claims.nextNumber(claim.getSheetId()));
++        claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
+         claim.setOpenedBy(by == null ? "" : by);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidClaim.java
+index b9f3bb274..dd1148f10 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidClaim.java
+@@ -5,7 +5,7 @@ import java.time.LocalDate;
+ 
+ /** A claim request once checked: the amount to two decimals, the date (null: the sheet's today), the note,
+  *  and for a correction (a negative amount) the number of the claim it corrects (null otherwise). */
+-public record ValidClaim(BigDecimal amount, LocalDate date, String note, Long corrects) {
++public record ValidClaim(BigDecimal amount, LocalDate date, String note, String corrects) {
+ 
+     /** Whether it is a correction: its amount is negative. */
+     public boolean isCorrection() {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+index 91871c2a3..f46621649 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ public class ValidateClaim {
+     /** An amount (negative for a correction), with up to two decimals. */
+     private static final Pattern AMOUNT = Pattern.compile("-?(\\d+(\\.\\d{0,2})?|\\.\\d{1,2})");
++    /** A sheet-wide number, compared as a whole number (07 is 7). */
+     private static final Pattern NUMBER = Pattern.compile("\\d{1,18}");
+ 
+     public void validate(@RequestBody ClaimRequest request, Out<ValidClaim> body)
+@@ -22,12 +23,12 @@ public class ValidateClaim {
+             throw new InvalidClaimException("An amount with up to two decimals is required");
+         }
+         BigDecimal value = new BigDecimal(amount).setScale(2);
+-        Long corrected = null;
++        String corrected = null;
+         if (value.signum() < 0) {
+-            if (!NUMBER.matcher(corrects).matches()) {
++            if (corrects.isEmpty()) {
+                 throw new InvalidClaimException("A negative amount must name the claim it corrects");
+             }
+-            corrected = Long.valueOf(corrects);
++            corrected = NUMBER.matcher(corrects).matches() ? String.valueOf(Long.parseLong(corrects)) : corrects;
+         }
+         LocalDate day = null;
+         if (!date.isEmpty()) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 14c84183a..b8eba08cb 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -27,6 +27,10 @@ public class SettingRepository {
+      *  up, one on or after it half to even. */
+     public static final String POLICY_DATE = "policy-date";
+ 
++    /** The period numbering date (yyyy-MM-dd; blank: off): once the sheet's today is on or after it,
++     *  a claim opened is numbered within its period. */
++    public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
++
+     /** The late percent until it is first set. */
+     public static final String DEFAULT_LATE_PCT = "0.00";
+ 
+@@ -87,6 +91,12 @@ public class SettingRepository {
+         return value == null ? today : LocalDate.parse(value);
+     }
+ 
++    /** The sheet's period numbering date; null when off. */
++    public LocalDate periodNumberingFrom(String sheetId) {
++        String value = find(sheetId, PERIOD_NUMBERING_FROM);
++        return value == null ? null : LocalDate.parse(value);
++    }
++
+     /** What a claim's late charge and rounding go by on the sheet now. */
+     public Dues.Late late(String sheetId, LocalDate today) {
+         return new Dues.Late(latePct(sheetId), terms(sheetId), today, policyDate(sheetId, today));
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 11203b260..f1e243cad 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -36,12 +36,13 @@ public class ValidateSetting {
+             }
+             body.set(new SettingRequest(key, String.valueOf(Integer.parseInt(value))));
+             return;
+-        } else if (SettingRepository.POLICY_DATE.equals(key)) {
++        } else if (SettingRepository.POLICY_DATE.equals(key)
++                || SettingRepository.PERIOD_NUMBERING_FROM.equals(key)) {
+             if (!value.isEmpty()) {
+                 try {
+                     value = LocalDate.parse(value).toString();
+                 } catch (DateTimeParseException e) {
+-                    throw new InvalidSettingException("The policy date is blank or a date (yyyy-MM-dd)");
++                    throw new InvalidSettingException("The " + key + " setting is blank or a date (yyyy-MM-dd)");
+                 }
+             }
+             body.set(new SettingRequest(key, value.isEmpty() ? null : value));
+diff --git a/src/main/resources/db/migration/V22__claim_period_number.sql b/src/main/resources/db/migration/V22__claim_period_number.sql
+new file mode 100644
+index 000000000..3284ebdf3
+--- /dev/null
++++ b/src/main/resources/db/migration/V22__claim_period_number.sql
+@@ -0,0 +1,13 @@
++-- A claim's number is now text: the sheet-wide number (1, 2, ...) or, while the sheet's
++-- period-numbering-from setting is in force when it is opened, <period name>-<n> (X-<n> for a claim
++-- in no period). A correction names the number of the claim it corrects in the same form.
++ALTER TABLE claim ALTER COLUMN number SET DATA TYPE VARCHAR(220);
++ALTER TABLE claim ALTER COLUMN corrects SET DATA TYPE VARCHAR(220);
++-- The last number given in each period's own sequence on a sheet; the key '' is the sequence of
++-- claims in no period. Numbers are never reused, so the sheet keeps them past a claim's voiding.
++CREATE TABLE sheet_period_number (
++    sheet_id    VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    period_key  VARCHAR(200) NOT NULL,
++    last_number BIGINT       DEFAULT 0 NOT NULL,
++    PRIMARY KEY (sheet_id, period_key)
++);
