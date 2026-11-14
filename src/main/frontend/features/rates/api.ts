@@ -1,5 +1,5 @@
 import { getJson, postJson } from '../../api/http';
-import type { Claim } from '../claims/api';
+import { counts, type Claim } from '../claims/api';
 import { sheetKey } from '../sheet/api';
 
 /** A grade's rate on the sheet: a percent as two-decimal text, in force from its from-date
@@ -51,13 +51,15 @@ function hundredths(text: string): bigint {
   return BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2));
 }
 
-/** An amount times a percent, divided by 100, rounded half up to two decimals; null (n/a) when
- *  there is no rate. Exact: worked in whole hundredths. */
+/** An amount times a percent, divided by 100, rounded half to even to two decimals; null (n/a)
+ *  when there is no rate. Exact: worked in whole hundredths. */
 export function dueOf(amount: string, pct: string | undefined): string | null {
   if (pct === undefined) return null;
-  // amount (1/100) x pct (1/100) / 100 is in 1/1_000_000; to cents is / 10_000, half up.
+  // amount (1/100) x pct (1/100) / 100 is in 1/1_000_000; to cents is / 10_000, half to even.
   const product = hundredths(amount) * hundredths(pct);
-  const cents = (product + 5_000n) / 10_000n;
+  const floor = product / 10_000n;
+  const rest = product % 10_000n;
+  const cents = rest > 5_000n || (rest === 5_000n && floor % 2n === 1n) ? floor + 1n : floor;
   return formatCents(cents);
 }
 
@@ -65,6 +67,14 @@ export function dueOf(amount: string, pct: string | undefined): string | null {
  *  claim's date. */
 export const claimDue = (c: Claim, rates: Rate[] | undefined, grade: string) =>
   c.settledDue ?? dueOf(c.amount, rateOn(rates, grade, c.date));
+
+/** A person's due-total: the sum of their counting claims' due figures (n/a ones skipped); n/a
+ *  when their grade has no rate today (`pct`) and none of those claims keeps a settled figure. */
+export function personDue(claims: Claim[], rates: Rate[] | undefined, grade: string, pct: string | undefined) {
+  const own = claims.filter(counts);
+  if (pct === undefined && !own.some((c) => c.settledDue !== null)) return null;
+  return sumDues(own.map((c) => claimDue(c, rates, grade)));
+}
 
 /** Add up two-decimal dues, skipping n/a. */
 export function sumDues(dues: Array<string | null>): string {

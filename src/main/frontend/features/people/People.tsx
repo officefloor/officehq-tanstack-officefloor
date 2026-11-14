@@ -2,15 +2,15 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PersonClaims } from '../claims/PersonClaims';
 import { claimsKey, listClaims, sumAmounts } from '../claims/api';
-import { dueOf, listRates, rateByGrade, ratesKey, showDue } from '../rates/api';
+import { listRates, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
 import { useSheetToday } from '../sheet/api';
 import { GRADES, addPerson, listPeople, peopleKey, updatePerson, type Person, type PersonInput } from './api';
 
 const EMPTY: PersonInput = { name: '', grade: 'A' };
 
 /** The people on the sheet: a form that adds a person or edits one, and the list in added order,
- *  each with their claimed total, their due-total (at their grade's rate in force on the sheet's
- *  today) and their claims. */
+ *  each with their claimed total, their due-total (the sum of their claims' due figures; n/a
+ *  when their grade has no rate on the sheet's today and no settled claim keeps a figure) and their claims. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
@@ -96,7 +96,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   Claimed <span data-testid="person-claimed">{claimed}</span>
                 </td>
                 <td>
-                  Due <span data-testid="person-due-total">{showDue(dueOf(claimed, pct))}</span>
+                  Due <span data-testid="person-due-total">{showDue(personDue(own, rates.data, p.grade, pct))}</span>
                 </td>
                 <td>
                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
