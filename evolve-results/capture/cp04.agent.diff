@@ -1,0 +1,112 @@
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 22b446caf..abbbcbe59 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -70,7 +70,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+             Cancel
+           </button>
+         )}
+-        {save.isError && <span data-testid="person-form-error">A person needs a name.</span>}
++        {save.isError && <span data-testid="person-form-error">A person needs a name not already in use.</span>}
+       </form>
+       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
+       <table>
+diff --git a/src/main/frontend/features/people/api.ts b/src/main/frontend/features/people/api.ts
+index 35b03d979..39a7a62a2 100644
+--- a/src/main/frontend/features/people/api.ts
++++ b/src/main/frontend/features/people/api.ts
+@@ -16,7 +16,7 @@ export function listPeople(sheetId: string): Promise<Person[]> {
+   return getJson<Person[]>(base(sheetId));
+ }
+ 
+-/** Add a person; refused (rejects) when the name is empty. */
++/** Add a person; refused (rejects) when the name is empty or already in use on the sheet. */
+ export function addPerson(sheetId: string, by: string, input: PersonInput): Promise<Person> {
+   return postJson<Person>(`${base(sheetId)}?by=${encodeURIComponent(by)}`, input);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/AddPerson.java b/src/main/java/net/officefloor/hq/app/person/AddPerson.java
+index 8f57d158d..85f5293f2 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AddPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/AddPerson.java
+@@ -10,9 +10,12 @@ public class AddPerson {
+     public void add(@PathVariable("sheetId") String sheetId,
+             @RequestParam(name = "by", required = false) String by,
+             @Val PersonRequest request, SheetRepository sheets, PersonRepository people,
+-            Out<Person> person) {
++            Out<Person> person) throws InvalidPersonException {
+         String id = sheetId.trim();
+         String user = by == null ? "" : by;
++        if (people.nameTaken(id, request.name(), null)) {
++            throw new InvalidPersonException("The name is already in use");
++        }
+         sheets.open(id, user);
+         person.set(people.add(id, request.name(), request.grade(), user));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index 4dbcdcd72..151aafdef 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -3,7 +3,11 @@ package net.officefloor.hq.app.person;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class ApplyPerson {
+-    public void apply(@Val PersonRequest request, @Val Person person) {
++    public void apply(@Val PersonRequest request, @Val Person person, PersonRepository people)
++            throws InvalidPersonException {
++        if (people.nameTaken(person.getSheetId(), request.name(), person.getId())) {
++            throw new InvalidPersonException("The name is already in use");
++        }
+         person.setName(request.name());
+         person.setGrade(request.grade());
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java b/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java
+index 7000efd45..2210c5736 100644
+--- a/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java
++++ b/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java
+@@ -1,6 +1,6 @@
+ package net.officefloor.hq.app.person;
+ 
+-/** The person's name is empty or the grade is not A, B or C: refused and nothing is written. */
++/** The person's name is empty or already in use on the sheet, or the grade is not A, B or C: refused and nothing is written. */
+ public class InvalidPersonException extends Exception {
+     public InvalidPersonException(String message) {
+         super(message);
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index a751a59a6..bf1f69940 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -30,6 +30,14 @@ public class PersonRepository {
+                 ROW, sheetId, id).stream().findFirst().orElse(null);
+     }
+ 
++    /** Whether another person on the sheet already has this name, compared ignoring case and surrounding spaces. */
++    public boolean nameTaken(String sheetId, String name, Long exceptId) {
++        Integer n = jdbc.queryForObject(
++                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?)) AND (? IS NULL OR id <> ?)",
++                Integer.class, sheetId, name, exceptId, exceptId);
++        return n != null && n > 0;
++    }
++
+     public Person add(String sheetId, String name, String grade, String user) {
+         GeneratedKeyHolder key = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+diff --git a/src/main/resources/db/migration/V4__person_name_unique.sql b/src/main/resources/db/migration/V4__person_name_unique.sql
+new file mode 100644
+index 000000000..a9d15c636
+--- /dev/null
++++ b/src/main/resources/db/migration/V4__person_name_unique.sql
+@@ -0,0 +1,4 @@
++-- A person's name is unique on the sheet, compared without regard to case. Names are stored trimmed.
++UPDATE person SET name = TRIM(name);
++ALTER TABLE person ADD COLUMN name_key VARCHAR(200) GENERATED ALWAYS AS (LOWER(name));
++CREATE UNIQUE INDEX person_sheet_name ON person (sheet_id, name_key);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index e0f8f71b5..e53f73173 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,4 +1,4 @@
+-# POST /api/sheets/{sheetId}/people — add a person; an empty name or unknown grade is refused.
++# POST /api/sheets/{sheetId}/people — add a person; an empty or already-used name or unknown grade is refused.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: create
