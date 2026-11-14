@@ -5,6 +5,8 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.period.PeriodClosedException;
+import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
@@ -13,7 +15,9 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  fixed and stays live. Refused for the user who opened it (four eyes). */
 public class SettleClaim {
     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
-            PersonRepository people, RateRepository rates) throws ClaimStatusException {
+            PersonRepository people, RateRepository rates, PeriodRepository periods)
+            throws ClaimStatusException, PeriodClosedException {
+        periods.requireOpen(claim.getSheetId(), claim.getDate());
         ClaimStatus settled = ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.SETTLED);
         if (claim.getOpenedBy() != null && claim.getOpenedBy().equals(by == null ? "" : by)) {
             throw new ClaimStatusException("The user who opened a claim cannot settle it");

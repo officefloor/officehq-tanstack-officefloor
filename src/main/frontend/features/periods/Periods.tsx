@@ -4,12 +4,13 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { claimsKey, counts, listClaims } from '../claims/api';
 import { listPeople, peopleKey } from '../people/api';
 import { claimDue, listRates, ratesKey, sumDues } from '../rates/api';
-import { addPeriod, listPeriods, periodsKey, type PeriodInput } from './api';
+import { addPeriod, closePeriod, listPeriods, periodsKey, type PeriodInput } from './api';
 
 const EMPTY: PeriodInput = { name: '', from: '', to: '' };
 
 /** The sheet's periods: a form that adds one, and each period by from-date with its due-total (the
- *  due of the claims that count whose date falls in it, n/a ones skipped). */
+ *  due of the claims that count whose date falls in it, n/a ones skipped; once closed, the one fixed
+ *  when it was closed), whether it is closed, and a button that closes it. */
 export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
@@ -27,6 +28,20 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   });
 
   const submitOnce = useSubmitOnce();
+  const actOnce = useSubmitOnce();
+
+  // The period whose last close was refused; cleared by the next close.
+  const close = useMutation({
+    mutationFn: (name: string) => closePeriod(sheetId, user, name),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
+  });
+
+  const closeOne = (name: string) => {
+    actOnce(() => {
+      close.reset();
+      return close.mutateAsync(name);
+    });
+  };
 
   const change = (patch: Partial<PeriodInput>) => {
     setForm((f) => ({ ...f, ...patch }));
@@ -80,7 +95,20 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
               <td>
-                Due <span data-testid="period-due-total">{dueTotal(p.from, p.to)}</span>
+                Due <span data-testid="period-due-total">{p.closed && p.closedTotal !== null
+                  ? p.closedTotal : dueTotal(p.from, p.to)}</span>
+              </td>
+              <td>
+                Closed <span data-testid="period-closed">{p.closed ? 'yes' : 'no'}</span>
+              </td>
+              <td>
+                <button type="button" data-testid="period-close" disabled={close.isPending}
+                  onClick={() => closeOne(p.name)}>
+                  Close
+                </button>
+                {close.isError && close.variables === p.name && (
+                  <span data-testid="period-error">The period is already closed.</span>
+                )}
               </td>
             </tr>
           ))}

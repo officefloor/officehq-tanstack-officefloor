@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type Rate } from '../rates/api';
@@ -87,7 +88,9 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: 
           {editing === null ? 'Add claim' : 'Save claim'}
         </button>
         {save.isError && (
-          <span data-testid="claim-form-error">A claim needs an amount of 0.00 or more with up to two decimals.</span>
+          <span data-testid="claim-form-error">{save.error instanceof HttpError && save.error.status === 423
+            ? 'A claim dated inside a closed period cannot be added or edited.'
+            : 'A claim needs an amount of 0.00 or more with up to two decimals.'}</span>
         )}
       </form>
       <table>
@@ -121,7 +124,9 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: 
                   </button>
                 )}
                 {move.isError && move.variables?.id === c.id && (
-                  <span data-testid="claim-error">{c.status === 'OPEN' && move.variables.action === 'settle'
+                  <span data-testid="claim-error">{move.error instanceof HttpError && move.error.status === 423
+                    ? 'A claim dated inside a closed period cannot be changed.'
+                    : c.status === 'OPEN' && move.variables.action === 'settle'
                     ? 'The user who opened a claim cannot settle it.'
                     : `A ${c.status} claim cannot be ${move.variables.action === 'open'
                       ? 'opened' : move.variables.action === 'settle' ? 'settled' : 'voided'}.`}</span>

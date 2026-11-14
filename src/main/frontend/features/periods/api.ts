@@ -2,8 +2,10 @@ import { getJson, postJson } from '../../api/http';
 import { sheetKey } from '../sheet/api';
 
 /** A period on the sheet: a name (unique on the sheet) and its from and to dates (yyyy-MM-dd), both
- *  inclusive. No two periods overlap. */
-export type Period = { sheetId: string; name: string; from: string; to: string };
+ *  inclusive. No two periods overlap. Once closed, its due-total is the one fixed when it was closed. */
+export type Period = {
+  sheetId: string; name: string; from: string; to: string; closed: boolean; closedTotal: string | null;
+};
 export type PeriodInput = { name: string; from: string; to: string };
 
 const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/periods`;
@@ -24,4 +26,10 @@ export function addPeriod(sheetId: string, by: string, input: PeriodInput): Prom
 /** The period whose dates contain the date (yyyy-MM-dd), or undefined for none. */
 export function periodOf(periods: Period[] | undefined, date: string): Period | undefined {
   return (periods ?? []).find((p) => p.from <= date && date <= p.to);
+}
+
+/** Close a period, fixing its due-total; refused (rejects) when it is already closed. No claim dated
+ *  inside a closed period can then be added, edited, opened, settled or voided. */
+export function closePeriod(sheetId: string, by: string, name: string): Promise<Period> {
+  return postJson<Period>(`${base(sheetId)}/${encodeURIComponent(name)}/close?by=${encodeURIComponent(by)}`, {});
 }
