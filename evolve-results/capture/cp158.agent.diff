@@ -1,0 +1,743 @@
+diff --git a/src/main/frontend/features/aliases/PersonAliases.tsx b/src/main/frontend/features/aliases/PersonAliases.tsx
+index 513a764b5..9f88b99d0 100644
+--- a/src/main/frontend/features/aliases/PersonAliases.tsx
++++ b/src/main/frontend/features/aliases/PersonAliases.tsx
+@@ -7,10 +7,12 @@ import { usePersonError } from '../people/personError';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { aliasesKey, aliasesOf, useAliases } from './aliases';
+ import type { Alias } from './aliases';
++import { useColumnShown } from '../columns/columns';
+ 
+ // A person's aliases (sorted as names are compared) and the entry and button that add one more. An alias shares
+ // the names' uniqueness: one equal to any name or alias on the sheet, or a blank one, is refused on the row.
+ export function PersonAliases({ person }: { person: Person }) {
++  const showAliases = useColumnShown('aliases');
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const aliases = aliasesOf(useAliases().data ?? [], person.id);
+@@ -44,7 +46,7 @@ export function PersonAliases({ person }: { person: Person }) {
+ 
+   return (
+     <td>
+-      <span data-testid="person-aliases">{aliases.join(', ')}</span>{' '}
++      {showAliases && <span data-testid="person-aliases">{aliases.join(', ')}</span>}{' '}
+       <input
+         data-testid="person-alias-input"
+         value={typed}
+diff --git a/src/main/frontend/features/claims/PersonClaimed.tsx b/src/main/frontend/features/claims/PersonClaimed.tsx
+index 55fa48e86..c05b81689 100644
+--- a/src/main/frontend/features/claims/PersonClaimed.tsx
++++ b/src/main/frontend/features/claims/PersonClaimed.tsx
+@@ -1,10 +1,12 @@
+ import type { Person } from '../people/people';
+ import { useSheetToday } from '../session/sheetToday';
+ import { claimed, holdsById, useClaims } from './claims';
++import { useColumnShown } from '../columns/columns';
+ 
+ // What a person has claimed: the sum of their counting claims' amounts (not corrections, nor their open ones a hold covers).
+ export function PersonClaimed({ person }: { person: Person }) {
+   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
+   const today = useSheetToday();
++  if (!useColumnShown('claimed')) return null;
+   return <td data-testid="person-claimed">{claimed(claims, holdsById([person], today), today)}</td>;
+ }
+diff --git a/src/main/frontend/features/claims/claimed.slot.tsx b/src/main/frontend/features/claims/claimed.slot.tsx
+index aa03b727e..cd407eb65 100644
+--- a/src/main/frontend/features/claims/claimed.slot.tsx
++++ b/src/main/frontend/features/claims/claimed.slot.tsx
+@@ -1,7 +1,8 @@
+ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
+ import { PersonClaimed } from './PersonClaimed';
++import { ColumnHead } from '../columns/ColumnHead';
+ 
+ export const contributions = [
+-  PersonColumnHeads.fill({ order: 10, Component: () => <th>Claimed</th> }),
++  PersonColumnHeads.fill({ order: 10, Component: () => <ColumnHead column="claimed">Claimed</ColumnHead> }),
+   PersonColumns.fill({ order: 10, Component: PersonClaimed }),
+ ];
+diff --git a/src/main/frontend/features/columns/ColumnChooser.tsx b/src/main/frontend/features/columns/ColumnChooser.tsx
+new file mode 100644
+index 000000000..81b948535
+--- /dev/null
++++ b/src/main/frontend/features/columns/ColumnChooser.tsx
+@@ -0,0 +1,54 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { COLUMNS, columnsKey, useUserColumns } from './columns';
++import type { Column, UserColumns } from './columns';
++
++// A checkbox per column of the people list: the signed-in user's own choice of which their screen shows.
++// Each box saves at once; the screen follows the box straight away and re-reads the store once every save is in.
++export function ColumnChooser() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const hidden = useUserColumns().data?.hidden ?? [];
++  const queryClient = useQueryClient();
++  const key = columnsKey(sheet, user);
++  const mutationKey = ['columns', sheet, user];
++
++  const save = useMutation({
++    mutationKey,
++    mutationFn: ({ column, shown }: { column: Column; shown: boolean }) =>
++      postJson<UserColumns>(
++        `/api/sheets/${encodeURIComponent(sheet)}/columns?user=${encodeURIComponent(user)}`,
++        { column, shown },
++      ),
++    onMutate: async ({ column, shown }) => {
++      await queryClient.cancelQueries({ queryKey: key });
++      queryClient.setQueryData<UserColumns>(key, (old) => {
++        const rest = (old?.hidden ?? []).filter((c) => c !== column);
++        return { user, hidden: shown ? rest : [...rest, column] };
++      });
++    },
++    onSettled: async () => {
++      if (queryClient.isMutating({ mutationKey }) <= 1) await queryClient.invalidateQueries({ queryKey: key });
++    },
++  });
++
++  if (!user || !sheet) return null;
++
++  return (
++    <span>
++      Columns:{' '}
++      {COLUMNS.map(([column, label]) => (
++        <label key={column}>
++          <input
++            type="checkbox"
++            data-testid={`column-${column}`}
++            checked={!hidden.includes(column)}
++            onChange={(e) => save.mutate({ column, shown: e.target.checked })}
++          />
++          {label}{' '}
++        </label>
++      ))}
++    </span>
++  );
++}
+diff --git a/src/main/frontend/features/columns/ColumnHead.tsx b/src/main/frontend/features/columns/ColumnHead.tsx
+new file mode 100644
+index 000000000..733c005dd
+--- /dev/null
++++ b/src/main/frontend/features/columns/ColumnHead.tsx
+@@ -0,0 +1,8 @@
++import type { ReactNode } from 'react';
++import { useColumnShown } from './columns';
++import type { Column } from './columns';
++
++/** The people list's header cell of a column the user may switch off: none while it is off. */
++export function ColumnHead({ column, children }: { column: Column; children: ReactNode }) {
++  return useColumnShown(column) ? <th>{children}</th> : null;
++}
+diff --git a/src/main/frontend/features/columns/columns.slot.tsx b/src/main/frontend/features/columns/columns.slot.tsx
+new file mode 100644
+index 000000000..f660b2172
+--- /dev/null
++++ b/src/main/frontend/features/columns/columns.slot.tsx
+@@ -0,0 +1,4 @@
++import { AppHeader } from '../../slots/defs/appHeader';
++import { ColumnChooser } from './ColumnChooser';
++
++export const contributions = [AppHeader.fill({ order: 23, Component: ColumnChooser })];
+diff --git a/src/main/frontend/features/columns/columns.ts b/src/main/frontend/features/columns/columns.ts
+new file mode 100644
+index 000000000..dcdddcdde
+--- /dev/null
++++ b/src/main/frontend/features/columns/columns.ts
+@@ -0,0 +1,45 @@
++import { useQuery } from '@tanstack/react-query';
++import { getLiveJson } from '../../api/http';
++import { sheetKey, useCurrentSheet, useCurrentUser } from '../session/session';
++
++/** A column of the people list a user may switch off, with the label its checkbox shows. */
++export const COLUMNS = [
++  ['claimed', 'Claimed'],
++  ['due-total', 'Due'],
++  ['excess', 'Excess'],
++  ['statement-count', 'Statements'],
++  ['stated-total', 'Stated total'],
++  ['statement-date', 'Statement date'],
++  ['overdue-count', 'Overdue'],
++  ['overdue-total', 'Overdue total'],
++  ['patrons', 'Patrons'],
++  ['backing', 'Backing'],
++  ['hold', 'Hold'],
++  ['retired', 'Retired'],
++  ['terms', 'Terms'],
++  ['contact', 'Contact'],
++  ['aliases', 'Aliases'],
++] as const;
++export type Column = (typeof COLUMNS)[number][0];
++
++export type UserColumns = { user: string; hidden: string[] };
++
++/** The query key for the columns the signed-in user switched off; under sheetKey, so re-loading the sheet re-reads it. */
++export const columnsKey = (sheet: string, user: string) => [...sheetKey(sheet), 'columns', user] as const;
++
++/** The columns of the people list the signed-in user switched off on this sheet: none unless chosen. */
++export function useUserColumns() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  return useQuery({
++    queryKey: columnsKey(sheet, user),
++    queryFn: () =>
++      getLiveJson<UserColumns>(`/api/sheets/${encodeURIComponent(sheet)}/columns?user=${encodeURIComponent(user)}`),
++    enabled: !!sheet && !!user,
++  });
++}
++
++/** Whether the signed-in user's screen shows the column: a column switched off has no cell at all. */
++export function useColumnShown(column: Column): boolean {
++  return !(useUserColumns().data?.hidden ?? []).includes(column);
++}
+diff --git a/src/main/frontend/features/hold/PersonHold.tsx b/src/main/frontend/features/hold/PersonHold.tsx
+index 371aca111..03f073e71 100644
+--- a/src/main/frontend/features/hold/PersonHold.tsx
++++ b/src/main/frontend/features/hold/PersonHold.tsx
+@@ -6,6 +6,7 @@ import { peopleKey } from '../people/people';
+ import type { Hold, Person } from '../people/people';
+ import { usePersonError } from '../people/personError';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { useColumnShown } from '../columns/columns';
+ 
+ const DATE = /^\d{4}-\d{2}-\d{2}$/;
+ 
+@@ -13,6 +14,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
+ // date (blank: the sheet's today) to an optional to-date. A hold ends on its to-date; there is no release. Only
+ // their open claims dated within a hold, and not bound by a statement, count in no live total.
+ export function PersonHold({ person }: { person: Person }) {
++  const showHold = useColumnShown('hold');
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const [from, setFrom] = useState('');
+@@ -52,7 +54,7 @@ export function PersonHold({ person }: { person: Person }) {
+ 
+   return (
+     <td>
+-      <span data-testid="person-hold">{person.held ? 'yes' : 'no'}</span>
++      {showHold && <span data-testid="person-hold">{person.held ? 'yes' : 'no'}</span>}
+       {person.holds.map((h, i) => (
+         <div key={i} data-testid="person-hold-line">
+           {h.from ?? 'start'} to {h.to ?? 'no end'}
+diff --git a/src/main/frontend/features/overdue/PersonOverdue.tsx b/src/main/frontend/features/overdue/PersonOverdue.tsx
+index abb99fd7f..dea338cfb 100644
+--- a/src/main/frontend/features/overdue/PersonOverdue.tsx
++++ b/src/main/frontend/features/overdue/PersonOverdue.tsx
+@@ -4,6 +4,7 @@ import type { Person } from '../people/people';
+ import { useRates } from '../rates/rates';
+ import { useDueRules } from '../settings/settings';
+ import { personOverdue } from './overdue';
++import { useColumnShown } from '../columns/columns';
+ 
+ function usePersonOverdue(person: Person) {
+   const rates = useRates().data ?? [];
+@@ -14,10 +15,12 @@ function usePersonOverdue(person: Person) {
+ 
+ // How many of a person's counting claims are overdue.
+ export function PersonOverdueCount({ person }: { person: Person }) {
+-  return <td data-testid="person-overdue-count">{usePersonOverdue(person).count}</td>;
++  const { count } = usePersonOverdue(person);
++  return useColumnShown('overdue-count') ? <td data-testid="person-overdue-count">{count}</td> : null;
+ }
+ 
+ // The dues (late charges included) of a person's overdue counting claims, added up.
+ export function PersonOverdueTotal({ person }: { person: Person }) {
+-  return <td data-testid="person-overdue-total">{usePersonOverdue(person).total}</td>;
++  const { total } = usePersonOverdue(person);
++  return useColumnShown('overdue-total') ? <td data-testid="person-overdue-total">{total}</td> : null;
+ }
+diff --git a/src/main/frontend/features/overdue/overdue.slot.tsx b/src/main/frontend/features/overdue/overdue.slot.tsx
+index d543b804c..15ec9151b 100644
+--- a/src/main/frontend/features/overdue/overdue.slot.tsx
++++ b/src/main/frontend/features/overdue/overdue.slot.tsx
+@@ -5,11 +5,12 @@ import { ClaimDueBy } from './ClaimDueBy';
+ import { ClaimOverdue } from './ClaimOverdue';
+ import { OverdueTotals } from './OverdueTotals';
+ import { PersonOverdueCount, PersonOverdueTotal } from './PersonOverdue';
++import { ColumnHead } from '../columns/ColumnHead';
+ 
+ export const contributions = [
+-  PersonColumnHeads.fill({ order: 16, Component: () => <th>Overdue</th> }),
++  PersonColumnHeads.fill({ order: 16, Component: () => <ColumnHead column="overdue-count">Overdue</ColumnHead> }),
+   PersonColumns.fill({ order: 16, Component: PersonOverdueCount }),
+-  PersonColumnHeads.fill({ order: 17, Component: () => <th>Overdue total</th> }),
++  PersonColumnHeads.fill({ order: 17, Component: () => <ColumnHead column="overdue-total">Overdue total</ColumnHead> }),
+   PersonColumns.fill({ order: 17, Component: PersonOverdueTotal }),
+   ClaimRowValues.fill({ order: 12, Component: ClaimDueBy }),
+   ClaimRowValues.fill({ order: 13, Component: ClaimOverdue }),
+diff --git a/src/main/frontend/features/patrons/PersonPatrons.tsx b/src/main/frontend/features/patrons/PersonPatrons.tsx
+index 5a696211a..38e3b3fea 100644
+--- a/src/main/frontend/features/patrons/PersonPatrons.tsx
++++ b/src/main/frontend/features/patrons/PersonPatrons.tsx
+@@ -11,10 +11,12 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { useDueRules } from '../settings/settings';
+ import { patronsKey, patronsOf, usePatrons } from './patrons';
+ import type { Patron } from './patrons';
++import { useColumnShown } from '../columns/columns';
+ 
+ // A person's patrons (each as their name and share, sorted by name) and the select and button that name one more: anyone else on
+ // the sheet who is not already their patron.
+ export function PersonPatrons({ person }: { person: Person }) {
++  const showPatrons = useColumnShown('patrons');
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const people = usePeople().data ?? [];
+@@ -56,7 +58,7 @@ export function PersonPatrons({ person }: { person: Person }) {
+ 
+   return (
+     <td>
+-      <span data-testid="person-patrons">{names.join(', ')}</span>{' '}
++      {showPatrons && <span data-testid="person-patrons">{names.join(', ')}</span>}{' '}
+       <select
+         data-testid="person-patron-select"
+         value={chosen}
+@@ -93,6 +95,7 @@ const backingStart = (today: string) =>
+ export function PersonBacking({ person }: { person: Person }) {
+   const mine = patronsOf(usePatrons().data ?? [], person.id);
+   const today = useDueRules().today;
++  const showBacking = useColumnShown('backing');
+   const claims = useClaims().data ?? [];
+   const from = today === '' ? '' : backingStart(today);
+   const figureOf = (patronId: number) =>
+@@ -102,6 +105,7 @@ export function PersonBacking({ person }: { person: Person }) {
+         .map((c) => c.due ?? NA),
+     );
+   const products = mine.reduce((sum, p) => sum + hundredths(figureOf(p.patronId)) * hundredths(p.share), 0);
++  if (!showBacking) return null;
+   return <td data-testid="person-backing">{halfEven(products)}</td>;
+ }
+ 
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index 732bcbb53..a7f72abf8 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -1,9 +1,10 @@
+ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
+ import { PersonBacking, PersonPatrons } from './PersonPatrons';
++import { ColumnHead } from '../columns/ColumnHead';
+ 
+ export const contributions = [
+   PersonColumnHeads.fill({ order: 19.5, Component: () => <th>Patrons</th> }),
+   PersonColumns.fill({ order: 19.5, Component: PersonPatrons }),
+-  PersonColumnHeads.fill({ order: 19.6, Component: () => <th>Backing</th> }),
++  PersonColumnHeads.fill({ order: 19.6, Component: () => <ColumnHead column="backing">Backing</ColumnHead> }),
+   PersonColumns.fill({ order: 19.6, Component: PersonBacking }),
+ ];
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 25bd605d6..090139a9f 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -6,6 +6,8 @@ import { NA, personDue, useRates } from '../rates/rates';
+ import { useDueRules } from '../settings/settings';
+ import { liveHolds, nameKey, useEditingPerson, usePeople, usePeopleSort, useShowRetired } from './people';
+ import type { Person, SortKey } from './people';
++import { ColumnHead } from '../columns/ColumnHead';
++import { useColumnShown } from '../columns/columns';
+ 
+ /** Orders a and b by key: negative, zero or positive. */
+ const compare = (a: string | number, b: string | number) => (a < b ? -1 : a > b ? 1 : 0);
+@@ -21,6 +23,8 @@ export function PeopleList() {
+   const [showRetired] = useShowRetired();
+   const [sort] = usePeopleSort();
+   const sortKey = useSortKey(sort);
++  const showTerms = useColumnShown('terms');
++  const showContact = useColumnShown('contact');
+ 
+   if (!user || !sheet) return null;
+ 
+@@ -30,8 +34,8 @@ export function PeopleList() {
+         <tr>
+           <th>Name</th>
+           <th>Grade</th>
+-          <th>Terms</th>
+-          <th>Contact</th>
++          <ColumnHead column="terms">Terms</ColumnHead>
++          <ColumnHead column="contact">Contact</ColumnHead>
+           <th>Clashing</th>
+           <PersonColumnHeads.Slot />
+           <th />
+@@ -44,8 +48,8 @@ export function PeopleList() {
+               {p.name}
+             </td>
+             <td data-testid="person-grade">{p.grade}</td>
+-            <td data-testid="person-terms">{p.terms ?? ''}</td>
+-            <td data-testid="person-contact">{p.contact ?? ''}</td>
++            {showTerms && <td data-testid="person-terms">{p.terms ?? ''}</td>}
++            {showContact && <td data-testid="person-contact">{p.contact ?? ''}</td>}
+             <td data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</td>
+             <PersonColumns.Slot person={p} />
+             <td>
+diff --git a/src/main/frontend/features/rates/PersonDueTotal.tsx b/src/main/frontend/features/rates/PersonDueTotal.tsx
+index 0786c6b4e..6577854cc 100644
+--- a/src/main/frontend/features/rates/PersonDueTotal.tsx
++++ b/src/main/frontend/features/rates/PersonDueTotal.tsx
+@@ -3,6 +3,7 @@ import { liveHolds } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useDueRules } from '../settings/settings';
+ import { personDue, useRates } from './rates';
++import { useColumnShown } from '../columns/columns';
+ 
+ // A person's due-total: the figures of their claims that count, added up; n/a when their grade has no
+ // rate on the sheet's today, unless a settled or stated claim keeps a figure.
+@@ -10,5 +11,6 @@ export function PersonDueTotal({ person }: { person: Person }) {
+   const rates = useRates().data ?? [];
+   const rules = useDueRules();
+   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
++  if (!useColumnShown('due-total')) return null;
+   return <td data-testid="person-due-total">{personDue(claims, rates, person.grades, liveHolds(person, rules.today), rules)}</td>;
+ }
+diff --git a/src/main/frontend/features/rates/PersonExcess.tsx b/src/main/frontend/features/rates/PersonExcess.tsx
+index 79860f86c..57ee881d7 100644
+--- a/src/main/frontend/features/rates/PersonExcess.tsx
++++ b/src/main/frontend/features/rates/PersonExcess.tsx
+@@ -3,11 +3,13 @@ import { liveHolds } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useDueRules } from '../settings/settings';
+ import { personExcess, useRates } from './rates';
++import { useColumnShown } from '../columns/columns';
+ 
+ // A person's excess: by how much the figures of their claims that count are above the sheet's cap; 0.00 otherwise.
+ export function PersonExcess({ person }: { person: Person }) {
+   const rates = useRates().data ?? [];
+   const rules = useDueRules();
+   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
++  if (!useColumnShown('excess')) return null;
+   return <td data-testid="person-excess">{personExcess(claims, rates, person.grades, liveHolds(person, rules.today), rules)}</td>;
+ }
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index c49b64652..68c725f55 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -3,11 +3,12 @@ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns
+ import { ClaimDue } from './ClaimDue';
+ import { PersonDueTotal } from './PersonDueTotal';
+ import { PersonExcess } from './PersonExcess';
++import { ColumnHead } from '../columns/ColumnHead';
+ 
+ export const contributions = [
+-  PersonColumnHeads.fill({ order: 15, Component: () => <th>Due</th> }),
++  PersonColumnHeads.fill({ order: 15, Component: () => <ColumnHead column="due-total">Due</ColumnHead> }),
+   PersonColumns.fill({ order: 15, Component: PersonDueTotal }),
+-  PersonColumnHeads.fill({ order: 15.5, Component: () => <th>Excess</th> }),
++  PersonColumnHeads.fill({ order: 15.5, Component: () => <ColumnHead column="excess">Excess</ColumnHead> }),
+   PersonColumns.fill({ order: 15.5, Component: PersonExcess }),
+   ClaimRowValues.fill({ order: 10, Component: ClaimDue }),
+ ];
+diff --git a/src/main/frontend/features/retire/PersonRetire.tsx b/src/main/frontend/features/retire/PersonRetire.tsx
+index 5d73c253d..7b066e8b8 100644
+--- a/src/main/frontend/features/retire/PersonRetire.tsx
++++ b/src/main/frontend/features/retire/PersonRetire.tsx
+@@ -6,6 +6,7 @@ import { peopleKey } from '../people/people';
+ import type { Person } from '../people/people';
+ import { usePersonError } from '../people/personError';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { useColumnShown } from '../columns/columns';
+ 
+ // Whether the person is retired and from when, and the date and button that retire them (a blank
+ // date is the sheet's today). From the day the date is reached, a retired person's open and pending claims leave
+@@ -13,6 +14,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ // person can be unretired on the sheet's today; each past retirement stays on the row as "<from> to <to>", and a
+ // claim dated after its from and before its to is refused.
+ export function PersonRetire({ person }: { person: Person }) {
++  const showRetired = useColumnShown('retired');
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const [from, setFrom] = useState('');
+@@ -57,7 +59,7 @@ export function PersonRetire({ person }: { person: Person }) {
+ 
+   return (
+     <td>
+-      <span data-testid="person-retired">{person.retired ? 'yes' : 'no'}</span>{' '}
++      {showRetired && <span data-testid="person-retired">{person.retired ? 'yes' : 'no'}</span>}{' '}
+       <span data-testid="person-retired-from">{person.retiredFrom ?? ''}</span>{' '}
+       <input
+         data-testid="person-retire-date"
+diff --git a/src/main/frontend/features/statements/PersonStatement.tsx b/src/main/frontend/features/statements/PersonStatement.tsx
+index 42c81b754..a171b8794 100644
+--- a/src/main/frontend/features/statements/PersonStatement.tsx
++++ b/src/main/frontend/features/statements/PersonStatement.tsx
+@@ -7,6 +7,7 @@ import { peopleKey } from '../people/people';
+ import type { Person } from '../people/people';
+ import { usePersonError } from '../people/personError';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { useColumnShown } from '../columns/columns';
+ 
+ const DATE = /^\d{4}-\d{2}-\d{2}$/;
+ 
+@@ -15,6 +16,11 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
+ // button a steward cancels the last one with, making the claims it bound live again. A date beside the button takes the
+ // statement as of that day (on or before the sheet's today; blank: now), as the sheet stood at the end of it.
+ export function PersonStatement({ person }: { person: Person }) {
++  const shown = {
++    count: useColumnShown('statement-count'),
++    stated: useColumnShown('stated-total'),
++    date: useColumnShown('statement-date'),
++  };
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const [, setError] = usePersonError(person.id);
+@@ -56,9 +62,9 @@ export function PersonStatement({ person }: { person: Person }) {
+ 
+   return (
+     <td>
+-      <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
+-      <span data-testid="person-stated-total">{person.statedTotal ?? ''}</span>{' '}
+-      <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}
++      {shown.count && <span data-testid="person-statement-count">{person.statementCount}</span>}{' '}
++      {shown.stated && <span data-testid="person-stated-total">{person.statedTotal ?? ''}</span>}{' '}
++      {shown.date && <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>}{' '}
+       <input
+         data-testid="person-statement-asof"
+         placeholder="As of yyyy-mm-dd (blank: now)"
+diff --git a/src/main/java/net/officefloor/hq/app/columns/ColumnChoice.java b/src/main/java/net/officefloor/hq/app/columns/ColumnChoice.java
+new file mode 100644
+index 000000000..9c64d9053
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/ColumnChoice.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.columns;
++
++/** {@code user} shows (or switches off) {@code column} of the people list. */
++public record ColumnChoice(String user, String column, boolean shown) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/ColumnRequest.java b/src/main/java/net/officefloor/hq/app/columns/ColumnRequest.java
+new file mode 100644
+index 000000000..393c01f83
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/ColumnRequest.java
+@@ -0,0 +1,4 @@
++package net.officefloor.hq.app.columns;
++
++public record ColumnRequest(String column, Boolean shown) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/ColumnsRepository.java b/src/main/java/net/officefloor/hq/app/columns/ColumnsRepository.java
+new file mode 100644
+index 000000000..edd48c8c3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/ColumnsRepository.java
+@@ -0,0 +1,33 @@
++package net.officefloor.hq.app.columns;
++
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++@Repository
++public class ColumnsRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public ColumnsRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The columns the user switched off on the sheet; none unless chosen. */
++    public List<String> hidden(String sheetId, String user) {
++        return jdbc.queryForList(
++                "SELECT column_name FROM user_column WHERE sheet_id = ? AND user_name = ? ORDER BY column_name",
++                String.class, sheetId, user);
++    }
++
++    public void show(String sheetId, String user, String column, boolean shown) {
++        if (shown) {
++            jdbc.update("DELETE FROM user_column WHERE sheet_id = ? AND user_name = ? AND column_name = ?", sheetId,
++                    user, column);
++        } else {
++            jdbc.update(
++                    "MERGE INTO user_column (sheet_id, user_name, column_name) KEY (sheet_id, user_name, column_name) VALUES (?, ?, ?)",
++                    sheetId, user, column);
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/HandleInvalidColumn.java b/src/main/java/net/officefloor/hq/app/columns/HandleInvalidColumn.java
+new file mode 100644
+index 000000000..7a0a1d82e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/HandleInvalidColumn.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.columns;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidColumn {
++    public void handle(@Parameter InvalidColumnException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/InvalidColumnException.java b/src/main/java/net/officefloor/hq/app/columns/InvalidColumnException.java
+new file mode 100644
+index 000000000..7de956ee7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/InvalidColumnException.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.columns;
++
++public class InvalidColumnException extends Exception {
++    public InvalidColumnException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/LoadColumns.java b/src/main/java/net/officefloor/hq/app/columns/LoadColumns.java
+new file mode 100644
+index 000000000..b4a737886
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/LoadColumns.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.columns;
++
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++public class LoadColumns {
++    public void load(@Val Sheet sheet, @RequestParam("user") String user, ColumnsRepository repository,
++            Out<UserColumns> columns) {
++        columns.set(new UserColumns(user, repository.hidden(sheet.id(), user)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/RespondWithColumns.java b/src/main/java/net/officefloor/hq/app/columns/RespondWithColumns.java
+new file mode 100644
+index 000000000..f1d8893e7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/RespondWithColumns.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.columns;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithColumns {
++    public void respond(@Val UserColumns columns, ObjectResponse<UserColumns> response) {
++        response.send(columns);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/SaveColumn.java b/src/main/java/net/officefloor/hq/app/columns/SaveColumn.java
+new file mode 100644
+index 000000000..613e9e901
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/SaveColumn.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.columns;
++
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++
++/** Shows or switches off the column; it is the user's own view of the sheet, so nothing is audited. */
++public class SaveColumn {
++    public void save(@Val Sheet sheet, @Val ColumnChoice choice, ColumnsRepository repository) {
++        repository.show(sheet.id(), choice.user(), choice.column(), choice.shown());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/UserColumns.java b/src/main/java/net/officefloor/hq/app/columns/UserColumns.java
+new file mode 100644
+index 000000000..caaad5f34
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/UserColumns.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.columns;
++
++import java.util.List;
++
++/** The columns of the people list {@code user} has switched off on the sheet. */
++public record UserColumns(String user, List<String> hidden) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/ValidateColumnRequest.java b/src/main/java/net/officefloor/hq/app/columns/ValidateColumnRequest.java
+new file mode 100644
+index 000000000..b33ac6726
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/ValidateColumnRequest.java
+@@ -0,0 +1,23 @@
++package net.officefloor.hq.app.columns;
++
++import java.util.Set;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Refuses (400) a column the people list does not let a user switch off, or no shown flag. */
++public class ValidateColumnRequest {
++
++    static final Set<String> COLUMNS = Set.of("claimed", "due-total", "excess", "statement-count", "stated-total",
++            "statement-date", "overdue-count", "overdue-total", "patrons", "backing", "hold", "retired", "terms",
++            "contact", "aliases");
++
++    public void validate(@RequestParam("user") String user, @RequestBody ColumnRequest request,
++            Out<ColumnChoice> choice) throws InvalidColumnException {
++        String column = request.column() == null ? "" : request.column().trim();
++        if (!COLUMNS.contains(column) || request.shown() == null) {
++            throw new InvalidColumnException("No such column: " + column);
++        }
++        choice.set(new ColumnChoice(user, column, request.shown()));
++    }
++}
+diff --git a/src/main/resources/db/migration/V85__user_column.sql b/src/main/resources/db/migration/V85__user_column.sql
+new file mode 100644
+index 000000000..ef9b07e34
+--- /dev/null
++++ b/src/main/resources/db/migration/V85__user_column.sql
+@@ -0,0 +1,7 @@
++-- A column of the people list a signed-in user has switched off on the sheet; no row is shown.
++CREATE TABLE user_column (
++    sheet_id VARCHAR(100) NOT NULL REFERENCES sheet (id),
++    user_name VARCHAR(100) NOT NULL,
++    column_name VARCHAR(40) NOT NULL,
++    PRIMARY KEY (sheet_id, user_name, column_name)
++);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.columns.InvalidColumnException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.columns.InvalidColumnException.yml
+new file mode 100644
+index 000000000..d943c2bc0
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.columns.InvalidColumnException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.columns.HandleInvalidColumn
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/columns.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/columns.GET.yml
+new file mode 100644
+index 000000000..5ca9de131
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/columns.GET.yml
+@@ -0,0 +1,12 @@
++# The columns of the people list the signed-in user has switched off on the sheet: none unless chosen.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: columns
++columns:
++  class: net.officefloor.hq.app.columns.LoadColumns
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.columns.RespondWithColumns
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/columns.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/columns.POST.yml
+new file mode 100644
+index 000000000..88d2ce375
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/columns.POST.yml
+@@ -0,0 +1,22 @@
++# Show or switch off one column of the people list for the signed-in user (an unknown column is
++# refused, 400). It only changes what that user's screen shows, so even a viewer may, and nothing is
++# audited. Responds with the columns now switched off.
++validate:
++  class: net.officefloor.hq.app.columns.ValidateColumnRequest
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.columns.SaveColumn
++  govern: [ transaction ]
++  next: columns
++columns:
++  class: net.officefloor.hq.app.columns.LoadColumns
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.columns.RespondWithColumns
++  govern: [ transaction ]
