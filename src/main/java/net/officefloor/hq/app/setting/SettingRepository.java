@@ -46,7 +46,7 @@ public class SettingRepository {
                 dated.gradeTermsOn(today), dated.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), entryDate(sheetId),
                 dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId), graceDays(sheetId),
                 today, delegations(sheetId), pot(sheetId), parent(sheetId), fiscalStartMonth(sheetId), alertThreshold(sheetId),
-                escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId));
+                escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId), defaultGrade(sheetId));
     }
 
     /** The sheet's dated settings: every value recorded, by key and from-date. */
@@ -220,6 +220,24 @@ public class SettingRepository {
     /** Set the sheet's review SLA in days (null: blank, none). */
     public void saveReviewSla(String sheetId, Integer days) {
         jdbc.update("UPDATE sheet SET review_sla = ? WHERE id = ?", days, sheetId);
+    }
+
+    /** The sheet's default grade (null: blank, A). */
+    public String defaultGrade(String sheetId) {
+        List<String> found = jdbc.query("SELECT default_grade FROM sheet WHERE id = ?",
+                (rs, n) -> rs.getString("default_grade"), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The grade a new person takes when none is given: the sheet's default grade, else A. */
+    public String defaultGradeOrA(String sheetId) {
+        String grade = defaultGrade(sheetId);
+        return grade == null ? "A" : grade;
+    }
+
+    /** Set the sheet's default grade (null: blank, A). */
+    public void saveDefaultGrade(String sheetId, String grade) {
+        jdbc.update("UPDATE sheet SET default_grade = ? WHERE id = ?", grade, sheetId);
     }
 
     /** The sheet's grace days (null: blank, off). */

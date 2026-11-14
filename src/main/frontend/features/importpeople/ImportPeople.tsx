@@ -9,7 +9,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 
 type ImportResult = { added: number; updated: number };
 
-// The import box: lines of name,grade,terms,contact (terms and contact may be left off or blank). A line naming a
+// The import box: lines of name,grade,terms,contact (terms and contact may be left off or blank; a blank grade takes the sheet's default grade). A line naming a
 // person on the sheet (by name or alias) updates them as the person form's edit does; any other adds a person.
 // The server checks every line with the form's rules first, so one refused line writes nothing.
 export function ImportPeople() {

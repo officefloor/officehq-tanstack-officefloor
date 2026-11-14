@@ -13,7 +13,7 @@ type QuickInput = { name: string; amount: string };
 const EMPTY: QuickInput = { name: '', amount: '' };
 
 // The quick-add bar on the people list: a DRAFT claim of the amount, dated the sheet's entry date (else its today), for the
-// named person — added first with grade A when the name is not on the sheet. The server does it as
+// named person — added first with the sheet's default grade (blank: A) when the name is not on the sheet. The server does it as
 // one change, so a refused claim adds no person.
 export function QuickAdd() {
   const [user] = useCurrentUser();

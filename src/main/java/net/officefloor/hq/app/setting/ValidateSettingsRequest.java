@@ -34,7 +34,8 @@ public class ValidateSettingsRequest {
             Out<ProofThreshold> proofThreshold, Out<NoteThreshold> noteThreshold, Out<ReviewThreshold> reviewThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays,
             Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold, Out<Pot> pot, Out<Parent> parent,
             Out<FiscalStartMonth> fiscalStartMonth, Out<AlertThreshold> alertThreshold, Out<RoundingSetting> rounding,
-            Out<EscalateAfter> escalateAfter, Out<ReviewSla> reviewSla, Out<ProofKinds> proofKinds)
+            Out<EscalateAfter> escalateAfter, Out<ReviewSla> reviewSla, Out<ProofKinds> proofKinds,
+            Out<DefaultGrade> defaultGrade)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -60,6 +61,7 @@ public class ValidateSettingsRequest {
         escalateAfter.set(escalateAfter(request.escalateAfter()));
         reviewSla.set(reviewSla(request.reviewSla()));
         proofKinds.set(proofKinds(request.proofKinds()));
+        defaultGrade.set(defaultGrade(request.defaultGrade()));
     }
 
     private static RoundingSetting rounding(String requested, LocalDate from) throws InvalidSettingException {
@@ -164,6 +166,20 @@ public class ValidateSettingsRequest {
             }
         }
         return new PermissionChanges(entries);
+    }
+
+    private static DefaultGrade defaultGrade(String requested) throws InvalidSettingException {
+        if (requested == null) {
+            return new DefaultGrade(false, null);
+        }
+        String value = requested.trim().toUpperCase();
+        if (value.isEmpty()) {
+            return new DefaultGrade(true, null);
+        }
+        if (!GRADES.contains(value)) {
+            throw new InvalidSettingException("The default grade must be A, B or C, or blank.");
+        }
+        return new DefaultGrade(true, value);
     }
 
     private static ProofKinds proofKinds(String requested) throws InvalidSettingException {

@@ -15,7 +15,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 /**
  * Splits the text into lines of name,grade,terms,contact (terms and contact may be absent or blank; blank lines are
  * skipped) and checks each with exactly the person form's rules. Nothing pasted is refused, as is a line with more
- * than four fields, and a name (ignoring case) or contact an earlier line gave.
+ * than four fields, and a name (ignoring case) or contact an earlier line gave. A blank grade is kept blank, for the
+ * sheet's default grade.
  */
 public class ValidateImportPeopleRequest {
     public void validate(@RequestBody @Valid ImportPeopleRequest request, Out<ImportedPeople> imported)
@@ -44,8 +45,8 @@ public class ValidateImportPeopleRequest {
             }
             PersonRequest[] person = new PersonRequest[1];
             try {
-                new ValidatePersonRequest().validate(new PersonRequest(name, grade, "", null, terms, contact, null),
-                        value -> person[0] = value);
+                new ValidatePersonRequest().validate(new PersonRequest(name, grade.isBlank() ? "A" : grade, "", null,
+                        terms, contact, null), value -> person[0] = value);
             } catch (InvalidPersonException e) {
                 throw new InvalidPersonException("Line " + number + ": " + e.getMessage());
             }
@@ -56,6 +57,11 @@ public class ValidateImportPeopleRequest {
             if (person[0].contactOrNull() != null && !contacts.add(person[0].contact())) {
                 throw new InvalidPersonException("Line " + number + ": the contact " + person[0].contact()
                         + " is already given by an earlier line.");
+            }
+            if (grade.isBlank()) {
+                PersonRequest p = person[0];
+                person[0] = new PersonRequest(p.name(), "", p.gradeFrom(), p.version(), p.terms(), p.contact(),
+                        p.tags(), p.termsFrom());
             }
             people.add(person[0]);
         }

@@ -19,6 +19,7 @@ import java.util.Map;
  * the policy date decides), recorded from its from-date (left out or blank: the sheet's today). The escalation gap is whole
  * days, 0 or more (blank: off); it is not dated. The review SLA is whole days, 0 or more (blank: none); it is not dated.
  * The proof kinds are receipt or photo, comma separated (blank: none); they are not dated.
+ * The default grade is A, B or C (blank: A); it is not dated.
  */
 public record SettingsRequest(@Size(max = 30) String clerkLimit, @Size(max = 30) String floor, @Size(max = 30) String terms,
         @Size(max = 30) String latePct, @Size(max = 30) String policyDate, @Size(max = 30) String periodNumberingFrom, @Size(max = 30) String entryDate, @Size(max = 30) String cap,
@@ -35,5 +36,6 @@ public record SettingsRequest(@Size(max = 30) String clerkLimit, @Size(max = 30)
         @Size(max = 10) Map<String, @Size(max = 30) String> gradeProofThresholdFrom,
         @Size(max = 30) String pot, @Size(max = 100) String parent, @Size(max = 30) String fiscalStartMonth,
         @Size(max = 30) String alertThreshold, @Size(max = 30) String rounding, @Size(max = 30) String roundingFrom,
-        @Size(max = 30) String escalateAfter, @Size(max = 30) String reviewSla, @Size(max = 100) String proofKinds) {
+        @Size(max = 30) String escalateAfter, @Size(max = 30) String reviewSla, @Size(max = 100) String proofKinds,
+        @Size(max = 10) String defaultGrade) {
 }

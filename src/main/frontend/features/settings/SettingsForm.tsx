@@ -59,6 +59,7 @@ type SettingsInput = {
   escalateAfter?: string;
   reviewSla?: string;
   proofKinds?: string;
+  defaultGrade?: string;
   pot?: string;
   parent?: string;
   fiscalStartMonth?: string;
@@ -86,6 +87,7 @@ type Touched = {
   escalateAfter: boolean;
   reviewSla: boolean;
   proofKinds: boolean;
+  defaultGrade: boolean;
   pot: boolean;
   parent: boolean;
   fiscalStartMonth: boolean;
@@ -109,6 +111,7 @@ const UNTOUCHED: Touched = {
   escalateAfter: false,
   reviewSla: false,
   proofKinds: false,
+  defaultGrade: false,
   pot: false,
   parent: false,
   fiscalStartMonth: false,
@@ -117,7 +120,7 @@ const UNTOUCHED: Touched = {
 };
 
 // The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and entry date (blank: off) and cap (blank: none) and proof threshold (blank: none) and each grade's proof threshold (blank: the sheet's) and note threshold (blank: none) and review threshold (blank: none) and rounding mode (half-up or half-even; blank: none, the policy date decides) in force, and the
-// permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the escalation gap (blank: off; not dated), and the review SLA (blank: none; not dated), and the proof kinds (receipt or photo, comma separated; blank: none; not dated), and the pot (blank: none; not dated), and the parent sheet (blank: none; not dated), and the fiscal year start month (1 to 12; blank: 1; not dated), and the alert threshold (blank: off; not dated), and the form that sets them. Saving sends
+// permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the escalation gap (blank: off; not dated), and the review SLA (blank: none; not dated), and the proof kinds (receipt or photo, comma separated; blank: none; not dated), and the default grade (blank: A; not dated), and the pot (blank: none; not dated), and the parent sheet (blank: none; not dated), and the fiscal year start month (1 to 12; blank: 1; not dated), and the alert threshold (blank: off; not dated), and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing. A dated setting (the clerk
 // limit, floor, terms, each grade's terms, late percent, cap, proof threshold, each grade's proof threshold, note threshold, review threshold and rounding mode) is recorded from the date typed beside it (blank: the
 // sheet's today); the value shown is the one in force on the sheet's today.
@@ -147,6 +150,7 @@ export function SettingsForm() {
   const [escalateAfter, setEscalateAfter] = useState('');
   const [reviewSla, setReviewSla] = useState('');
   const [proofKinds, setProofKinds] = useState('');
+  const [defaultGrade, setDefaultGrade] = useState('');
   const [pot, setPot] = useState('');
   const [parent, setParent] = useState('');
   const [fiscalStartMonth, setFiscalStartMonth] = useState('');
@@ -185,6 +189,7 @@ export function SettingsForm() {
       setEscalateAfter('');
       setReviewSla('');
       setProofKinds('');
+      setDefaultGrade('');
       setPot('');
       setParent('');
       setFiscalStartMonth('');
@@ -424,6 +429,14 @@ export function SettingsForm() {
       }
       input.proofKinds = value;
     }
+    if (touched.defaultGrade) {
+      const value = defaultGrade.trim().toUpperCase();
+      if (value !== '' && !(GRADES as readonly string[]).includes(value)) {
+        setError(`Type a default grade of ${GRADES.join(', ')}, or leave it blank for A.`);
+        return;
+      }
+      input.defaultGrade = value;
+    }
     if (touched.pot) {
       const value = pot.trim();
       if (value !== '' && !AMOUNT.test(value)) {
@@ -480,6 +493,7 @@ export function SettingsForm() {
       input.escalateAfter === undefined &&
       input.reviewSla === undefined &&
       input.proofKinds === undefined &&
+      input.defaultGrade === undefined &&
       input.pot === undefined &&
       input.parent === undefined &&
       input.fiscalStartMonth === undefined &&
@@ -565,6 +579,9 @@ export function SettingsForm() {
       </p>
       <p>
         Proof kinds: <span data-testid="setting-proof-kinds-current">{settings?.proofKinds ?? ''}</span>
+      </p>
+      <p>
+        Default grade: <span data-testid="setting-default-grade-current">{settings?.defaultGrade ?? ''}</span>
       </p>
       <p>
         Pot: <span data-testid="setting-pot-current">{settings?.pot ?? ''}</span>
@@ -815,6 +832,17 @@ export function SettingsForm() {
           onChange={(e) => {
             setProofKinds(e.target.value);
             setTouched((t) => ({ ...t, proofKinds: true }));
+            setError('');
+          }}
+        />
+        <input
+          data-testid="setting-default-grade"
+          placeholder="Grade a quick-added person or an imported line with no grade takes (blank: A)"
+          value={defaultGrade}
+          onFocus={() => setTouched((t) => ({ ...t, defaultGrade: true }))}
+          onChange={(e) => {
+            setDefaultGrade(e.target.value);
+            setTouched((t) => ({ ...t, defaultGrade: true }));
             setError('');
           }}
         />

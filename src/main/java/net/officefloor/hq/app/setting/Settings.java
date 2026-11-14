@@ -28,12 +28,14 @@ import java.util.Map;
  * went to REVIEW) plus it is before today is late; it is not dated.
  * {@code proofKinds} are the sheet's proof kinds (empty: none): while set, a claim whose due is above the proof threshold in force on
  * its date is settled or approved only once it has a proof of each; they are not dated.
+ * {@code defaultGrade} is the sheet's default grade (null: blank, A), the grade a quick-added person and an imported line with a
+ * blank grade take; it is not dated.
  * {@code alertThreshold} is the sheet's alert threshold (null: off), above which a person's due-total crossing is alerted in the audit; it is not dated.
  */
 public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, int terms, Map<String, Integer> gradeTerms, BigDecimal latePct,
         LocalDate policyDate, LocalDate periodNumberingFrom, LocalDate entryDate, BigDecimal cap, BigDecimal proofThreshold, List<UserRole> roles, DatedSettings dated, Permissions permissions, Integer graceDays,
         LocalDate today, List<Delegation> delegations, BigDecimal pot, String parent, int fiscalStartMonth, BigDecimal alertThreshold,
-        Integer escalateAfter, Integer reviewSla, List<String> proofKinds) {
+        Integer escalateAfter, Integer reviewSla, List<String> proofKinds, String defaultGrade) {
 
     /** The role the user name acts in: steward while a delegation to it is in force on today, else its given role. */
     public Role roleOf(String user) {
