@@ -46,7 +46,7 @@ public class SettingRepository {
                 dated.gradeTermsOn(today), dated.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), entryDate(sheetId),
                 dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId), graceDays(sheetId),
                 today, delegations(sheetId), pot(sheetId), parent(sheetId), fiscalStartMonth(sheetId), alertThreshold(sheetId),
-                escalateAfter(sheetId));
+                escalateAfter(sheetId), reviewSla(sheetId));
     }
 
     /** The sheet's dated settings: every value recorded, by key and from-date. */
@@ -181,6 +181,18 @@ public class SettingRepository {
     /** Set the sheet's escalation gap in days (null: blank, off). */
     public void saveEscalateAfter(String sheetId, Integer days) {
         jdbc.update("UPDATE sheet SET escalate_after = ? WHERE id = ?", days, sheetId);
+    }
+
+    /** The sheet's review SLA in days (null: blank, none). */
+    public Integer reviewSla(String sheetId) {
+        List<Integer> days = jdbc.query("SELECT review_sla FROM sheet WHERE id = ?",
+                (rs, n) -> (Integer) rs.getObject("review_sla", Integer.class), sheetId);
+        return days.isEmpty() ? null : days.get(0);
+    }
+
+    /** Set the sheet's review SLA in days (null: blank, none). */
+    public void saveReviewSla(String sheetId, Integer days) {
+        jdbc.update("UPDATE sheet SET review_sla = ? WHERE id = ?", days, sheetId);
     }
 
     /** The sheet's grace days (null: blank, off). */

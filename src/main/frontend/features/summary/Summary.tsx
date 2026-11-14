@@ -4,7 +4,8 @@ import { GRADES, liveHolds, usePeople } from '../people/people';
 import { periodDue, usePeriods } from '../periods/periods';
 import { personDue, total, useRates } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { useDueRules } from '../settings/settings';
+import { useDueRules, useSettings } from '../settings/settings';
+import { reviewLate } from '../reviewlate/reviewLate';
 import { useVoidReasons } from '../voidreasons/voidReasons';
 
 /** The statuses the summary counts claims by; one no claim reaches yet still shows, as 0. */
@@ -12,7 +13,7 @@ const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'] as co
 
 // The sheet at a glance, worked out from the same figures the list shows. Per grade: the people on it
 // today (retired people left out), their due-totals added up (skipping n/a) and how many of them are active. Per period: its
-// due-total and its change from the period before it by start date (none for the earliest). Per status: how many claims have it. Per void reason on the list: how many VOID claims were voided with it.
+// due-total and its change from the period before it by start date (none for the earliest). Per status: how many claims have it, and how many REVIEW claims are late past the review SLA. Per void reason on the list: how many VOID claims were voided with it.
 export function Summary() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -22,6 +23,7 @@ export function Summary() {
   const rates = useRates().data ?? [];
   const rules = useDueRules();
   const voidReasons = useVoidReasons().data ?? [];
+  const reviewSla = useSettings().data?.reviewSla ?? '';
 
   if (!user || !sheet) return null;
 
@@ -96,6 +98,12 @@ export function Summary() {
               <td data-testid={`summary-status-${s}-count`}>{claims.filter((c) => c.status === s).length}</td>
             </tr>
           ))}
+          <tr>
+            <td>REVIEW late</td>
+            <td data-testid="summary-review-late-count">
+              {claims.filter((c) => reviewLate(c, reviewSla, rules.today)).length}
+            </td>
+          </tr>
         </tbody>
       </table>
       <table>

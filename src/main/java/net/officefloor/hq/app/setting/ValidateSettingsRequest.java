@@ -31,7 +31,7 @@ public class ValidateSettingsRequest {
             Out<ProofThreshold> proofThreshold, Out<NoteThreshold> noteThreshold, Out<ReviewThreshold> reviewThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays,
             Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold, Out<Pot> pot, Out<Parent> parent,
             Out<FiscalStartMonth> fiscalStartMonth, Out<AlertThreshold> alertThreshold, Out<RoundingSetting> rounding,
-            Out<EscalateAfter> escalateAfter)
+            Out<EscalateAfter> escalateAfter, Out<ReviewSla> reviewSla)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -55,6 +55,7 @@ public class ValidateSettingsRequest {
         alertThreshold.set(alertThreshold(request.alertThreshold()));
         rounding.set(rounding(request.rounding(), from(request.roundingFrom(), "rounding")));
         escalateAfter.set(escalateAfter(request.escalateAfter()));
+        reviewSla.set(reviewSla(request.reviewSla()));
     }
 
     private static RoundingSetting rounding(String requested, LocalDate from) throws InvalidSettingException {
@@ -159,6 +160,20 @@ public class ValidateSettingsRequest {
             }
         }
         return new PermissionChanges(entries);
+    }
+
+    private static ReviewSla reviewSla(String requested) throws InvalidSettingException {
+        if (requested == null) {
+            return new ReviewSla(false, null);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new ReviewSla(true, null);
+        }
+        if (!DAYS.matcher(value).matches()) {
+            throw new InvalidSettingException("The review SLA must be a whole number of days, 0 or more, or blank.");
+        }
+        return new ReviewSla(true, Integer.parseInt(value));
     }
 
     private static EscalateAfter escalateAfter(String requested) throws InvalidSettingException {

@@ -56,6 +56,7 @@ type SettingsInput = {
   permissions?: Record<string, string>;
   graceDays?: string;
   escalateAfter?: string;
+  reviewSla?: string;
   pot?: string;
   parent?: string;
   fiscalStartMonth?: string;
@@ -81,6 +82,7 @@ type Touched = {
   reviewThreshold: boolean;
   graceDays: boolean;
   escalateAfter: boolean;
+  reviewSla: boolean;
   pot: boolean;
   parent: boolean;
   fiscalStartMonth: boolean;
@@ -102,6 +104,7 @@ const UNTOUCHED: Touched = {
   reviewThreshold: false,
   graceDays: false,
   escalateAfter: false,
+  reviewSla: false,
   pot: false,
   parent: false,
   fiscalStartMonth: false,
@@ -110,7 +113,7 @@ const UNTOUCHED: Touched = {
 };
 
 // The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and entry date (blank: off) and cap (blank: none) and proof threshold (blank: none) and each grade's proof threshold (blank: the sheet's) and note threshold (blank: none) and review threshold (blank: none) and rounding mode (half-up or half-even; blank: none, the policy date decides) in force, and the
-// permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the escalation gap (blank: off; not dated), and the pot (blank: none; not dated), and the parent sheet (blank: none; not dated), and the fiscal year start month (1 to 12; blank: 1; not dated), and the alert threshold (blank: off; not dated), and the form that sets them. Saving sends
+// permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the escalation gap (blank: off; not dated), and the review SLA (blank: none; not dated), and the pot (blank: none; not dated), and the parent sheet (blank: none; not dated), and the fiscal year start month (1 to 12; blank: 1; not dated), and the alert threshold (blank: off; not dated), and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing. A dated setting (the clerk
 // limit, floor, terms, each grade's terms, late percent, cap, proof threshold, each grade's proof threshold, note threshold, review threshold and rounding mode) is recorded from the date typed beside it (blank: the
 // sheet's today); the value shown is the one in force on the sheet's today.
@@ -138,6 +141,7 @@ export function SettingsForm() {
   const [reviewThreshold, setReviewThreshold] = useState('');
   const [graceDays, setGraceDays] = useState('');
   const [escalateAfter, setEscalateAfter] = useState('');
+  const [reviewSla, setReviewSla] = useState('');
   const [pot, setPot] = useState('');
   const [parent, setParent] = useState('');
   const [fiscalStartMonth, setFiscalStartMonth] = useState('');
@@ -174,6 +178,7 @@ export function SettingsForm() {
       setReviewThreshold('');
       setGraceDays('');
       setEscalateAfter('');
+      setReviewSla('');
       setPot('');
       setParent('');
       setFiscalStartMonth('');
@@ -397,6 +402,14 @@ export function SettingsForm() {
       }
       input.escalateAfter = value;
     }
+    if (touched.reviewSla) {
+      const value = reviewSla.trim();
+      if (value !== '' && !DAYS.test(value)) {
+        setError('Type a review SLA of 0 or more whole days, or leave it blank for none.');
+        return;
+      }
+      input.reviewSla = value;
+    }
     if (touched.pot) {
       const value = pot.trim();
       if (value !== '' && !AMOUNT.test(value)) {
@@ -451,6 +464,7 @@ export function SettingsForm() {
       input.permissions === undefined &&
       input.graceDays === undefined &&
       input.escalateAfter === undefined &&
+      input.reviewSla === undefined &&
       input.pot === undefined &&
       input.parent === undefined &&
       input.fiscalStartMonth === undefined &&
@@ -530,6 +544,9 @@ export function SettingsForm() {
       <p>
         Escalate after (days):{' '}
         <span data-testid="setting-escalate-after-current">{settings?.escalateAfter ?? ''}</span>
+      </p>
+      <p>
+        Review SLA (days): <span data-testid="setting-review-sla-current">{settings?.reviewSla ?? ''}</span>
       </p>
       <p>
         Pot: <span data-testid="setting-pot-current">{settings?.pot ?? ''}</span>
@@ -758,6 +775,17 @@ export function SettingsForm() {
           onChange={(e) => {
             setEscalateAfter(e.target.value);
             setTouched((t) => ({ ...t, escalateAfter: true }));
+            setError('');
+          }}
+        />
+        <input
+          data-testid="setting-review-sla"
+          placeholder="Days a claim may stay in REVIEW before it is late (blank: none)"
+          value={reviewSla}
+          onFocus={() => setTouched((t) => ({ ...t, reviewSla: true }))}
+          onChange={(e) => {
+            setReviewSla(e.target.value);
+            setTouched((t) => ({ ...t, reviewSla: true }));
             setError('');
           }}
         />

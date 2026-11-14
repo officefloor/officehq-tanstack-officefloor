@@ -17,7 +17,7 @@ import java.util.Map;
  * proof thresholds have two decimals at most, by grade, each only for a grade it carries (blank: none, the sheet's), recorded
  * from their from-date by grade (left out or blank: the sheet's today). The rounding mode is half-up or half-even (blank: none,
  * the policy date decides), recorded from its from-date (left out or blank: the sheet's today). The escalation gap is whole
- * days, 0 or more (blank: off); it is not dated.
+ * days, 0 or more (blank: off); it is not dated. The review SLA is whole days, 0 or more (blank: none); it is not dated.
  */
 public record SettingsRequest(@Size(max = 30) String clerkLimit, @Size(max = 30) String floor, @Size(max = 30) String terms,
         @Size(max = 30) String latePct, @Size(max = 30) String policyDate, @Size(max = 30) String periodNumberingFrom, @Size(max = 30) String entryDate, @Size(max = 30) String cap,
@@ -34,5 +34,5 @@ public record SettingsRequest(@Size(max = 30) String clerkLimit, @Size(max = 30)
         @Size(max = 10) Map<String, @Size(max = 30) String> gradeProofThresholdFrom,
         @Size(max = 30) String pot, @Size(max = 100) String parent, @Size(max = 30) String fiscalStartMonth,
         @Size(max = 30) String alertThreshold, @Size(max = 30) String rounding, @Size(max = 30) String roundingFrom,
-        @Size(max = 30) String escalateAfter) {
+        @Size(max = 30) String escalateAfter, @Size(max = 30) String reviewSla) {
 }
