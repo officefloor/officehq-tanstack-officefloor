@@ -58,6 +58,7 @@ public class SheetCloner {
         sheet.put("archived", false);
         sheet.put("last_claim_number", 0);
         sheet.put("last_batch", 0);
+        sheet.put("cloned_from", from);
         RowCopy.copyAll(jdbc, "sheet", "id = ?", List.of(from), null, sheet);
         Map<String, Object> onClone = Map.of("sheet_id", to);
         for (String table : SHEET_TABLES) {

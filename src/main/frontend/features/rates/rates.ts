@@ -13,7 +13,8 @@ import type { DueRules } from '../settings/settings';
  * A grade's rate as the store holds it: a percent with two decimals, in force from its from-date
  * (yyyy-MM-dd; null: from the beginning of time) until the grade's next rate takes over, or through its
  * to-date (null: no end), whichever comes first. `sheet` is the sheet it is set on: the sheet's own rates come
- * first, then those it inherits from its parent, its parent's parent and so on (up to three levels up). A rate is kept
+ * first, then those it inherits from its parent, its parent's parent and so on (up to three levels up), then, for a
+ * cloned sheet, those of the sheet it was cloned from (with its own parents and source likewise). A rate is kept
  * as versions, one per time it was set for its grade and from-date: this is the newest (in force), `version` how many.
  * A rate saved with a from-date on or after the sheet's today is `forward`-only: it applies only to claims added after
  * it was `saved` (a claim's `added` is on the same sequence); a claim added before keeps the `earlier` version that
@@ -43,7 +44,7 @@ export const PERCENT = /^(\d{1,5}(\.\d{1,2})?|\.\d{1,2})$/;
 /** The query key for the sheet's rates; under sheetKey, so re-loading the sheet re-reads them. */
 export const ratesKey = (sheet: string) => [...sheetKey(sheet), 'rates'] as const;
 
-/** The sheet's rates, by grade and then from-date (from the start first), then those it inherits, nearest parent first. */
+/** The sheet's rates, by grade and then from-date (from the start first), then those it inherits, nearest parent first, then the clone source's. */
 export function useRates() {
   const [sheet] = useCurrentSheet();
   return useQuery({
@@ -56,7 +57,7 @@ export function useRates() {
 /**
  * The grade's rate (two decimals) in force on the date: the one with the latest from-date on or
  * before it, a rate with no from-date applying from the start; undefined when none applies, or when that
- * one's to-date is before the date. With inherited rates, the first sheet (own, then the nearest parent up) with
+ * one's to-date is before the date. With inherited rates, the first sheet (own, then the nearest parent up, then the clone source) with
  * a rate in force gives it.
  */
 export function rateFor(rates: Rate[], grade: string | undefined, date: string): string | undefined {

@@ -5,10 +5,10 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.List;
+import java.util.function.Function;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -25,18 +25,37 @@ public class RateRepository {
     public static final int PARENT_LEVELS = 3;
 
     /**
-     * The sheet's rates, by grade and then from-date (from the start first), followed by those of its parent, its
-     * parent's parent and so on, up to {@link #PARENT_LEVELS} levels up: see {@link Rate#inForce}.
+     * The sheet's rates, by grade and then from-date (from the start first), followed by those of the sheets it
+     * inherits from, in {@link #lineage} order: see {@link Rate#inForce}.
      */
     public List<Rate> findAll(String sheetId) {
-        List<Rate> rates = new ArrayList<>(findOwn(sheetId));
-        Set<String> seen = new HashSet<>(Set.of(sheetId));
-        String up = parent(sheetId);
-        for (int level = 1; level <= PARENT_LEVELS && up != null && seen.add(up); level++) {
-            rates.addAll(findOwn(up));
-            up = parent(up);
+        List<Rate> rates = new ArrayList<>();
+        for (String id : lineage(sheetId, this::links)) {
+            rates.addAll(findOwn(id));
         }
         return rates;
+    }
+
+    /** A sheet's parent and the sheet it was cloned from (either null: none). */
+    public record Links(String parent, String source) {
+    }
+
+    /**
+     * The sheet and the sheets it inherits rates from, each once, in the order they are looked at: the sheet, its
+     * parent, its parent's parent and so on up to {@link #PARENT_LEVELS} levels up; then, for a sheet that was cloned,
+     * the sheet it was cloned from with its own lineage likewise (its parents, then the sheet it was cloned from, ...).
+     */
+    public static List<String> lineage(String sheetId, Function<String, Links> links) {
+        LinkedHashSet<String> ids = new LinkedHashSet<>();
+        for (String at = sheetId; at != null && ids.add(at); ) {
+            Links own = links.apply(at);
+            String up = own.parent();
+            for (int level = 1; level <= PARENT_LEVELS && up != null && ids.add(up); level++) {
+                up = links.apply(up).parent();
+            }
+            at = own.source();
+        }
+        return List.copyOf(ids);
     }
 
     /** The sheet's own rates, by grade and then from-date (from the start first). */
@@ -58,9 +77,11 @@ public class RateRepository {
         return rate.grade() + "|" + rate.from();
     }
 
-    private String parent(String sheetId) {
-        List<String> parent = jdbc.query("SELECT parent_id FROM sheet WHERE id = ?", (rs, n) -> rs.getString("parent_id"), sheetId);
-        return parent.isEmpty() ? null : parent.get(0);
+    /** The sheet's links as the store holds them now; they are not dated, so an as-of view follows them too. */
+    private Links links(String sheetId) {
+        List<Links> found = jdbc.query("SELECT parent_id, cloned_from FROM PUBLIC.sheet WHERE id = ?",
+                (rs, n) -> new Links(rs.getString("parent_id"), rs.getString("cloned_from")), sheetId);
+        return found.isEmpty() ? new Links(null, null) : found.get(0);
     }
 
     /**

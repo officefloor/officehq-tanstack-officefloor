@@ -69,25 +69,19 @@ public class AsOfSchemas {
 
     /** The sheet and the sheets above it it inherits rates from: see {@link RateRepository#findAll}. */
     private static List<String> lineage(Connection c, String sheetId) throws SQLException {
-        List<String> ids = new ArrayList<>(List.of(sheetId));
-        try (PreparedStatement p = c.prepareStatement("SELECT PARENT_ID FROM PUBLIC.SHEET WHERE ID = ?")) {
-            String at = sheetId;
-            for (int level = 1; level <= RateRepository.PARENT_LEVELS && at != null; level++) {
-                p.setString(1, at);
-                String up = null;
-                try (ResultSet rs = p.executeQuery()) {
-                    if (rs.next()) {
-                        up = rs.getString(1);
+        try (PreparedStatement p = c.prepareStatement("SELECT PARENT_ID, CLONED_FROM FROM PUBLIC.SHEET WHERE ID = ?")) {
+            return RateRepository.lineage(sheetId, (at) -> {
+                try {
+                    p.setString(1, at);
+                    try (ResultSet rs = p.executeQuery()) {
+                        return rs.next() ? new RateRepository.Links(rs.getString(1), rs.getString(2))
+                                : new RateRepository.Links(null, null);
                     }
+                } catch (SQLException e) {
+                    throw new IllegalStateException("Could not read the sheets above " + at, e);
                 }
-                if (up == null || ids.contains(up)) {
-                    break;
-                }
-                ids.add(up);
-                at = up;
-            }
+            });
         }
-        return ids;
     }
 
     private static String literal(String value) {
