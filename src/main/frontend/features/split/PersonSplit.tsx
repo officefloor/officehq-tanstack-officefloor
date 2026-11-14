@@ -1,5 +1,5 @@
 import { useClaims } from '../claims/claims';
-import { liveHolds } from '../people/people';
+import { liveHolds, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { personSplit, useRates } from '../rates/rates';
 import { useDueRules } from '../settings/settings';
@@ -7,8 +7,10 @@ import { useDueRules } from '../settings/settings';
 function usePersonSplit(person: Person) {
   const rates = useRates().data ?? [];
   const rules = useDueRules();
-  const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
-  return personSplit(claims, rates, person.grades, liveHolds(person, rules.today), rules);
+  const all = useClaims().data ?? [];
+  const people = usePeople().data ?? [];
+  const claims = all.filter((c) => c.personId === person.id);
+  return personSplit(claims, rates, person.grades, liveHolds(person, rules.today), rules, { personId: person.id, claims: all, people });
 }
 
 // The dues of a person's settled counting claims, added up.

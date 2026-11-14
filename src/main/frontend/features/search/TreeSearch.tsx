@@ -37,7 +37,11 @@ function matches(sheet: string, d: SheetData, text: string): string[] {
   return d.people
     .filter((p) => hit(p.name) || d.aliases.some((a) => a.personId === p.id && hit(a.alias)))
     .map((p) => {
-      const due = personDue(d.claims.filter((c) => c.personId === p.id), d.rates, p.grades, liveHolds(p, d.rules.today), d.rules);
+      const due = personDue(d.claims.filter((c) => c.personId === p.id), d.rates, p.grades, liveHolds(p, d.rules.today), d.rules, {
+        personId: p.id,
+        claims: d.claims,
+        people: d.people,
+      });
       return `${sheet} ${shownName(p)} ${due}`;
     });
 }

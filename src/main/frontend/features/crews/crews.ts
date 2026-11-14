@@ -35,7 +35,7 @@ export function useDueByPerson(): (personId: number) => string {
     const person = people.find((p) => p.id === personId);
     if (!person) return NA;
     const own = claims.filter((c) => c.personId === personId);
-    return personDue(own, rates, person.grades, liveHolds(person, rules.today), rules);
+    return personDue(own, rates, person.grades, liveHolds(person, rules.today), rules, { personId, claims, people });
   };
 }
 

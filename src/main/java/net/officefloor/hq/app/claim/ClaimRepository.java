@@ -118,9 +118,11 @@ public class ClaimRepository {
 
     /**
      * Move the claim to another person: it loses any figure a statement bound it to (live again) and is listed as
-     * their newest claim; the claim as stored.
+     * their newest claim; any share of it that person held goes. The claim as stored.
      */
     public Claim reassign(Claim claim, long personId) {
+        jdbc.update("DELETE FROM claim_share WHERE sheet_id = ? AND claim_id = ? AND person_id = ?", claim.sheetId(),
+                claim.id(), personId);
         jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL,"
                 + " listed = NEXT VALUE FOR claim_listed_seq WHERE id = ? AND sheet_id = ?",
                 personId, claim.id(), claim.sheetId());
@@ -129,9 +131,11 @@ public class ClaimRepository {
 
     /**
      * Move the claim to the person it is merged into: it keeps any figure a statement bound it to and is listed as
-     * their newest claim.
+     * their newest claim; any share of it that person held goes.
      */
     public void moveMerged(Claim claim, long personId) {
+        jdbc.update("DELETE FROM claim_share WHERE sheet_id = ? AND claim_id = ? AND person_id = ?", claim.sheetId(),
+                claim.id(), personId);
         jdbc.update("UPDATE claim SET person_id = ?, listed = NEXT VALUE FOR claim_listed_seq WHERE id = ? AND sheet_id = ?",
                 personId, claim.id(), claim.sheetId());
     }
@@ -347,8 +351,8 @@ public class ClaimRepository {
 
     /**
      * Copy the person's claims to the other sheet's person, in the order they were added, keeping their status,
-     * dates, notes, frozen figures, any figure a statement bound, tags, logs and comments, losing their references
-     * and their batch; each claim's tags join the other sheet's tag list. The claims leave this sheet (with any lock
+     * dates, notes, frozen figures, any figure a statement bound, tags, logs and comments, losing their references,
+     * their batch and their shares; each claim's tags join the other sheet's tag list. The claims leave this sheet (with any lock
      * on them). Numbers are left as they were, to be given anew ({@link #renumberTransferred}).
      */
     public List<Moved> transfer(String sheetId, long personId, String to, long toPersonId) {
@@ -369,6 +373,7 @@ public class ClaimRepository {
             jdbc.update("UPDATE claim_log SET sheet_id = ?, claim_id = ? WHERE claim_id = ?", to, id, old);
             jdbc.update("UPDATE claim_comment SET sheet_id = ?, claim_id = ? WHERE claim_id = ?", to, id, old);
             jdbc.update("UPDATE claim_line SET sheet_id = ?, claim_id = ? WHERE claim_id = ?", to, id, old);
+            jdbc.update("DELETE FROM claim_share WHERE sheet_id = ? AND claim_id = ?", sheetId, old);
             jdbc.update("DELETE FROM claim_lock WHERE sheet_id = ? AND claim_id = ?", sheetId, old);
             jdbc.update("DELETE FROM claim WHERE id = ?", old);
             String tags = tags(to, id);

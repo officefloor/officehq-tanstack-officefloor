@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.ClaimShare;
+import net.officefloor.hq.app.claim.ClaimShareRepository;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Rounding;
 import net.officefloor.hq.app.person.Person;
@@ -28,6 +30,8 @@ import org.springframework.stereotype.Service;
  * rate there and no counting claim has a figure (kept, or at the rate for the grade in force on its date). Their overdue-total
  * is the dues of their overdue counting claims added up (skipping n/a, not capped). The sheet's totals add these up, skipping n/a;
  * its due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one.
+ * A shared claim's due is parted: each holder's due-total counts the due times their share / 100 (half to even, while
+ * the claim counts for its own person), and its own person's the due less those parts; its overdue figure is not parted.
  */
 @Service
 public class RollupService {
@@ -39,9 +43,11 @@ public class RollupService {
     private final RateRepository rates;
     private final SheetRepository sheets;
     private final SettingRepository settings;
+    private final ClaimShareRepository shares;
 
     public RollupService(PersonRepository people, ClaimRepository claims, RateRepository rates,
-            SheetRepository sheets, SettingRepository settings) {
+            SheetRepository sheets, SettingRepository settings, ClaimShareRepository shares) {
+        this.shares = shares;
         this.people = people;
         this.claims = claims;
         this.rates = rates;
@@ -61,7 +67,9 @@ public class RollupService {
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
         List<BigDecimal> dues = new ArrayList<>();
         List<BigDecimal> overdues = new ArrayList<>();
-        for (Person person : people.findAll(sheetId)) {
+        List<Person> sheetPeople = people.findAll(sheetId);
+        Map<Long, List<ClaimShare>> shared = shares.findAll(sheetId);
+        for (Person person : sheetPeople) {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             BigDecimal overdue = BigDecimal.ZERO.setScale(2);
@@ -87,12 +95,26 @@ public class RollupService {
                 }
                 if (figure != null) {
                     kept = true;
-                    due = due.add(figure);
+                    due = due.add(ClaimShare.ownPart(figure, shared.getOrDefault(claim.id(), List.of())));
                     if (late) {
                         overdue = overdue.add(figure);
                     }
                     if (claim.status() == ClaimStatus.SETTLED && !claim.correction()) {
                         settled = settled.add(figure);
+                    }
+                }
+            }
+            for (Claim claim : sheetClaims) {
+                for (ClaimShare share : shared.getOrDefault(claim.id(), List.of())) {
+                    Person owner = share.personId() == person.id() ? find(sheetPeople, claim.personId()) : null;
+                    if (owner == null || !owner.counts(claim, today)) {
+                        continue;
+                    }
+                    BigDecimal figure = claim.due(Rate.inForce(sheetRates, owner.gradeOn(claim.date()), claim),
+                            dated.floorOn(claim.date()), dated.lateCharge(today, owner), rounding);
+                    if (figure != null) {
+                        kept = true;
+                        due = due.add(share.part(figure));
                     }
                 }
             }
@@ -108,6 +130,10 @@ public class RollupService {
         }
         return new Rollup(figures, show(claimedTotal), show(trimmedTotal(dues)), show(trimmedTotal(overdues)),
                 settings.alertThreshold(sheetId));
+    }
+
+    private static Person find(List<Person> people, long id) {
+        return people.stream().filter((p) -> p.id() == id).findFirst().orElse(null);
     }
 
     /**

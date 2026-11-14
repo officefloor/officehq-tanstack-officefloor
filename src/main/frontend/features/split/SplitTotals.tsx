@@ -16,7 +16,11 @@ export function SplitTotals() {
   if (!user || !sheet) return null;
 
   const each = people.map((p) =>
-    personSplit(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules),
+    personSplit(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules, {
+      personId: p.id,
+      claims,
+      people,
+    }),
   );
   return (
     <p>

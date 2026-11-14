@@ -36,13 +36,13 @@ function sheetFigures(people: Person[], aliases: Alias[], claims: Claim[], rates
     total(
       current
         .filter((p) => p.grade === g)
-        .map((p) => personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules)),
+        .map((p) => personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules, { personId: p.id, claims, people })),
     );
   return {
     names: people.map((p) =>
       [p.name, ...aliases.filter((a) => a.personId === p.id).map((a) => a.alias)].map(nameKey).filter((k) => k),
     ),
-    dues: people.map((p) => personDue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules)),
+    dues: people.map((p) => personDue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules, { personId: p.id, claims, people })),
     overdues: people.map((p) => personOverdue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules).total),
     grades: Object.fromEntries(GRADES.map((g) => [g, gradeDue(g)])),
     statuses: Object.fromEntries(STATUSES.map((s) => [s, claims.filter((c) => c.status === s).length])),

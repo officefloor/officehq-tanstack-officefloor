@@ -18,7 +18,9 @@ export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'
 /** A sheet's due-total and overdue-total as its header shows them. */
 export function sheetTotals(people: Person[], claims: Claim[], rates: Rate[], rules: DueRules): { due: string; overdue: string } {
   const mine = (id: number) => claims.filter((c) => c.personId === id);
-  const dues = people.map((p) => personDue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules));
+  const dues = people.map((p) =>
+    personDue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules, { personId: p.id, claims, people }),
+  );
   const overdue = people.map((p) => personOverdue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules).total);
   return { due: trimmedTotal(dues), overdue: trimmedTotal(overdue) };
 }
@@ -51,7 +53,7 @@ export function HeaderCounters() {
 
   const me = personNamed(people, aliases, user ?? '');
   const mine = me ? claims.filter((c) => c.personId === me.id) : [];
-  const myDue = me ? personDue(mine, rates, me.grades, liveHolds(me, rules.today), rules) : '';
+  const myDue = me ? personDue(mine, rates, me.grades, liveHolds(me, rules.today), rules, { personId: me.id, claims, people }) : '';
   const myOverdue = me ? personOverdue(mine, rates, me.grades, liveHolds(me, rules.today), rules).total : '';
   const led = me ? crews.filter((c) => c.lead?.id === me.id) : [];
   const myCrewDue = led.length ? total(led.map((c) => crewDue(c, dueOf))) : '';

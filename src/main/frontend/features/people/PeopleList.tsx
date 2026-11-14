@@ -109,6 +109,7 @@ function useSortKey(sort: SortKey): ((p: Person) => string | number) | null {
   const rates = useRates().data ?? [];
   const rules = useDueRules();
   const claims = useClaims().data ?? [];
+  const people = usePeople().data ?? [];
   switch (sort) {
     case 'name':
       return (p) => nameKey(p.name);
@@ -116,7 +117,11 @@ function useSortKey(sort: SortKey): ((p: Person) => string | number) | null {
       return (p) => p.grade;
     case 'due-total':
       return (p) => {
-        const total = personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules);
+        const total = personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules, {
+          personId: p.id,
+          claims,
+          people,
+        });
         return total === NA ? Infinity : Math.round(Number(total) * 100);
       };
     default:

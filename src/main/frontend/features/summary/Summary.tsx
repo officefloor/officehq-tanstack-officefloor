@@ -133,7 +133,7 @@ export function Summary() {
 export function gradeDueTotal(grade: string, people: Person[], claims: Claim[], rates: Rate[], rules: DueRules): string {
   const dues = people
     .filter((p) => !p.retired && p.grade === grade)
-    .map((p) => personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules));
+    .map((p) => personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules, { personId: p.id, claims, people }));
   return total(dues);
 }
 

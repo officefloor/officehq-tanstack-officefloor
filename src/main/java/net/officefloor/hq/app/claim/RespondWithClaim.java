@@ -6,6 +6,7 @@ import net.officefloor.web.ObjectResponse;
 public class RespondWithClaim {
     public void respond(@Val Claim claim, ClaimLogRepository logs, ClaimLockRepository locks,
             ClaimRepository repository, ClaimCommentRepository comments, ClaimLineRepository lines,
+            ClaimShareRepository shares,
             SettleBatchRepository batches, ObjectResponse<ClaimResponse> response) {
         response.send(ClaimResponse.from(claim, logs.find(claim.sheetId(), claim.id()),
                 locks.lockedBy(claim.sheetId(), claim.id()),
@@ -17,6 +18,7 @@ public class RespondWithClaim {
                 comments.find(claim.sheetId(), claim.id()),
                 batches.batch(claim.sheetId(), claim.id()),
                 lines.find(claim.sheetId(), claim.id()),
-                repository.photoProofs(claim.sheetId(), claim.id())));
+                repository.photoProofs(claim.sheetId(), claim.id()),
+                shares.find(claim.sheetId(), claim.id())));
     }
 }

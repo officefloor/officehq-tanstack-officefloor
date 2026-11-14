@@ -1,5 +1,5 @@
 import { useClaims } from '../claims/claims';
-import { liveHolds } from '../people/people';
+import { liveHolds, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useDueRules } from '../settings/settings';
 import { personExcess, useRates } from './rates';
@@ -9,7 +9,10 @@ import { useColumnShown } from '../columns/columns';
 export function PersonExcess({ person }: { person: Person }) {
   const rates = useRates().data ?? [];
   const rules = useDueRules();
-  const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
+  const all = useClaims().data ?? [];
+  const people = usePeople().data ?? [];
+  const claims = all.filter((c) => c.personId === person.id);
+  const shared = { personId: person.id, claims: all, people };
   if (!useColumnShown('excess')) return null;
-  return <td data-testid="person-excess">{personExcess(claims, rates, person.grades, liveHolds(person, rules.today), rules)}</td>;
+  return <td data-testid="person-excess">{personExcess(claims, rates, person.grades, liveHolds(person, rules.today), rules, shared)}</td>;
 }

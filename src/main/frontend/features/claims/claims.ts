@@ -53,7 +53,9 @@ export const bound = (c: Claim) => c.stated;
  * lines are its lines, in the order added: a DRAFT's label, quantity and unit amount; a claim with lines has their
  * quantities times their unit amounts, added up, as its amount;
  * waived is whether a steward waived its late charge: a waived claim bears none, whatever its overdue state;
- * held is whether the claim is held: a held open (or pending) claim counts as one a hold of its person covers.
+ * held is whether the claim is held: a held open (or pending) claim counts as one a hold of its person covers;
+ * shares are the other people it is shared with, in the order given: each holder's due-total counts their share of
+ * its due, and its own person's the rest.
  */
 export type Claim = {
   id: number;
@@ -88,7 +90,11 @@ export type Claim = {
   added: number;
   waived: boolean;
   held: boolean;
+  shares: ClaimShare[];
 };
+
+/** A share of a claim: the id of the person holding it and the percent of the claim's due they hold (two decimals). */
+export type ClaimShare = { personId: number; share: string };
 
 /** A line of a claim: its label, its quantity (a whole number, at least 1) and its unit amount (two decimals). */
 export type ClaimLine = { label: string; qty: number; unit: string };

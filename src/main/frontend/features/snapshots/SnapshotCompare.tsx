@@ -36,7 +36,7 @@ export function SnapshotCompare() {
         const then = snapshotOn(snapshots, p.id, compared.from);
         const now =
           compared.to === ''
-            ? personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules)
+            ? personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules, { personId: p.id, claims, people })
             : snapshotOn(snapshots, p.id, compared.to);
         return [p.name, then, now].join(' ').trim();
       })

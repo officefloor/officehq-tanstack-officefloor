@@ -263,7 +263,7 @@ public class PersonRepository {
      * Merge the person ({@code from}, their claims already moved) into the other: their name and then their aliases,
      * in the order added, become the other's newest aliases; their patrons are added after the other's, in the order named (not the other,
      * no repeats); anyone naming them as patron names the other instead (not themselves, no repeats); their pool
-     * and crew memberships, crews they lead, and plans move to the other (shares added where the other is already a member). Their statements join
+     * and crew memberships, crews they lead, and plans move to the other (shares added where the other is already a member), as do their shares of claims (dropped where the other holds one or owns the claim). Their statements join
      * the other's, before them: the other's count is both counts added, and the other's last statement stays theirs (or,
      * having none, becomes the merged person's). Their grades,
      * holds, past retirements, watchers, snapshot lines and contact are dropped with them.
@@ -310,6 +310,11 @@ public class PersonRepository {
         jdbc.update("UPDATE crew SET lead_id = ? WHERE sheet_id = ? AND lead_id = ?", kept, sheetId, gone);
 
         jdbc.update("UPDATE person_plan SET person_id = ? WHERE sheet_id = ? AND person_id = ?", kept, sheetId, gone);
+
+        jdbc.update("DELETE FROM claim_share g WHERE g.sheet_id = ? AND g.person_id = ? AND (EXISTS (SELECT 1 FROM"
+                + " claim_share k WHERE k.claim_id = g.claim_id AND k.person_id = ?) OR EXISTS (SELECT 1 FROM claim c"
+                + " WHERE c.id = g.claim_id AND c.person_id = ?))", sheetId, gone, kept, kept);
+        jdbc.update("UPDATE claim_share SET person_id = ? WHERE sheet_id = ? AND person_id = ?", kept, sheetId, gone);
 
         mergeStatements(sheetId, gone, kept);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
@@ -518,7 +523,7 @@ public class PersonRepository {
 
     /**
      * Remove the person, transferred to another sheet (their claims already moved), from this sheet entirely: their
-     * statements, holds, past retirements, patron links either way, pool and crew memberships, watches, plans and closed-period figures go with them; the crews they lead stay, with no lead.
+     * statements, holds, past retirements, patron links either way, pool and crew memberships, shares of claims, watches, plans and closed-period figures go with them; the crews they lead stay, with no lead.
      */
     public void dropTransferred(Person person) {
         String sheetId = person.sheetId();
@@ -526,6 +531,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, gone,
                 gone);
         jdbc.update("DELETE FROM pool_member WHERE person_id = ?", gone);
+        jdbc.update("DELETE FROM claim_share WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM crew_member WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("UPDATE crew SET lead_id = NULL WHERE sheet_id = ? AND lead_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);

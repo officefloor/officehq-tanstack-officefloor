@@ -26,7 +26,7 @@ export function ClassicSummary() {
   if (!user || !sheet) return null;
 
   const dues = people.map((p) =>
-    personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules),
+    personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules, { personId: p.id, claims, people }),
   );
   return (
     <section data-testid="classic-summary">
