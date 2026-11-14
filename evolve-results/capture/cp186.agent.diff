@@ -1,0 +1,158 @@
+diff --git a/src/main/frontend/features/periods/Periods.tsx b/src/main/frontend/features/periods/Periods.tsx
+index 5414b7700..62b168824 100644
+--- a/src/main/frontend/features/periods/Periods.tsx
++++ b/src/main/frontend/features/periods/Periods.tsx
+@@ -74,6 +74,21 @@ export function Periods() {
+     onError: () => setGenError('No periods were generated: type the fiscal year as yyyy.'),
+   });
+ 
++  // The quarters form: the four calendar quarters of the year typed, named yyyy-Q1 to yyyy-Q4.
++  const [quarterYear, setQuarterYear] = useState('');
++  const generateQuarters = useMutation({
++    mutationFn: (input: { year: string }) =>
++      postJson<{ made: number }>(
++        `/api/sheets/${encodeURIComponent(sheet)}/generate-quarters?user=${encodeURIComponent(user)}`,
++        input,
++      ),
++    onSuccess: async (result) => {
++      await queryClient.invalidateQueries({ queryKey: periodsKey(sheet) });
++      setMade(result.made);
++    },
++    onError: () => setGenError('No periods were generated: type the year as yyyy.'),
++  });
++
+   // The period whose close, reopen, lock or unlock was refused, and why; cleared by the next action on a period.
+   const [rowError, setRowError] = useState<{ name: string; message: string } | null>(null);
+   const act = useMutation({
+@@ -154,6 +169,18 @@ export function Periods() {
+     once(() => generateFy.mutateAsync({ year }));
+   };
+ 
++  const submitGenerateQuarters = (e: FormEvent) => {
++    e.preventDefault();
++    setGenError('');
++    setMade(undefined);
++    const year = quarterYear.trim();
++    if (!/^\d{4}$/.test(year)) {
++      setGenError('Type the year as yyyy.');
++      return;
++    }
++    once(() => generateQuarters.mutateAsync({ year }));
++  };
++
+   const changeGenerate = (patch: Partial<{ from: string; to: string }>) => {
+     setGen((g) => ({ ...g, ...patch }));
+     setGenError('');
+@@ -321,6 +348,20 @@ export function Periods() {
+           Generate fiscal year
+         </button>
+       </form>
++      <form onSubmit={submitGenerateQuarters} data-testid="period-generate-quarters-form">
++        <input
++          data-testid="period-generate-quarters-year"
++          placeholder="Year yyyy"
++          value={quarterYear}
++          onChange={(e) => {
++            setQuarterYear(e.target.value);
++            setGenError('');
++          }}
++        />
++        <button type="submit" data-testid="period-generate-quarters" disabled={generateQuarters.isPending}>
++          Generate quarters
++        </button>
++      </form>
+     </section>
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/BuildQuarterPeriods.java b/src/main/java/net/officefloor/hq/app/period/BuildQuarterPeriods.java
+new file mode 100644
+index 000000000..5f6a6f4fb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/BuildQuarterPeriods.java
+@@ -0,0 +1,38 @@
++package net.officefloor.hq.app.period;
++
++import jakarta.validation.Valid;
++import java.time.YearMonth;
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * The four calendar quarters of the year typed, named yyyy-Q1 to yyyy-Q4, each from its first month's first day to
++ * its last month's last day; a quarter whose name is already a period on the sheet (ignoring case), or whose days
++ * overlap one, is left out. A year that is not four digits is refused.
++ */
++public class BuildQuarterPeriods {
++    public void build(@RequestBody @Valid GenerateQuartersRequest request, @Val Sheet sheet,
++            PeriodRepository repository, Out<GeneratedPeriods> generated) throws InvalidPeriodException {
++        String year = request.year() == null ? "" : request.year().trim();
++        if (!year.matches("\\d{4}")) {
++            throw new InvalidPeriodException("The year must be yyyy.");
++        }
++        List<Period> existing = repository.findAll(sheet.id());
++        List<Period> made = new ArrayList<>();
++        for (int quarter = 1; quarter <= 4; quarter++) {
++            YearMonth first = YearMonth.of(Integer.parseInt(year), quarter * 3 - 2);
++            Period period = new Period(sheet.id(), year + "-Q" + quarter, first.atDay(1),
++                    first.plusMonths(2).atEndOfMonth());
++            boolean free = existing.stream()
++                    .noneMatch((other) -> other.name().equalsIgnoreCase(period.name()) || other.overlaps(period));
++            if (free) {
++                made.add(period);
++            }
++        }
++        generated.set(new GeneratedPeriods(List.copyOf(made)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/GenerateQuartersRequest.java b/src/main/java/net/officefloor/hq/app/period/GenerateQuartersRequest.java
+new file mode 100644
+index 000000000..ed01c02af
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/GenerateQuartersRequest.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.period;
++
++import jakarta.validation.constraints.Size;
++
++/** A generate of a year's quarterly periods as the form submits it: the calendar year (yyyy). */
++public record GenerateQuartersRequest(@Size(max = 30) String year) {
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-quarters.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-quarters.POST.yml
+new file mode 100644
+index 000000000..1412406f7
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-quarters.POST.yml
+@@ -0,0 +1,29 @@
++# Generate a calendar year's four quarterly periods, named yyyy-Q1 to yyyy-Q4, each from its first month's first day
++# to its last month's last day, made as the period form adds them: a quarter whose name is already a period on the
++# sheet, or whose days overlap one, is left out and the others are still made, each audited as PERIOD_ADDED.
++# A year that is not four digits is refused (400). Answers how many were made.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: build
++build:
++  class: net.officefloor.hq.app.period.BuildQuarterPeriods
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.period.SaveGeneratedPeriods
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.period.AuditGeneratedPeriods
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.period.RespondWithGeneratedPeriods
++  govern: [ transaction ]
