@@ -1,0 +1,331 @@
+diff --git a/src/main/frontend/features/claims/PersonClaims.tsx b/src/main/frontend/features/claims/PersonClaims.tsx
+index ae39179e9..13b90f72f 100644
+--- a/src/main/frontend/features/claims/PersonClaims.tsx
++++ b/src/main/frontend/features/claims/PersonClaims.tsx
+@@ -17,7 +17,7 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
+  *  there is no such rate; an overdue one gains its late charge on top, see `charges`), its due-by (fixed when it was added) and whether it is
+  *  overdue (OPEN and due-by before the sheet's `today`), whether
+  *  it is stated,
+- *  the period its date falls in (none when no period contains it), who opened it, and buttons that
++ *  the period its date falls in (none when no period contains it), its status log (oldest first), who opened it, and buttons that
+  *  change its status (the user who opened a claim cannot settle it; a clerk settling one whose due is
+  *  above the sheet's clerk limit makes it PENDING, which a steward other than its opener approves,
+  *  or any steward rejects with a reason typed beside it), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
+@@ -171,6 +171,9 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+                 Stated <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>
+               </td>
+               <td data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</td>
++              <td>
++                {(c.log ?? []).map((line, i) => <div key={i} data-testid="claim-log-line">{line}</div>)}
++              </td>
+               <td>
+                 {(['open', 'settle', 'void', 'approve'] as const).map((a) => (
+                   <button key={a} type="button" data-testid={`claim-${a}`} disabled={move.isPending}
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index 8dbc697b8..1068e5e01 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -24,11 +24,13 @@ export const isBound = (c: Claim) => c.stated && c.statedDue !== null && c.statu
+  *  A correction (a negative amount) has the number of the SETTLED claim it corrects (null otherwise).
+  *  `roundDate` is the date its live figures round by: its own, or a correction's claim's it corrects.
+  *  `dueBy` (yyyy-MM-dd) is fixed when it was added: its date then plus the terms of its person's
+- *  grade in force on that date (the grade's own, else the sheet's). */
++ *  grade in force on that date (the grade's own, else the sheet's). `log` is its status log, oldest
++ *  first: `<STATUS> by <user> on <date> due=<due>`, the sheet's today and its due at each change. */
+ export type Claim = {
+   id: number; sheetId: string; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
+   number: string | null; settledDue: string | null; openedBy: string | null;
+   stated: boolean; statedDue: string | null; corrects: string | null; roundDate: string; dueBy: string;
++  log: string[];
+ };
+ /** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects. */
+ export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+index 8b49d7549..09b9afa83 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+@@ -28,7 +28,7 @@ public class BulkOpenClaims {
+             @RequestParam(name = "by", required = false) String by,
+             @RequestBody BulkOpenRequest request, ClaimRepository claims, PeriodRepository periods,
+             PersonRepository people, RateRepository rates, SheetRepository sheets,
+-            SettingRepository settings, Audit audit, Out<BulkOpenResult> result) {
++            SettingRepository settings, ClaimLogRepository log, Audit audit, Out<BulkOpenResult> result) {
+         String id = sheetId.trim();
+         String user = by == null ? "" : by;
+         Set<Long> selected = new HashSet<>(request == null || request.claimIds() == null
+@@ -57,6 +57,7 @@ public class BulkOpenClaims {
+             claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
+             claim.setOpenedBy(user);
+             claims.update(claim);
++            log.record(claim, user);
+             opened++;
+             Person person = everyone.stream().filter((p) -> p.getId() == claim.getPersonId())
+                     .findFirst().orElse(null);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index e62991fc9..f28b077df 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import com.fasterxml.jackson.annotation.JsonIgnore;
++import java.util.List;
+ 
+ /** A claim of a person: an amount (two decimals, as text), a date (yyyy-MM-dd), a note and a status
+  *  (a {@link ClaimStatus} name), and its number on the sheet (given when opened and kept when voided;
+@@ -24,6 +25,7 @@ public class Claim {
+     private String corrects;
+     private String roundDate;
+     private String dueBy;
++    private List<String> log = List.of();
+ 
+     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
+             String status, String number, String settledDue, String openedBy) {
+@@ -80,6 +82,10 @@ public class Claim {
+     public String getDueBy() { return dueBy; }
+     public void setDueBy(String dueBy) { this.dueBy = dueBy; }
+ 
++    /** Its status log, oldest first (see {@link ClaimLogRepository}). */
++    public List<String> getLog() { return log; }
++    public void setLog(List<String> log) { this.log = log; }
++
+     public boolean isStated() { return stated; }
+     public String getStatedDue() { return statedDue; }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java
+new file mode 100644
+index 000000000..be074892f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java
+@@ -0,0 +1,73 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.Rate;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** Each claim's status log: one line per status it has had, oldest first, as
++ *  {@code <STATUS> by <user> on <date> due=<due>} (the sheet's today and the due it showed then; n/a: none). */
++@Repository
++public class ClaimLogRepository {
++
++    private final JdbcTemplate jdbc;
++    private final PersonRepository people;
++    private final RateRepository rates;
++    private final SettingRepository settings;
++    private final SheetRepository sheets;
++
++    public ClaimLogRepository(JdbcTemplate jdbc, PersonRepository people, RateRepository rates,
++            SettingRepository settings, SheetRepository sheets) {
++        this.jdbc = jdbc;
++        this.people = people;
++        this.rates = rates;
++        this.settings = settings;
++        this.sheets = sheets;
++    }
++
++    /** Log the claim's status now: by the user, on the sheet's today, with the due it shows now. */
++    public void record(Claim claim, String by) {
++        String sheetId = claim.getSheetId();
++        LocalDate today = sheets.today(sheetId);
++        Person person = people.find(sheetId, claim.getPersonId());
++        Rate rate = person == null ? null : rates.find(sheetId, person.gradeOn(claim.getDate()),
++                LocalDate.parse(claim.getDate()));
++        Dues.Late late = settings.late(sheetId, today);
++        String due = Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
++                settings.floor(sheetId), late.rounding(claim.getRoundDate())), late);
++        jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, on_date, due) VALUES (?, ?, ?, ?, ?, ?)",
++                sheetId, claim.getId(), claim.getStatus(), by == null ? "" : by, today,
++                due == null ? null : new BigDecimal(due));
++    }
++
++    /** The sheet's log lines by claim id, oldest first. */
++    public Map<Long, List<String>> linesOf(String sheetId) {
++        Map<Long, List<String>> lines = new HashMap<>();
++        jdbc.query("SELECT claim_id, status, by_user, on_date, due FROM claim_log WHERE sheet_id = ? ORDER BY id",
++                (rs) -> {
++                    BigDecimal due = rs.getBigDecimal("due");
++                    lines.computeIfAbsent(rs.getLong("claim_id"), (k) -> new ArrayList<>())
++                            .add(rs.getString("status") + " by " + rs.getString("by_user") + " on "
++                                    + rs.getObject("on_date", LocalDate.class) + " due="
++                                    + (due == null ? "n/a" : due.setScale(2).toPlainString()));
++                }, sheetId);
++        return lines;
++    }
++
++    /** Give each claim its log lines. */
++    public List<Claim> withLogs(String sheetId, List<Claim> claims) {
++        Map<Long, List<String>> lines = linesOf(sheetId);
++        for (Claim c : claims) c.setLog(lines.getOrDefault(c.getId(), List.of()));
++        return claims;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ListClaims.java b/src/main/java/net/officefloor/hq/app/claim/ListClaims.java
+index 53395cb16..b4644fb9e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ListClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ListClaims.java
+@@ -5,8 +5,9 @@ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class ListClaims {
+-    public void list(@PathVariable("sheetId") String sheetId, ClaimRepository claims,
++    public void list(@PathVariable("sheetId") String sheetId, ClaimRepository claims, ClaimLogRepository log,
+             ObjectResponse<List<Claim>> response) {
+-        response.send(claims.list(sheetId.trim()));
++        String id = sheetId.trim();
++        response.send(log.withLogs(id, claims.list(id)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/LogClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/LogClaimStatus.java
+new file mode 100644
+index 000000000..f955accff
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/LogClaimStatus.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Write step after the claim is saved: logs the status it now has (see {@link ClaimLogRepository}). */
++public class LogClaimStatus {
++    public void log(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
++            ClaimLogRepository log) {
++        log.record(claim, by);
++    }
++}
+diff --git a/src/main/resources/db/migration/V25__claim_log.sql b/src/main/resources/db/migration/V25__claim_log.sql
+new file mode 100644
+index 000000000..27e0d50f7
+--- /dev/null
++++ b/src/main/resources/db/migration/V25__claim_log.sql
+@@ -0,0 +1,13 @@
++-- A claim's status log: one line per status it has had (DRAFT when it was added, then each change),
++-- with who made the change, the sheet's today then, and the claim's due as computed at that moment
++-- (none: n/a). Listed oldest first (by id). Claims added before the log have no lines.
++CREATE TABLE claim_log (
++    id       BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id VARCHAR(200)   NOT NULL REFERENCES sheet (id),
++    claim_id BIGINT         NOT NULL REFERENCES claim (id),
++    status   VARCHAR(10)    NOT NULL,
++    by_user  VARCHAR(200)   NOT NULL,
++    on_date  DATE           NOT NULL,
++    due      DECIMAL(19, 2)
++);
++CREATE INDEX claim_log_sheet ON claim_log (sheet_id, claim_id, id);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/approve.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/approve.POST.yml
+index e2f8470bf..e7f53a492 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/approve.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/approve.POST.yml
+@@ -15,6 +15,10 @@ move:
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+   govern: [ transaction ]
++  next: log
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
+   next: audit
+ audit:
+   class: net.officefloor.hq.app.claim.RecordClaimApproved
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/open.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/open.POST.yml
+index 837636ce0..f844dff58 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/open.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/open.POST.yml
+@@ -15,6 +15,10 @@ move:
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+   govern: [ transaction ]
++  next: log
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
+   next: audit
+ audit:
+   class: net.officefloor.hq.app.claim.RecordClaimStatus
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reject.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reject.POST.yml
+index ee3bccf7d..e268b5a19 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reject.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reject.POST.yml
+@@ -15,6 +15,10 @@ move:
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+   govern: [ transaction ]
++  next: log
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
+   next: audit
+ audit:
+   class: net.officefloor.hq.app.claim.RecordClaimRejected
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle.POST.yml
+index 7c4faa506..07a17c0ae 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle.POST.yml
+@@ -15,6 +15,10 @@ move:
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+   govern: [ transaction ]
++  next: log
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
+   next: audit
+ audit:
+   class: net.officefloor.hq.app.claim.RecordClaimStatus
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/void.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/void.POST.yml
+index 41c9ab852..e7cecfecb 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/void.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/void.POST.yml
+@@ -15,6 +15,10 @@ move:
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+   govern: [ transaction ]
++  next: log
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
+   next: audit
+ audit:
+   class: net.officefloor.hq.app.claim.RecordClaimStatus
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 618d04b3b..8002a81da 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -15,6 +15,10 @@ load:
+ create:
+   class: net.officefloor.hq.app.claim.AddClaim
+   govern: [ transaction ]
++  next: log
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
+   next: audit
+ audit:
+   class: net.officefloor.hq.app.claim.RecordClaimAdded
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+index daf934286..2261cf178 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+@@ -19,6 +19,10 @@ claimBefore:
+ create:
+   class: net.officefloor.hq.app.claim.AddClaim
+   govern: [ transaction ]
++  next: log
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
+   next: audit
+ audit:
+   class: net.officefloor.hq.app.claim.RecordClaimAdded
