@@ -26,6 +26,7 @@ export function PersonInlineGrade({ person }: { person: Person }) {
         grade: g,
         gradeFrom: '',
         terms: person.terms == null ? '' : String(person.terms),
+        termsFrom: '',
         contact: person.contact ?? '',
         tags: person.tags.join(','),
         version: person.version,

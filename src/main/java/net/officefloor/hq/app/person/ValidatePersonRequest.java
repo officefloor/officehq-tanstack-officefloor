@@ -36,10 +36,18 @@ public class ValidatePersonRequest {
         if (!terms.isEmpty() && !terms.matches("\\d{1,5}")) {
             throw new InvalidPersonException("The terms must be a whole number of days, 0 or more, or blank.");
         }
+        String termsFrom = request.termsFrom() == null ? "" : request.termsFrom().trim();
+        if (!termsFrom.isEmpty()) {
+            try {
+                LocalDate.parse(termsFrom);
+            } catch (DateTimeParseException e) {
+                throw new InvalidPersonException("The terms' from-date must be yyyy-mm-dd.");
+            }
+        }
         String contact = request.contact() == null ? "" : request.contact().strip().toLowerCase(Locale.ROOT);
         String tags = request.tags() == null ? null : Claim.tags(request.tags());
         body.set(new PersonRequest(name, grade, from, request.version(),
                 terms.isEmpty() ? "" : String.valueOf(Integer.parseInt(terms)), contact,
-                request.tags() == null ? null : tags == null ? "" : tags));
+                request.tags() == null ? null : tags == null ? "" : tags, termsFrom));
     }
 }

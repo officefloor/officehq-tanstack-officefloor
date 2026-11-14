@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.setting.DatedSettings;
 
@@ -15,13 +16,22 @@ import net.officefloor.hq.app.setting.DatedSettings;
  * the person's holds, oldest first: their open claims dated within one, and not bound by a statement, count in no
  * live total. {@code grades} are the grades
  * recorded for the person, each from its from-date; {@code grade} is the one in force on the sheet's today.
- * {@code terms} are the person's own terms in days, or null when they have none. {@code contact} is the person's
- * contact, trimmed and lower-cased, or null when they have none. {@code pastRetirements} are the retirements they
- * were unretired from, oldest first.
+ * {@code termsFrom} are the person's own terms recorded, each from its from-date (one from the beginning of time);
+ * {@code terms} are those in force on the sheet's today, in days, or null when they have none then. {@code contact}
+ * is the person's contact, trimmed and lower-cased, or null when they have none. {@code pastRetirements} are the
+ * retirements they were unretired from, oldest first.
  */
 public record Person(Long id, String sheetId, String name, String grade, int version, int statementCount,
         String statedTotal, LocalDate statementDate, LocalDate retiredFrom, List<Hold> holds, List<GradeFrom> grades,
-        Integer terms, String contact, List<PastRetirement> pastRetirements) {
+        Integer terms, String contact, List<PastRetirement> pastRetirements, List<TermsFrom> termsFrom) {
+
+    /** A person whose only terms of their own apply from the beginning of time. */
+    public Person(Long id, String sheetId, String name, String grade, int version, int statementCount,
+            String statedTotal, LocalDate statementDate, LocalDate retiredFrom, List<Hold> holds,
+            List<GradeFrom> grades, Integer terms, String contact, List<PastRetirement> pastRetirements) {
+        this(id, sheetId, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, holds,
+                grades, terms, contact, pastRetirements, List.of(new TermsFrom(terms, null)));
+    }
 
     /** A person never unretired. */
     public Person(Long id, String sheetId, String name, String grade, int version, int statementCount,
@@ -68,27 +78,62 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
     /** The same person with another name. */
     public Person withName(String nextName) {
         return new Person(id, sheetId, nextName, grade, version, statementCount, statedTotal, statementDate,
-                retiredFrom, holds, grades, terms, contact, pastRetirements);
+                retiredFrom, holds, grades, terms, contact, pastRetirements, termsFrom);
     }
 
     /** The same person with this contact (null: none). */
     public Person withContact(String nextContact) {
         return new Person(id, sheetId, name, grade, version, statementCount, statedTotal, statementDate,
-                retiredFrom, holds, grades, terms, nextContact, pastRetirements);
+                retiredFrom, holds, grades, terms, nextContact, pastRetirements, termsFrom);
     }
 
-    /** The same person with these terms of their own (null: none). */
+    /** The same person with these terms of their own (null: none) from the beginning of time, and no others. */
     public Person withTerms(Integer nextTerms) {
         return new Person(id, sheetId, name, grade, version, statementCount, statedTotal, statementDate,
                 retiredFrom, holds, grades, nextTerms, contact, pastRetirements);
     }
 
     /**
-     * The terms a claim of the person's dated on the date is due by: their own, else those of their grade in force
-     * on the date, else the sheet's in force on it.
+     * The same person with these terms of their own (null: none) recorded from the date (null: the beginning of
+     * time), replacing any recorded from that same date and keeping the others; {@code terms} become those in force
+     * on {@code today}.
+     */
+    public Person withTerms(Integer nextTerms, LocalDate from, LocalDate today) {
+        List<TermsFrom> next = new ArrayList<>();
+        for (TermsFrom t : termsFrom) {
+            if (!Objects.equals(t.from(), from)) {
+                next.add(t);
+            }
+        }
+        next.add(new TermsFrom(nextTerms, from));
+        next.sort(Comparator.comparing(TermsFrom::from, Comparator.nullsFirst(Comparator.naturalOrder())));
+        return new Person(id, sheetId, name, grade, version, statementCount, statedTotal, statementDate,
+                retiredFrom, holds, grades, ownTermsOn(next, today), contact, pastRetirements, List.copyOf(next));
+    }
+
+    /** The person's own terms in force on the date: those recorded with the latest from-date on or before it. */
+    public Integer ownTermsOn(LocalDate date) {
+        return ownTermsOn(termsFrom, date);
+    }
+
+    static Integer ownTermsOn(List<TermsFrom> recorded, LocalDate date) {
+        return recorded.stream().filter((t) -> t.from() == null || !t.from().isAfter(date))
+                .max(Comparator.comparing(TermsFrom::from, Comparator.nullsFirst(Comparator.naturalOrder())))
+                .map(TermsFrom::terms).orElse(null);
+    }
+
+    /** The terms of their own the person had from the beginning of time (null: none). */
+    public Integer firstTerms() {
+        return termsFrom.stream().filter((t) -> t.from() == null).findFirst().map(TermsFrom::terms).orElse(null);
+    }
+
+    /**
+     * The terms a claim of the person's dated on the date is due by: their own in force on the date, else those of
+     * their grade in force on the date, else the sheet's in force on it.
      */
     public int termsOn(DatedSettings settings, LocalDate date) {
-        return terms != null ? terms : settings.termsFor(gradeOn(date), date);
+        Integer own = ownTermsOn(date);
+        return own != null ? own : settings.termsFor(gradeOn(date), date);
     }
 
     /**
@@ -104,7 +149,8 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
         }
         next.add(new GradeFrom(nextGrade, from));
         return new Person(id, sheetId, nextName, gradeOn(next, today, nextGrade), version, statementCount,
-                statedTotal, statementDate, retiredFrom, holds, List.copyOf(next), terms, contact, pastRetirements);
+                statedTotal, statementDate, retiredFrom, holds, List.copyOf(next), terms, contact, pastRetirements,
+                termsFrom);
     }
 
     /** Whether the person has any hold, whatever its dates. */

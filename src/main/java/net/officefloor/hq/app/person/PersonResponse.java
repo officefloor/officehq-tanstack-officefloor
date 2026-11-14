@@ -6,7 +6,8 @@ import java.util.List;
  * A person as the screen shows them; the last statement's due-total and date are null before the first, and
  * {@code retiredFrom} is null while they are not retired; {@code held} is whether they have any hold, {@code holds}
  * each hold, oldest first. {@code grade} is the grade in force on the sheet's today; {@code grades} every grade
- * recorded, each from its from-date. {@code terms} are the person's own terms in days, null when they have none;
+ * recorded, each from its from-date. {@code terms} are the person's own terms in days in force on the sheet's today,
+ * null when they have none then;
  * {@code contact} their contact, null when they have none. {@code clashing} is whether another sheet of the sheet's
  * tree uses their name or any of their aliases as a name or alias. {@code origin} is the sheet they were transferred
  * from, null when they were not transferred here. {@code pastRetirements} are the retirements they were unretired

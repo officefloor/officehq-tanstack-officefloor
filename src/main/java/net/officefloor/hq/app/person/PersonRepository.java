@@ -81,7 +81,7 @@ public class PersonRepository {
         if (person.id() != null) {
             int n = jdbc.update(
                     "UPDATE person SET name = ?, terms = ?, contact = ?, version = version + 1 WHERE id = ? AND sheet_id = ? AND version = ?",
-                    person.name(), person.terms(), person.contact(), person.id(), person.sheetId(), person.version());
+                    person.name(), person.firstTerms(), person.contact(), person.id(), person.sheetId(), person.version());
             if (n == 0) {
                 return null;
             }
@@ -89,9 +89,11 @@ public class PersonRepository {
             for (GradeFrom g : person.grades()) {
                 insertGrade(person.sheetId(), person.id(), g);
             }
+            insertTerms(person.sheetId(), person.id(), person.termsFrom());
             return new Person(person.id(), person.sheetId(), person.name(), person.grade(), person.version() + 1,
                     person.statementCount(), person.statedTotal(), person.statementDate(), person.retiredFrom(),
-                    person.holds(), person.grades(), person.terms(), person.contact(), person.pastRetirements());
+                    person.holds(), person.grades(), person.terms(), person.contact(), person.pastRetirements(),
+                    person.termsFrom());
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
@@ -101,15 +103,27 @@ public class PersonRepository {
             ps.setString(1, person.sheetId());
             ps.setString(2, person.name());
             ps.setString(3, person.grade());
-            ps.setObject(4, person.terms());
+            ps.setObject(4, person.firstTerms());
             ps.setString(5, person.contact());
             ps.setString(6, person.sheetId());
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
         insertGrade(person.sheetId(), id, new GradeFrom(person.grade(), null));
-        return new Person(id, person.sheetId(), person.name(), person.grade(), 0, 0, null, null, null, List.of())
-                .withTerms(person.terms()).withContact(person.contact());
+        insertTerms(person.sheetId(), id, person.termsFrom());
+        return new Person(id, person.sheetId(), person.name(), person.grade(), 0, 0, null, null, null, List.of(),
+                person.grades(), person.terms(), person.contact(), List.of(), person.termsFrom());
+    }
+
+    /** Replace the person's terms recorded from a from-date with these (those from the beginning of time skipped). */
+    private void insertTerms(String sheetId, long personId, List<TermsFrom> terms) {
+        jdbc.update("DELETE FROM person_terms WHERE person_id = ? AND sheet_id = ?", personId, sheetId);
+        for (TermsFrom t : terms) {
+            if (t.from() != null) {
+                jdbc.update("INSERT INTO person_terms (sheet_id, person_id, terms, from_date) VALUES (?, ?, ?, ?)",
+                        sheetId, personId, t.terms(), Date.valueOf(t.from()));
+            }
+        }
     }
 
     private void insertGrade(String sheetId, long personId, GradeFrom grade) {
@@ -130,6 +144,11 @@ public class PersonRepository {
             grades.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())
                     .add(new GradeFrom(rs.getString("grade"), rs.getObject("from_date", LocalDate.class)));
         }, sheetId);
+        Map<Long, List<TermsFrom>> terms = new HashMap<>();
+        jdbc.query("SELECT person_id, terms, from_date FROM person_terms WHERE sheet_id = ? ORDER BY from_date", (rs) -> {
+            terms.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())
+                    .add(new TermsFrom(rs.getObject("terms", Integer.class), rs.getObject("from_date", LocalDate.class)));
+        }, sheetId);
         Map<Long, List<Hold>> holds = new HashMap<>();
         jdbc.query("SELECT person_id, from_date, to_date FROM person_hold WHERE sheet_id = ? ORDER BY id", (rs) -> {
             holds.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(new Hold(
@@ -146,10 +165,14 @@ public class PersonRepository {
         List<Person> people = new ArrayList<>();
         for (Person p : found) {
             List<GradeFrom> own = grades.getOrDefault(p.id(), List.of(new GradeFrom(p.grade(), null)));
+            List<TermsFrom> ownTerms = new ArrayList<>();
+            ownTerms.add(new TermsFrom(p.terms(), null));
+            ownTerms.addAll(terms.getOrDefault(p.id(), List.of()));
             people.add(new Person(p.id(), p.sheetId(), p.name(), Person.gradeOn(own, on, p.grade()), p.version(),
                     p.statementCount(), p.statedTotal(), p.statementDate(), p.retiredFrom(),
-                    List.copyOf(holds.getOrDefault(p.id(), List.of())), List.copyOf(own), p.terms(), p.contact(),
-                    List.copyOf(retirements.getOrDefault(p.id(), List.of()))));
+                    List.copyOf(holds.getOrDefault(p.id(), List.of())), List.copyOf(own),
+                    Person.ownTermsOn(ownTerms, on), p.contact(),
+                    List.copyOf(retirements.getOrDefault(p.id(), List.of())), List.copyOf(ownTerms)));
         }
         return people;
     }
@@ -289,6 +312,7 @@ public class PersonRepository {
 
         mergeStatements(sheetId, gone, kept);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
@@ -423,6 +447,8 @@ public class PersonRepository {
         }
         jdbc.update("UPDATE person_grade SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to, id,
                 person.sheetId(), person.id());
+        jdbc.update("UPDATE person_terms SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to, id,
+                person.sheetId(), person.id());
         jdbc.update("UPDATE person_alias SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to, id,
                 person.sheetId(), person.id());
         jdbc.update("UPDATE person_retirement SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to,
@@ -450,6 +476,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);

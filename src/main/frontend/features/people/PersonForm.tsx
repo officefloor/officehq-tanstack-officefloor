@@ -8,7 +8,7 @@ import { tagsKey } from '../tags/tags';
 import { GRADES, peopleKey, useEditingPerson, usePeople } from './people';
 import type { Person, PersonInput } from './people';
 
-const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '', tags: '' };
+const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFrom: '', contact: '', tags: '' };
 
 // The form's values for a person as stored.
 const fill = (p: Person): PersonInput => ({
@@ -16,6 +16,7 @@ const fill = (p: Person): PersonInput => ({
   grade: p.grade,
   gradeFrom: '',
   terms: p.terms == null ? '' : String(p.terms),
+  termsFrom: '',
   contact: p.contact ?? '',
   tags: p.tags.join(', '),
 });
@@ -154,6 +155,13 @@ export function PersonForm() {
         title="The person's own terms in days (blank: none)"
         value={form.terms}
         onChange={(e) => change({ terms: e.target.value })}
+      />
+      <input
+        data-testid="person-form-terms-from"
+        type="date"
+        title="Terms from (blank: from the beginning of time)"
+        value={form.termsFrom}
+        onChange={(e) => change({ termsFrom: e.target.value })}
       />
       <input
         data-testid="person-form-contact"

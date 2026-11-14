@@ -39,7 +39,8 @@ export const liveHolds = (p: { holds: Hold[]; retiredFrom: string | null }, toda
  * sheet's today when it was taken, both null before the first. `retired` is whether a retirement date is
  * set (whatever the date), `retiredFrom` that date, null while they are not retired. `held` is whether
  * they have any hold, `holds` each hold, oldest first: their open claims dated within one, and not bound by a
- * statement, count in no live total. `terms` is the person's own terms in days, null when they have none;
+ * statement, count in no live total. `terms` is the person's own terms in days in force on the sheet's
+ * today, null when they have none then;
  * `contact` their contact (trimmed, lower-cased), null when they have none. `clashing` is whether another sheet of
  * the sheet's tree (its ancestors and descendants) uses their name or any of their aliases as a name or alias.
  * `origin` is the sheet they were transferred from, null when they were not transferred here. `pastRetirements` are
@@ -71,9 +72,18 @@ export type Person = {
 
 /**
  * The fields the person form submits; a blank `gradeFrom` is the sheet's today, blank `terms` none of their own,
- * blank `contact` none, `tags` comma separated (blank: none).
+ * `termsFrom` the date the terms are recorded from (blank: the beginning of time), blank `contact` none, `tags`
+ * comma separated (blank: none).
  */
-export type PersonInput = { name: string; grade: string; gradeFrom: string; terms: string; contact: string; tags: string };
+export type PersonInput = {
+  name: string;
+  grade: string;
+  gradeFrom: string;
+  terms: string;
+  termsFrom: string;
+  contact: string;
+  tags: string;
+};
 
 /** The query key for the sheet's people; under sheetKey, so re-loading the sheet re-reads them. */
 export const peopleKey = (sheet: string) => [...sheetKey(sheet), 'people'] as const;

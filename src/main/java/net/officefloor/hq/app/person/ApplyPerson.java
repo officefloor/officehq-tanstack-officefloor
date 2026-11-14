@@ -9,8 +9,10 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Applies the edit to the person as loaded; refused when the editor loaded an older version. The form's grade
  * is recorded from its from-date (blank: the sheet's today), keeping the grades already recorded — except that a
- * grade left as the row showed it, with the from-date blank, records nothing. The person's own terms become the
- * form's (blank: none), as does their contact; whether either changed is published for the audit.
+ * grade left as the row showed it, with the from-date blank, records nothing. The person's own terms are recorded
+ * likewise from the terms' from-date (blank: from the beginning of time; blank terms: none), keeping those recorded
+ * from other dates — except that terms left as the row showed them, with the from-date blank, record nothing. Their
+ * contact becomes the form's; whether the terms recorded or the contact changed is published for the audit.
  */
 public class ApplyPerson {
     public void apply(@Val PersonRequest request, @Val Person person, SheetRepository sheets, Out<Person> updated,
@@ -18,18 +20,20 @@ public class ApplyPerson {
         if (request.version() != null && request.version() != person.version()) {
             throw new StalePersonException(person.name());
         }
+        LocalDate today = sheets.today(person.sheetId());
         Integer terms = request.termsDays();
+        LocalDate termsFrom = request.termsFromDate();
+        Person termed = termsFrom == null && Objects.equals(terms, person.terms()) ? person
+                : person.withTerms(terms, termsFrom, today);
         String contact = request.contactOrNull();
-        termsChange.set(new PersonTermsChange(!Objects.equals(terms, person.terms()),
+        termsChange.set(new PersonTermsChange(!termed.termsFrom().equals(person.termsFrom()),
                 !Objects.equals(contact, person.contact())));
         boolean blank = request.gradeFrom() == null || request.gradeFrom().isEmpty();
         if (blank && request.grade().equals(person.grade())) {
-            updated.set(person.withName(request.name()).withTerms(terms).withContact(contact));
+            updated.set(termed.withName(request.name()).withContact(contact));
             return;
         }
-        LocalDate today = sheets.today(person.sheetId());
         LocalDate from = blank ? today : LocalDate.parse(request.gradeFrom());
-        updated.set(person.withNameAndGrade(request.name(), request.grade(), from, today).withTerms(terms)
-                .withContact(contact));
+        updated.set(termed.withNameAndGrade(request.name(), request.grade(), from, today).withContact(contact));
     }
 }

@@ -7,7 +7,11 @@ import net.officefloor.plugin.variable.Val;
 
 public class BuildPerson {
     public void build(@Val PersonRequest request, @Val Sheet sheet, Out<Person> person) {
-        person.set(new Person(null, sheet.id(), request.name(), request.grade(), 0, 0, null, null, null, List.of())
-                .withTerms(request.termsDays()).withContact(request.contactOrNull()));
+        Person built = new Person(null, sheet.id(), request.name(), request.grade(), 0, 0, null, null, null, List.of())
+                .withContact(request.contactOrNull());
+        // terms with a from-date are recorded from it, none of their own before it
+        person.set(request.termsFromDate() == null ? built.withTerms(request.termsDays())
+                : built.withTerms(request.termsDays(), request.termsFromDate(),
+                        sheet.today() == null ? java.time.LocalDate.now() : sheet.today()));
     }
 }

@@ -29,8 +29,8 @@ public class SheetCloner {
             "grade_terms", "rate", "rate_version", "holiday", "void_reason", "claim_template", "claim_tag");
 
     /** The tables of a person's own entries, copied under the clone's id and the person's id there. */
-    private static final List<String> PERSON_TABLES = List.of("person_grade", "person_hold", "person_alias",
-            "person_retirement");
+    private static final List<String> PERSON_TABLES = List.of("person_grade", "person_terms", "person_hold",
+            "person_alias", "person_retirement");
 
     private final JdbcTemplate jdbc;
 
@@ -89,7 +89,8 @@ public class SheetCloner {
             ids.put(old, id);
             for (String table : PERSON_TABLES) {
                 RowCopy.copyAll(jdbc, table, "sheet_id = ? AND person_id = ?", List.of(from, old),
-                        table.equals("person_grade") ? null : "id", Map.of("sheet_id", to, "person_id", id));
+                        table.equals("person_grade") || table.equals("person_terms") ? null : "id",
+                        Map.of("sheet_id", to, "person_id", id));
             }
         }
         for (Map<String, Object> link : jdbc.queryForList(
