@@ -74,7 +74,7 @@ public class TakeStatement {
                 continue;
             }
             boolean fixed = claim.keepsFigure();
-            BigDecimal rate = Rate.inForce(sheetRates, thenPerson.gradeOn(claim.date()), claim.date());
+            BigDecimal rate = Rate.inForce(sheetRates, thenPerson.gradeOn(claim.date()), claim);
             BigDecimal figure = claim.figure(rate, rounding);
             figures.put(claim.id(), figure);
             counted++;

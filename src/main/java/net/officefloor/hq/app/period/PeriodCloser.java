@@ -75,7 +75,7 @@ public class PeriodCloser {
             if (person == null || !period.counts(claim, sheetLogs.getOrDefault(claim.id(), List.of()), person, today)) {
                 continue;
             }
-            BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()),
+            BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim),
                     dated.floorOn(claim.date()), dated.lateCharge(today, person), rounding);
             if (figure != null) {
                 total = total.add(figure);

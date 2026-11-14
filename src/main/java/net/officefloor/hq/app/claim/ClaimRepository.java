@@ -21,7 +21,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, added";
 
     private final JdbcTemplate jdbc;
 
@@ -75,9 +75,11 @@ public class ClaimRepository {
             ps.setInt(12, fixedTerms);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
+        long id = keys.getKey().longValue();
+        return new Claim(id, claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                 claim.note(), claim.status(), claim.number(), claim.due(), claim.openedBy(), false, null,
-                claim.corrects(), claim.dueBy(), null, 0, claim.splitFrom());
+                claim.corrects(), claim.dueBy(), null, 0, claim.splitFrom(),
+                jdbc.queryForObject("SELECT added FROM claim WHERE id = ?", Long.class, id));
     }
 
     /**
@@ -358,6 +360,6 @@ public class ClaimRepository {
                 rs.getBigDecimal("due"), rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
                 rs.getString("corrects"), rs.getDate("due_by").toLocalDate(),
                 rs.getDate("deferred_until") == null ? null : rs.getDate("deferred_until").toLocalDate(),
-                rs.getInt("proofs"), rs.getString("split_from"));
+                rs.getInt("proofs"), rs.getString("split_from"), rs.getLong("added"));
     }
 }

@@ -21,11 +21,24 @@ import java.util.stream.Collectors;
  * once rejected (back to OPEN) when the statement included it. {@code deferredUntil} is the date an OPEN claim is
  * deferred until (null: never deferred): while the sheet's today is before it the claim is {@link #deferred deferred}.
  * {@code proofs} is how many proofs the claim has been given. {@code splitFrom} is the number of the claim it was split
- * off (null: not split off another claim).
+ * off (null: not split off another claim). {@code added} is when the claim was added to the sheet, on the sequence rates
+ * are saved on (see {@link net.officefloor.hq.app.rate.Rate#appliesTo}): a forward-only rate applies only to claims added
+ * after it was saved; {@link #NEWEST} for a claim not yet stored.
  */
 public record Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
-        String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs, String splitFrom) {
+        String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs, String splitFrom, long added) {
+
+    /** The {@code added} of a claim not yet stored: added after every rate. */
+    public static final long NEWEST = Long.MAX_VALUE;
+
+    /** A claim not yet stored. */
+    public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+            ClaimStatus status, String number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
+            String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs, String splitFrom) {
+        this(id, sheetId, personId, amount, date, note, status, number, due, openedBy, stated, statedDue, corrects,
+                dueBy, deferredUntil, proofs, splitFrom, NEWEST);
+    }
 
     /** A claim not split off another claim. */
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
@@ -54,13 +67,13 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
     /** The same claim with another status, number, fixed due and opener. */
     public Claim withStatus(ClaimStatus next, String nextNumber, BigDecimal nextDue, String nextOpenedBy) {
         return new Claim(id, sheetId, personId, amount, date, note, next, nextNumber, nextDue, nextOpenedBy, stated,
-                statedDue, corrects, dueBy, deferredUntil, proofs, splitFrom);
+                statedDue, corrects, dueBy, deferredUntil, proofs, splitFrom, added);
     }
 
     /** The same claim as an open claim bound by no statement: live, with no fixed due. */
     public Claim asOpenUnbound() {
         return new Claim(id, sheetId, personId, amount, date, note, ClaimStatus.OPEN, number, null, openedBy, false,
-                null, corrects, dueBy, deferredUntil, proofs, splitFrom);
+                null, corrects, dueBy, deferredUntil, proofs, splitFrom, added);
     }
 
     /**
@@ -69,7 +82,7 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
      */
     public Claim splitKeeping(BigDecimal rest) {
         return new Claim(id, sheetId, personId, rest, date, note, status, number, due, openedBy, false, null,
-                corrects, dueBy, deferredUntil, proofs, splitFrom);
+                corrects, dueBy, deferredUntil, proofs, splitFrom, added);
     }
 
     /** Whether the claim is a correction: a negative amount naming the settled claim it corrects. */
@@ -98,19 +111,19 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
     /** The same claim deferred until the date. */
     public Claim deferTo(LocalDate until) {
         return new Claim(id, sheetId, personId, amount, date, note, status, number, due, openedBy, stated, statedDue,
-                corrects, dueBy, until, proofs, splitFrom);
+                corrects, dueBy, until, proofs, splitFrom, added);
     }
 
     /** The same claim on another date with the given number, keeping its due-by and any statement figure. */
     public Claim redateTo(LocalDate nextDate, String nextNumber) {
         return new Claim(id, sheetId, personId, amount, nextDate, note, status, nextNumber, due, openedBy, stated,
-                statedDue, corrects, dueBy, deferredUntil, proofs, splitFrom);
+                statedDue, corrects, dueBy, deferredUntil, proofs, splitFrom, added);
     }
 
     /** The same claim with one more proof. */
     public Claim withProof() {
         return new Claim(id, sheetId, personId, amount, date, note, status, number, due, openedBy, stated, statedDue,
-                corrects, dueBy, deferredUntil, proofs + 1, splitFrom);
+                corrects, dueBy, deferredUntil, proofs + 1, splitFrom, added);
     }
 
     /** Whether a proof can be added to the claim: it is neither SETTLED, VOID nor DELETED. */

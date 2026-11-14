@@ -25,7 +25,7 @@ public final class ClaimDueNow {
             SettingRepository settings, ClaimRepository claims) {
         Person person = people.find(claim.sheetId(), claim.personId());
         BigDecimal rate = person == null ? null
-                : Rate.inForce(rates.findAll(claim.sheetId()), person.gradeOn(claim.date()), claim.date());
+                : Rate.inForce(rates.findAll(claim.sheetId()), person.gradeOn(claim.date()), claim);
         LocalDate today = sheets.today(claim.sheetId());
         DatedSettings dated = settings.dated(claim.sheetId());
         return claim.due(rate, dated.floorOn(claim.date()), dated.lateCharge(today, person),

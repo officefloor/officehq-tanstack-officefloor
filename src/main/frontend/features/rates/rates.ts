@@ -15,8 +15,21 @@ import type { DueRules } from '../settings/settings';
  * to-date (null: no end), whichever comes first. `sheet` is the sheet it is set on: the sheet's own rates come
  * first, then those it inherits from its parent, its parent's parent and so on (up to three levels up). A rate is kept
  * as versions, one per time it was set for its grade and from-date: this is the newest (in force), `version` how many.
+ * A rate saved with a from-date on or after the sheet's today is `forward`-only: it applies only to claims added after
+ * it was `saved` (a claim's `added` is on the same sequence); a claim added before keeps the `earlier` version that
+ * applied to it (null: none).
  */
-export type Rate = { grade: string; rate: string; from: string | null; to: string | null; sheet: string; version: number };
+export type Rate = {
+  grade: string;
+  rate: string;
+  from: string | null;
+  to: string | null;
+  sheet: string;
+  version: number;
+  forward?: boolean;
+  saved?: number;
+  earlier?: Rate | null;
+};
 
 /** The fields the rate form submits; a blank from-date is from the beginning of time, a blank to-date no end. */
 export type RateInput = { grade: string; rate: string; from: string; to: string };
@@ -66,6 +79,18 @@ function ownRateFor(rates: Rate[], grade: string | undefined, date: string): str
   return found?.rate;
 }
 
+/** The newest version of the rate that applies to a claim added at `added`; undefined with none. */
+function versionFor(rate: Rate, added: number): Rate | undefined {
+  let version: Rate | null | undefined = rate;
+  while (version && version.forward && added <= (version.saved ?? 0)) version = version.earlier;
+  return version ?? undefined;
+}
+
+/** The rates as they apply to the claim: each at the newest version that applies to it, those with none left out. */
+export function ratesForClaim(rates: Rate[], claim: Claim): Rate[] {
+  return rates.map((r) => versionFor(r, claim.added ?? Number.MAX_SAFE_INTEGER)).filter((r): r is Rate => !!r);
+}
+
 /** A two-decimal value as whole hundredths, exactly. */
 const hundredths = (value: string) => Math.round(Number(value) * 100);
 
@@ -110,11 +135,13 @@ export function floored(value: string, floor: string): string {
 
 /**
  * A claim's figure: the figure its statement bound it to (not while PENDING), else its amount at the rate in force on its
- * date for the person's grade in force on that date, rounded by the policy date — no floor.
+ * date for the person's grade in force on that date (of the rate versions that apply to it), rounded by the policy
+ * date — no floor.
  */
 function claimFigure(claim: Claim, rates: Rate[], grades: GradeFrom[], rules: DueRules): string {
   if (bound(claim)) return claim.statedDue ?? NA;
-  return due(claim.amount, rateFor(rates, gradeOn(grades, claim.date), claim.date), roundingFor(claim, rules));
+  const rate = rateFor(ratesForClaim(rates, claim), gradeOn(grades, claim.date), claim.date);
+  return due(claim.amount, rate, roundingFor(claim, rules));
 }
 
 /**

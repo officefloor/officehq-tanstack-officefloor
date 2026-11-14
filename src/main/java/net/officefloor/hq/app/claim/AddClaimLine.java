@@ -15,6 +15,6 @@ public class AddClaimLine {
         updated.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), ClaimLineRepository.total(all),
                 claim.date(), claim.note(), claim.status(), claim.number(), claim.due(), claim.openedBy(),
                 claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil(),
-                claim.proofs(), claim.splitFrom()));
+                claim.proofs(), claim.splitFrom(), claim.added()));
     }
 }

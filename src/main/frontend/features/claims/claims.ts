@@ -78,6 +78,8 @@ export type Claim = {
   comments: ClaimComment[];
   batch: number | null;
   lines: ClaimLine[];
+  /** When it was added, on the sequence rates are saved on: a forward-only rate applies only to claims added after it. */
+  added: number;
 };
 
 /** A line of a claim: its label, its quantity (a whole number, at least 1) and its unit amount (two decimals). */
