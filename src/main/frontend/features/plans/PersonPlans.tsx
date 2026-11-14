@@ -8,8 +8,8 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { plansKey, usePlans } from './plans';
 import type { Plan } from './plans';
 
-type PlanFields = { amount: string; start: string; every: string; day: string; end: string };
-const EMPTY: PlanFields = { amount: '', start: '', every: '', day: '', end: '' };
+type PlanFields = { amount: string; start: string; every: string; day: string; end: string; sheet: string };
+const EMPTY: PlanFields = { amount: '', start: '', every: '', day: '', end: '', sheet: '' };
 
 // A plan's paused yes/no and its pause and resume buttons: pausing skips its dates from the sheet's today until it is
 // resumed. The server refuses pausing a paused plan or resuming a running one; the error shows in the plan's row.
@@ -114,7 +114,8 @@ function PlanError({ person, plan }: { person: Person; plan: Plan }) {
 // A person's plans (each its amount, start, interval or day of the month, end, how many claims it has made so far and
 // its next five dates after the sheet's today, whether it is paused, with buttons to pause and resume it, and an entry to change its amount with the
 // changes so far) and the form that adds one: an amount, a start (blank: the sheet's today), every N days or a day of the month (1 to
-// 31), and an end. The server refuses a bad amount, interval or day, both an interval and a day, or an end before the
+// 31), an end, and a descendant sheet to make its claims on (blank: this one). The server refuses a sheet that is not a
+// descendant, a bad amount, interval or day, both an interval and a day, or an end before the
 // start.
 export function PersonPlans({ person }: { person: Person }) {
   const [user] = useCurrentUser();
@@ -135,7 +136,7 @@ export function PersonPlans({ person }: { person: Person }) {
       setFields(EMPTY);
       await queryClient.invalidateQueries({ queryKey: plansKey(sheet) });
     },
-    onError: () => setError('The plan was refused: check its amount, interval or day, and dates.'),
+    onError: () => setError('The plan was refused: check its amount, interval or day, dates and sheet.'),
   });
 
   const change = (key: keyof PlanFields) => (e: { target: { value: string } }) => {
@@ -152,7 +153,7 @@ export function PersonPlans({ person }: { person: Person }) {
     <td>
       {mine.map((p) => (
         <div key={p.id} data-testid={`plan-row-${p.id}`}>
-          {p.amount} from {p.start} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end}, made{' '}
+          {p.amount} from {p.start} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end}{p.sheet ? ` on ${p.sheet}` : ''}, made{' '}
           <span data-testid="plan-generated">{p.generated}</span>, next{' '}
           <span data-testid="plan-next-dates">{p.nextDates}</span>
           <PlanPause person={person} plan={p} />
@@ -165,6 +166,7 @@ export function PersonPlans({ person }: { person: Person }) {
       <input data-testid="plan-form-every" placeholder="every N days" size={4} value={fields.every} onChange={change('every')} />
       <input data-testid="plan-form-day" placeholder="or day of month" size={4} value={fields.day} onChange={change('day')} />
       <input data-testid="plan-form-end" type="date" value={fields.end} onChange={change('end')} />
+      <input data-testid="plan-form-sheet" placeholder="descendant sheet" size={10} value={fields.sheet} onChange={change('sheet')} />
       <button type="button" data-testid="plan-form-submit" disabled={add.isPending} onClick={submit}>
         Add plan
       </button>

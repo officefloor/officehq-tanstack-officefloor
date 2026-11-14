@@ -16,7 +16,8 @@ public class PlanRepository {
     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getDate("start_date").toLocalDate(),
             rs.getObject("every_days", Integer.class), rs.getObject("month_day", Integer.class),
-            rs.getDate("end_date").toLocalDate(), rs.getInt("generated"), List.of(), List.of());
+            rs.getDate("end_date").toLocalDate(), rs.getInt("generated"), List.of(), List.of(),
+            rs.getString("target_sheet_id"));
 
     private final JdbcTemplate jdbc;
 
@@ -64,7 +65,7 @@ public class PlanRepository {
                                 rs.getDate("resumed_on") == null ? null : rs.getDate("resumed_on").toLocalDate()),
                         p.id()), jdbc.query("SELECT changed_on, amount FROM person_plan_change WHERE plan_id = ?"
                                 + " ORDER BY id", (rs, n) -> new PlanChange(rs.getDate("changed_on").toLocalDate(),
-                                        rs.getBigDecimal("amount")), p.id()))).toList();
+                                        rs.getBigDecimal("amount")), p.id()), p.targetSheet())).toList();
     }
 
     /** Saves a new plan; it with its id. */
@@ -72,7 +73,7 @@ public class PlanRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement p = c.prepareStatement("INSERT INTO person_plan (sheet_id, person_id, amount, start_date,"
-                    + " every_days, month_day, end_date) VALUES (?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
+                    + " every_days, month_day, end_date, target_sheet_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
             p.setString(1, plan.sheetId());
             p.setLong(2, plan.personId());
             p.setBigDecimal(3, plan.amount());
@@ -80,11 +81,12 @@ public class PlanRepository {
             p.setObject(5, plan.every(), Types.INTEGER);
             p.setObject(6, plan.day(), Types.INTEGER);
             p.setDate(7, Date.valueOf(plan.end()));
+            p.setString(8, plan.targetSheet());
             return p;
         }, keys);
         long id = keys.getKey().longValue();
         return new Plan(id, plan.sheetId(), plan.personId(), plan.amount(), plan.start(), plan.every(), plan.day(),
-                plan.end(), 0, List.of(), List.of());
+                plan.end(), 0, List.of(), List.of(), plan.targetSheet());
     }
 
     /** The dates the plan has made a claim for. */

@@ -18,6 +18,8 @@ export type Plan = {
   nextDates: string;
   paused: boolean;
   changes: string[];
+  /** The descendant sheet it makes its claims on; blank: this one. */
+  sheet: string;
 };
 
 /** The query key for the sheet's plans; under sheetKey, so re-loading the sheet re-reads them. */

@@ -15,7 +15,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * The person's new plan; refused (400) for an amount the claim form would refuse for a claim that corrects none, an
  * interval that is not a whole number of at least 1, a day of the month that is not a whole number from 1 to 31 (or
- * given with an interval too), a bad date, or an end before the start. A blank start is the
+ * given with an interval too), a bad date, an end before the start, or a sheet that is not one of the sheet's descendants. A blank start is the
  * sheet's today.
  */
 public class BuildPlan {
@@ -59,8 +59,13 @@ public class BuildPlan {
         if (end.isBefore(start)) {
             throw new InvalidPlanException("The end cannot be before the start.");
         }
+        String sheetText = request.sheet() == null ? "" : request.sheet().trim();
+        String target = sheetText.isEmpty() ? null : sheetText;
+        if (target != null && !sheets.descendants(person.sheetId()).contains(target)) {
+            throw new InvalidPlanException("The sheet must be one of this sheet's descendants.");
+        }
         plan.set(new Plan(null, person.sheetId(), person.id(), amount, start, everyDays, monthDay, end,
-                0, java.util.List.of(), java.util.List.of()));
+                0, java.util.List.of(), java.util.List.of(), target));
     }
 
     private static LocalDate date(String text, String what) throws InvalidPlanException {
