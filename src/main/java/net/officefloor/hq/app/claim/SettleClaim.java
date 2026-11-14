@@ -17,15 +17,19 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /** Settles a claim, fixing its due: its amount at its person's grade's rate in force on its date, rounded by the sheet's policy date to
  *  two decimals and at least the sheet's floor (a claim bound by a statement: the figure it was bound to). With no rate the due is not
- *  fixed and stays live. Its late charge on the sheet's today is added and fixed with it. Refused for the user who opened it (four eyes), and for a clerk when the due
- *  is above the sheet's clerk limit (a due that is n/a is within any limit; a steward settles anything). */
+ *  fixed and stays live. Its late charge on the sheet's today is added and fixed with it. Refused for the user who opened it (four eyes), and for a claim
+ *  that is not OPEN. Settled by a clerk when the due is above the sheet's clerk limit (a due that is n/a is within any limit; a steward settles
+ *  anything), it goes to PENDING instead, nothing fixed, until a steward approves or rejects it. */
 public class SettleClaim {
     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
             PersonRepository people, RateRepository rates, PeriodRepository periods,
             RoleRepository roles, SettingRepository settings, SheetRepository sheets)
-            throws ClaimStatusException, ClaimLimitException, PeriodClosedException {
+            throws ClaimStatusException, PeriodClosedException {
         periods.requireOpen(claim.getSheetId(), claim.getDate());
-        ClaimStatus settled = ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.SETTLED);
+        if (!ClaimStatus.OPEN.name().equals(claim.getStatus())) {
+            throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be settled");
+        }
+        ClaimStatus settled = ClaimStatus.OPEN.moveTo(ClaimStatus.SETTLED);
         if (claim.getOpenedBy() != null && claim.getOpenedBy().equals(by == null ? "" : by)) {
             throw new ClaimStatusException("The user who opened a claim cannot settle it");
         }
@@ -40,7 +44,8 @@ public class SettleClaim {
         if (due != null && Role.CLERK.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
             BigDecimal limit = settings.clerkLimit(claim.getSheetId());
             if (limit != null && new BigDecimal(due).compareTo(limit) > 0) {
-                throw new ClaimLimitException("A clerk cannot settle a claim whose due is above the clerk limit");
+                claim.setStatus(ClaimStatus.OPEN.moveTo(ClaimStatus.PENDING).name());
+                return;
             }
         }
         claim.setStatus(settled.name());

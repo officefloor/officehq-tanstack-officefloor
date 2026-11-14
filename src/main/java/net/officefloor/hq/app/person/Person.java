@@ -95,11 +95,11 @@ public class Person {
     public java.util.List<Long> getPatronIds() { return patronIds; }
     public void setPatronIds(java.util.List<Long> patronIds) { this.patronIds = patronIds; }
 
-    /** Whether the claim counts in live totals: it counts by status, and is not an OPEN claim of a
+    /** Whether the claim counts in live totals: it counts by status, and is not an open (OPEN or PENDING) claim of a
      *  person on hold. */
     public boolean countsLive(Claim claim) {
         return claim.isCounting()
-                && !(held && ClaimStatus.OPEN.name().equals(claim.getStatus()));
+                && !(held && ClaimStatus.isOpen(claim.getStatus()));
     }
 
     /** Whether a claim on this date is refused: the person is retired from a date before it. */

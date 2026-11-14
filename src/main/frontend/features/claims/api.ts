@@ -1,10 +1,19 @@
 import { getJson, postJson, putJson } from '../../api/http';
 import { sheetKey } from '../sheet/api';
 
-/** A claim's status: DRAFT, opened to OPEN, settled to SETTLED; a DRAFT or OPEN claim can be voided. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+/** A claim's status: DRAFT, opened to OPEN, settled to SETTLED (or, by a clerk above the clerk limit,
+ *  to PENDING, which a steward approves to SETTLED or rejects back to OPEN); a DRAFT, OPEN or PENDING
+ *  claim can be voided. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 /** A change of a claim's status. */
-export type ClaimAction = 'open' | 'settle' | 'void';
+export type ClaimAction = 'open' | 'settle' | 'void' | 'approve' | 'reject';
+
+/** Whether a claim is open: OPEN, or PENDING a steward's approval. */
+export const isOpen = (c: Pick<Claim, 'status'>) => c.status === 'OPEN' || c.status === 'PENDING';
+
+/** Whether a statement's figure binds a claim now: it was bound to one and is not PENDING (a PENDING
+ *  claim shows and totals its live figure until it is rejected). */
+export const isBound = (c: Claim) => c.stated && c.statedDue !== null && c.status !== 'PENDING';
 
 /** A claim: its amount as two-decimal text, its date (yyyy-MM-dd), its note, its status and its
  *  number on the sheet (given when opened: the sheet-wide 1, 2, ... or, under period numbering,
@@ -46,20 +55,22 @@ export function updateClaim(sheetId: string, by: string, id: number, input: Clai
   return putJson<Claim>(`${sheetBase(sheetId)}/claims/${id}?by=${encodeURIComponent(by)}`, input);
 }
 
-/** Change a claim's status; refused (rejects) when its status does not allow the change, or when the
- *  user settling it is the one who opened it. */
-export function moveClaim(sheetId: string, by: string, id: number, action: ClaimAction): Promise<Claim> {
-  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/${action}?by=${encodeURIComponent(by)}`, {});
+/** Change a claim's status; refused (rejects) when its status does not allow the change, when the
+ *  user settling or approving it is the one who opened it, when a non-steward approves or rejects it,
+ *  or when a rejection has no `reason`. */
+export function moveClaim(sheetId: string, by: string, id: number, action: ClaimAction, reason = ''): Promise<Claim> {
+  const extra = action === 'reject' ? `&reason=${encodeURIComponent(reason)}` : '';
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/${action}?by=${encodeURIComponent(by)}${extra}`, {});
 }
 
-/** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED do. */
-export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
+/** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED do. */
+export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
 
-/** The claims that count in live totals: all but the OPEN claims of people on hold (their SETTLED
+/** The claims that count in live totals: all but the open claims of people on hold (their SETTLED
  *  claims still count). */
 export function liveClaims(claims: Claim[], people: Array<{ id: number; held: boolean }> | undefined): Claim[] {
   const held = new Set((people ?? []).filter((p) => p.held).map((p) => p.id));
-  return claims.filter((c) => !(c.status === 'OPEN' && held.has(c.personId)));
+  return claims.filter((c) => !(isOpen(c) && held.has(c.personId)));
 }
 
 /** Sum the amounts of the claims that count (see `counts`) exactly (in cents), shown with two decimals. */
@@ -75,9 +86,9 @@ export function dueBy(c: Claim, terms: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Whether a claim is overdue: it is OPEN and its due-by is before the sheet's `today`. */
+/** Whether a claim is overdue: it is open (OPEN or PENDING) and its due-by is before the sheet's `today`. */
 export const isOverdue = (c: Claim, terms: number, today: string) =>
-  c.status === 'OPEN' && today !== '' && dueBy(c, terms) < today;
+  isOpen(c) && today !== '' && dueBy(c, terms) < today;
 
 /** How many of the selected claims a bulk open opened, and how many it refused (left as they were). */
 export type BulkOpenResult = { opened: number; refused: number };

@@ -1,5 +1,5 @@
 import { getJson, postJson } from '../../api/http';
-import { counts, dueBy, isCorrection, isOverdue, type Claim } from '../claims/api';
+import { counts, dueBy, isBound, isCorrection, isOverdue, type Claim } from '../claims/api';
 import { sheetKey } from '../sheet/api';
 
 /** A grade's rate on the sheet: a percent as two-decimal text, in force from its from-date
@@ -73,7 +73,7 @@ export type Late = { pct: string; terms: number; today: string; policy: string }
  *  date of the claim it corrects) is before the policy date; else they round half to even. */
 export const roundsHalfUp = (c: Claim, late: Late) => (c.roundDate ?? c.date) < late.policy;
 
-/** The late charge on an OPEN claim's `figure`: the late percent of it for every full 30 days it is
+/** The late charge on an open (OPEN or PENDING) claim's `figure`: the late percent of it for every full 30 days it is
  *  past its due-by on the sheet's today, rounded by the policy date to two decimals (0 when not overdue, and
  *  on a correction). */
 export function lateCharge(c: Claim, figure: string, late: Late): bigint {
@@ -86,12 +86,12 @@ export function lateCharge(c: Claim, figure: string, late: Late): bigint {
 export type GradeOn = (date: string) => string;
 
 /** A claim's due: the one fixed when it was settled (its late charge then frozen in), else its
- *  figure — the one bound by its person's last statement, else live at the rate in force on the
+ *  figure — the one bound by its person's last statement (not while PENDING), else live at the rate in force on the
  *  claim's date of the grade in force then (`gradeOn`), at least the `floor` — with its late charge
  *  on the sheet's today on top. */
 export function claimDue(c: Claim, rates: Rate[] | undefined, gradeOn: GradeOn, floor: string, late: Late): string | null {
   if (c.settledDue !== null) return c.settledDue;
-  const figure = c.stated ? c.statedDue : dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date), floor, roundsHalfUp(c, late));
+  const figure = isBound(c) ? c.statedDue : dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date), floor, roundsHalfUp(c, late));
   return figure === null ? null : formatCents(hundredths(figure) + lateCharge(c, figure, late));
 }
 
@@ -111,7 +111,7 @@ export function personDue(claims: Claim[], rates: Rate[] | undefined, gradeOn: G
   floor: string, late: Late) {
   const own = claims.filter(counts);
   const now = gradeOn(late.today);
-  const kept = (c: Claim) => c.settledDue !== null || (c.stated && c.statedDue !== null)
+  const kept = (c: Claim) => c.settledDue !== null || isBound(c)
     || (gradeOn(c.date) !== now && rateOn(rates, gradeOn(c.date), c.date) !== undefined);
   if (pct === undefined && !own.some(kept)) return null;
   return sumDues(own.map((c) => claimDue(c, rates, gradeOn, floor, late)));

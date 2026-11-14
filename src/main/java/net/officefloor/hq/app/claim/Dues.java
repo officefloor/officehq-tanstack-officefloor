@@ -34,11 +34,11 @@ public final class Dues {
         return new BigDecimal(amount).signum() < 0;
     }
 
-    /** The late charge on a claim's figure: the late percent of it for every full 30 days its OPEN
+    /** The late charge on a claim's figure: the late percent of it for every full 30 days its open (OPEN or PENDING)
      *  claim is past its due-by (its date plus the terms) on the sheet's today, rounded by the
      *  policy date to two decimals; none (0.00) when it is not overdue, or on a correction. */
     public static BigDecimal charge(Claim claim, String figure, Late late) {
-        if (figure == null || isCorrection(claim.getAmount()) || !ClaimStatus.OPEN.name().equals(claim.getStatus())) return BigDecimal.ZERO.setScale(2);
+        if (figure == null || isCorrection(claim.getAmount()) || !ClaimStatus.isOpen(claim.getStatus())) return BigDecimal.ZERO.setScale(2);
         LocalDate dueBy = LocalDate.parse(claim.getDate()).plusDays(late.terms());
         long periods = Math.max(0, ChronoUnit.DAYS.between(dueBy, late.today())) / 30;
         return new BigDecimal(figure).multiply(new BigDecimal(late.pct()))

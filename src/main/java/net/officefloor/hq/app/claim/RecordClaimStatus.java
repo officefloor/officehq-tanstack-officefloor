@@ -10,13 +10,22 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class RecordClaimStatus {
     public void record(@RequestParam(name = "by", required = false) String by,
             @Val Claim claim, PersonRepository people, Audit audit) {
+        audit.record(line(ClaimStatus.valueOf(claim.getStatus()).event(), by, claim, people)
+                + (ClaimStatus.SETTLED.name().equals(claim.getStatus()) ? due(claim) : ""));
+    }
+
+    /** A claim line: the event, the sheet, the user, then the claim's person, amount, date and number. */
+    static String line(String event, String by, Claim claim, PersonRepository people) {
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
-        audit.record(ClaimStatus.valueOf(claim.getStatus()).event() + " sheet=" + claim.getSheetId()
+        return event + " sheet=" + claim.getSheetId()
                 + " by=" + (by == null ? "" : by)
                 + " person=" + (person == null ? "" : person.getName())
                 + " amount=" + claim.getAmount() + " date=" + claim.getDate()
-                + claim.getAuditNumber()
-                + (ClaimStatus.SETTLED.name().equals(claim.getStatus())
-                        ? " due=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue()) : ""));
+                + claim.getAuditNumber();
+    }
+
+    /** The fixed due suffix of a settled claim. */
+    static String due(Claim claim) {
+        return " due=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue());
     }
 }

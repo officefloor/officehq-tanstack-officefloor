@@ -36,7 +36,7 @@ public class TakeStatement {
                 Rate rate = rates.find(sheetId, grade, LocalDate.parse(c.getDate()));
                 String live = rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor, late.rounding(c.getRoundDate()));
                 String shown = Dues.shown(c, live, late);
-                kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null)
+                kept |= c.getSettledDue() != null || c.isBound()
                         || (rate != null && !grade.equals(person.getGrade()));
                 if (shown != null) total = total.add(new BigDecimal(shown));
                 // The figure under it is bound; its late charge keeps following the sheet's today.

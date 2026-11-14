@@ -82,17 +82,24 @@ public class Claim {
         this.statedDue = stated ? statedDue : null;
     }
 
-    /** Whether it counts toward claimed, due-total and every total: only OPEN and SETTLED do. */
+    /** Whether it counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED do. */
     @JsonIgnore
     public boolean isCounting() {
-        return ClaimStatus.OPEN.name().equals(status) || ClaimStatus.SETTLED.name().equals(status);
+        return ClaimStatus.isOpen(status) || ClaimStatus.SETTLED.name().equals(status);
     }
 
-    /** The due it shows: the one fixed when settled, else the one bound by a statement, else
-     *  {@code live} (the amount at the rate in force on its date; null: none). */
+    /** Whether a statement's figure binds it now: it was bound to one and is not PENDING (a PENDING
+     *  claim keeps its binding, but shows and totals its live figure until it is rejected). */
+    @JsonIgnore
+    public boolean isBound() {
+        return stated && statedDue != null && !ClaimStatus.PENDING.name().equals(status);
+    }
+
+    /** The due it shows: the one fixed when settled, else the one bound by a statement (not while
+     *  PENDING), else {@code live} (the amount at the rate in force on its date; null: none). */
     public String due(String live) {
         if (settledDue != null) return settledDue;
-        return stated ? statedDue : live;
+        return stated && !ClaimStatus.PENDING.name().equals(status) ? statedDue : live;
     }
 
     /** The audit suffix: {@code " number=<n>"} for a claim that has a number. */

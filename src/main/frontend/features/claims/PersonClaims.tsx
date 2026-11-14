@@ -8,6 +8,9 @@ import { addClaim, claimsKey, dueBy, isOverdue, moveClaim, updateClaim, type Cla
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
 
+const LABELS: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void', approve: 'Approve', reject: 'Reject' };
+const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided', approve: 'approved', reject: 'rejected' };
+
 /** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
  *  with its status, its due (fixed when settled, else at the rate in force on the claim's date of the
  *  person's grade in force then (`gradeOn`) and at least the sheet's `floor`, or bound by the person's last statement; none when
@@ -15,8 +18,9 @@ const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
  *  overdue (OPEN and due-by before the sheet's `today`), whether
  *  it is stated,
  *  the period its date falls in (none when no period contains it), who opened it, and buttons that
- *  change its status (the user who opened a claim cannot settle it, nor a clerk one whose due is
- *  above the sheet's clerk limit), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
+ *  change its status (the user who opened a claim cannot settle it; a clerk settling one whose due is
+ *  above the sheet's clerk limit makes it PENDING, which a steward other than its opener approves,
+ *  or any steward rejects with a reason typed beside it), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
  *  charge) the number of the SETTLED claim it corrects. Only a DRAFT can be edited:
  *  editing any other claim is refused with an error on the claim. */
 export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, terms, today, charges, selected, onSelect }: {
@@ -31,6 +35,8 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
   const [editing, setEditing] = useState<number | null>(null);
   // The claim whose edit was refused (it is not a DRAFT); cleared by the next action on any claim here.
   const [editRefused, setEditRefused] = useState<number | null>(null);
+  // The rejection reason typed for each claim.
+  const [reasons, setReasons] = useState<Record<number, string>>({});
 
   const save = useMutation({
     mutationFn: (v: { id: number | null; input: ClaimInput }) =>
@@ -47,8 +53,12 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
 
   // The claim whose last status change was refused; cleared by the next action on any claim here.
   const move = useMutation({
-    mutationFn: (v: { id: number; action: ClaimAction }) => moveClaim(sheetId, user, v.id, v.action),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    mutationFn: (v: { id: number; action: ClaimAction }) =>
+      moveClaim(sheetId, user, v.id, v.action, reasons[v.id] ?? ''),
+    onSuccess: (_, v) => {
+      if (v.action === 'reject') setReasons((r) => ({ ...r, [v.id]: '' }));
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
   });
 
   const act = (id: number, action: ClaimAction) => {
@@ -138,12 +148,21 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
               </td>
               <td data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</td>
               <td>
-                {(['open', 'settle', 'void'] as const).map((a) => (
+                {(['open', 'settle', 'void', 'approve'] as const).map((a) => (
                   <button key={a} type="button" data-testid={`claim-${a}`} disabled={move.isPending}
                     onClick={() => act(c.id, a)}>
-                    {a === 'open' ? 'Open' : a === 'settle' ? 'Settle' : 'Void'}
+                    {LABELS[a]}
                   </button>
                 ))}{' '}
+                <input data-testid="claim-reject-reason" placeholder="Reason" value={reasons[c.id] ?? ''}
+                  onChange={(e) => {
+                    setReasons((r) => ({ ...r, [c.id]: e.target.value }));
+                    if (move.variables?.id === c.id) move.reset();
+                  }} />{' '}
+                <button type="button" data-testid="claim-reject" disabled={move.isPending}
+                  onClick={() => act(c.id, 'reject')}>
+                  {LABELS.reject}
+                </button>{' '}
                 <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                   Edit
                 </button>
@@ -160,12 +179,15 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 {move.isError && move.variables?.id === c.id && (
                   <span data-testid="claim-error">{move.error instanceof HttpError && move.error.status === 423
                     ? 'A claim dated inside a closed period cannot be changed.'
-                    : move.error instanceof HttpError && move.error.status === 403
-                    ? 'A clerk cannot settle a claim whose due is above the clerk limit.'
+                    : move.error instanceof HttpError && move.error.status === 400
+                    ? 'A rejection needs a reason.'
                     : c.status === 'OPEN' && move.variables.action === 'settle'
                     ? 'The user who opened a claim cannot settle it.'
-                    : `A ${c.status} claim cannot be ${move.variables.action === 'open'
-                      ? 'opened' : move.variables.action === 'settle' ? 'settled' : 'voided'}.`}</span>
+                    : c.status === 'PENDING' && move.variables.action === 'approve'
+                    ? 'Only a steward who did not open a claim can approve it.'
+                    : c.status === 'PENDING' && move.variables.action === 'reject'
+                    ? 'Only a steward can reject a claim.'
+                    : `A ${c.status} claim cannot be ${DONE[move.variables.action]}.`}</span>
                 )}
               </td>
             </tr>
