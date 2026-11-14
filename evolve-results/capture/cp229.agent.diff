@@ -1,0 +1,833 @@
+diff --git a/src/main/frontend/features/counters/ConsolidatedFigures.tsx b/src/main/frontend/features/counters/ConsolidatedFigures.tsx
+index 75d49e61b..c2c4275c9 100644
+--- a/src/main/frontend/features/counters/ConsolidatedFigures.tsx
++++ b/src/main/frontend/features/counters/ConsolidatedFigures.tsx
+@@ -5,6 +5,7 @@ import { currentAsOf, currentPreview, getJson, getLiveJson } from '../../api/htt
+ import { useClaims } from '../claims/claims';
+ import type { Claim } from '../claims/claims';
+ import { GRADES, liveHolds, usePeople } from '../people/people';
++import { useGradeCodes } from '../grades/grades';
+ import type { Person } from '../people/people';
+ import { personOverdue } from '../overdue/overdue';
+ import { personDue, total, trimmedTotal, useRates } from '../rates/rates';
+@@ -46,7 +47,8 @@ export function sheetFigures(people: Person[], aliases: Alias[], claims: Claim[]
+     ),
+     dues: people.map((p) => personDue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules, { personId: p.id, claims, people })),
+     overdues: people.map((p) => personOverdue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules).total),
+-    grades: Object.fromEntries(GRADES.map((g) => [g, gradeDue(g)])),
++    // A, B, C and every grade a person here is on, so a grade added on any sheet of the tree is counted
++    grades: Object.fromEntries([...new Set([...GRADES, ...current.map((p) => p.grade)])].map((g) => [g, gradeDue(g)])),
+     statuses: Object.fromEntries(STATUSES.map((s) => [s, claims.filter((c) => c.status === s).length])),
+     overdueCount: people.reduce((n, p) => n + personOverdue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules).count, 0),
+   };
+@@ -117,6 +119,7 @@ export function ConsolidatedFigures() {
+   const rules = useDueRules();
+   const aliases = useAliases().data ?? [];
+   const stored = useStoredFigures(asOf).data ?? [];
++  const grades = useGradeCodes();
+ 
+   const all: Figures[] = [sheetFigures(people, aliases, claims, rates, rules), ...stored];
+   return (
+@@ -124,10 +127,10 @@ export function ConsolidatedFigures() {
+       Consolidated — People: <strong data-testid="consolidated-people-count">{distinctPeople(all.flatMap((f) => f.names))}</strong>
+       {' · '}Due: <strong data-testid="consolidated-due-total">{trimmedTotal(all.flatMap((f) => f.dues))}</strong>
+       {' · '}Overdue: <strong data-testid="consolidated-overdue-total">{trimmedTotal(all.flatMap((f) => f.overdues))}</strong>
+-      {GRADES.map((g) => (
++      {grades.map((g) => (
+         <span key={g}>
+           {' · '}
+-          {g}: <strong data-testid={`consolidated-grade-${g}-due-total`}>{total(all.map((f) => f.grades[g]))}</strong>
++          {g}: <strong data-testid={`consolidated-grade-${g}-due-total`}>{total(all.map((f) => f.grades[g] ?? '0.00'))}</strong>
+         </span>
+       ))}
+       {STATUSES.map((s) => (
+diff --git a/src/main/frontend/features/grades/Grades.tsx b/src/main/frontend/features/grades/Grades.tsx
+index 10c311d9e..5605ae435 100644
+--- a/src/main/frontend/features/grades/Grades.tsx
++++ b/src/main/frontend/features/grades/Grades.tsx
+@@ -3,11 +3,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { sheetKey, useCurrentSheet, useCurrentUser } from '../session/session';
+ import { GRADES } from '../people/people';
+-import { gradesKey, useGrades } from './grades';
++import { gradeCodesKey, gradesKey, useGradeCodes, useGrades } from './grades';
+ import type { Grade } from './grades';
+ import { useOneAtATime } from '../../query/useOneAtATime';
+ 
+-// The sheet's grades, each showing whether it is retired, and the select and button a grade is retired with; a grade
++// The sheet's grades, each showing whether it is retired; the entry and button a grade is added with (a code of one
++// to three capital letters not yet a grade; anything else is refused); and the select and button a grade is retired with; a grade
+ // already retired is refused. A steward merges a grade into another with two selects and a button: everyone on the
+ // merged grade today is given the other from today (the same grade twice, or anyone but a steward, is refused); the
+ // count of people moved shows once it is done.
+@@ -15,9 +16,11 @@ export function Grades() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const grades = useGrades().data ?? [];
++  const codes = useGradeCodes();
+   const [grade, setGrade] = useState<string>(GRADES[0]);
+   const [mergeFrom, setMergeFrom] = useState<string>(GRADES[0]);
+   const [mergeInto, setMergeInto] = useState<string>(GRADES[1]);
++  const [code, setCode] = useState('');
+   const [merged, setMerged] = useState<number | undefined>(undefined);
+   const [error, setError] = useState('');
+   // loading a sheet (again, even the same one) clears the last merge's count
+@@ -36,6 +39,20 @@ export function Grades() {
+     onError: () => setError('That grade could not be retired: it is already retired.'),
+   });
+ 
++  const add = useMutation({
++    mutationFn: (input: { grade: string }) =>
++      postJson<Grade[]>(`/api/sheets/${encodeURIComponent(sheet)}/grades/add?user=${encodeURIComponent(user)}`, input),
++    onSuccess: async (saved) => {
++      setError('');
++      setCode('');
++      queryClient.setQueryData(gradesKey(sheet), saved);
++      queryClient.setQueryData(gradeCodesKey(sheet), saved);
++      await queryClient.invalidateQueries({ queryKey: gradesKey(sheet) });
++      await queryClient.invalidateQueries({ queryKey: gradeCodesKey(sheet) });
++    },
++    onError: () => setError('That grade could not be added: a grade is one to three capital letters not yet a grade.'),
++  });
++
+   const merge = useMutation({
+     mutationFn: (input: { from: string; into: string }) =>
+       postJson<{ merged: number }>(
+@@ -62,6 +79,26 @@ export function Grades() {
+           </li>
+         ))}
+       </ul>
++      <input
++        data-testid="grade-add-code"
++        placeholder="New grade"
++        value={code}
++        onChange={(e) => {
++          setCode(e.target.value);
++          setError('');
++        }}
++      />
++      <button
++        type="button"
++        data-testid="grade-add"
++        disabled={add.isPending}
++        onClick={() => {
++          setError('');
++          once(() => add.mutateAsync({ grade: code }));
++        }}
++      >
++        Add grade
++      </button>
+       <select
+         data-testid="grade-retire-select"
+         value={grade}
+@@ -70,7 +107,7 @@ export function Grades() {
+           setError('');
+         }}
+       >
+-        {GRADES.map((g) => (
++        {codes.map((g) => (
+           <option key={g} value={g}>
+             {g}
+           </option>
+@@ -95,7 +132,7 @@ export function Grades() {
+           setError('');
+         }}
+       >
+-        {GRADES.map((g) => (
++        {codes.map((g) => (
+           <option key={g} value={g}>
+             {g}
+           </option>
+@@ -110,7 +147,7 @@ export function Grades() {
+           setError('');
+         }}
+       >
+-        {GRADES.map((g) => (
++        {codes.map((g) => (
+           <option key={g} value={g}>
+             {g}
+           </option>
+diff --git a/src/main/frontend/features/grades/grades.ts b/src/main/frontend/features/grades/grades.ts
+index 2fe2b9264..bfaaed453 100644
+--- a/src/main/frontend/features/grades/grades.ts
++++ b/src/main/frontend/features/grades/grades.ts
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+-import { getJson } from '../../api/http';
++import { getJson, getLiveJson } from '../../api/http';
++import { GRADES } from '../people/people';
+ import { sheetKey, useCurrentSheet } from '../session/session';
+ 
+ /** A grade on the sheet and whether it is retired. */
+@@ -9,7 +10,7 @@ export type Grade = { grade: string; retired: boolean };
+ export const gradesKey = (sheet: string) => [...sheetKey(sheet), 'grades'] as const;
+ 
+ /**
+- * The sheet's grades, A to C, each with whether it is retired. A retired grade cannot be chosen for a person (by the
++ * The sheet's grades, A to C then those added on it, each with whether it is retired. A retired grade cannot be chosen for a person (by the
+  * form, the quick-add bar or an import); those already on it keep it.
+  */
+ export function useGrades() {
+@@ -20,3 +21,21 @@ export function useGrades() {
+     enabled: !!sheet,
+   });
+ }
++
++/** The query key for the sheet's grade codes as the store holds them now; under sheetKey, as the grades. */
++export const gradeCodesKey = (sheet: string) => [...sheetKey(sheet), 'grade-codes'] as const;
++
++/**
++ * The codes of the sheet's grades, in order (A, B, C until they are read): those every grade select, the summary and
++ * the rates list. Read as the store holds them now, even while the screen shows the sheet as of a date, so a grade
++ * added since is listed (with nothing on it then).
++ */
++export function useGradeCodes(): string[] {
++  const [sheet] = useCurrentSheet();
++  const grades = useQuery({
++    queryKey: gradeCodesKey(sheet),
++    queryFn: () => getLiveJson<Grade[]>(`/api/sheets/${encodeURIComponent(sheet)}/grades`),
++    enabled: !!sheet,
++  }).data;
++  return grades ? grades.map((g) => g.grade) : [...GRADES];
++}
+diff --git a/src/main/frontend/features/people/BulkGrade.tsx b/src/main/frontend/features/people/BulkGrade.tsx
+index 1c2d968d3..36119743c 100644
+--- a/src/main/frontend/features/people/BulkGrade.tsx
++++ b/src/main/frontend/features/people/BulkGrade.tsx
+@@ -4,6 +4,7 @@ import { putJson } from '../../api/http';
+ import { useOneAtATime } from '../../query/useOneAtATime';
+ import { sheetKey, useCurrentSheet, useCurrentUser } from '../session/session';
+ import { GRADES, usePeople } from './people';
++import { useGradeCodes } from '../grades/grades';
+ import type { Person } from './people';
+ import { setPersonError } from './personError';
+ import { useSelectedPeople } from './selection';
+@@ -18,6 +19,7 @@ export function BulkGrade() {
+   const people = usePeople().data ?? [];
+   const [selected, , clear] = useSelectedPeople();
+   const [grade, setGrade] = useState<string>(GRADES[0]);
++  const grades = useGradeCodes();
+   const [from, setFrom] = useState('');
+   const [graded, setGraded] = useState<number | undefined>(undefined);
+   const [busy, setBusy] = useState(false);
+@@ -56,7 +58,7 @@ export function BulkGrade() {
+   return (
+     <p>
+       <select data-testid="bulk-grade" value={grade} onChange={(e) => setGrade(e.target.value)}>
+-        {GRADES.map((g) => (
++        {grades.map((g) => (
+           <option key={g} value={g}>
+             {g}
+           </option>
+diff --git a/src/main/frontend/features/people/PersonForm.tsx b/src/main/frontend/features/people/PersonForm.tsx
+index 3ad139171..52e041d8a 100644
+--- a/src/main/frontend/features/people/PersonForm.tsx
++++ b/src/main/frontend/features/people/PersonForm.tsx
+@@ -5,7 +5,8 @@ import { HttpError, postJson, putJson } from '../../api/http';
+ import { useOneAtATime } from '../../query/useOneAtATime';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { tagsKey } from '../tags/tags';
+-import { GRADES, peopleKey, useEditingPerson, usePeople } from './people';
++import { useGradeCodes } from '../grades/grades';
++import { peopleKey, useEditingPerson, usePeople } from './people';
+ import type { Person, PersonInput } from './people';
+ 
+ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFrom: '', contact: '', tags: '' };
+@@ -29,6 +30,7 @@ export function PersonForm() {
+   const [sheet] = useCurrentSheet();
+   const [editing, setEditing] = useEditingPerson();
+   const people = usePeople();
++  const grades = useGradeCodes();
+   const [form, setForm] = useState<PersonInput>(EMPTY);
+   const [error, setError] = useState('');
+   const filledFor = useRef<number | undefined>(undefined);
+@@ -136,7 +138,7 @@ export function PersonForm() {
+         value={form.grade}
+         onChange={(e) => change({ grade: e.target.value })}
+       >
+-        {GRADES.map((g) => (
++        {grades.map((g) => (
+           <option key={g} value={g}>
+             {g}
+           </option>
+diff --git a/src/main/frontend/features/people/PersonInlineGrade.tsx b/src/main/frontend/features/people/PersonInlineGrade.tsx
+index be5a9585f..e577e1bc0 100644
+--- a/src/main/frontend/features/people/PersonInlineGrade.tsx
++++ b/src/main/frontend/features/people/PersonInlineGrade.tsx
+@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { putJson } from '../../api/http';
+ import { useOneAtATime } from '../../query/useOneAtATime';
+ import { sheetKey, useCurrentSheet, useCurrentUser } from '../session/session';
+-import { GRADES } from './people';
++import { useGradeCodes } from '../grades/grades';
+ import type { Person } from './people';
+ import { usePersonError } from './personError';
+ 
+@@ -18,6 +18,7 @@ export function PersonInlineGrade({ person }: { person: Person }) {
+   const queryClient = useQueryClient();
+   const once = useOneAtATime();
+   const grade = chosen ?? person.grade;
++  const grades = useGradeCodes();
+ 
+   const save = useMutation({
+     mutationFn: (g: string) =>
+@@ -48,7 +49,7 @@ export function PersonInlineGrade({ person }: { person: Person }) {
+           setError('');
+         }}
+       >
+-        {GRADES.map((g) => (
++        {grades.map((g) => (
+           <option key={g} value={g}>
+             {g}
+           </option>
+diff --git a/src/main/frontend/features/rates/RatePreview.tsx b/src/main/frontend/features/rates/RatePreview.tsx
+index 392af7fe9..2ccf51e1c 100644
+--- a/src/main/frontend/features/rates/RatePreview.tsx
++++ b/src/main/frontend/features/rates/RatePreview.tsx
+@@ -1,7 +1,8 @@
+ import { useState } from 'react';
+ import type { FormEvent } from 'react';
+ import { useClaims } from '../claims/claims';
+-import { GRADES, usePeople } from '../people/people';
++import { usePeople } from '../people/people';
++import { useGradeCodes } from '../grades/grades';
+ import { useDueRules } from '../settings/settings';
+ import { PERCENT, ratePreview, useRates } from './rates';
+ 
+@@ -12,6 +13,7 @@ export function RatePreview() {
+   const people = usePeople().data ?? [];
+   const claims = useClaims().data ?? [];
+   const rules = useDueRules();
++  const grades = useGradeCodes();
+   const [grade, setGrade] = useState<string>('A');
+   const [pct, setPct] = useState('');
+   const [result, setResult] = useState<{ count: number; diff: string } | null>(null);
+@@ -40,7 +42,7 @@ export function RatePreview() {
+   return (
+     <form onSubmit={submit} data-testid="rate-preview-form">
+       <select data-testid="rate-preview-grade" value={grade} onChange={(e) => change(() => setGrade(e.target.value))}>
+-        {GRADES.map((g) => (
++        {grades.map((g) => (
+           <option key={g} value={g}>
+             {g}
+           </option>
+diff --git a/src/main/frontend/features/rates/Rates.tsx b/src/main/frontend/features/rates/Rates.tsx
+index b28a8dbbb..953697e6b 100644
+--- a/src/main/frontend/features/rates/Rates.tsx
++++ b/src/main/frontend/features/rates/Rates.tsx
+@@ -2,7 +2,7 @@ import { useState } from 'react';
+ import type { FormEvent } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { putJson } from '../../api/http';
+-import { GRADES } from '../people/people';
++import { useGradeCodes } from '../grades/grades';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { useSheetToday } from '../session/sheetToday';
+ import { NA, PERCENT, rateFor, ratesKey, useRates } from './rates';
+@@ -27,6 +27,7 @@ export function Rates() {
+   const [sheet] = useCurrentSheet();
+   const rates = useRates().data ?? [];
+   const today = useSheetToday();
++  const grades = useGradeCodes();
+   const [form, setForm] = useState<RateInput>(EMPTY);
+   const [error, setError] = useState('');
+   const queryClient = useQueryClient();
+@@ -86,7 +87,7 @@ export function Rates() {
+           </tr>
+         </thead>
+         <tbody>
+-          {GRADES.map((g) => (
++          {grades.map((g) => (
+             <tr key={g}>
+               <td>{g}</td>
+               <td data-testid={`rate-current-${g}`}>{rateFor(rates, g, today) ?? NA}</td>
+@@ -104,7 +105,7 @@ export function Rates() {
+           </tr>
+         </thead>
+         <tbody>
+-          {GRADES.map((g) => (
++          {grades.map((g) => (
+             <tr key={g}>
+               <td>{g}</td>
+               {MONTHS.map((m) => (
+@@ -140,7 +141,7 @@ export function Rates() {
+       </table>
+       <form onSubmit={submit} data-testid="rate-form">
+         <select data-testid="rate-form-grade" value={form.grade} onChange={(e) => change({ grade: e.target.value })}>
+-          {GRADES.map((g) => (
++          {grades.map((g) => (
+             <option key={g} value={g}>
+               {g}
+             </option>
+diff --git a/src/main/frontend/features/summary/Summary.tsx b/src/main/frontend/features/summary/Summary.tsx
+index a16486760..2fc0a9c23 100644
+--- a/src/main/frontend/features/summary/Summary.tsx
++++ b/src/main/frontend/features/summary/Summary.tsx
+@@ -1,7 +1,8 @@
+ import { isActive } from '../active/active';
+ import { useClaims } from '../claims/claims';
+ import type { Claim } from '../claims/claims';
+-import { GRADES, liveHolds, usePeople } from '../people/people';
++import { liveHolds, usePeople } from '../people/people';
++import { useGradeCodes } from '../grades/grades';
+ import type { Person } from '../people/people';
+ import { periodDue, usePeriods } from '../periods/periods';
+ import { personDue, total, useRates } from '../rates/rates';
+@@ -26,6 +27,7 @@ export function Summary() {
+   const periods = usePeriods().data ?? [];
+   const rates = useRates().data ?? [];
+   const rules = useDueRules();
++  const grades = useGradeCodes();
+   const voidReasons = useVoidReasons().data ?? [];
+   const reviewSla = useSettings().data?.reviewSla ?? '';
+ 
+@@ -52,7 +54,7 @@ export function Summary() {
+           </tr>
+         </thead>
+         <tbody>
+-          {GRADES.map((g) => {
++          {grades.map((g) => {
+             const on = current.filter((p) => p.grade === g);
+             return (
+               <tr key={g}>
+diff --git a/src/main/java/net/officefloor/hq/app/grade/AuditGradeAdded.java b/src/main/java/net/officefloor/hq/app/grade/AuditGradeAdded.java
+new file mode 100644
+index 000000000..9289d0fc9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/AuditGradeAdded.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.grade;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Records the grade added on the sheet. */
++public class AuditGradeAdded {
++    public void audit(@Val GradeAdded added, @RequestParam("user") String user, Audit audit) {
++        audit.record("GRADE_ADDED sheet=" + added.sheetId() + " by=" + user + " grade=" + added.grade());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/GradeAddRequest.java b/src/main/java/net/officefloor/hq/app/grade/GradeAddRequest.java
+new file mode 100644
+index 000000000..3093cdc74
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/GradeAddRequest.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.grade;
++
++import jakarta.validation.constraints.Size;
++
++/** The code the add-grade entry submits. */
++public record GradeAddRequest(@Size(max = 30) String grade) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/GradeAdded.java b/src/main/java/net/officefloor/hq/app/grade/GradeAdded.java
+new file mode 100644
+index 000000000..4820126c2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/GradeAdded.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.grade;
++
++/** A grade added on the sheet. */
++public record GradeAdded(String sheetId, String grade) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/GradeRepository.java b/src/main/java/net/officefloor/hq/app/grade/GradeRepository.java
+index 5aa63ba1f..a26687552 100644
+--- a/src/main/java/net/officefloor/hq/app/grade/GradeRepository.java
++++ b/src/main/java/net/officefloor/hq/app/grade/GradeRepository.java
+@@ -1,25 +1,54 @@
+ package net.officefloor.hq.app.grade;
+ 
++import java.util.ArrayList;
+ import java.util.List;
+ import java.util.Set;
+ import java.util.TreeSet;
++import java.util.regex.Pattern;
+ import net.officefloor.hq.app.person.InvalidPersonException;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+-/** The sheet's grades (A, B, C) and which of them are retired. */
++/** The sheet's grades (A, B, C, then those added on it, in the order added) and which of them are retired. */
+ @Repository
+ public class GradeRepository {
+ 
+-    /** The grades a person may be on. */
++    /** The grades every sheet has. */
+     public static final List<String> GRADES = List.of("A", "B", "C");
+ 
++    /** The form of a grade's code: one to three capital letters. */
++    public static final Pattern CODE = Pattern.compile("[A-Z]{1,3}");
++
+     private final JdbcTemplate jdbc;
+ 
+     public GradeRepository(JdbcTemplate jdbc) {
+         this.jdbc = jdbc;
+     }
+ 
++    /** The sheet's grades: A, B, C, then those added, in the order added. */
++    public List<String> grades(String sheetId) {
++        List<String> all = new ArrayList<>(GRADES);
++        all.addAll(jdbc.queryForList("SELECT grade FROM grade_added WHERE sheet_id = ? ORDER BY position", String.class,
++                sheetId));
++        return all;
++    }
++
++    public boolean exists(String sheetId, String grade) {
++        if (GRADES.contains(grade)) {
++            return true;
++        }
++        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM grade_added WHERE sheet_id = ? AND grade = ?",
++                Integer.class, sheetId, grade);
++        return n != null && n > 0;
++    }
++
++    public void add(String sheetId, String grade) {
++        Integer last = jdbc.queryForObject("SELECT COALESCE(MAX(position), 0) FROM grade_added WHERE sheet_id = ?",
++                Integer.class, sheetId);
++        jdbc.update("INSERT INTO grade_added (sheet_id, grade, position) VALUES (?, ?, ?)", sheetId, grade,
++                (last == null ? 0 : last) + 1);
++    }
++
+     /** The sheet's retired grades. */
+     public Set<String> retired(String sheetId) {
+         return new TreeSet<>(jdbc.queryForList("SELECT grade FROM grade_retired WHERE sheet_id = ?", String.class, sheetId));
+@@ -35,8 +64,11 @@ public class GradeRepository {
+         jdbc.update("INSERT INTO grade_retired (sheet_id, grade) VALUES (?, ?)", sheetId, grade);
+     }
+ 
+-    /** Refuses a retired grade chosen for a person. */
++    /** Refuses a grade chosen for a person that is not one of the sheet's, or is retired. */
+     public void checkChoosable(String sheetId, String grade) throws InvalidPersonException {
++        if (!exists(sheetId, grade)) {
++            throw new InvalidPersonException("The grade " + grade + " is not one of the sheet's grades.");
++        }
+         if (isRetired(sheetId, grade)) {
+             throw new InvalidPersonException("The grade " + grade + " is retired.");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/grade/RespondWithGrades.java b/src/main/java/net/officefloor/hq/app/grade/RespondWithGrades.java
+index 6032f6abb..a16c9bbe5 100644
+--- a/src/main/java/net/officefloor/hq/app/grade/RespondWithGrades.java
++++ b/src/main/java/net/officefloor/hq/app/grade/RespondWithGrades.java
+@@ -6,10 +6,10 @@ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+-/** The sheet's grades, A to C, each with whether it is retired. */
++/** The sheet's grades, A to C then those added, each with whether it is retired. */
+ public class RespondWithGrades {
+     public void respond(@Val Sheet sheet, GradeRepository grades, ObjectResponse<List<GradeResponse>> response) {
+         Set<String> retired = grades.retired(sheet.id());
+-        response.send(GradeRepository.GRADES.stream().map((g) -> new GradeResponse(g, retired.contains(g))).toList());
++        response.send(grades.grades(sheet.id()).stream().map((g) -> new GradeResponse(g, retired.contains(g))).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/grade/SaveGradeAdded.java b/src/main/java/net/officefloor/hq/app/grade/SaveGradeAdded.java
+new file mode 100644
+index 000000000..fe209e811
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/SaveGradeAdded.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.grade;
++
++import net.officefloor.plugin.variable.Val;
++
++public class SaveGradeAdded {
++    public void save(@Val GradeAdded added, GradeRepository grades) {
++        grades.add(added.sheetId(), added.grade());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/ValidateGradeAddRequest.java b/src/main/java/net/officefloor/hq/app/grade/ValidateGradeAddRequest.java
+new file mode 100644
+index 000000000..db4809bf6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/ValidateGradeAddRequest.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app.grade;
++
++import jakarta.validation.Valid;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Refuses (400) a code that is not one to three capital letters, or one already a grade on the sheet. */
++public class ValidateGradeAddRequest {
++    public void validate(@Val Sheet sheet, @RequestBody @Valid GradeAddRequest request, GradeRepository grades,
++            Out<GradeAdded> added) throws InvalidGradeException {
++        String grade = request == null || request.grade() == null ? "" : request.grade().trim();
++        if (!GradeRepository.CODE.matcher(grade).matches()) {
++            throw new InvalidGradeException("A grade is one to three capital letters.");
++        }
++        if (grades.exists(sheet.id(), grade)) {
++            throw new InvalidGradeException("The grade " + grade + " is already a grade.");
++        }
++        added.set(new GradeAdded(sheet.id(), grade));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/ValidateGradeMergeRequest.java b/src/main/java/net/officefloor/hq/app/grade/ValidateGradeMergeRequest.java
+index 94a751da3..15c8ccee7 100644
+--- a/src/main/java/net/officefloor/hq/app/grade/ValidateGradeMergeRequest.java
++++ b/src/main/java/net/officefloor/hq/app/grade/ValidateGradeMergeRequest.java
+@@ -6,14 +6,14 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** Refuses (400) a grade that is not A, B or C, the same grade twice, or a merge into a retired grade. */
++/** Refuses (400) a grade that is not one of the sheet's, the same grade twice, or a merge into a retired grade. */
+ public class ValidateGradeMergeRequest {
+     public void validate(@Val Sheet sheet, @RequestBody @Valid GradeMergeRequest request, GradeRepository grades,
+             Out<GradeMerge> merge) throws InvalidGradeException {
+         String from = request == null || request.from() == null ? "" : request.from().trim().toUpperCase();
+         String into = request == null || request.into() == null ? "" : request.into().trim().toUpperCase();
+-        if (!GradeRepository.GRADES.contains(from) || !GradeRepository.GRADES.contains(into)) {
+-            throw new InvalidGradeException("The grades must be A, B or C.");
++        if (!grades.exists(sheet.id(), from) || !grades.exists(sheet.id(), into)) {
++            throw new InvalidGradeException("The grades must be the sheet's grades.");
+         }
+         if (from.equals(into)) {
+             throw new InvalidGradeException("A grade cannot be merged into itself.");
+diff --git a/src/main/java/net/officefloor/hq/app/grade/ValidateGradeRetireRequest.java b/src/main/java/net/officefloor/hq/app/grade/ValidateGradeRetireRequest.java
+index 1b83f46f0..a0618ce24 100644
+--- a/src/main/java/net/officefloor/hq/app/grade/ValidateGradeRetireRequest.java
++++ b/src/main/java/net/officefloor/hq/app/grade/ValidateGradeRetireRequest.java
+@@ -6,13 +6,13 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** Refuses (400) a grade that is not A, B or C, or one already retired on the sheet. */
++/** Refuses (400) a grade that is not one of the sheet's, or one already retired on the sheet. */
+ public class ValidateGradeRetireRequest {
+     public void validate(@Val Sheet sheet, @RequestBody @Valid GradeRetireRequest request, GradeRepository grades,
+             Out<GradeRetired> retired) throws InvalidGradeException {
+         String grade = request == null || request.grade() == null ? "" : request.grade().trim().toUpperCase();
+-        if (!GradeRepository.GRADES.contains(grade)) {
+-            throw new InvalidGradeException("The grade must be A, B or C.");
++        if (!grades.exists(sheet.id(), grade)) {
++            throw new InvalidGradeException("The grade must be one of the sheet's grades.");
+         }
+         if (grades.isRetired(sheet.id(), grade)) {
+             throw new InvalidGradeException("The grade " + grade + " is already retired.");
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+index 070f6886f..c23194bd7 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+@@ -4,7 +4,7 @@ import jakarta.validation.constraints.Size;
+ import java.time.LocalDate;
+ 
+ /**
+- * A person's fields as the form submits them: a name (required), a grade (A, B or C) and the date the grade
++ * A person's fields as the form submits them: a name (required), a grade (one of the sheet's) and the date the grade
+  * is in force from (yyyy-mm-dd; blank is the sheet's today, and is kept blank here) and the person's own terms
+  * (a whole number of days, 0 or more; blank: none, kept blank here). An edit also sends the version of the person
+  * its editor loaded; an add sends none. The contact is kept trimmed and lower-cased (blank: none, kept blank here).
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePersonRequest.java b/src/main/java/net/officefloor/hq/app/person/ValidatePersonRequest.java
+index c809ff0f5..b80944a11 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePersonRequest.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePersonRequest.java
+@@ -4,15 +4,13 @@ import jakarta.validation.Valid;
+ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
+ import java.util.Locale;
+-import java.util.Set;
+ import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.grade.GradeRepository;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidatePersonRequest {
+ 
+-    private static final Set<String> GRADES = Set.of("A", "B", "C");
+-
+     public void validate(@RequestBody @Valid PersonRequest request, Out<PersonRequest> body)
+             throws InvalidPersonException {
+         // The name is kept without surrounding spaces; a blank one is refused.
+@@ -21,8 +19,9 @@ public class ValidatePersonRequest {
+             throw new InvalidPersonException("A name is required.");
+         }
+         String grade = request.grade() == null ? "" : request.grade().trim().toUpperCase();
+-        if (!GRADES.contains(grade)) {
+-            throw new InvalidPersonException("The grade must be A, B or C.");
++        // the form of a grade here; whether the sheet has it is checked against the sheet
++        if (!GradeRepository.CODE.matcher(grade).matches()) {
++            throw new InvalidPersonException("The grade must be one to three letters.");
+         }
+         String from = request.gradeFrom() == null ? "" : request.gradeFrom().trim();
+         if (!from.isEmpty()) {
+diff --git a/src/main/java/net/officefloor/hq/app/rate/BuildRate.java b/src/main/java/net/officefloor/hq/app/rate/BuildRate.java
+index 3483ec1f7..115830dd8 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/BuildRate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/BuildRate.java
+@@ -2,12 +2,17 @@ package net.officefloor.hq.app.rate;
+ 
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
++import net.officefloor.hq.app.grade.GradeRepository;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class BuildRate {
+-    public void build(@Val RateRequest request, @Val Sheet sheet, Out<Rate> rate) {
++    public void build(@Val RateRequest request, @Val Sheet sheet, GradeRepository grades, Out<Rate> rate)
++            throws InvalidRateException {
++        if (!grades.exists(sheet.id(), request.grade())) {
++            throw new InvalidRateException("The grade " + request.grade() + " is not one of the sheet's grades.");
++        }
+         LocalDate from = request.from() == null ? null : LocalDate.parse(request.from());
+         // From the sheet's today on: forward-only, applying only to claims added after it is saved.
+         boolean forward = from != null && !from.isBefore(sheet.today());
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRequest.java b/src/main/java/net/officefloor/hq/app/rate/RateRequest.java
+index 69338b854..1dab7b79c 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRequest.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRequest.java
+@@ -3,7 +3,7 @@ package net.officefloor.hq.app.rate;
+ import jakarta.validation.constraints.Size;
+ 
+ /**
+- * A rate as the form submits it: the grade (A, B or C), the percent (required, at most two decimals)
++ * A rate as the form submits it: the grade (one of the sheet's), the percent (required, at most two decimals)
+  * the from-date (yyyy-MM-dd; blank: from the beginning of time)
+  * and the to-date (yyyy-MM-dd; blank: no end).
+  */
+diff --git a/src/main/java/net/officefloor/hq/app/rate/SaveImportedRates.java b/src/main/java/net/officefloor/hq/app/rate/SaveImportedRates.java
+index 895ed3224..bfe0f5bad 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/SaveImportedRates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/SaveImportedRates.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.rate;
+ 
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.grade.GradeRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.rollup.RollupLines;
+ import net.officefloor.hq.app.rollup.RollupService;
+@@ -15,12 +16,22 @@ import org.springframework.web.bind.annotation.RequestParam;
+  */
+ public class SaveImportedRates {
+     public void save(@Val ImportedRates imported, @Val Sheet sheet, @RequestParam("user") String user,
+-            RateRepository repository, RollupService rollups, Audit audit, Out<ImportRatesResult> result) {
++            RateRepository repository, GradeRepository grades, RollupService rollups, Audit audit,
++            Out<ImportRatesResult> result) throws InvalidRateException {
++        // a grade the sheet does not have refuses the whole import, before anything is set
++        int number = 0;
++        for (RateRequest line : imported.lines()) {
++            number++;
++            if (!grades.exists(sheet.id(), line.grade())) {
++                throw new InvalidRateException("Line " + number + ": the grade " + line.grade()
++                        + " is not one of the sheet's grades.");
++            }
++        }
+         int set = 0;
+         for (RateRequest line : imported.lines()) {
+             Rollup before = rollups.compute(sheet.id());
+             Rate[] rate = new Rate[1];
+-            new BuildRate().build(line, sheet, value -> rate[0] = value);
++            new BuildRate().build(line, sheet, grades, value -> rate[0] = value);
+             repository.save(rate[0]);
+             new AuditRateSet().audit(rate[0], user, audit);
+             RollupLines.record(before, rollups.compute(sheet.id()), sheet.id(), user, audit);
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ValidateRateRequest.java b/src/main/java/net/officefloor/hq/app/rate/ValidateRateRequest.java
+index e75bf5896..d7466c66c 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/ValidateRateRequest.java
++++ b/src/main/java/net/officefloor/hq/app/rate/ValidateRateRequest.java
+@@ -4,22 +4,21 @@ import jakarta.validation.Valid;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
+-import java.util.Set;
+ import java.util.regex.Pattern;
++import net.officefloor.hq.app.grade.GradeRepository;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateRateRequest {
+ 
+-    private static final Set<String> GRADES = Set.of("A", "B", "C");
+-
+     /** 0.00 or more, with at most two decimals. */
+     private static final Pattern PERCENT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?|\\.\\d{1,2}");
+ 
+     public void validate(@RequestBody @Valid RateRequest request, Out<RateRequest> body) throws InvalidRateException {
+         String grade = request.grade() == null ? "" : request.grade().trim().toUpperCase();
+-        if (!GRADES.contains(grade)) {
+-            throw new InvalidRateException("The grade must be A, B or C.");
++        // the form of a grade here; whether the sheet has it is checked against the sheet
++        if (!GradeRepository.CODE.matcher(grade).matches()) {
++            throw new InvalidRateException("The grade must be one to three letters.");
+         }
+         String rate = request.rate() == null ? "" : request.rate().trim();
+         if (rate.isEmpty()) {
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index 68b0292df..f02fa9e9a 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -16,7 +16,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+ /**
+- * Clones a sheet to a new id: the clone gets its today, settings, roles, rates (with their versions), retired grades, holidays, void reasons, templates,
++ * Clones a sheet to a new id: the clone gets its today, settings, roles, rates (with their versions), added and retired grades, holidays, void reasons, templates,
+  * people (grades, terms, contacts, aliases, tags, holds, retirements, patrons), pools, crews, periods (all open) and claims
+  * (status, frozen figures, dates, notes, logs). Statements, watches, comments, locks, batches and as-of days are not
+  * copied. Claims that had a number take the clone's own numbers afresh, in the order they were opened.
+@@ -27,7 +27,7 @@ public class SheetCloner {
+     /** The tables kept per sheet that are copied as they are, under the clone's id. */
+     private static final List<String> SHEET_TABLES = List.of("user_role", "permission", "delegation", "setting_from",
+             "grade_terms", "rate", "rate_version", "holiday", "void_reason", "claim_template", "claim_tag", "sheet_pot",
+-            "grade_retired");
++            "grade_retired", "grade_added");
+ 
+     /** The tables of a person's own entries, copied under the clone's id and the person's id there. */
+     private static final List<String> PERSON_TABLES = List.of("person_grade", "person_terms", "person_hold",
+diff --git a/src/main/resources/db/migration/V116__grade_added.sql b/src/main/resources/db/migration/V116__grade_added.sql
+new file mode 100644
+index 000000000..79a079224
+--- /dev/null
++++ b/src/main/resources/db/migration/V116__grade_added.sql
+@@ -0,0 +1,11 @@
++-- The grades added on the sheet beyond A, B and C, in the order they were added (position 1, 2, ...).
++CREATE TABLE grade_added (
++    sheet_id VARCHAR(100) NOT NULL REFERENCES sheet (id),
++    grade VARCHAR(10) NOT NULL,
++    position INT NOT NULL,
++    PRIMARY KEY (sheet_id, grade)
++);
++
++-- An added grade is up to three letters: a person's grades hold it as the rates do.
++ALTER TABLE person ALTER COLUMN grade SET DATA TYPE VARCHAR(10);
++ALTER TABLE person_grade ALTER COLUMN grade SET DATA TYPE VARCHAR(10);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/add.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/add.POST.yml
+new file mode 100644
+index 000000000..b0e65844f
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/add.POST.yml
+@@ -0,0 +1,27 @@
++# Add a grade (GRADE_ADDED): a code of one to three capital letters (surrounding spaces ignored) not yet a grade on the
++# sheet; it follows A, B, C and those added before it. Anything else is refused (400). Responds with the grades.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: validate
++validate:
++  class: net.officefloor.hq.app.grade.ValidateGradeAddRequest
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.grade.SaveGradeAdded
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.grade.AuditGradeAdded
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.grade.RespondWithGrades
++  govern: [ transaction ]
