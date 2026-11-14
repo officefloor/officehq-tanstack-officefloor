@@ -6,7 +6,7 @@ import { useSheetToday } from '../sheet/api';
 import { listRates, personDue, rateByGrade, ratesKey, sumDues } from './api';
 
 /** The sheet's due-total: everyone's due-total added up, skipping those shown n/a. */
-export function DueTotal({ sheetId, user }: { sheetId: string; user: string }) {
+export function useDueTotal(sheetId: string, user: string): string {
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
@@ -18,9 +18,13 @@ export function DueTotal({ sheetId, user }: { sheetId: string; user: string }) {
   const dues = (people.data ?? []).map((p) =>
     personDue(live.filter((c) => c.personId === p.id), rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges),
   );
+  return sumDues(dues);
+}
+
+export function DueTotal({ sheetId, user }: { sheetId: string; user: string }) {
   return (
     <p>
-      Due total <span data-testid="rollup-due-total">{sumDues(dues)}</span>
+      Due total <span data-testid="rollup-due-total">{useDueTotal(sheetId, user)}</span>
     </p>
   );
 }

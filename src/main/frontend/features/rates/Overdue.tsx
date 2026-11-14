@@ -7,7 +7,7 @@ import { claimDue, listRates, overdue, ratesKey } from './api';
 
 /** The sheet's overdue claims: how many of the claims that count are OPEN past their due-by, and
  *  their due (with its late charge) added up. */
-export function Overdue({ sheetId, user }: { sheetId: string; user: string }) {
+export function useOverdue(sheetId: string, user: string): ReturnType<typeof overdue> {
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
@@ -16,7 +16,11 @@ export function Overdue({ sheetId, user }: { sheetId: string; user: string }) {
   const charges = useLate(sheetId, today);
   const byId = new Map<number, Person>((people.data ?? []).map((p) => [p.id, p]));
   const live = liveClaims(claims.data ?? [], people.data).filter((c) => byId.has(c.personId));
-  const late = overdue(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(byId.get(c.personId)!, d), floor, charges));
+  return overdue(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(byId.get(c.personId)!, d), floor, charges));
+}
+
+export function Overdue({ sheetId, user }: { sheetId: string; user: string }) {
+  const late = useOverdue(sheetId, user);
   return (
     <p>
       Overdue <span data-testid="rollup-overdue-count">{late.count}</span>{' '}

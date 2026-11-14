@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { claimsKey, listClaims, liveClaims } from '../claims/api';
+import { claimsKey, listClaims, liveClaims, type Claim } from '../claims/api';
 import { GRADES, gradeOn, listPeople, peopleKey } from '../people/api';
 import { listPeriods, periodDueTotal, periodsKey } from '../periods/api';
 import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
@@ -7,7 +7,12 @@ import { useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 
 /** Every status a claim's count is shown for. */
-const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+
+/** How many of the sheet's claims have the status. */
+export function statusCount(claims: Claim[] | undefined, status: (typeof STATUSES)[number]): number {
+  return (claims ?? []).filter((c) => c.status === status).length;
+}
 
 /** The sheet's summary, agreeing with the lists: per grade, how many people not retired are on it
  *  today and their due-totals added up (n/a ones skipped); per period, its due-total; per status,
@@ -52,7 +57,7 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
           {STATUSES.map((s) => (
             <tr key={s}>
               <td>{s}</td>
-              <td>Claims <span data-testid={`summary-status-${s}-count`}>{all.filter((c) => c.status === s).length}</span></td>
+              <td>Claims <span data-testid={`summary-status-${s}-count`}>{statusCount(all, s)}</span></td>
               <td />
             </tr>
           ))}
