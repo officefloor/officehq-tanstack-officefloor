@@ -13,7 +13,8 @@ const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
  *  claim's date, or bound by the person's last statement; none when there is no such rate), whether
  *  it is stated,
  *  the period its date falls in (none when no period contains it), who opened it, and buttons that
- *  change its status (the user who opened a claim cannot settle it). Only a DRAFT can be edited:
+ *  change its status (the user who opened a claim cannot settle it, nor a clerk one whose due is
+ *  above the sheet's clerk limit). Only a DRAFT can be edited:
  *  editing any other claim is refused with an error on the claim. */
 export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: {
   sheetId: string; user: string; personId: number; claims: Claim[]; grade: string; rates: Rate[] | undefined;
@@ -142,6 +143,8 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: 
                 {move.isError && move.variables?.id === c.id && (
                   <span data-testid="claim-error">{move.error instanceof HttpError && move.error.status === 423
                     ? 'A claim dated inside a closed period cannot be changed.'
+                    : move.error instanceof HttpError && move.error.status === 403
+                    ? 'A clerk cannot settle a claim whose due is above the clerk limit.'
                     : c.status === 'OPEN' && move.variables.action === 'settle'
                     ? 'The user who opened a claim cannot settle it.'
                     : `A ${c.status} claim cannot be ${move.variables.action === 'open'
