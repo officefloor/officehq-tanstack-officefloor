@@ -1,0 +1,294 @@
+diff --git a/src/main/frontend/features/claims/ClaimStatus.tsx b/src/main/frontend/features/claims/ClaimStatus.tsx
+index 25dcf1f10..aca56f138 100644
+--- a/src/main/frontend/features/claims/ClaimStatus.tsx
++++ b/src/main/frontend/features/claims/ClaimStatus.tsx
+@@ -45,7 +45,9 @@ const REFUSED: Partial<Record<Action, string>> = {
+ // Move button. A steward re-settles a SETTLED claim, freezing it again at today's figure. An OPEN claim is deferred to the
+ // date typed beside the Defer button. The Add proof button raises the claim's proofs count by one, of the kind chosen
+ // beside it (none chosen: a receipt; not on a SETTLED or VOID claim, nor one due by a date in a closed period). The Split button splits the amount typed beside it off an
+-// OPEN claim into a new OPEN claim of the same person (more than 0.00 and less than the claim's amount). A steward
++// OPEN claim into a new OPEN claim of the same person (more than 0.00 and less than the claim's amount); Part-settle splits its
++// amount off the same way and settles the new claim at once (PENDING above the clerk limit), refused whole when either
++// would be (the settle judged on the original claim). A steward
+ // re-dates an OPEN or PENDING claim to the date typed beside the Re-date button. While the sheet has void reasons, a void
+ // sends the reason chosen beside it (none chosen: the server refuses it). Delete sets a DRAFT claim aside as DELETED;
+ // Restore makes it a DRAFT again, only on the sheet's today it was deleted. An open whose due is above the review threshold
+@@ -61,6 +63,7 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
+   const [deferTo, setDeferTo] = useState('');
+   const [proofKind, setProofKind] = useState('');
+   const [splitAmount, setSplitAmount] = useState('');
++  const [settlePartAmount, setSettlePartAmount] = useState('');
+   const [redateTo, setRedateTo] = useState('');
+   const others = (usePeople().data ?? []).filter((p) => p.id !== claim.personId);
+   const queryClient = useQueryClient();
+@@ -121,6 +124,22 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
+       ),
+   });
+ 
++  const settlePart = useMutation({
++    mutationFn: (amount: string) =>
++      postJson<Claim>(
++        `/api/sheets/${encodeURIComponent(sheet)}/claims/${claim.id}/settle/part?user=${encodeURIComponent(user)}`,
++        { amount },
++      ),
++    onSuccess: async () => {
++      setSettlePartAmount('');
++      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
++    },
++    onError: () =>
++      setError(
++        `This ${claim.status} claim cannot be part-settled by that amount (it must be split as Split does and settled as Settle does: not by the user who opened or last edited it, and one whose due is above the proof threshold needs a proof).`,
++      ),
++  });
++
+   const redate = useMutation({
+     mutationFn: (date: string) =>
+       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${claim.id}/date?user=${encodeURIComponent(user)}`, {
+@@ -277,6 +296,32 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
+       >
+         Split
+       </button>
++      <input
++        data-testid="claim-settle-part-amount"
++        aria-label="Part-settle amount"
++        placeholder="settle part 0.00"
++        value={settlePartAmount}
++        onChange={(e) => {
++          setSettlePartAmount(e.target.value);
++          setError('');
++        }}
++      />
++      <button
++        type="button"
++        data-testid="claim-settle-part"
++        disabled={settlePart.isPending}
++        onClick={() => {
++          setError('');
++          const amount = settlePartAmount.trim();
++          if (!AMOUNT.test(amount)) {
++            setError('Type the amount to settle as 0.00.');
++            return;
++          }
++          once(() => settlePart.mutateAsync(amount));
++        }}
++      >
++        Part-settle
++      </button>
+       <input
+         data-testid="claim-date-new"
+         aria-label="New date"
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckClaimSettlePart.java b/src/main/java/net/officefloor/hq/app/claim/CheckClaimSettlePart.java
+new file mode 100644
+index 000000000..12a6a328a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckClaimSettlePart.java
+@@ -0,0 +1,41 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * Refuses (400) a part-settle the settle button would refuse, judged on the original claim before anything is
++ * written: one not OPEN or deferred, a role not allowed to settle, the user who opened it or last edited it (four
++ * eyes), or one with no proofs (of each of the sheet's proof kinds) whose due is above the proof threshold.
++ */
++public class CheckClaimSettlePart {
++    public void check(@RequestParam("user") String user, @Val Claim claim, SheetRepository sheets,
++            PersonRepository people, RateRepository rates, SettingRepository settings, ClaimRepository claims)
++            throws InvalidClaimException {
++        if (claim.status() != ClaimStatus.OPEN) {
++            throw new InvalidClaimException("A " + claim.status() + " claim cannot be part-settled: only an OPEN one.");
++        }
++        if (!settings.find(claim.sheetId()).may(user, "settle")) {
++            throw new InvalidClaimException("The user's role is not allowed to settle a claim.");
++        }
++        if (claim.deferred(sheets.today(claim.sheetId()))) {
++            throw new InvalidClaimException("The claim is deferred until " + claim.deferredUntil() + ": it cannot be settled yet.");
++        }
++        if (user.equals(claim.openedBy())) {
++            throw new InvalidClaimException("The user who opened a claim cannot settle it.");
++        }
++        if (user.equals(claims.editedBy(claim.sheetId(), claim.id()))) {
++            throw new InvalidClaimException("The user who last edited a claim cannot settle it.");
++        }
++        BigDecimal due = ClaimDueNow.of(claim, sheets, people, rates, settings, claims);
++        if (!ApplyClaimAction.hasProofs(claim, settings, claims) && settings.dated(claim.sheetId())
++                .needsProof(ApplyClaimAction.proofGrade(claim, people), claim.date(), due)) {
++            throw new InvalidClaimException("The claim's due is above the proof threshold: it needs a proof (of each of the sheet's proof kinds) to be settled.");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaimBatch.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaimBatch.java
+index 75fdda2d2..9459d6add 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaimBatch.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaimBatch.java
+@@ -5,14 +5,20 @@ import net.officefloor.plugin.variable.Val;
+ /**
+  * Stores the batch a settle puts the claim in: a settle (or re-settle) that is part of a bulk settle (the body's batch
+  * token) gives it that bulk settle's batch number — the sheet's next the first time — whether it ends SETTLED or
+- * PENDING; one taken one at a time gives it none. A reject (back to OPEN) clears it; other changes keep it.
++ * PENDING; a settle taken one at a time gives it none, while a re-settle taken one at a time keeps the batch it has.
++ * A reject (back to OPEN) clears it; other changes keep it.
+  */
+ public class SaveClaimBatch {
+     public void save(@Val ClaimAction action, @Val Claim claim, @Val ClaimActionRequest request,
+             SettleBatchRepository batches) {
+         switch (action) {
+-            case SETTLE, PEND, RESETTLE -> batches.saveBatch(claim.sheetId(), claim.id(),
++            case SETTLE, PEND -> batches.saveBatch(claim.sheetId(), claim.id(),
+                     request.batch().isEmpty() ? null : batches.numberFor(claim.sheetId(), request.batch()));
++            case RESETTLE -> {
++                if (!request.batch().isEmpty()) {
++                    batches.saveBatch(claim.sheetId(), claim.id(), batches.numberFor(claim.sheetId(), request.batch()));
++                }
++            }
+             case REJECT -> batches.saveBatch(claim.sheetId(), claim.id(), null);
+             default -> {
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleSplitClaim.java b/src/main/java/net/officefloor/hq/app/claim/SettleSplitClaim.java
+new file mode 100644
+index 000000000..99a142412
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleSplitClaim.java
+@@ -0,0 +1,34 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * Settles the claim just split off, as the settle button does (its checks were made on the original): its due is
++ * fixed at its figure now, or, when the user's role may not settle that due (the clerk limit), it goes PENDING,
++ * live and unfixed. Publishes the change for the settle's save, log and audit steps, taken one at a time (no batch).
++ */
++public class SettleSplitClaim {
++    public void settle(@RequestParam("user") String user, @Val Claim claim, SheetRepository sheets,
++            PersonRepository people, RateRepository rates, SettingRepository settings, ClaimRepository claims,
++            Out<ClaimAction> applied, Out<ClaimNumber> number, Out<PreviousDue> previous,
++            Out<ClaimActionRequest> request, Out<Claim> updated) {
++        ClaimAction action = ClaimAction.SETTLE;
++        BigDecimal due = ClaimDueNow.of(claim, sheets, people, rates, settings, claims);
++        if (!settings.find(claim.sheetId()).maySettle(user, due)) {
++            action = ClaimAction.PEND;
++            due = null;
++        }
++        applied.set(action);
++        previous.set(new PreviousDue(claim.due(), false));
++        number.set(new ClaimNumber(claim.number()));
++        request.set(new ClaimActionRequest("", ""));
++        updated.set(claim.withStatus(action.to(), claim.number(), due, claim.openedBy()));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle/part.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle/part.POST.yml
+new file mode 100644
+index 000000000..bdad01537
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle/part.POST.yml
+@@ -0,0 +1,81 @@
++# Part-settle an OPEN claim: split the body's amount off it exactly as split does, then settle the new claim at once
++# by the user exactly as settle does (PENDING when the clerk limit says so). The settle's four-eyes and proof rules are
++# judged on the original claim, before anything is written (the new claim's opener is the user, who may still settle it).
++# A split or a settle that would be refused refuses the whole action (400) and writes nothing. Responds with the new claim.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
++validate:
++  class: net.officefloor.hq.app.claim.ValidateSplitRequest
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: checkPeriod
++checkPeriod:
++  class: net.officefloor.hq.app.claim.CheckClaimPeriodOpen
++  govern: [ transaction ]
++  next: checkSettle
++checkSettle:
++  class: net.officefloor.hq.app.claim.CheckClaimSettlePart
++  govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
++  next: split
++split:
++  class: net.officefloor.hq.app.claim.SplitClaim
++  govern: [ transaction ]
++  next: splitLog
++splitLog:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
++  next: splitAudit
++splitAudit:
++  class: net.officefloor.hq.app.claim.AuditClaimSplit
++  govern: [ transaction ]
++  next: splitRollup
++splitRollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
++  next: settleBefore
++settleBefore:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
++  next: settle
++settle:
++  class: net.officefloor.hq.app.claim.SettleSplitClaim
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveClaim
++  govern: [ transaction ]
++  next: batch
++batch:
++  class: net.officefloor.hq.app.claim.SaveClaimBatch
++  govern: [ transaction ]
++  next: log
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimAction
++  govern: [ transaction ]
++  next: notify
++notify:
++  class: net.officefloor.hq.app.watch.NotifyWatchers
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+index f30d5277f..0f0acdad7 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+@@ -9,7 +9,8 @@
+ # Only a steward re-settles (resettle: SETTLED -> SETTLED), freezing the claim again at today's figure as an open, unbound claim.
+ # While the sheet's void reasons list is not empty, a void needs the body's reason chosen from it (400 otherwise).
+ # A settle (or re-settle) with the body's batch token is part of a bulk settle: the claim takes that bulk settle's
+-# batch number (the sheet's next the first time), SETTLED or PENDING; one taken one at a time has none.
++# batch number (the sheet's next the first time), SETTLED or PENDING; a settle taken one at a time has none, and a
++# re-settle taken one at a time keeps the batch the claim has.
+ # A claim that ends SETTLED (settled, approved or re-settled) notifies each user watching its person.
+ archived:
+   class: net.officefloor.hq.app.sheet.CheckNotArchived
