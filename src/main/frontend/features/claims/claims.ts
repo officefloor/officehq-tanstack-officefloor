@@ -39,7 +39,8 @@ export const bound = (c: Claim) => c.stated;
  * deferredUntil (yyyy-MM-dd) is the date it was deferred until, null when it never was;
  * proofs is how many proofs it has been given (a claim whose due is above the proof threshold in force on its date — its
  * person's grade's own, else the sheet's — is
- * settled or approved only once it has one);
+ * settled or approved only once it has one — while the sheet has proof kinds, one of each);
+ * proofKinds is how many of its proofs are of each kind, receipt or photo (a proof added with no kind chosen is a receipt);
  * splitFrom is the number of the claim it was split off, null when it was not split off one;
  * lockedBy is the user whose open editor locks it for every other user, null when it is not locked;
  * lateEntry is whether it was added while the period containing its due-by was soft-closed;
@@ -70,6 +71,8 @@ export type Claim = {
   log: ClaimLogLine[];
   deferredUntil: string | null;
   proofs: number;
+  /** How many of its proofs are of each kind (receipt, photo). */
+  proofKinds: Record<string, number>;
   splitFrom: string | null;
   lockedBy: string | null;
   lateEntry: boolean;

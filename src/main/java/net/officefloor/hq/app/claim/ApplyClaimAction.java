@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * Settling fixes the claim's due at the greater of the sheet's floor in force on its date and its figure — at its person's grade's rate in force on the claim's date,
  * rounded by its policy date, or, when a statement bound the claim, the figure it was bound to — plus the late charge it has then, if overdue, frozen in; with no
  * figure it stays live. A clerk settling a claim whose due is above the sheet's clerk limit (a due of n/a is within any
- * limit) makes it PENDING instead, live and unfixed. A claim with no proofs whose due is above the proof threshold in force on its date —
+ * limit) makes it PENDING instead, live and unfixed. A claim with no proofs (while the sheet has proof kinds: without a proof of each) whose due is above the proof threshold in force on its date —
  * its person's grade's own, when that grade has one then, else the sheet's — is refused settling or approving — before the clerk limit is considered, so it never goes PENDING.
  * A claim with an empty note whose due (as shown now) is above the sheet's note threshold in force on its date is refused opening.
  * Opening a claim due by a date in a period with a cap is refused while its person already has that many OPEN or PENDING
@@ -126,9 +126,9 @@ public class ApplyClaimAction {
         if (found == ClaimAction.OPEN) {
             checkCap(claim, periods, claims);
         }
-        if ((found == ClaimAction.SETTLE || found == ClaimAction.APPROVE) && claim.proofs() == 0
+        if ((found == ClaimAction.SETTLE || found == ClaimAction.APPROVE) && !hasProofs(claim, settings, claims)
                 && settings.dated(claim.sheetId()).needsProof(proofGrade(claim, people), claim.date(), due)) {
-            throw new InvalidClaimException("The claim's due is above the proof threshold: it needs a proof to be "
+            throw new InvalidClaimException("The claim's due is above the proof threshold: it needs a proof (of each of the sheet's proof kinds) to be "
                     + (found == ClaimAction.SETTLE ? "settled" : "approved") + ".");
         }
         if (found == ClaimAction.OPEN && settings.dated(claim.sheetId()).needsReview(claim.date(),
@@ -164,6 +164,21 @@ public class ApplyClaimAction {
             throw new InvalidClaimException("The person already has " + period.cap() + " open claims in period "
                     + period.name() + ": its cap.");
         }
+    }
+
+    /** Whether the claim has the proofs a claim above the proof threshold needs: one of each of the sheet's proof kinds, else any one. */
+    static boolean hasProofs(Claim claim, SettingRepository settings, ClaimRepository claims) {
+        if (claim.proofs() == 0) {
+            return false;
+        }
+        int photos = claims.photoProofs(claim.sheetId(), claim.id());
+        for (String kind : settings.proofKinds(claim.sheetId())) {
+            int count = ProofKind.PHOTO.equals(kind) ? photos : claim.proofs() - photos;
+            if (count == 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** The grade whose proof threshold the claim falls under: its person's grade in force on its date (null: no person). */

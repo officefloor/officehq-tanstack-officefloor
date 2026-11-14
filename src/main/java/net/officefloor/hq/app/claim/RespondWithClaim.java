@@ -16,6 +16,7 @@ public class RespondWithClaim {
                 repository.voidReason(claim.sheetId(), claim.id()),
                 comments.find(claim.sheetId(), claim.id()),
                 batches.batch(claim.sheetId(), claim.id()),
-                lines.find(claim.sheetId(), claim.id())));
+                lines.find(claim.sheetId(), claim.id()),
+                repository.photoProofs(claim.sheetId(), claim.id())));
     }
 }

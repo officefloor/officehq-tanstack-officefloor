@@ -11,6 +11,9 @@ import { useVoidReasons } from '../voidreasons/voidReasons';
 
 type Action = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore';
 
+/** The kinds a proof can be, as the server takes them. */
+const PROOF_KINDS = ['receipt', 'photo'];
+
 const ACTIONS: Array<{ action: Action; label: string }> = [
   { action: 'open', label: 'Open' },
   { action: 'review', label: 'Review' },
@@ -26,9 +29,9 @@ const ACTIONS: Array<{ action: Action; label: string }> = [
 const REFUSED: Partial<Record<Action, string>> = {
   open: ' (your role may not be allowed to open a claim)',
   review: ' (only a steward reviews a claim in REVIEW, which opens it)',
-  settle: ' (the user who opened it cannot settle it, one whose due is above the proof threshold needs a proof, and your role may not be allowed to settle)',
+  settle: ' (the user who opened it cannot settle it, one whose due is above the proof threshold needs a proof, of each proof kind set, and your role may not be allowed to settle)',
   void: ' (your role may not be allowed to void a claim; only a steward voids a settled claim, within 7 days of its settlement; while the sheet has void reasons, choose one)',
-  approve: ' (only a steward approves a pending claim, and not the user who opened it; one whose due is above the proof threshold needs a proof)',
+  approve: ' (only a steward approves a pending claim, and not the user who opened it; one whose due is above the proof threshold needs a proof, of each proof kind set)',
   reject: ' (only a steward rejects a pending claim, and a reason is required)',
   resettle: ' (only a steward re-settles a settled claim)',
   delete: ' (only a DRAFT claim not due in a closed period is deleted)',
@@ -40,8 +43,8 @@ const REFUSED: Partial<Record<Action, string>> = {
 // above the clerk limit makes the claim PENDING; a reject sends the reason typed beside it. A role
 // allowed to reassign (standing rule: a steward) moves a DRAFT, OPEN or PENDING claim to the person chosen beside the
 // Move button. A steward re-settles a SETTLED claim, freezing it again at today's figure. An OPEN claim is deferred to the
-// date typed beside the Defer button. The Add proof button raises the claim's proofs count by one (not on a
-// SETTLED or VOID claim, nor one due by a date in a closed period). The Split button splits the amount typed beside it off an
+// date typed beside the Defer button. The Add proof button raises the claim's proofs count by one, of the kind chosen
+// beside it (none chosen: a receipt; not on a SETTLED or VOID claim, nor one due by a date in a closed period). The Split button splits the amount typed beside it off an
 // OPEN claim into a new OPEN claim of the same person (more than 0.00 and less than the claim's amount). A steward
 // re-dates an OPEN or PENDING claim to the date typed beside the Re-date button. While the sheet has void reasons, a void
 // sends the reason chosen beside it (none chosen: the server refuses it). Delete sets a DRAFT claim aside as DELETED;
@@ -56,6 +59,7 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
   const voidReasons = useVoidReasons().data ?? [];
   const [moveTo, setMoveTo] = useState('');
   const [deferTo, setDeferTo] = useState('');
+  const [proofKind, setProofKind] = useState('');
   const [splitAmount, setSplitAmount] = useState('');
   const [redateTo, setRedateTo] = useState('');
   const others = (usePeople().data ?? []).filter((p) => p.id !== claim.personId);
@@ -133,9 +137,12 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
   });
 
   const proof = useMutation({
-    mutationFn: () =>
-      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${claim.id}/proofs?user=${encodeURIComponent(user)}`, {}),
+    mutationFn: (kind: string) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${claim.id}/proofs?user=${encodeURIComponent(user)}`, {
+        kind,
+      }),
     onSuccess: async () => {
+      setProofKind('');
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
     },
     onError: () =>
@@ -296,14 +303,36 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
       >
         Re-date
       </button>
-      Proofs: <span data-testid="claim-proofs">{claim.proofs}</span>{' '}
+      Proofs: <span data-testid="claim-proofs">{claim.proofs}</span> (
+      {PROOF_KINDS.map((k, i) => (
+        <span key={k}>
+          {i > 0 && ', '}
+          {k}: <span data-testid={`claim-proofs-${k}`}>{claim.proofKinds?.[k] ?? 0}</span>
+        </span>
+      ))}
+      ){' '}
+      <select
+        data-testid="claim-proof-kind"
+        value={proofKind}
+        onChange={(e) => {
+          setProofKind(e.target.value);
+          setError('');
+        }}
+      >
+        <option value="">(kind: receipt)</option>
+        {PROOF_KINDS.map((k) => (
+          <option key={k} value={k}>
+            {k}
+          </option>
+        ))}
+      </select>
       <button
         type="button"
         data-testid="claim-proof"
         disabled={proof.isPending}
         onClick={() => {
           setError('');
-          once(() => proof.mutateAsync());
+          once(() => proof.mutateAsync(proofKind));
         }}
       >
         Add proof

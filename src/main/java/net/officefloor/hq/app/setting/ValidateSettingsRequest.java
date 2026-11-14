@@ -4,10 +4,13 @@ import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.claim.ProofKind;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -31,7 +34,7 @@ public class ValidateSettingsRequest {
             Out<ProofThreshold> proofThreshold, Out<NoteThreshold> noteThreshold, Out<ReviewThreshold> reviewThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays,
             Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold, Out<Pot> pot, Out<Parent> parent,
             Out<FiscalStartMonth> fiscalStartMonth, Out<AlertThreshold> alertThreshold, Out<RoundingSetting> rounding,
-            Out<EscalateAfter> escalateAfter, Out<ReviewSla> reviewSla)
+            Out<EscalateAfter> escalateAfter, Out<ReviewSla> reviewSla, Out<ProofKinds> proofKinds)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -56,6 +59,7 @@ public class ValidateSettingsRequest {
         rounding.set(rounding(request.rounding(), from(request.roundingFrom(), "rounding")));
         escalateAfter.set(escalateAfter(request.escalateAfter()));
         reviewSla.set(reviewSla(request.reviewSla()));
+        proofKinds.set(proofKinds(request.proofKinds()));
     }
 
     private static RoundingSetting rounding(String requested, LocalDate from) throws InvalidSettingException {
@@ -160,6 +164,26 @@ public class ValidateSettingsRequest {
             }
         }
         return new PermissionChanges(entries);
+    }
+
+    private static ProofKinds proofKinds(String requested) throws InvalidSettingException {
+        if (requested == null) {
+            return new ProofKinds(false, List.of());
+        }
+        List<String> kinds = new ArrayList<>();
+        for (String part : requested.split(",")) {
+            String kind = part.trim();
+            if (kind.isEmpty()) {
+                continue;
+            }
+            if (!ProofKind.isKind(kind)) {
+                throw new InvalidSettingException("The proof kinds must be receipt or photo, comma separated, or blank.");
+            }
+            if (!kinds.contains(kind)) {
+                kinds.add(kind);
+            }
+        }
+        return new ProofKinds(true, kinds);
     }
 
     private static ReviewSla reviewSla(String requested) throws InvalidSettingException {

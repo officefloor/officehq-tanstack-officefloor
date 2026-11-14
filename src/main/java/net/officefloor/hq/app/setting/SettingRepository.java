@@ -46,7 +46,7 @@ public class SettingRepository {
                 dated.gradeTermsOn(today), dated.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), entryDate(sheetId),
                 dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId), graceDays(sheetId),
                 today, delegations(sheetId), pot(sheetId), parent(sheetId), fiscalStartMonth(sheetId), alertThreshold(sheetId),
-                escalateAfter(sheetId), reviewSla(sheetId));
+                escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId));
     }
 
     /** The sheet's dated settings: every value recorded, by key and from-date. */
@@ -181,6 +181,19 @@ public class SettingRepository {
     /** Set the sheet's escalation gap in days (null: blank, off). */
     public void saveEscalateAfter(String sheetId, Integer days) {
         jdbc.update("UPDATE sheet SET escalate_after = ? WHERE id = ?", days, sheetId);
+    }
+
+    /** The sheet's proof kinds, in the order set (empty: none). */
+    public List<String> proofKinds(String sheetId) {
+        List<String> found = jdbc.query("SELECT proof_kinds FROM sheet WHERE id = ?",
+                (rs, n) -> rs.getString("proof_kinds"), sheetId);
+        String value = found.isEmpty() ? null : found.get(0);
+        return value == null || value.isEmpty() ? List.of() : List.of(value.split(","));
+    }
+
+    /** Set the sheet's proof kinds (empty: none). */
+    public void saveProofKinds(String sheetId, List<String> kinds) {
+        jdbc.update("UPDATE sheet SET proof_kinds = ? WHERE id = ?", kinds.isEmpty() ? null : String.join(",", kinds), sheetId);
     }
 
     /** The sheet's review SLA in days (null: blank, none). */

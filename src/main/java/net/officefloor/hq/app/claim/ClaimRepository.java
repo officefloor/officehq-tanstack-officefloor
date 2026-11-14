@@ -171,6 +171,28 @@ public class ClaimRepository {
                 Date.valueOf(claim.date()), claim.number(), claim.id(), claim.sheetId());
     }
 
+    /** Count one more photo among the claim's proofs. */
+    public void addPhotoProof(String sheetId, long id) {
+        jdbc.update("UPDATE claim SET photo_proofs = photo_proofs + 1 WHERE id = ? AND sheet_id = ?", id, sheetId);
+    }
+
+    /** How many of the claim's proofs are photos. */
+    public int photoProofs(String sheetId, long id) {
+        List<Integer> found = jdbc.queryForList("SELECT photo_proofs FROM claim WHERE sheet_id = ? AND id = ?",
+                Integer.class, sheetId, id);
+        return found.isEmpty() ? 0 : found.get(0);
+    }
+
+    /** How many of each of the sheet's claims' proofs are photos, by claim id (none: left out). */
+    public Map<Long, Integer> photoProofsAll(String sheetId) {
+        Map<Long, Integer> found = new HashMap<>();
+        jdbc.query("SELECT id, photo_proofs FROM claim WHERE sheet_id = ? AND photo_proofs > 0",
+                (rs) -> {
+                    found.put(rs.getLong("id"), rs.getInt("photo_proofs"));
+                }, sheetId);
+        return found;
+    }
+
     /** Store the claim's {@code proofs} count. */
     public void saveProofs(Claim claim) {
         jdbc.update("UPDATE claim SET proofs = ? WHERE id = ? AND sheet_id = ?", claim.proofs(), claim.id(),
