@@ -161,7 +161,7 @@ public class SavePastedClaims {
         PreviousDue[] previous = new PreviousDue[1];
         Claim[] updated = new Claim[1];
         new ApplyClaimAction().apply("open", user, draft, request, sheets, people, rates, settings, periods,
-                voidReasons, claims, logs, (v) -> action[0] = v, (v) -> number[0] = v, (v) -> previous[0] = v,
+                voidReasons, claims, logs, null, (v) -> action[0] = v, (v) -> number[0] = v, (v) -> previous[0] = v,
                 (v) -> updated[0] = v);
         Claim opened = claims.save(updated[0]);
         new LogClaimStatus().log(opened, user, sheets, people, rates, settings, claims, logs);

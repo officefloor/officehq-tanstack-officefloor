@@ -3,6 +3,8 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.time.format.DateTimeParseException;
+import net.officefloor.hq.app.asof.AsOfReader;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
@@ -25,6 +27,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * Opening, settling and voiding are refused (400) to a role the sheet's permission matrix does not allow them.
  * Opening records the user who opened it; that user cannot settle it (four eyes). Nor can the user who last edited
  * it (through its editor or its row's amount entry) settle or approve it. A deferred claim cannot be settled.
+ * Settled as of a date (on or before the sheet's today; refused after it, or when the claim did not exist then),
+ * the due fixed is the claim's due as it stood at the end of that date, as the as-of view works it out.
  * Settling fixes the claim's due at the greater of the sheet's floor in force on its date and its figure — at its person's grade's rate in force on the claim's date,
  * rounded by its policy date, or, when a statement bound the claim, the figure it was bound to — plus the late charge it has then, if overdue, frozen in; with no
  * figure it stays live. A clerk settling a claim whose due is above the clerk limit in force (its person's grade's own on the sheet's today, when it has one, else the sheet's) (a due of n/a is within any
@@ -54,7 +58,7 @@ public class ApplyClaimAction {
     public void apply(@PathVariable("action") String action, @RequestParam("user") String user, @Val Claim claim,
             @Val ClaimActionRequest request, SheetRepository sheets,
             PersonRepository people, RateRepository rates, SettingRepository settings, PeriodRepository periods,
-            VoidReasonRepository voidReasons, ClaimRepository claims, ClaimLogRepository logs, Out<ClaimAction> applied, Out<ClaimNumber> number, Out<PreviousDue> previous, Out<Claim> updated) throws InvalidClaimException {
+            VoidReasonRepository voidReasons, ClaimRepository claims, ClaimLogRepository logs, AsOfReader asOf, Out<ClaimAction> applied, Out<ClaimNumber> number, Out<PreviousDue> previous, Out<Claim> updated) throws InvalidClaimException {
         ClaimAction found = ClaimAction.of(action);
         if (found == null) {
             throw new InvalidClaimException("No such claim action: " + action);
@@ -122,7 +126,9 @@ public class ApplyClaimAction {
         if (found == ClaimAction.REJECT && request.reason().isEmpty()) {
             throw new InvalidClaimException("A reason is required to reject a claim.");
         }
-        BigDecimal due = found.settles() ? settledDue(found == ClaimAction.RESETTLE ? claim.asOpenUnbound() : claim, sheets, people, rates, settings, claims) : claim.due();
+        LocalDate on = found == ClaimAction.SETTLE ? settleOn(claim, request, sheets) : null;
+        BigDecimal due = on != null ? settledDueAsOf(claim, on, asOf, sheets, people, rates, settings, claims)
+                : found.settles() ? settledDue(found == ClaimAction.RESETTLE ? claim.asOpenUnbound() : claim, sheets, people, rates, settings, claims) : claim.due();
         if (found == ClaimAction.OPEN && (claim.note() == null || claim.note().isBlank())
                 && settings.dated(claim.sheetId()).needsNote(claim.date(),
                         ClaimDueNow.of(claim, sheets, people, rates, settings, claims))) {
@@ -196,6 +202,42 @@ public class ApplyClaimAction {
     static String proofGrade(Claim claim, PersonRepository people) {
         Person person = people.find(claim.sheetId(), claim.personId());
         return person == null ? null : person.gradeOn(claim.date());
+    }
+
+    /** The date the settle is taken as of (null: now); refused after the sheet's today. */
+    private static LocalDate settleOn(Claim claim, ClaimActionRequest request, SheetRepository sheets)
+            throws InvalidClaimException {
+        if (request.on() == null || request.on().isEmpty()) {
+            return null;
+        }
+        LocalDate on;
+        try {
+            on = LocalDate.parse(request.on());
+        } catch (DateTimeParseException e) {
+            throw new InvalidClaimException("Not a date to settle as of: " + request.on());
+        }
+        if (on.isAfter(sheets.today(claim.sheetId()))) {
+            throw new InvalidClaimException("A claim cannot be settled as of a date after the sheet's today.");
+        }
+        return on;
+    }
+
+    /**
+     * The claim's due as it stood at the end of the date, as the as-of view works it out (every change made while the
+     * sheet's today was on or before it, with the date as today); refused when the claim did not exist then.
+     */
+    private static BigDecimal settledDueAsOf(Claim claim, LocalDate on, AsOfReader asOf, SheetRepository sheets,
+            PersonRepository people, RateRepository rates, SettingRepository settings, ClaimRepository claims)
+            throws InvalidClaimException {
+        Object[] then = asOf.read(claim.sheetId(), on, () -> {
+            Claim thenClaim = claims.find(claim.sheetId(), claim.id());
+            return thenClaim == null || thenClaim.status() == ClaimStatus.DELETED ? null
+                    : new Object[] { ClaimDueNow.of(thenClaim, sheets, people, rates, settings, claims) };
+        });
+        if (then == null) {
+            throw new InvalidClaimException("The claim did not exist on " + on + ": it cannot be settled as of then.");
+        }
+        return (BigDecimal) then[0];
     }
 
     private static BigDecimal settledDue(Claim claim, SheetRepository sheets, PersonRepository people,

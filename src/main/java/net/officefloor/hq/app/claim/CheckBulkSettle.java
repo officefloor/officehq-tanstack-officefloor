@@ -37,7 +37,7 @@ public class CheckBulkSettle {
             }
             new CheckClaimPeriodOpen().check(claim, periods);
             new ApplyClaimAction().apply("settle", user, claim, settle, sheets, people,
-                    rates, settings, periods, voidReasons, claims, logs, (a) -> {
+                    rates, settings, periods, voidReasons, claims, logs, null, (a) -> {
                     }, (n) -> {
                     }, (p) -> {
                     }, (c) -> {

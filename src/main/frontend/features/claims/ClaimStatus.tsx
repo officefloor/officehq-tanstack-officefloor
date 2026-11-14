@@ -29,7 +29,7 @@ const ACTIONS: Array<{ action: Action; label: string }> = [
 const REFUSED: Partial<Record<Action, string>> = {
   open: ' (your role may not be allowed to open a claim)',
   review: ' (only a steward reviews a claim in REVIEW, which opens it)',
-  settle: ' (the user who opened it cannot settle it, one whose due is above the proof threshold needs a proof, of each proof kind set, and your role may not be allowed to settle)',
+  settle: ' (a date to settle as of must be on or before today, when the claim existed; the user who opened it cannot settle it, one whose due is above the proof threshold needs a proof, of each proof kind set, and your role may not be allowed to settle)',
   void: ' (your role may not be allowed to void a claim; only a steward voids a settled claim, within 7 days of its settlement; while the sheet has void reasons, choose one)',
   approve: ' (only a steward approves a pending claim, and not the user who opened it; one whose due is above the proof threshold needs a proof, of each proof kind set)',
   reject: ' (only a steward rejects a pending claim, and a reason is required)',
@@ -40,7 +40,8 @@ const REFUSED: Partial<Record<Action, string>> = {
 
 // A claim's status and the buttons that change it. Every button is shown; the server refuses a
 // change the status does not allow, and the refusal shows as the claim's error. A clerk's settle
-// above the clerk limit makes the claim PENDING; a reject sends the reason typed beside it. A role
+// above the clerk limit makes the claim PENDING; a settle sends the as-of date typed beside it (blank: now), fixing
+// the due as it stood at the end of that day; a reject sends the reason typed beside it. A role
 // allowed to reassign (standing rule: a steward) moves a DRAFT, OPEN or PENDING claim to the person chosen beside the
 // Move button. A steward re-settles a SETTLED claim, freezing it again at today's figure. An OPEN claim is deferred to the
 // date typed beside the Defer button. The Add proof button raises the claim's proofs count by one, of the kind chosen
@@ -57,6 +58,7 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
   const [sheet] = useCurrentSheet();
   const [error, setError] = useClaimError(claim.id);
   const [reason, setReason] = useState('');
+  const [settleOn, setSettleOn] = useState('');
   const [voidReason, setVoidReason] = useState('');
   const voidReasons = useVoidReasons().data ?? [];
   const [moveTo, setMoveTo] = useState('');
@@ -73,11 +75,18 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
     mutationFn: (action: Action) =>
       postJson<Claim>(
         `/api/sheets/${encodeURIComponent(sheet)}/claims/${claim.id}/${action}?user=${encodeURIComponent(user)}`,
-        action === 'reject' ? { reason } : action === 'void' ? { reason: voidReason } : {},
+        action === 'reject'
+          ? { reason }
+          : action === 'void'
+            ? { reason: voidReason }
+            : action === 'settle'
+              ? { on: settleOn.trim() }
+              : {},
       ),
     onSuccess: async (_c, action) => {
       if (action === 'reject') setReason('');
       if (action === 'void') setVoidReason('');
+      if (action === 'settle') setSettleOn('');
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
     },
     onError: (_e, action) => setError(`This ${claim.status} claim cannot be changed by ${action}${REFUSED[action] ?? ''}.`),
@@ -172,18 +181,31 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
     <>
       <span data-testid="claim-status">{claim.status}</span>{' '}
       {ACTIONS.map(({ action, label }) => (
-        <button
-          key={action}
-          type="button"
-          data-testid={`claim-${action}`}
-          disabled={change.isPending}
-          onClick={() => {
-            setError('');
-            once(() => change.mutateAsync(action));
-          }}
-        >
-          {label}
-        </button>
+        <span key={action}>
+          <button
+            type="button"
+            data-testid={`claim-${action}`}
+            disabled={change.isPending}
+            onClick={() => {
+              setError('');
+              once(() => change.mutateAsync(action));
+            }}
+          >
+            {label}
+          </button>
+          {action === 'settle' && (
+            <input
+              data-testid="claim-settle-date"
+              aria-label="Settle as of"
+              placeholder="as of yyyy-mm-dd"
+              value={settleOn}
+              onChange={(e) => {
+                setSettleOn(e.target.value);
+                setError('');
+              }}
+            />
+          )}
+        </span>
       ))}
       <input
         data-testid="claim-reject-reason"

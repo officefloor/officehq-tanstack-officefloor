@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Records the claim's status change, with its person's name; runs only once the change has been allowed.
- * Settling and approving also record the due fixed (n/a when the grade had no rate); rejecting records its reason;
+ * Settling and approving also record the due fixed (n/a when the grade had no rate); a settle taken as of a date records that date (on=) after its due; rejecting records its reason;
  * a steward's review records CLAIM_REVIEWED (no number) then CLAIM_OPENED with the number it gave;
  * re-settling records the previous due and the new one; voiding a SETTLED claim records the frozen due it reverses; voiding with a reason records it last.
  */
@@ -31,6 +31,7 @@ public class AuditClaimAction {
                 + (action == ClaimAction.RESETTLE
                         ? " old=" + figure(previous.value()) + " new=" + figure(claim.due())
                         : action.settles() ? " due=" + figure(claim.due()) : "")
+                + (action == ClaimAction.SETTLE && !request.on().isEmpty() ? " on=" + request.on() : "")
                 + (action == ClaimAction.REJECT ? " reason=" + request.reason() : "")
                 + (action == ClaimAction.VOID && previous.settled() ? " reversed=" + figure(previous.value()) : "")
                 + (action == ClaimAction.VOID && !request.reason().isEmpty() ? " reason=" + request.reason() : ""));
