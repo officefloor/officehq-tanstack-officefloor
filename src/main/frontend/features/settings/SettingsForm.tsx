@@ -15,6 +15,7 @@ import {
   PERCENT,
   PERMISSION_ACTIONS,
   ROLE_LIST,
+  ROUNDING_MODES,
   STANDING_PERMISSIONS,
   settingsKey,
   useSettings,
@@ -56,6 +57,8 @@ type SettingsInput = {
   parent?: string;
   fiscalStartMonth?: string;
   alertThreshold?: string;
+  rounding?: string;
+  roundingFrom?: string;
 };
 
 /** The from-date field of each dated setting, by its key as the screen names it (terms-A for a grade's terms). */
@@ -77,6 +80,7 @@ type Touched = {
   parent: boolean;
   fiscalStartMonth: boolean;
   alertThreshold: boolean;
+  rounding: boolean;
 };
 
 const UNTOUCHED: Touched = {
@@ -95,12 +99,13 @@ const UNTOUCHED: Touched = {
   parent: false,
   fiscalStartMonth: false,
   alertThreshold: false,
+  rounding: false,
 };
 
-// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and entry date (blank: off) and cap (blank: none) and proof threshold (blank: none) and each grade's proof threshold (blank: the sheet's) and note threshold (blank: none) in force, and the
+// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and entry date (blank: off) and cap (blank: none) and proof threshold (blank: none) and each grade's proof threshold (blank: the sheet's) and note threshold (blank: none) and rounding mode (half-up or half-even; blank: none, the policy date decides) in force, and the
 // permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the pot (blank: none; not dated), and the parent sheet (blank: none; not dated), and the fiscal year start month (1 to 12; blank: 1; not dated), and the alert threshold (blank: off; not dated), and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing. A dated setting (the clerk
-// limit, floor, terms, each grade's terms, late percent, cap, proof threshold, each grade's proof threshold and note threshold) is recorded from the date typed beside it (blank: the
+// limit, floor, terms, each grade's terms, late percent, cap, proof threshold, each grade's proof threshold, note threshold and rounding mode) is recorded from the date typed beside it (blank: the
 // sheet's today); the value shown is the one in force on the sheet's today.
 export function SettingsForm() {
   const [user] = useCurrentUser();
@@ -128,6 +133,7 @@ export function SettingsForm() {
   const [parent, setParent] = useState('');
   const [fiscalStartMonth, setFiscalStartMonth] = useState('');
   const [alertThreshold, setAlertThreshold] = useState('');
+  const [rounding, setRounding] = useState('');
   const [perms, setPerms] = useState<Record<string, string>>({});
   const [touchedPerms, setTouchedPerms] = useState<Record<string, boolean>>({});
   const [froms, setFroms] = useState<Froms>({});
@@ -161,6 +167,7 @@ export function SettingsForm() {
       setParent('');
       setFiscalStartMonth('');
       setAlertThreshold('');
+      setRounding('');
       setPerms({});
       setTouchedPerms({});
       setFroms({});
@@ -212,6 +219,7 @@ export function SettingsForm() {
       ['proof-threshold', 'proof threshold'],
       ...GRADES.map((g) => [`proof-threshold-${g}`, `proof threshold for grade ${g}`]),
       ['note-threshold', 'note threshold'],
+      ['rounding', 'rounding mode'],
     ]) {
       if (fromOf(key) === null) {
         setError(`Type the ${label} from-date as yyyy-MM-dd, or leave it blank for the sheet's today.`);
@@ -343,6 +351,15 @@ export function SettingsForm() {
       input.noteThreshold = value;
       input.noteThresholdFrom = datedFrom('note-threshold');
     }
+    if (touched.rounding) {
+      const value = rounding.trim();
+      if (value !== '' && !(ROUNDING_MODES as readonly string[]).includes(value)) {
+        setError('Type a rounding mode of half-up or half-even, or leave it blank for none (the policy date decides).');
+        return;
+      }
+      input.rounding = value;
+      input.roundingFrom = datedFrom('rounding');
+    }
     if (touched.graceDays) {
       const value = graceDays.trim();
       if (value !== '' && !DAYS.test(value)) {
@@ -406,7 +423,8 @@ export function SettingsForm() {
       input.pot === undefined &&
       input.parent === undefined &&
       input.fiscalStartMonth === undefined &&
-      input.alertThreshold === undefined
+      input.alertThreshold === undefined &&
+      input.rounding === undefined
     )
       return;
     once(() => save.mutateAsync(input));
@@ -468,6 +486,9 @@ export function SettingsForm() {
       ))}
       <p>
         Note threshold: <span data-testid="setting-note-threshold-current">{settings?.noteThreshold ?? ''}</span>
+      </p>
+      <p>
+        Rounding mode: <span data-testid="setting-rounding-current">{settings?.rounding ?? ''}</span>
       </p>
       <p>
         Grace days: <span data-testid="setting-grace-days-current">{settings?.graceDays ?? ''}</span>
@@ -656,6 +677,18 @@ export function SettingsForm() {
           }}
         />
         {fromField('note-threshold', 'Note threshold')}
+        <input
+          data-testid="setting-rounding"
+          placeholder="Rounding mode, half-up or half-even (blank: none, the policy date decides)"
+          value={rounding}
+          onFocus={() => setTouched((t) => ({ ...t, rounding: true }))}
+          onChange={(e) => {
+            setRounding(e.target.value);
+            setTouched((t) => ({ ...t, rounding: true }));
+            setError('');
+          }}
+        />
+        {fromField('rounding', 'Rounding mode')}
         <input
           data-testid="setting-grace-days"
           placeholder="Grace days after a period's end before it closes itself (blank: off)"

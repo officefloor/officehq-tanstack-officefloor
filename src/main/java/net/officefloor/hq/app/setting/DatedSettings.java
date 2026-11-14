@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -11,10 +12,10 @@ import net.officefloor.hq.app.claim.LateCharge;
 import net.officefloor.hq.app.person.Person;
 
 /**
- * A sheet's dated settings: for each key (floor, late-pct, terms, terms-&lt;grade&gt;, grace-&lt;grade&gt;, clerk-limit, cap, proof-threshold, proof-threshold-&lt;grade&gt;, note-threshold) the values
+ * A sheet's dated settings: for each key (floor, late-pct, terms, terms-&lt;grade&gt;, grace-&lt;grade&gt;, clerk-limit, cap, proof-threshold, proof-threshold-&lt;grade&gt;, note-threshold, rounding) the values
  * recorded, by from-date (a value null: blank). The value in force on a date is the one with the latest from-date on or
  * before it; before every from-date it is the sheet's starting value (floor 1.00, late percent 0.00, terms 14; none
- * for the clerk limit, the cap, the proof threshold, the note threshold, a grade's own terms, a grade's grace days and a grade's proof threshold).
+ * for the clerk limit, the cap, the proof threshold, the note threshold, a grade's own terms, a grade's grace days, a grade's proof threshold and the rounding mode).
  */
 public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values) {
 
@@ -26,6 +27,11 @@ public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values)
     public static final String PROOF_THRESHOLD = "proof-threshold";
     public static final String NOTE_THRESHOLD = "note-threshold";
     public static final String GRACE = "grace";
+    public static final String ROUNDING = "rounding";
+
+    /** The rounding modes that can be set, as typed. */
+    public static final String HALF_UP = "half-up";
+    public static final String HALF_EVEN = "half-even";
 
     /** The key of a grade's own terms. */
     public static String gradeTerms(String grade) {
@@ -186,6 +192,20 @@ public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values)
     public boolean needsNote(LocalDate date, BigDecimal due) {
         BigDecimal threshold = noteThresholdOn(date);
         return threshold != null && due != null && due.compareTo(threshold) > 0;
+    }
+
+    /** The rounding mode in force on the date, as typed (null: none). */
+    public String roundingOn(LocalDate date) {
+        return on(ROUNDING, date);
+    }
+
+    /** The rounding mode in force on the date (null: none, the policy date decides). */
+    public RoundingMode roundingModeOn(LocalDate date) {
+        String value = roundingOn(date);
+        if (HALF_UP.equals(value)) {
+            return RoundingMode.HALF_UP;
+        }
+        return HALF_EVEN.equals(value) ? RoundingMode.HALF_EVEN : null;
     }
 
     /** Every value recorded, by key, oldest from-date first. */

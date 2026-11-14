@@ -64,7 +64,7 @@ public class TakeStatement {
             dated = then.dated();
             policyDate = then.policyDate();
         }
-        Rounding rounding = Rounding.of(policyDate == null ? on : policyDate, thenClaims);
+        Rounding rounding = Rounding.of(policyDate == null ? on : policyDate, dated::roundingModeOn, thenClaims);
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean kept = false;
         int counted = 0;

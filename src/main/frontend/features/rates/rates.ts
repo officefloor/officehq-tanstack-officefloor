@@ -72,11 +72,14 @@ const hundredths = (value: string) => Math.round(Number(value) * 100);
 export type Rounding = 'half-up' | 'half-even';
 
 /**
- * How a claim's live figures round: half up when it is dated before the sheet's policy date, half to
- * even on or after it. A correction rounds by the date of the claim it corrects, not its own.
+ * How a claim's live figures round: by the rounding mode in force on its date; with none, half up when it is
+ * dated before the sheet's policy date, half to even on or after it. A correction rounds by the date of the
+ * claim it corrects, not its own.
  */
 export function roundingFor(claim: Claim, rules: DueRules): Rounding {
   const date = claim.corrects !== null ? (rules.claimDates.get(claim.corrects) ?? claim.date) : claim.date;
+  const mode = rules.roundingOn(date);
+  if (mode === 'half-up' || mode === 'half-even') return mode;
   return date < rules.policyDate ? 'half-up' : 'half-even';
 }
 

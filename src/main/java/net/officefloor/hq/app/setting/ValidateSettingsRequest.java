@@ -30,7 +30,7 @@ public class ValidateSettingsRequest {
             Out<PeriodNumberingFrom> periodNumberingFrom, Out<EntryDate> entryDate, Out<GradeTerms> gradeTerms, Out<Cap> cap,
             Out<ProofThreshold> proofThreshold, Out<NoteThreshold> noteThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays,
             Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold, Out<Pot> pot, Out<Parent> parent,
-            Out<FiscalStartMonth> fiscalStartMonth, Out<AlertThreshold> alertThreshold)
+            Out<FiscalStartMonth> fiscalStartMonth, Out<AlertThreshold> alertThreshold, Out<RoundingSetting> rounding)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -51,6 +51,21 @@ public class ValidateSettingsRequest {
         parent.set(parent(request.parent()));
         fiscalStartMonth.set(fiscalStartMonth(request.fiscalStartMonth()));
         alertThreshold.set(alertThreshold(request.alertThreshold()));
+        rounding.set(rounding(request.rounding(), from(request.roundingFrom(), "rounding")));
+    }
+
+    private static RoundingSetting rounding(String requested, LocalDate from) throws InvalidSettingException {
+        if (requested == null) {
+            return new RoundingSetting(false, null, null);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new RoundingSetting(true, null, from);
+        }
+        if (!DatedSettings.HALF_UP.equals(value) && !DatedSettings.HALF_EVEN.equals(value)) {
+            throw new InvalidSettingException("The rounding mode must be half-up or half-even, or blank.");
+        }
+        return new RoundingSetting(true, value, from);
     }
 
     private static AlertThreshold alertThreshold(String requested) throws InvalidSettingException {

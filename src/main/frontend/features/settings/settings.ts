@@ -24,7 +24,7 @@ export type UserRole = { user: string; role: string };
  * claim whose due is above the one in force on its date is opened only with a note), and the roles
  * given to user names. The clerk limit, floor, terms, grade terms, late percent, cap, proof threshold and note threshold are those in force on the sheet's
  * today; `history` holds every value recorded for them, by key (floor, late-pct, terms, terms-<grade>, grace-<grade>, clerk-limit,
- * cap, proof-threshold, proof-threshold-<grade>, note-threshold), oldest from-date first (value '': blank). `permissions` is the permission matrix: by action, the
+ * cap, proof-threshold, proof-threshold-<grade>, note-threshold, rounding), oldest from-date first (value '': blank). `permissions` is the permission matrix: by action, the
  * roles allowed it, comma separated ('': blank, the standing rule); it is not dated.
  * `graceDays` is the grace days (whole days; '': off — when the sheet's today is changed, an open period whose
  * to-date plus them is before the new today is closed); it is not dated.
@@ -33,8 +33,10 @@ export type UserRole = { user: string; role: string };
  * `pot` is the pot ('': none), the pot of each pool that is a member of no pool, shared out among its members when it is balanced; it is not dated.
  * `parent` is the parent sheet's id ('': none), whose rates a grade with none of its own in force takes; it is not dated.
  * `fiscalStartMonth` is the month (1 to 12) each fiscal year starts in; it is not dated.
+ * `rounding` is the rounding mode in force on the sheet's today (half-up or half-even; '': none — a claim with none in force on its
+ * date rounds by the policy date); it is dated, its values in `history` under rounding.
  */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; entryDate: string; cap: string; proofThreshold: string; noteThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[]; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; entryDate: string; cap: string; proofThreshold: string; noteThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[]; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string };
 
 /**
  * The steward role delegated by a steward (`by`) to a user name, from a from-date to a to-date (yyyy-MM-dd), both
@@ -118,13 +120,16 @@ export function useFloor(): string {
 }
 
 
+/** The rounding modes a sheet can set. */
+export const ROUNDING_MODES = ['half-up', 'half-even'] as const;
+
 /** A date as the settings form takes it: yyyy-MM-dd. */
 export const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * What a claim's due is worked out from: the floor and late percent in force on a claim's date, the grace days of a grade
  * in force on a date (0: none), the sheet's today, its policy
- * date in force (blank: today), its cap in force on today ('': none) and the dates of its claims by number (a correction rounds by the date
+ * date in force (blank: today), the rounding mode in force on a date ('': none, the policy date decides), its cap in force on today ('': none) and the dates of its claims by number (a correction rounds by the date
  * of the claim it corrects).
  */
 export type DueRules = {
@@ -133,6 +138,7 @@ export type DueRules = {
   graceOn: (grade: string | undefined, date: string) => number;
   today: string;
   policyDate: string;
+  roundingOn: (date: string) => string;
   cap: string;
   claimDates: Map<string, string>;
 };
@@ -154,6 +160,7 @@ export function dueRules(settings: Settings | undefined, today: string, claims: 
     graceOn: (grade: string | undefined, date: string) => (grade ? Number(valueOn(history?.[`grace-${grade}`], date, '0')) : 0),
     today,
     policyDate: settings?.policyDate || today,
+    roundingOn: (date: string) => valueOn(history?.rounding, date, ''),
     cap: settings?.cap ?? '',
     claimDates: new Map(claims.filter((c) => c.number !== null).map((c) => [c.number!, c.date])),
   };

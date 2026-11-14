@@ -74,10 +74,10 @@ public class SettingRepository {
         return date.isEmpty() || date.get(0) == null ? null : date.get(0).toLocalDate();
     }
 
-    /** How the sheet rounds the given claims' live figures on the given today: by its policy date (blank: today). */
+    /** How the sheet rounds the given claims' live figures on the given today: by the rounding mode in force on a claim's date, else by its policy date (blank: today). */
     public Rounding rounding(String sheetId, LocalDate today, List<Claim> claims) {
         LocalDate policyDate = policyDate(sheetId);
-        return Rounding.of(policyDate == null ? today : policyDate, claims);
+        return Rounding.of(policyDate == null ? today : policyDate, dated(sheetId)::roundingModeOn, claims);
     }
 
     /** Set the sheet's rounding policy date (null: blank, the sheet's today). */
