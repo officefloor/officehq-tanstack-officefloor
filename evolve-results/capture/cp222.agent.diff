@@ -1,0 +1,97 @@
+diff --git a/src/main/frontend/features/counters/ConsolidatedFigures.tsx b/src/main/frontend/features/counters/ConsolidatedFigures.tsx
+index 944b69d70..c56624d64 100644
+--- a/src/main/frontend/features/counters/ConsolidatedFigures.tsx
++++ b/src/main/frontend/features/counters/ConsolidatedFigures.tsx
+@@ -18,18 +18,19 @@ import { nameKey, STATUSES } from './HeaderCounters';
+ /**
+  * One sheet's figures: each person's names (their name and aliases, as names are compared), each person's due-total
+  * and overdue-total, per grade the due-totals of the people on it (retired people left out) added up, and per status
+- * how many claims have it.
++ * how many claims have it, and how many overdue claims count (as the rollup's overdue count).
+  */
+-type Figures = {
++export type Figures = {
+   names: string[][];
+   dues: string[];
+   overdues: string[];
+   grades: Record<string, string>;
+   statuses: Record<string, number>;
++  overdueCount: number;
+ };
+ 
+ /** A sheet's figures, worked out from its people, aliases, claims and rates by its rules. */
+-function sheetFigures(people: Person[], aliases: Alias[], claims: Claim[], rates: Rate[], rules: DueRules): Figures {
++export function sheetFigures(people: Person[], aliases: Alias[], claims: Claim[], rates: Rate[], rules: DueRules): Figures {
+   const mine = (id: number) => claims.filter((c) => c.personId === id);
+   const current = people.filter((p) => !p.retired);
+   const gradeDue = (g: string) =>
+@@ -46,6 +47,7 @@ function sheetFigures(people: Person[], aliases: Alias[], claims: Claim[], rates
+     overdues: people.map((p) => personOverdue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules).total),
+     grades: Object.fromEntries(GRADES.map((g) => [g, gradeDue(g)])),
+     statuses: Object.fromEntries(STATUSES.map((s) => [s, claims.filter((c) => c.status === s).length])),
++    overdueCount: people.reduce((n, p) => n + personOverdue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules).count, 0),
+   };
+ }
+ 
+@@ -73,7 +75,7 @@ async function figuresOf(sheet: string): Promise<Figures> {
+  * The figures of each of the sheet's descendants (its children, theirs and so on), as they stand now, or as they
+  * stood at the end of the date the screen shows.
+  */
+-function useStoredFigures(asOf: string) {
++export function useStoredFigures(asOf: string) {
+   const [sheet] = useCurrentSheet();
+   return useQuery({
+     queryKey: [...descendantFiguresKey(sheet), asOf],
+diff --git a/src/main/frontend/features/dashboard/StewardDashboard.tsx b/src/main/frontend/features/dashboard/StewardDashboard.tsx
+index d483d46cc..9c95a5486 100644
+--- a/src/main/frontend/features/dashboard/StewardDashboard.tsx
++++ b/src/main/frontend/features/dashboard/StewardDashboard.tsx
+@@ -1,6 +1,8 @@
++import { currentAsOf } from '../../api/http';
++import { useAliases } from '../aliases/aliases';
+ import { useClaims } from '../claims/claims';
+-import { personOverdue } from '../overdue/overdue';
+-import { liveHolds, usePeople } from '../people/people';
++import { sheetFigures, useStoredFigures } from '../counters/ConsolidatedFigures';
++import { usePeople } from '../people/people';
+ import { useRates } from '../rates/rates';
+ import { useCurrentUser } from '../session/session';
+ import { useDueRules, useSettings } from '../settings/settings';
+@@ -15,9 +17,9 @@ export function actsAsSteward(settings: Settings | undefined, user: string, toda
+   );
+ }
+ 
+-// A steward's dashboard over the sheet: how many claims are PENDING, how many REVIEW, and how many overdue claims count
+-// (as the rollup's overdue count). Blank for a user who does not act as a steward. While the screen shows the sheet as
+-// of a date, everything — the role included — is as it stood then.
++// A steward's dashboard over the sheet and all its descendants: how many claims are PENDING, how many REVIEW, and how many overdue claims count
++// (as the rollup's overdue count), each added up over the tree, each sheet by its own rules. Blank for a user who does not act as a steward. While the screen shows the sheet as
++// of a date, everything — the role included — is as it stood then, over every sheet of the tree.
+ export function StewardDashboard() {
+   const [user] = useCurrentUser();
+   const settings = useSettings().data;
+@@ -25,16 +27,18 @@ export function StewardDashboard() {
+   const claims = useClaims().data ?? [];
+   const rates = useRates().data ?? [];
+   const rules = useDueRules();
++  const aliases = useAliases().data ?? [];
++  const stored = useStoredFigures(currentAsOf()).data ?? [];
+ 
+   const steward = actsAsSteward(settings, user ?? '', rules.today);
+-  const overdue = people.reduce(
+-    (n, p) => n + personOverdue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules).count,
+-    0,
+-  );
++  const all = [sheetFigures(people, aliases, claims, rates, rules), ...stored];
++  const pending = all.reduce((n, f) => n + f.statuses.PENDING, 0);
++  const review = all.reduce((n, f) => n + f.statuses.REVIEW, 0);
++  const overdue = all.reduce((n, f) => n + f.overdueCount, 0);
+   return (
+     <p data-testid="steward-dashboard">
+-      Steward — Pending: <strong data-testid="dash-pending-count">{steward ? claims.filter((c) => c.status === 'PENDING').length : ''}</strong>
+-      {' · '}Review: <strong data-testid="dash-review-count">{steward ? claims.filter((c) => c.status === 'REVIEW').length : ''}</strong>
++      Steward — Pending: <strong data-testid="dash-pending-count">{steward ? pending : ''}</strong>
++      {' · '}Review: <strong data-testid="dash-review-count">{steward ? review : ''}</strong>
+       {' · '}Overdue: <strong data-testid="dash-overdue-count">{steward ? overdue : ''}</strong>
+     </p>
+   );
