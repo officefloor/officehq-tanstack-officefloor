@@ -19,8 +19,9 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '' };
  *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures; n/a
  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
  *  their statements (a button that takes one, the count, the last one's due-total and date), whether
- *  they are retired and from when (with a date and a button that retires them), whether they are on
- *  hold (with a button that holds or releases them; held, their OPEN claims count in no total), their
+ *  they are retired and from when (with a date and a button that retires them), whether they have
+ *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
+ *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
  *  patrons (names sorted, with a picker that names one more) and backing (their patrons' due-totals
  *  added up, skipping n/a), and
  *  their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
@@ -42,6 +43,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const [showRetired] = useShowRetired();
   // The retirement date typed on each person's row (blank: the sheet's today).
   const [retireDates, setRetireDates] = useState<Record<number, string>>({});
+  // The hold dates typed on each person's row (blank from: the sheet's today; blank to: open-ended).
+  const [holdDates, setHoldDates] = useState<Record<number, { from: string; to: string }>>({});
   // The patron picked on each person's row (blank: none picked).
   const [patronPicks, setPatronPicks] = useState<Record<number, string>>({});
   // The claims selected for a bulk action.
@@ -93,9 +96,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
   });
 
-  // The person whose last hold or release was refused; cleared by the next action on the row.
+  // The person whose last hold was refused; cleared by the next action on the row.
   const holding = useMutation({
-    mutationFn: (id: number) => holdPerson(sheetId, user, id),
+    mutationFn: (v: { id: number; from: string; to: string }) => holdPerson(sheetId, user, v.id, v.from, v.to),
     onSuccess: () => Promise.all([
       queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
       queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
@@ -131,10 +134,16 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   };
 
   const hold = (id: number) => {
+    const { from = '', to = '' } = holdDates[id] ?? {};
     stateOnce(() => {
       resetRowActions();
-      return holding.mutateAsync(id);
+      return holding.mutateAsync({ id, from, to });
     });
+  };
+
+  const changeHold = (id: number, patch: Partial<{ from: string; to: string }>) => {
+    setHoldDates((d) => ({ ...d, [id]: { from: '', to: '', ...d[id], ...patch } }));
+    holding.reset();
   };
 
   const patronize = (id: number) => {
@@ -263,8 +272,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   {retirement.isError && retirement.variables?.id === p.id && (
                     <span data-testid="person-error">The person could not be retired: the date must be a date.</span>
                   )}
-                  {holding.isError && holding.variables === p.id && (
-                    <span data-testid="person-error">The person could not be held or released.</span>
+                  {holding.isError && holding.variables?.id === p.id && (
+                    <span data-testid="person-error">The person could not be held: the dates must be dates, the to-date not before the from-date.</span>
                   )}
                 </td>
                 <td>
@@ -282,9 +291,16 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                 </td>
                 <td>
                   On hold <span data-testid="person-hold">{p.held ? 'yes' : 'no'}</span>{' '}
+                  {p.holds.map((h, i) => (
+                    <span key={i} data-testid="person-hold-line">{h.from} to {h.to ?? '…'}; </span>
+                  ))}
+                  <input type="date" data-testid="person-hold-from" value={holdDates[p.id]?.from ?? ''}
+                    onChange={(e) => changeHold(p.id, { from: e.target.value })} />{' '}
+                  <input type="date" data-testid="person-hold-to" value={holdDates[p.id]?.to ?? ''}
+                    onChange={(e) => changeHold(p.id, { to: e.target.value })} />{' '}
                   <button type="button" data-testid="person-hold-toggle" disabled={holding.isPending}
                     onClick={() => hold(p.id)}>
-                    {p.held ? 'Release' : 'Hold'}
+                    Hold
                   </button>
                 </td>
                 <td>

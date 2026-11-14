@@ -77,11 +77,13 @@ export function reassignClaim(sheetId: string, by: string, id: number, toPersonI
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED do. */
 export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
 
-/** The claims that count in live totals: all but the open claims of people on hold (their SETTLED
- *  claims still count). */
-export function liveClaims(claims: Claim[], people: Array<{ id: number; held: boolean }> | undefined): Claim[] {
-  const held = new Set((people ?? []).filter((p) => p.held).map((p) => p.id));
-  return claims.filter((c) => !(isOpen(c) && held.has(c.personId)));
+/** The claims that count in live totals: all but the open claims dated within one of their
+ *  person's holds (`to` null: open-ended) that no statement bound (SETTLED and bound claims still count). */
+export function liveClaims(claims: Claim[],
+  people: Array<{ id: number; holds: Array<{ from: string; to: string | null }> }> | undefined): Claim[] {
+  const holds = new Map((people ?? []).map((p) => [p.id, p.holds]));
+  const held = (c: Claim) => (holds.get(c.personId) ?? []).some((h) => h.from <= c.date && (h.to === null || c.date <= h.to));
+  return claims.filter((c) => !(isOpen(c) && !c.stated && held(c)));
 }
 
 /** Sum the amounts of the claims that count (see `counts`) exactly (in cents), shown with two decimals. */

@@ -8,16 +8,21 @@ export const GRADES: Grade[] = ['A', 'B', 'C'];
 /** A grade a person was given, in force from its from-date (yyyy-MM-dd; null: from the beginning of time). */
 export type GradeFrom = { grade: Grade; from: string | null };
 
+/** A hold on a person: from its from-date to its to-date (null: open-ended), both included (yyyy-MM-dd). */
+export type Hold = { from: string; to: string | null };
+
 /** `grade` is the one in force on the sheet's today, of their `grades` by from-date (none first).
  *  `version` is raised by every saved edit; an edit sends the version its form loaded. Their
  *  statements: how many were taken, and the last one's due-total and date (null until the first).
  *  `retiredFrom` is the date they are retired from (null: not retired); with it set at all they
- *  are `retired`, whatever the date. While `held`, their OPEN claims count in no live total. `patronIds` are the people they name
+ *  are `retired`, whatever the date. `holds` are their holds in the order added, and `held` whether
+ *  they have any: their OPEN claims dated within a hold, and not bound by a statement, count in no
+ *  live total. `patronIds` are the people they name
  *  as patrons, in the order named. */
 export type Person = {
   id: number; sheetId: string; name: string; grade: Grade; grades: GradeFrom[]; version: number;
   statementCount: number; statedTotal: string | null; statementDate: string | null;
-  retired: boolean; retiredFrom: string | null; held: boolean; patronIds: number[];
+  retired: boolean; retiredFrom: string | null; held: boolean; holds: Hold[]; patronIds: number[];
 };
 /** `gradeFrom` is the date an edit's grade applies from (blank: the sheet's today). */
 export type PersonInput = { name: string; grade: string; gradeFrom: string };
@@ -63,9 +68,10 @@ export function retirePerson(sheetId: string, by: string, id: number, from: stri
   return postJson<Person>(`${base(sheetId)}/${id}/retire?by=${encodeURIComponent(by)}`, { from });
 }
 
-/** Put the person on hold, or take them off it when they are held. */
-export function holdPerson(sheetId: string, by: string, id: number): Promise<Person> {
-  return postJson<Person>(`${base(sheetId)}/${id}/hold?by=${encodeURIComponent(by)}`, {});
+/** Add a hold on the person from `from` (blank: the sheet's today) to `to` (blank: open-ended);
+ *  refused (rejects) when a date is not a date or `to` is before `from`. */
+export function holdPerson(sheetId: string, by: string, id: number, from: string, to: string): Promise<Person> {
+  return postJson<Person>(`${base(sheetId)}/${id}/hold?by=${encodeURIComponent(by)}`, { from, to });
 }
 
 /** Name another person on the sheet as one of the person's patrons; refused (rejects) for the

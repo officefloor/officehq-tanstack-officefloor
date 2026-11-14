@@ -8,7 +8,8 @@ import net.officefloor.hq.app.claim.ClaimStatus;
  *  first from the beginning of time), with {@code grade} the one in force on the sheet's today, the version raised by each saved edit, and
  *  their statements: how many have been taken, and the last one's due-total and date (none until the
  *  first), and the date they are retired from (null: not retired; set at all, they count as retired),
- *  and whether they are on hold (their OPEN claims then count in no live total). */
+ *  and their holds, by when they were added (their OPEN claims dated within one, and not bound by a
+ *  statement, count in no live total). */
 public class Person {
     private final long id;
     private final String sheetId;
@@ -23,7 +24,8 @@ public class Person {
     private String statedTotal;
     private String statementDate;
     private String retiredFrom;
-    private boolean held;
+    /** Their holds, in the order they were added. */
+    private java.util.List<Hold> holds = new java.util.ArrayList<>();
     /** The ids of the people they name as patrons, in the order named. */
     private java.util.List<Long> patronIds = new java.util.ArrayList<>();
     /** How many claims the statement this request took bound, for its audit line. */
@@ -90,16 +92,19 @@ public class Person {
     public String getRetiredFrom() { return retiredFrom; }
     public void setRetiredFrom(String retiredFrom) { this.retiredFrom = retiredFrom; }
     public boolean isRetired() { return retiredFrom != null; }
-    public boolean isHeld() { return held; }
-    public void setHeld(boolean held) { this.held = held; }
+    /** Whether they have any hold. */
+    public boolean isHeld() { return !holds.isEmpty(); }
+    public java.util.List<Hold> getHolds() { return holds; }
+    public void setHolds(java.util.List<Hold> holds) { this.holds = holds; }
     public java.util.List<Long> getPatronIds() { return patronIds; }
     public void setPatronIds(java.util.List<Long> patronIds) { this.patronIds = patronIds; }
 
-    /** Whether the claim counts in live totals: it counts by status, and is not an open (OPEN or PENDING) claim of a
-     *  person on hold. */
+    /** Whether the claim counts in live totals: it counts by status, and is not an open (OPEN or
+     *  PENDING) claim dated within one of their holds that no statement bound. */
     public boolean countsLive(Claim claim) {
         return claim.isCounting()
-                && !(held && ClaimStatus.isOpen(claim.getStatus()));
+                && !(ClaimStatus.isOpen(claim.getStatus()) && !claim.isStated()
+                        && holds.stream().anyMatch((h) -> h.covers(claim.getDate())));
     }
 
     /** Whether a claim on this date is refused: the person is retired from a date before it. */

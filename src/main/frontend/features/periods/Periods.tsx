@@ -11,7 +11,7 @@ import { addPeriod, closePeriod, listPeriods, periodDueTotal, periodsKey, reopen
 const EMPTY: PeriodInput = { name: '', from: '', to: '' };
 
 /** The sheet's periods: a form that adds one, and each period by from-date with its due-total (the
- *  due of the claims that count whose date falls in it, n/a ones and OPEN ones of people on hold skipped; once closed, the one fixed
+ *  due of the claims that count whose date falls in it, n/a ones and OPEN unbound ones dated within their person's hold skipped; once closed, the one fixed
  *  when it was closed), whether it is closed, and buttons that close it and (a steward only) reopen it. */
 export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();

@@ -13,7 +13,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 
 /** Takes a statement of the person: records their due-total now (the sum of the due of their claims that
- *  count live (OPEN ones of a person on hold do not), n/a ones skipped; n/a when their grade has no rate on the sheet's today and none of
+ *  count live (open ones dated within a hold of theirs, and not bound, do not), n/a ones skipped; n/a when their grade has no rate on the sheet's today and none of
  *  those claims keeps a settled or bound figure, or a live one at a grade no longer in force) on the sheet's today, and binds each counting claim
  *  to the figure under the due it shows now (its late charge is never bound); a claim that does not
  *  count live is unbound. */

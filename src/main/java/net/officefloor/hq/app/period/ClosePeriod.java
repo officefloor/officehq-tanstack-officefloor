@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** Closes a period, fixing its due-total as it is now: the due of the claims that count whose date
- *  falls in it (n/a ones skipped, and OPEN ones of people on hold), as the screen shows them.
+ *  falls in it (n/a ones skipped, and OPEN ones dated within a hold of their person, unless bound), as the screen shows them.
  *  Refused when it is already closed. */
 public class ClosePeriod {
     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name,
