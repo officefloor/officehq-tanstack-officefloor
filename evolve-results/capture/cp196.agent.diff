@@ -1,0 +1,60 @@
+diff --git a/src/main/frontend/features/rates/ClaimDue.tsx b/src/main/frontend/features/rates/ClaimDue.tsx
+index ab169ad60..93a8612f1 100644
+--- a/src/main/frontend/features/rates/ClaimDue.tsx
++++ b/src/main/frontend/features/rates/ClaimDue.tsx
+@@ -3,7 +3,7 @@ import type { Person } from '../people/people';
+ import { useDueRules } from '../settings/settings';
+ import { claimDue, useRates } from './rates';
+ 
+-// A claim's due: the one fixed when it was settled, else the greater of the floor and its amount at the rate in force on its date for its person's grade (or its stated figure) plus any late charge while it is overdue.
++// A claim's due: the one fixed when it was settled, else the greater of the floor and its amount at the rate in force on its date for its person's grade (or its stated figure), plus any late charge on that floored figure while it is overdue.
+ export function ClaimDue({ claim, person }: { claim: Claim; person: Person }) {
+   const rates = useRates().data ?? [];
+   const rules = useDueRules();
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 65ec14f27..30f52d645 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -166,14 +166,15 @@ export function lateCharge(claim: Claim, figure: string, grades: GradeFrom[], ru
+ /**
+  * A claim's due: the one fixed when it was settled (any late charge and floor frozen in), else the due its
+  * statement bound it to (late charge and floor included, as shown when it was taken), else the greater of the floor in
+- * force on its date and its figure plus the late charge on it while it is overdue — a correction has no floor and no
++ * force on its date and its figure, plus the late charge on that floored figure while it is overdue — a correction has no floor and no
+  * charge.
+  */
+ export function claimDue(claim: Claim, rates: Rate[], grades: GradeFrom[], rules: DueRules): string {
+   if (claim.due !== null) return claim.due;
+   const figure = claimFigure(claim, rates, grades, rules);
+   if (figure === NA || bound(claim) || claim.corrects !== null) return figure;
+-  return floored(total([figure, lateCharge(claim, figure, grades, rules)]), rules.floorOn(claim.date));
++  const raised = floored(figure, rules.floorOn(claim.date));
++  return total([raised, lateCharge(claim, raised, grades, rules)]);
+ }
+ 
+ /** Whether a claim keeps a figure whatever the rates: fixed when settled, or bound by a statement. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 362311b23..54ef2139b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -189,8 +189,8 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
+ 
+     /**
+      * The claim's due (null: n/a): the due fixed when it was settled, else the due its statement bound it to, else
+-     * the greater of the floor in force on its date and its {@link #figure figure} plus the late charge on that figure
+-     * while it is overdue. A settled claim's fixed due and a bound due already have the charge and floor in them; a
++     * the greater of the floor in force on its date and its {@link #figure figure}, plus the late charge on that
++     * floored figure while it is overdue. A settled claim's fixed due and a bound due already have the charge and floor in them; a
+      * correction has no floor and no charge.
+      */
+     public BigDecimal due(BigDecimal liveRate, BigDecimal floor, LateCharge late, Rounding rounding) {
+@@ -198,7 +198,8 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
+         if (due != null || bound() || figure == null || correction()) {
+             return figure;
+         }
+-        return atLeast(figure.add(late.on(this, figure, rounding.modeFor(this))), floor);
++        BigDecimal floored = atLeast(figure, floor);
++        return floored.add(late.on(this, floored, rounding.modeFor(this)));
+     }
+ 
+     /** An amount times a percent rate, divided by 100, rounded by the mode to two decimals; null with no rate. */
