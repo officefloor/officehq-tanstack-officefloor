@@ -1,0 +1,163 @@
+diff --git a/src/main/frontend/features/claims/ClaimDeferred.tsx b/src/main/frontend/features/claims/ClaimDeferred.tsx
+index 4139be6e6..1a3ad3df0 100644
+--- a/src/main/frontend/features/claims/ClaimDeferred.tsx
++++ b/src/main/frontend/features/claims/ClaimDeferred.tsx
+@@ -2,11 +2,11 @@ import { useSheetToday } from '../session/sheetToday';
+ import type { Claim } from './claims';
+ 
+ // Whether a claim is deferred on the sheet's today — it was deferred until a date after it, and stays so shown once
+-// voided — and the date it was last deferred until (blank when it never was). Only an OPEN one is left out of the
++// voided; while a statement binds it, it is not — and the date it was last deferred until (blank when it never was). Only an OPEN one is left out of the
+ // totals (`deferred` in claims.ts).
+ export function ClaimDeferred({ claim }: { claim: Claim }) {
+   const today = useSheetToday();
+-  const is = claim.deferredUntil !== null && today !== '' && today < claim.deferredUntil;
++  const is = !claim.stated && claim.deferredUntil !== null && today !== '' && today < claim.deferredUntil;
+   return (
+     <>
+       <span data-testid="claim-deferred">{is ? 'yes' : 'no'}</span>{' '}
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index d8868a8fc..6483f09f6 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -16,11 +16,14 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'D
+ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
+ 
+ /**
+- * Whether a claim is deferred on the sheet's `today`: OPEN, deferred until a date after it. A deferred claim counts
+- * in no total, is not overdue, cannot be settled and is left unbound by a statement.
++ * Whether a claim is deferred on the sheet's `today`: OPEN (or SETTLED while a statement bound it), deferred until a
++ * date after it, and no statement binds it. A deferred claim counts in no total, is not overdue, cannot be settled
++ * and is left unbound by a statement; a claim deferred while bound stays in the totals (and can be settled) until the
++ * binding ends.
+  */
+ export const deferred = (c: Claim, today: string) =>
+-  c.status === 'OPEN' && c.deferredUntil !== null && today !== '' && today < c.deferredUntil;
++  (c.status === 'OPEN' || c.status === 'SETTLED') && !c.stated && c.deferredUntil !== null && today !== '' &&
++  today < c.deferredUntil;
+ 
+ /** Whether a statement binds the claim now: it was stated (a PENDING claim too, showing the bound figure). */
+ export const bound = (c: Claim) => c.stated;
+@@ -114,12 +117,12 @@ export type ClaimLogLine = { status: ClaimStatus; by: string; date: string; due:
+  * nor while it is deferred on the sheet's `today`.
+  */
+ export const counts = (c: Claim, holds: Hold[], today: string) =>
+-  c.status === 'SETTLED' ||
+-  (isOpen(c) && !deferred(c, today) && (bound(c) || !holds.some((h) => covers(h, c.date))));
++  !deferred(c, today) &&
++  (c.status === 'SETTLED' || (isOpen(c) && (bound(c) || !holds.some((h) => covers(h, c.date)))));
+ 
+ /** Whether a claim counts toward claimed: as {@link counts}, but a hold (the person's or the claim's) does not take it out. */
+ export const countsClaimed = (c: Claim, today: string) =>
+-  c.status === 'SETTLED' || (isOpen(c) && !deferred(c, today));
++  !deferred(c, today) && (c.status === 'SETTLED' || isOpen(c));
+ 
+ /** Each person's live holds on the sheet's `today`, by id: their open claims dated within one count in no live total. */
+ export const holdsById = (people: { id: number; holds: Hold[]; retiredFrom: string | null }[], today: string) =>
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index d0182db3f..140017396 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -83,7 +83,7 @@ export function statusAt(c: Claim, date: string): ClaimStatus | undefined {
+  */
+ export const countsInPeriod = (period: Period, c: Claim, holds: Person['holds'], today: string) => {
+   const then = statusAt(c, period.to);
+-  if (then === 'SETTLED') return true;
++  if (then === 'SETTLED') return !deferred(c, today);
+   if (then !== 'OPEN' && then !== 'PENDING') return false;
+   return !deferred(c, today) && (!isOpen(c) || bound(c) || !holds.some((h) => covers(h, c.date)));
+ };
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 54ef2139b..c6dac822e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -121,11 +121,14 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
+     }
+ 
+     /**
+-     * Whether the claim is deferred on the given today: OPEN, deferred until a date after that day. A deferred claim
+-     * counts in no total, is not overdue, cannot be settled and is left unbound by a statement.
++     * Whether the claim is deferred on the given today: OPEN (or SETTLED while a statement bound it), deferred until a
++     * date after that day, and bound by no statement. A deferred claim counts in no total, is not overdue, cannot be
++     * settled and is left unbound by a statement; a claim deferred while bound stays in the totals and can be settled
++     * until the binding ends (the statement is cancelled, or the next one leaves it unbound).
+      */
+     public boolean deferred(LocalDate today) {
+-        return status == ClaimStatus.OPEN && deferredUntil != null && today != null && today.isBefore(deferredUntil);
++        return (status == ClaimStatus.OPEN || status == ClaimStatus.SETTLED) && !bound() && deferredUntil != null
++                && today != null && today.isBefore(deferredUntil);
+     }
+ 
+     /** The same claim deferred until the date. */
+diff --git a/src/main/java/net/officefloor/hq/app/period/Period.java b/src/main/java/net/officefloor/hq/app/period/Period.java
+index 1e3862e9e..a9b550bf8 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Period.java
++++ b/src/main/java/net/officefloor/hq/app/period/Period.java
+@@ -75,7 +75,7 @@ public record Period(String sheetId, String name, LocalDate from, LocalDate to,
+         }
+         ClaimStatus then = statusAtEnd(claim, log);
+         if (then == ClaimStatus.SETTLED) {
+-            return claim.status() != ClaimStatus.VOID;
++            return claim.status() != ClaimStatus.VOID && !claim.deferred(today);
+         }
+         if (then == null || !then.open() || claim.deferred(today)) {
+             return false;
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index be28ef08d..7dfc2587e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -273,7 +273,8 @@ public class PersonRepository {
+      * no repeats); anyone naming them as patron names the other instead (not themselves, no repeats); their pool
+      * and crew memberships, crews they lead, and plans move to the other (shares added where the other is already a member), as do their shares of claims (dropped where the other holds one or owns the claim). Their statements join
+      * the other's, before them: the other's count is both counts added, and the other's last statement stays theirs (or,
+-     * having none, becomes the merged person's). Their grades,
++     * having none, becomes the merged person's). Their figures fixed for closed or soft-closed periods (due-total and
++     * carried) are added to the other's for the same periods. Their grades,
+      * holds, past retirements, watchers, snapshot lines and contact are dropped with them.
+      */
+     public void merge(Person from, Person into) {
+@@ -324,6 +325,18 @@ public class PersonRepository {
+                 + " WHERE c.id = g.claim_id AND c.person_id = ?))", sheetId, gone, kept, kept);
+         jdbc.update("UPDATE claim_share SET person_id = ? WHERE sheet_id = ? AND person_id = ?", kept, sheetId, gone);
+ 
++        jdbc.update("UPDATE period_person_total k SET total = total + (SELECT g.total FROM period_person_total g"
++                + " WHERE g.sheet_id = k.sheet_id AND g.period_name = k.period_name AND g.person_id = ?), carried ="
++                + " carried + (SELECT g.carried FROM period_person_total g WHERE g.sheet_id = k.sheet_id AND"
++                + " g.period_name = k.period_name AND g.person_id = ?) WHERE k.sheet_id = ? AND k.person_id = ? AND"
++                + " EXISTS (SELECT 1 FROM period_person_total g WHERE g.sheet_id = k.sheet_id AND g.period_name ="
++                + " k.period_name AND g.person_id = ?)", gone, gone, sheetId, kept, gone);
++        jdbc.update("DELETE FROM period_person_total g WHERE g.sheet_id = ? AND g.person_id = ? AND EXISTS (SELECT 1"
++                + " FROM period_person_total k WHERE k.sheet_id = g.sheet_id AND k.period_name = g.period_name AND"
++                + " k.person_id = ?)", sheetId, gone, kept);
++        jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND person_id = ?", kept, sheetId,
++                gone);
++
+         mergeStatements(sheetId, gone, kept);
+         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+         jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/deferral.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/deferral.PUT.yml
+index 8ef5721eb..02c6f2019 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/deferral.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/deferral.PUT.yml
+@@ -1,7 +1,8 @@
+ # Defer an OPEN claim until the body's date (yyyy-MM-dd), which must be after the sheet's today. A claim that is
+ # not OPEN, a date not after today, or a claim dated inside a closed period is refused (400) and writes nothing.
+ # Until the sheet's today reaches the date the claim counts in no total, is not overdue, cannot be settled and is
+-# left unbound by a statement; from that day on it is an OPEN claim like any other.
++# left unbound by a statement; from that day on it is an OPEN claim like any other. A claim a statement binds is not
++# deferred while bound: it stays in the totals and can be settled, and the deferral takes effect once the binding ends.
+ archived:
+   class: net.officefloor.hq.app.sheet.CheckNotArchived
+   next: viewer
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/merge.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/merge.POST.yml
+index 83abd7678..513cf581c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/merge.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/merge.POST.yml
+@@ -1,6 +1,6 @@
+ # Merge the person into another person on the sheet (by id). Anyone but a steward, the same person, or either of
+ # them retired is refused (400); a person not on the sheet (404). The merged person's claims, name, aliases, patrons
+-# and pool memberships pass to the other; their statements, holds, watchers and contact are dropped, and they leave
++# and pool memberships pass to the other, and their figures fixed for closed or soft-closed periods are added to the other's; their statements, holds, watchers and contact are dropped, and they leave
+ # the sheet.
+ archived:
+   class: net.officefloor.hq.app.sheet.CheckNotArchived
