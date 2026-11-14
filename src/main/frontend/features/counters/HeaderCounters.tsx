@@ -53,7 +53,7 @@ export function HeaderCounters() {
   const mine = me ? claims.filter((c) => c.personId === me.id) : [];
   const myDue = me ? personDue(mine, rates, me.grades, liveHolds(me, rules.today), rules) : '';
   const myOverdue = me ? personOverdue(mine, rates, me.grades, liveHolds(me, rules.today), rules).total : '';
-  const led = me ? crews.filter((c) => c.lead.id === me.id) : [];
+  const led = me ? crews.filter((c) => c.lead?.id === me.id) : [];
   const myCrewDue = led.length ? total(led.map((c) => crewDue(c, dueOf))) : '';
   const totals = sheetTotals(people, claims, rates, rules);
   return (

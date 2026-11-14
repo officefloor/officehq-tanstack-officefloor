@@ -28,7 +28,7 @@ public class ValidateCrewMemberRequest {
         if (person == null) {
             throw new InvalidCrewException("Choose a person on the sheet.");
         }
-        if (crew.lead().id() == person.id()) {
+        if (crew.lead() != null && crew.lead().id() == person.id()) {
             throw new InvalidCrewException(person.name() + " leads the crew.");
         }
         if (crew.members().stream().anyMatch(m -> m.id() == person.id())) {

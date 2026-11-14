@@ -462,7 +462,7 @@ public class PersonRepository {
 
     /**
      * Remove the person, transferred to another sheet (their claims already moved), from this sheet entirely: their
-     * statements, holds, past retirements, patron links either way, pool and crew memberships, crews they lead, watches, plans and closed-period figures go with them.
+     * statements, holds, past retirements, patron links either way, pool and crew memberships, watches, plans and closed-period figures go with them; the crews they lead stay, with no lead.
      */
     public void dropTransferred(Person person) {
         String sheetId = person.sheetId();
@@ -470,9 +470,8 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, gone,
                 gone);
         jdbc.update("DELETE FROM pool_member WHERE person_id = ?", gone);
-        jdbc.update("DELETE FROM crew_member WHERE sheet_id = ? AND (person_id = ? OR crew_id IN (SELECT id FROM crew"
-                + " WHERE sheet_id = ? AND lead_id = ?))", sheetId, gone, sheetId, gone);
-        jdbc.update("DELETE FROM crew WHERE sheet_id = ? AND lead_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM crew_member WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("UPDATE crew SET lead_id = NULL WHERE sheet_id = ? AND lead_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, gone);

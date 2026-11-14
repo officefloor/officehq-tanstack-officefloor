@@ -16,14 +16,15 @@ public class CrewRepository {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's crews with their leads and members, each in the order they were added. */
+    /** The sheet's crews with their leads (null: none) and members, each in the order they were added. */
     public List<Crew> findAll(String sheetId) {
         Map<Long, Crew> crews = new LinkedHashMap<>();
-        jdbc.query("SELECT c.id, c.name, c.lead_id, p.name AS lead_name FROM crew c JOIN person p ON p.id = c.lead_id"
+        jdbc.query("SELECT c.id, c.name, c.lead_id, p.name AS lead_name FROM crew c LEFT JOIN person p ON p.id = c.lead_id"
                 + " WHERE c.sheet_id = ? ORDER BY c.id", rs -> {
                     long id = rs.getLong("id");
-                    crews.put(id, new Crew(id, sheetId, rs.getString("name"),
-                            new CrewPerson(rs.getLong("lead_id"), rs.getString("lead_name")), new ArrayList<>()));
+                    long leadId = rs.getLong("lead_id");
+                    CrewPerson lead = rs.wasNull() ? null : new CrewPerson(leadId, rs.getString("lead_name"));
+                    crews.put(id, new Crew(id, sheetId, rs.getString("name"), lead, new ArrayList<>()));
                 }, sheetId);
         jdbc.query("SELECT m.crew_id, m.person_id, p.name FROM crew_member m"
                 + " JOIN person p ON p.id = m.person_id WHERE m.sheet_id = ? ORDER BY m.id",

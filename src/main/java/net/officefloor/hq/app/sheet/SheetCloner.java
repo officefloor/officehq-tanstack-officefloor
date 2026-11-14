@@ -110,8 +110,9 @@ public class SheetCloner {
         for (Map<String, Object> crew : jdbc.queryForList("SELECT id, lead_id FROM crew WHERE sheet_id = ? ORDER BY id",
                 from)) {
             long old = ((Number) crew.get("id")).longValue();
-            crews.put(old, RowCopy.copy(jdbc, "crew", old,
-                    Map.of("sheet_id", to, "lead_id", people.get(((Number) crew.get("lead_id")).longValue()))));
+            Object lead = crew.get("lead_id");
+            crews.put(old, RowCopy.copy(jdbc, "crew", old, lead == null ? Map.of("sheet_id", to)
+                    : Map.of("sheet_id", to, "lead_id", people.get(((Number) lead).longValue()))));
         }
         for (Map<String, Object> member : jdbc.queryForList(
                 "SELECT id, crew_id, person_id FROM crew_member WHERE sheet_id = ? ORDER BY id", from)) {

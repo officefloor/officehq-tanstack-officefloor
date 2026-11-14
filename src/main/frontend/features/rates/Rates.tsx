@@ -15,8 +15,12 @@ const EMPTY: RateInput = { grade: 'A', rate: '', from: '', to: '' };
 /** yyyy-MM-dd. */
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** The months of a year, as MM. */
+const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
+
 // Each grade's rate in force on the sheet's today (n/a when none is), every rate the sheet has with
-// its from- and to-date and version count, and the form that sets one. The rate in force may be inherited from a parent sheet;
+// its from- and to-date and version count, a calendar of each grade's rate in force on the first day of each month
+// of the sheet's today's year, and the form that sets one. The rate in force may be inherited from a parent sheet;
 // the list shows only the sheet's own.
 export function Rates() {
   const [user] = useCurrentUser();
@@ -40,6 +44,8 @@ export function Rates() {
   });
 
   if (!user || !sheet) return null;
+
+  const year = today.slice(0, 4);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -84,6 +90,28 @@ export function Rates() {
             <tr key={g}>
               <td>{g}</td>
               <td data-testid={`rate-current-${g}`}>{rateFor(rates, g, today) ?? NA}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table data-testid="rate-calendar">
+        <thead>
+          <tr>
+            <th>Grade</th>
+            {MONTHS.map((m) => (
+              <th key={m}>{`${year}-${m}`}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {GRADES.map((g) => (
+            <tr key={g}>
+              <td>{g}</td>
+              {MONTHS.map((m) => (
+                <td key={m} data-testid={`rate-month-${g}-${year}-${m}`}>
+                  {rateFor(rates, g, `${year}-${m}-01`) ?? NA}
+                </td>
+              ))}
             </tr>
           ))}
         </tbody>

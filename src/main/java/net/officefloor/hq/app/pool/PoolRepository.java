@@ -67,7 +67,7 @@ public class PoolRepository {
     /**
      * The sheet's crews as pools, in the order the crews were added: each named as its crew, with id the crew's id
      * negated (so it is never a stored pool's), and the lead then the members as its members at equal shares of 100.00
-     * (each rounded half to even to two decimals, the remainder on the lead, as patrons' shares are split); a person
+     * (each rounded half to even to two decimals, the remainder on the lead — on the first member when it has none — as patrons' shares are split); a person
      * member is held when a hold of theirs is in force on {@code today} (null: none is held).
      */
     public List<Pool> crewPools(String sheetId, LocalDate today) {
@@ -77,10 +77,13 @@ public class PoolRepository {
                 + " AND (h.from_date IS NULL OR h.from_date <= CAST(? AS DATE))"
                 + " AND (h.to_date IS NULL OR h.to_date >= CAST(? AS DATE))) THEN 1 ELSE 0 END AS held";
         jdbc.query("SELECT c.id, c.name, p.id AS person_id, p.name AS person_name, p.retired_from," + held
-                + " FROM crew c JOIN person p ON p.id = c.lead_id WHERE c.sheet_id = ? ORDER BY c.id", rs -> {
+                + " FROM crew c LEFT JOIN person p ON p.id = c.lead_id WHERE c.sheet_id = ? ORDER BY c.id", rs -> {
                     long id = rs.getLong("id");
                     Pool pool = new Pool(-id, sheetId, rs.getString("name"), new ArrayList<>());
-                    pool.members().add(crewMember(rs));
+                    rs.getLong("person_id");
+                    if (!rs.wasNull()) {
+                        pool.members().add(crewMember(rs));
+                    }
                     pools.put(id, pool);
                 }, on, on, on, sheetId);
         jdbc.query("SELECT m.crew_id, p.id AS person_id, p.name AS person_name, p.retired_from," + held
@@ -91,6 +94,10 @@ public class PoolRepository {
         List<Pool> list = new ArrayList<>();
         for (Pool pool : pools.values()) {
             int n = pool.members().size();
+            if (n == 0) {
+                list.add(pool);
+                continue;
+            }
             BigDecimal share = HUNDRED.divide(BigDecimal.valueOf(n), 2, RoundingMode.HALF_EVEN);
             BigDecimal lead = HUNDRED.subtract(share.multiply(BigDecimal.valueOf(n))).add(share);
             List<PoolMember> members = new ArrayList<>();

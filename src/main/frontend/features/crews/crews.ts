@@ -9,8 +9,8 @@ import { NA, personDue, total, useRates } from '../rates/rates';
 /** A crew's lead or member: a person of the sheet. */
 export type CrewPerson = { id: number; name: string };
 
-/** A crew on the sheet: its name, its lead and its members in the order they were added. */
-export type Crew = { id: number; name: string; lead: CrewPerson; members: CrewPerson[] };
+/** A crew on the sheet: its name, its lead (null: none, once its lead was transferred away) and its members in the order they were added. */
+export type Crew = { id: number; name: string; lead: CrewPerson | null; members: CrewPerson[] };
 
 /** The query key for the sheet's crews; under sheetKey, so re-loading the sheet re-reads them. */
 export const crewsKey = (sheet: string) => [...sheetKey(sheet), 'crews'] as const;
@@ -41,5 +41,5 @@ export function useDueByPerson(): (personId: number) => string {
 
 /** A crew's due-total: its lead's and members' due-totals added up, skipping n/a. */
 export function crewDue(crew: Crew, dueOf: (personId: number) => string): string {
-  return total([crew.lead, ...crew.members].map((p) => dueOf(p.id)));
+  return total([...(crew.lead ? [crew.lead] : []), ...crew.members].map((p) => dueOf(p.id)));
 }

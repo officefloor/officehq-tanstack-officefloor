@@ -139,7 +139,7 @@ function CrewRow({ crew, due }: { crew: Crew; due: string }) {
       return;
     }
     const id = Number(member);
-    if (id === crew.lead.id) {
+    if (id === crew.lead?.id) {
       setError('That person leads the crew.');
       return;
     }
@@ -152,7 +152,7 @@ function CrewRow({ crew, due }: { crew: Crew; due: string }) {
 
   return (
     <li data-testid={`crew-row-${crew.name}`}>
-      <span data-testid="crew-name">{crew.name}</span> lead <span data-testid="crew-lead">{crew.lead.name}</span>{' '}
+      <span data-testid="crew-name">{crew.name}</span> lead <span data-testid="crew-lead">{crew.lead?.name ?? ''}</span>{' '}
       due-total <span data-testid="crew-due-total">{due}</span>
       <ul>
         {crew.members.map((m) => (
