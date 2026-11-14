@@ -26,6 +26,10 @@ public class ValidateSetting {
             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("The clerk limit is blank or 0.00 or more with up to two decimals");
             }
+        } else if (SettingRepository.CAP.equals(key)) {
+            if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
+                throw new InvalidSettingException("The cap is blank or 0.00 or more with up to two decimals");
+            }
         } else if (SettingRepository.FLOOR.equals(key)) {
             if (!MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("The floor is 0.00 or more with up to two decimals");

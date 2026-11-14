@@ -8,7 +8,8 @@ export type Setting = { sheetId: string; key: string; value: string };
 /** The role a user name has on the sheet; a name not listed is a clerk. */
 export type Role = { sheetId: string; user: string; role: string };
 
-/** The settings the screen offers: the clerk limit (two decimals; blank means no limit), the
+/** The settings the screen offers: the clerk limit (two decimals; blank means no limit), the cap
+ *  (two decimals; blank means none: the most a person's due-total can be), the
  *  floor (two decimals; the least a claim's live due can be) and the terms (whole days after its
  *  date by which a claim is due) and the late percent (two decimals; the share of an overdue claim's
  *  figure it gains for every full 30 days it is overdue) and the policy date (yyyy-MM-dd; blank means
@@ -17,7 +18,7 @@ export type Role = { sheetId: string; user: string; role: string };
  *  claim opened is numbered within its period, <period>-<n>, or X-<n> in no period). A grade's own terms
  *  (terms-<grade>; blank means the sheet's terms) fix the due-by of a claim added for a person of that
  *  grade on its date: its date plus those terms, kept when the terms or its date change later. */
-export const SETTING_KEYS = ['clerk-limit', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
+export const SETTING_KEYS = ['clerk-limit', 'cap', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
   'period-numbering-from'] as const;
 
 /** A setting's value until it is first set. */
@@ -50,6 +51,12 @@ export function setRole(sheetId: string, by: string, user: string, role: string)
 export function useFloor(sheetId: string): string {
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
   return settings.data?.find((s) => s.key === 'floor')?.value || SETTING_DEFAULTS.floor;
+}
+
+/** The sheet's cap: the most a person's due-total can be; null when there is none. */
+export function useCap(sheetId: string): string | null {
+  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+  return settings.data?.find((s) => s.key === 'cap')?.value || null;
 }
 
 /** What a claim's late charge and rounding go by: the sheet's late percent, today and policy

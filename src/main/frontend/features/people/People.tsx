@@ -5,8 +5,8 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { BulkOpen } from '../claims/BulkOpen';
 import { PersonClaims } from '../claims/PersonClaims';
 import { claimsKey, listClaims, liveClaims, sumAmounts } from '../claims/api';
-import { claimDue, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, sumDues } from '../rates/api';
-import { useFloor, useLate } from '../settings/api';
+import { claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, sumDues } from '../rates/api';
+import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { ExportPeople } from './ExportPeople';
 import { QuickAdd } from './QuickAdd';
@@ -16,7 +16,7 @@ import { GRADES, addPatron, addPerson, gradeOn, holdPerson, listPeople, peopleKe
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '' };
 
 /** The people on the sheet: a form that adds a person or edits one, and the list in added order,
- *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures; n/a
+ *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap, with the excess above it; n/a
  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
  *  their statements (a button that takes one, the count, the last one's due-total and date), whether
  *  they are retired and from when (with a date and a button that retires them), whether they have
@@ -34,6 +34,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
   const floor = useFloor(sheetId);
+  const cap = useCap(sheetId);
   const today = useSheetToday(sheetId, user);
   const charges = useLate(sheetId, today);
   const byGrade = rateByGrade(rates.data, today);
@@ -175,7 +176,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const everyone = people.data ?? [];
   const dueOf = new Map(everyone.map((q) => [q.id, personDue(
     liveClaims((claims.data ?? []).filter((c) => c.personId === q.id), [q]),
-    rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges)]));
+    rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges, cap)]));
   const nameOf = new Map(everyone.map((q) => [q.id, q.name]));
 
   return (
@@ -247,7 +248,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   Claimed <span data-testid="person-claimed">{claimed}</span>
                 </td>
                 <td>
-                  Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges))}</span>
+                  Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap))}</span>{' '}
+                  excess <span data-testid="person-excess">{excessOf(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap)}</span>
                 </td>
                 <td>
                   Overdue <span data-testid="person-overdue-count">{late.count}</span>{' '}

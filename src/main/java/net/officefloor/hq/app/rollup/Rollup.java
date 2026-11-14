@@ -17,7 +17,7 @@ import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 
 /** The sheet's figures at one moment, as the screen shows them: each person's claimed and
- *  due-total (null: n/a), in the order they were added, and the sheet's claimed-total and due-total. */
+ *  due-total (null: n/a; else at most the sheet's cap), in the order they were added, and the sheet's claimed-total and due-total. */
 public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueTotal) {
 
     /** A person's figures: their name, claimed and due-total (null: n/a). */
@@ -33,6 +33,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             RateRepository rates, SheetRepository sheets, SettingRepository settings) {
         List<Rate> sheetRates = rates.list(sheetId);
         String floor = settings.floor(sheetId);
+        BigDecimal cap = settings.cap(sheetId);
         LocalDate todayDate = sheets.today(sheetId);
         String today = todayDate.toString();
         Dues.Late late = settings.late(sheetId, todayDate);
@@ -55,6 +56,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 if (d != null) due = due.add(new BigDecimal(d));
             }
             boolean na = rateOn(sheetRates, p.getGrade(), today) == null && !kept;
+            if (cap != null && due.compareTo(cap) > 0) due = cap.setScale(2);
             figures.put(p.getId(), new Figures(p.getName(), claimed.toPlainString(),
                     na ? null : due.toPlainString()));
             claimedTotal = claimedTotal.add(claimed);

@@ -13,7 +13,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 
 /** Takes a statement of the person: records their due-total now (the sum of the due of their claims that
- *  count live (open ones dated within a hold of theirs, and not bound, do not), n/a ones skipped; n/a when their grade has no rate on the sheet's today and none of
+ *  count live (open ones dated within a hold of theirs, and not bound, do not), n/a ones skipped, at most the sheet's cap; n/a when their grade has no rate on the sheet's today and none of
  *  those claims keeps a settled or bound figure, or a live one at a grade no longer in force or dated on or before the sheet's today) on the sheet's today, and binds each counting claim
  *  to the figure under the due it shows now (its late charge is never bound); a claim that does not
  *  count live is unbound. */
@@ -47,6 +47,8 @@ public class TakeStatement {
             claims.updateBinding(c);
         }
         boolean na = rates.find(sheetId, person.getGrade(), today) == null && !kept;
+        BigDecimal cap = settings.cap(sheetId);
+        if (cap != null && total.compareTo(cap) > 0) total = cap.setScale(2);
         person.stated(na ? null : total.toPlainString(), today.toString(), bound);
         people.updateStatements(person);
     }

@@ -13,6 +13,9 @@ public class SettingRepository {
     /** The clerk limit: the largest due a clerk may settle (two decimals; blank: no limit). */
     public static final String CLERK_LIMIT = "clerk-limit";
 
+    /** The cap: the most a person's due-total can be (two decimals; blank: no cap). */
+    public static final String CAP = "cap";
+
     /** The floor: the least a claim's live due can be (two decimals). */
     public static final String FLOOR = "floor";
 
@@ -67,6 +70,12 @@ public class SettingRepository {
     /** The sheet's clerk limit; null when there is none. */
     public BigDecimal clerkLimit(String sheetId) {
         String value = find(sheetId, CLERK_LIMIT);
+        return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The sheet's cap; null when there is none. */
+    public BigDecimal cap(String sheetId) {
+        String value = find(sheetId, CAP);
         return value == null ? null : new BigDecimal(value);
     }
 

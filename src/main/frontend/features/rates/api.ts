@@ -106,18 +106,29 @@ function roundPct(product: bigint, halfUp: boolean): bigint {
   return rest > 5_000n || (rest === 5_000n && (halfUp || whole % 2n === 1n)) ? whole + 1n : whole;
 }
 
-/** A person's due-total: the sum of their counting claims' due figures (n/a ones skipped); n/a
+/** A person's due-total: the sum of their counting claims' due figures (n/a ones skipped), at
+ *  most the sheet's `cap` (null: no cap); n/a
  *  when their grade today has no rate today (`pct`) and none of those claims keeps a settled or bound
  *  figure, or a live one at a grade no longer in force on the sheet's today or dated on or before it
  *  (its rate since ended). */
 export function personDue(claims: Claim[], rates: Rate[] | undefined, gradeOn: GradeOn, pct: string | undefined,
-  floor: string, late: Late) {
+  floor: string, late: Late, cap: string | null) {
   const own = claims.filter(counts);
   const now = gradeOn(late.today);
   const kept = (c: Claim) => c.settledDue !== null || isBound(c)
     || ((gradeOn(c.date) !== now || c.date <= late.today) && rateOn(rates, gradeOn(c.date), c.date) !== undefined);
   if (pct === undefined && !own.some(kept)) return null;
-  return sumDues(own.map((c) => claimDue(c, rates, gradeOn, floor, late)));
+  const sum = sumDues(own.map((c) => claimDue(c, rates, gradeOn, floor, late)));
+  return cap !== null && hundredths(sum) > hundredths(cap) ? formatCents(hundredths(cap)) : sum;
+}
+
+/** What a person's due figures add up to above the sheet's `cap` (null: no cap); 0.00 when they do
+ *  not exceed it, or their due-total is n/a. */
+export function excessOf(claims: Claim[], rates: Rate[] | undefined, gradeOn: GradeOn, pct: string | undefined,
+  floor: string, late: Late, cap: string | null): string {
+  const full = personDue(claims, rates, gradeOn, pct, floor, late, null);
+  return full === null || cap === null || hundredths(full) <= hundredths(cap) ? '0.00'
+    : formatCents(hundredths(full) - hundredths(cap));
 }
 
 /** The overdue claims among those that count (`claims`, the live ones): their count and the sum

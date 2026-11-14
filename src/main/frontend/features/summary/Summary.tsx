@@ -3,7 +3,7 @@ import { claimsKey, listClaims, liveClaims, type Claim } from '../claims/api';
 import { GRADES, gradeOn, listPeople, peopleKey } from '../people/api';
 import { listPeriods, periodDueTotal, periodsKey } from '../periods/api';
 import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
-import { useFloor, useLate } from '../settings/api';
+import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 
 /** Every status a claim's count is shown for. */
@@ -23,13 +23,14 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
   const floor = useFloor(sheetId);
+  const cap = useCap(sheetId);
   const today = useSheetToday(sheetId, user);
   const charges = useLate(sheetId, today);
   const byGrade = rateByGrade(rates.data, today);
   const all = claims.data ?? [];
   const active = (people.data ?? []).filter((p) => !p.retired);
   const dueOf = (p: (typeof active)[number]) => personDue(liveClaims(all.filter((c) => c.personId === p.id), [p]),
-    rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges);
+    rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap);
 
   return (
     <section>
