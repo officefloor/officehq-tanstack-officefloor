@@ -12,7 +12,8 @@ import net.officefloor.plugin.variable.Val;
  * grade left as the row showed it, with the from-date blank, records nothing. The person's own terms are recorded
  * likewise from the terms' from-date (blank: from the beginning of time; blank terms: none), keeping those recorded
  * from other dates — except that terms left as the row showed them, with the from-date blank, record nothing. Their
- * contact becomes the form's; whether the terms recorded or the contact changed is published for the audit.
+ * contact becomes the form's; whether terms were recorded (even the same as those already recorded) or the contact
+ * changed is published for the audit.
  */
 public class ApplyPerson {
     public void apply(@Val PersonRequest request, @Val Person person, SheetRepository sheets, Out<Person> updated,
@@ -23,10 +24,10 @@ public class ApplyPerson {
         LocalDate today = sheets.today(person.sheetId());
         Integer terms = request.termsDays();
         LocalDate termsFrom = request.termsFromDate();
-        Person termed = termsFrom == null && Objects.equals(terms, person.terms()) ? person
-                : person.withTerms(terms, termsFrom, today);
+        boolean recorded = termsFrom != null || !Objects.equals(terms, person.terms());
+        Person termed = recorded ? person.withTerms(terms, termsFrom, today) : person;
         String contact = request.contactOrNull();
-        termsChange.set(new PersonTermsChange(!termed.termsFrom().equals(person.termsFrom()),
+        termsChange.set(new PersonTermsChange(recorded,
                 !Objects.equals(contact, person.contact())));
         boolean blank = request.gradeFrom() == null || request.gradeFrom().isEmpty();
         if (blank && request.grade().equals(person.grade())) {

@@ -370,6 +370,30 @@ public class PersonRepository {
         return found;
     }
 
+    /** Flag the person with the reason until the date (inclusive), replacing any flag they had. */
+    public void flag(String sheetId, long personId, String reason, LocalDate until) {
+        jdbc.update("UPDATE person SET flag_reason = ?, flag_until = ? WHERE id = ? AND sheet_id = ?", reason,
+                Date.valueOf(until), personId, sheetId);
+    }
+
+    /** The reason of the person's flag while it is in force on the day (on or before its until date), else null. */
+    public String flagOn(String sheetId, long personId, LocalDate day) {
+        List<String> found = jdbc.query("SELECT flag_reason FROM person WHERE sheet_id = ? AND id = ?"
+                + " AND flag_reason IS NOT NULL AND flag_until >= ?", (rs, n) -> rs.getString("flag_reason"),
+                sheetId, personId, Date.valueOf(day));
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The reason of each of the sheet's people's flags in force on the day, by person id. */
+    public Map<Long, String> flagsOn(String sheetId, LocalDate day) {
+        Map<Long, String> found = new HashMap<>();
+        jdbc.query("SELECT id, flag_reason FROM person WHERE sheet_id = ? AND flag_reason IS NOT NULL AND flag_until >= ?",
+                (rs) -> {
+                    found.put(rs.getLong("id"), rs.getString("flag_reason"));
+                }, sheetId, Date.valueOf(day));
+        return found;
+    }
+
     /** Store the person's tags (stored form; null: none), adding each to the sheet's tag list. */
     public void saveTags(String sheetId, long personId, String tags) {
         jdbc.update("UPDATE person SET tags = ? WHERE id = ? AND sheet_id = ?", tags, personId, sheetId);

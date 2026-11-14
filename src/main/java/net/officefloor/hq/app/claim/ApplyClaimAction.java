@@ -42,6 +42,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * not on the list is always refused.
  * Opening a claim whose due (as shown now) is above the sheet's review threshold in force on its date sends it to REVIEW
  * instead, with no number yet, recording who opened it; only a steward reviews it, which opens it (giving its number).
+ * While its person is flagged (the sheet's today on or before the flag's until date), only a steward opens a claim.
  * Deleting sets a DRAFT claim aside as DELETED (counting nowhere); restoring makes it a DRAFT again, only while the
  * sheet's today is the day it was deleted (the status log's latest DELETED date).
  */
@@ -64,6 +65,10 @@ public class ApplyClaimAction {
         if ((found == ClaimAction.OPEN || found == ClaimAction.SETTLE || found == ClaimAction.VOID)
                 && !settings.find(claim.sheetId()).may(user, action)) {
             throw new InvalidClaimException("The user's role is not allowed to " + action + " a claim.");
+        }
+        if (found == ClaimAction.OPEN && settings.find(claim.sheetId()).roleOf(user) != Role.STEWARD
+                && people.flagOn(claim.sheetId(), claim.personId(), sheets.today(claim.sheetId())) != null) {
+            throw new InvalidClaimException("The claim's person is flagged: only a steward may open their claims.");
         }
         if (found == ClaimAction.SETTLE && claim.deferred(sheets.today(claim.sheetId()))) {
             throw new InvalidClaimException("The claim is deferred until " + claim.deferredUntil() + ": it cannot be settled yet.");

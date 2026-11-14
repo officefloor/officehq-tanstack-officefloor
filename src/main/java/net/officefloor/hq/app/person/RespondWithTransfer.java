@@ -1,15 +1,17 @@
 package net.officefloor.hq.app.person;
 
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.web.ObjectResponse;
 
 /** Responds with the person as they arrived on the other sheet. */
 public class RespondWithTransfer {
-    public void respond(@Val Transferred transferred, PersonRepository people, NameTree tree,
+    public void respond(@Val Transferred transferred, PersonRepository people, NameTree tree, SheetRepository sheets,
             ObjectResponse<PersonResponse> response) {
         Person person = transferred.person();
         response.send(PersonResponse.from(person, tree.clashing(person, people.aliases(person.sheetId(), person.id())),
                 people.origin(person.sheetId(), person.id()), people.tags(person.sheetId(), person.id()),
-                people.statementLines(person.sheetId(), person.id())));
+                people.statementLines(person.sheetId(), person.id()),
+                people.flagOn(person.sheetId(), person.id(), sheets.today(person.sheetId()))));
     }
 }
