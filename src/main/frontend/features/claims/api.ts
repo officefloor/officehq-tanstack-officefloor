@@ -11,11 +11,12 @@ export type ClaimAction = 'open' | 'settle' | 'void';
  *  (fixed when settled; null otherwise, or when there was no rate then — its due stays live), and who
  *  opened it (null while a draft; that user cannot settle it), and whether its person's last statement
  *  bound it, with the figure it bound (null when it had none): a bound claim shows and totals that.
- *  A correction (a negative amount) has the number of the SETTLED claim it corrects (null otherwise). */
+ *  A correction (a negative amount) has the number of the SETTLED claim it corrects (null otherwise).
+ *  `roundDate` is the date its live figures round by: its own, or a correction's claim's it corrects. */
 export type Claim = {
   id: number; sheetId: string; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: number | null; settledDue: string | null; openedBy: string | null;
-  stated: boolean; statedDue: string | null; corrects: number | null;
+  stated: boolean; statedDue: string | null; corrects: number | null; roundDate: string;
 };
 /** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects. */
 export type ClaimInput = { amount: string; date: string; note: string; corrects: string };

@@ -22,6 +22,7 @@ public class Claim {
     private boolean stated;
     private String statedDue;
     private Long corrects;
+    private String roundDate;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, Long number, String settledDue, String openedBy) {
@@ -66,6 +67,11 @@ public class Claim {
 
     public Long getCorrects() { return corrects; }
     public void setCorrects(Long corrects) { this.corrects = corrects; }
+
+    /** The date its figures round by (see {@link Dues.Late#rounding}): its own date, or for a
+     *  correction the date of the claim it corrects. */
+    public String getRoundDate() { return roundDate == null ? date : roundDate; }
+    public void setRoundDate(String roundDate) { this.roundDate = roundDate; }
 
     public boolean isStated() { return stated; }
     public String getStatedDue() { return statedDue; }

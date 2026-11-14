@@ -41,7 +41,7 @@ public class ClosePeriod {
             if (person != null && !person.countsLive(c)) continue;
             Rate rate = person == null ? null
                     : rates.find(id, person.gradeOn(c.getDate()), LocalDate.parse(c.getDate()));
-            String due = Dues.shown(c, rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor), late);
+            String due = Dues.shown(c, rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor, late.rounding(c.getRoundDate())), late);
             if (due != null) total = total.add(new BigDecimal(due));
         }
         period.set(periods.close(found, total, by == null ? "" : by));

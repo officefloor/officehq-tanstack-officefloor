@@ -34,7 +34,7 @@ public class TakeStatement {
             } else {
                 String grade = person.gradeOn(c.getDate());
                 Rate rate = rates.find(sheetId, grade, LocalDate.parse(c.getDate()));
-                String live = rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor);
+                String live = rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor, late.rounding(c.getRoundDate()));
                 String shown = Dues.shown(c, live, late);
                 kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null)
                         || (rate != null && !grade.equals(person.getGrade()));

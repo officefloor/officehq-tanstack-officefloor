@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -33,6 +35,16 @@ public class ValidateSetting {
                 throw new InvalidSettingException("The terms are a whole number of days, 0 or more");
             }
             body.set(new SettingRequest(key, String.valueOf(Integer.parseInt(value))));
+            return;
+        } else if (SettingRepository.POLICY_DATE.equals(key)) {
+            if (!value.isEmpty()) {
+                try {
+                    value = LocalDate.parse(value).toString();
+                } catch (DateTimeParseException e) {
+                    throw new InvalidSettingException("The policy date is blank or a date (yyyy-MM-dd)");
+                }
+            }
+            body.set(new SettingRequest(key, value.isEmpty() ? null : value));
             return;
         } else {
             throw new InvalidSettingException("Unknown setting: " + key);

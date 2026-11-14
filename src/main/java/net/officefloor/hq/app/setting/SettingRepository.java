@@ -23,6 +23,10 @@ public class SettingRepository {
      *  it is overdue (two decimals). */
     public static final String LATE_PCT = "late-pct";
 
+    /** The policy date (yyyy-MM-dd; blank: the sheet's today): a claim dated before it rounds half
+     *  up, one on or after it half to even. */
+    public static final String POLICY_DATE = "policy-date";
+
     /** The late percent until it is first set. */
     public static final String DEFAULT_LATE_PCT = "0.00";
 
@@ -77,9 +81,15 @@ public class SettingRepository {
         return value == null ? DEFAULT_LATE_PCT : value;
     }
 
-    /** What a claim's late charge goes by on the sheet now. */
+    /** The sheet's policy date: the one set, else its {@code today}. */
+    public LocalDate policyDate(String sheetId, LocalDate today) {
+        String value = find(sheetId, POLICY_DATE);
+        return value == null ? today : LocalDate.parse(value);
+    }
+
+    /** What a claim's late charge and rounding go by on the sheet now. */
     public Dues.Late late(String sheetId, LocalDate today) {
-        return new Dues.Late(latePct(sheetId), terms(sheetId), today);
+        return new Dues.Late(latePct(sheetId), terms(sheetId), today, policyDate(sheetId, today));
     }
 
     /** Set (or replace) the setting's value (null: blank). */

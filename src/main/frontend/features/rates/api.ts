@@ -54,27 +54,32 @@ function hundredths(text: string): bigint {
   return negative ? -value : value;
 }
 
-/** An amount times a percent, divided by 100, rounded half to even to two decimals, and at least
- *  the sheet's `floor` (a correction, a negative amount, has no floor); null (n/a) when there is no
- *  rate. Exact: worked in whole hundredths. */
-export function dueOf(amount: string, pct: string | undefined, floor: string): string | null {
+/** An amount times a percent, divided by 100, rounded to two decimals (half up when `halfUp`, else
+ *  half to even), and at least the sheet's `floor` (a correction, a negative amount, has no floor);
+ *  null (n/a) when there is no rate. Exact: worked in whole hundredths. */
+export function dueOf(amount: string, pct: string | undefined, floor: string, halfUp: boolean): string | null {
   if (pct === undefined) return null;
-  // amount (1/100) x pct (1/100) / 100 is in 1/1_000_000; to cents is / 10_000, half to even.
-  const cents = roundPct(hundredths(amount) * hundredths(pct));
+  // amount (1/100) x pct (1/100) / 100 is in 1/1_000_000; to cents is / 10_000.
+  const cents = roundPct(hundredths(amount) * hundredths(pct), halfUp);
   const least = hundredths(floor);
   return formatCents(cents < least && hundredths(amount) >= 0n ? least : cents);
 }
 
-/** What a claim's late charge goes by: the sheet's late percent, its terms (days) and its today. */
-export type Late = { pct: string; terms: number; today: string };
+/** What a claim's late charge goes by: the sheet's late percent, its terms (days) and its today;
+ *  and the sheet's policy date (its today when blank), which decides how a claim's live figures round. */
+export type Late = { pct: string; terms: number; today: string; policy: string };
+
+/** Whether a claim's live figures round half up: its round date (its own, or for a correction the
+ *  date of the claim it corrects) is before the policy date; else they round half to even. */
+export const roundsHalfUp = (c: Claim, late: Late) => (c.roundDate ?? c.date) < late.policy;
 
 /** The late charge on an OPEN claim's `figure`: the late percent of it for every full 30 days it is
- *  past its due-by on the sheet's today, rounded half to even to two decimals (0 when not overdue, and
+ *  past its due-by on the sheet's today, rounded by the policy date to two decimals (0 when not overdue, and
  *  on a correction). */
 export function lateCharge(c: Claim, figure: string, late: Late): bigint {
   if (isCorrection(c) || !isOverdue(c, late.terms, late.today)) return 0n;
   const days = (Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(c, late.terms)}T00:00:00Z`)) / 86_400_000;
-  return roundPct(hundredths(figure) * hundredths(late.pct) * BigInt(Math.floor(days / 30)));
+  return roundPct(hundredths(figure) * hundredths(late.pct) * BigInt(Math.floor(days / 30)), roundsHalfUp(c, late));
 }
 
 /** A person's grade in force on a date (yyyy-MM-dd). */
@@ -86,17 +91,17 @@ export type GradeOn = (date: string) => string;
  *  on the sheet's today on top. */
 export function claimDue(c: Claim, rates: Rate[] | undefined, gradeOn: GradeOn, floor: string, late: Late): string | null {
   if (c.settledDue !== null) return c.settledDue;
-  const figure = c.stated ? c.statedDue : dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date), floor);
+  const figure = c.stated ? c.statedDue : dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date), floor, roundsHalfUp(c, late));
   return figure === null ? null : formatCents(hundredths(figure) + lateCharge(c, figure, late));
 }
 
-/** A product of hundredths and a percent's hundredths (in 1/1_000_000) to cents, half to even
- *  (symmetric about zero). */
-function roundPct(product: bigint): bigint {
-  if (product < 0n) return -roundPct(-product);
+/** A product of hundredths and a percent's hundredths (in 1/1_000_000) to cents, half up (away
+ *  from zero) when `halfUp`, else half to even (symmetric about zero). */
+function roundPct(product: bigint, halfUp: boolean): bigint {
+  if (product < 0n) return -roundPct(-product, halfUp);
   const whole = product / 10_000n;
   const rest = product % 10_000n;
-  return rest > 5_000n || (rest === 5_000n && whole % 2n === 1n) ? whole + 1n : whole;
+  return rest > 5_000n || (rest === 5_000n && (halfUp || whole % 2n === 1n)) ? whole + 1n : whole;
 }
 
 /** A person's due-total: the sum of their counting claims' due figures (n/a ones skipped); n/a

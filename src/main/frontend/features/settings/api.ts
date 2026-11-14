@@ -11,8 +11,9 @@ export type Role = { sheetId: string; user: string; role: string };
 /** The settings the screen offers: the clerk limit (two decimals; blank means no limit), the
  *  floor (two decimals; the least a claim's live due can be) and the terms (whole days after its
  *  date by which a claim is due) and the late percent (two decimals; the share of an overdue claim's
- *  figure it gains for every full 30 days it is overdue). */
-export const SETTING_KEYS = ['clerk-limit', 'floor', 'terms', 'late-pct'] as const;
+ *  figure it gains for every full 30 days it is overdue) and the policy date (yyyy-MM-dd; blank means
+ *  the sheet's today: a claim dated before it rounds half up, on or after it half to even). */
+export const SETTING_KEYS = ['clerk-limit', 'floor', 'terms', 'late-pct', 'policy-date'] as const;
 
 /** A setting's value until it is first set. */
 export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00' };
@@ -46,11 +47,13 @@ export function useFloor(sheetId: string): string {
   return settings.data?.find((s) => s.key === 'floor')?.value || SETTING_DEFAULTS.floor;
 }
 
-/** What a claim's late charge goes by: the sheet's late percent, terms and today. */
+/** What a claim's late charge and rounding go by: the sheet's late percent, terms, today and policy
+ *  date (its today when blank). */
 export function useLate(sheetId: string, today: string): Late {
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
   const pct = settings.data?.find((s) => s.key === 'late-pct')?.value || SETTING_DEFAULTS['late-pct'];
-  return { pct, terms: useTerms(sheetId), today };
+  const policy = settings.data?.find((s) => s.key === 'policy-date')?.value || today;
+  return { pct, terms: useTerms(sheetId), today, policy };
 }
 
 /** The sheet's terms: the number of days after its date by which a claim is due. */

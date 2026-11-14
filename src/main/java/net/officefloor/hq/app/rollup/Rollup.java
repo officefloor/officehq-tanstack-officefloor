@@ -49,7 +49,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 claimed = claimed.add(new BigDecimal(c.getAmount()));
                 String grade = p.gradeOn(c.getDate());
                 String pct = rateOn(sheetRates, grade, c.getDate());
-                String d = Dues.shown(c, pct == null ? null : Dues.of(c.getAmount(), pct, floor), late);
+                String d = Dues.shown(c, pct == null ? null : Dues.of(c.getAmount(), pct, floor, late.rounding(c.getRoundDate())), late);
                 kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null)
                         || (pct != null && !grade.equals(p.getGrade()));
                 if (d != null) due = due.add(new BigDecimal(d));

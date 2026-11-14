@@ -12,7 +12,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, "
+            // The date it rounds by: a correction's is the date of the claim it corrects.
+            + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = claim.sheet_id AND k.number = claim.corrects), "
+            + "claim_date) AS round_date";
 
     private static final RowMapper<Claim> ROW = (rs, n) -> withCorrects(new Claim(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getLong("person_id"),
@@ -23,10 +26,12 @@ public class ClaimRepository {
                     : rs.getBigDecimal("settled_due").setScale(2).toPlainString(),
             rs.getString("opened_by"), rs.getBoolean("stated"),
             rs.getBigDecimal("stated_due") == null ? null
-                    : rs.getBigDecimal("stated_due").setScale(2).toPlainString()), rs.getObject("corrects", Long.class));
+                    : rs.getBigDecimal("stated_due").setScale(2).toPlainString()), rs.getObject("corrects", Long.class),
+            rs.getObject("round_date", LocalDate.class).toString());
 
-    private static Claim withCorrects(Claim claim, Long corrects) {
+    private static Claim withCorrects(Claim claim, Long corrects, String roundDate) {
         claim.setCorrects(corrects);
+        claim.setRoundDate(roundDate);
         return claim;
     }
 
@@ -70,8 +75,7 @@ public class ClaimRepository {
             ps.setObject(7, corrects);
             return ps;
         }, key);
-        return withCorrects(new Claim(key.getKey().longValue(), sheetId, personId, amount.toPlainString(),
-                date.toString(), note, ClaimStatus.DRAFT.name(), null, null, null), corrects);
+        return find(sheetId, key.getKey().longValue());
     }
 
     public void update(Claim claim) {

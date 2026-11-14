@@ -26,6 +26,7 @@ public class ApplyClaim {
         Long corrects = Corrections.check(request, claim.getSheetId(), claim.getPersonId(), claims);
         claim.setAmount(request.amount().toPlainString());
         claim.setCorrects(corrects);
+        claim.setRoundDate(corrects == null ? null : claims.findByNumber(claim.getSheetId(), corrects).getDate());
         claim.setDate(date.toString());
         claim.setNote(request.note());
         periods.requireOpen(claim.getSheetId(), claim.getDate());

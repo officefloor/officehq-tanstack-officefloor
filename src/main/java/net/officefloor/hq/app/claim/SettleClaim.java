@@ -15,7 +15,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** Settles a claim, fixing its due: its amount at its person's grade's rate in force on its date, rounded half to even to
+/** Settles a claim, fixing its due: its amount at its person's grade's rate in force on its date, rounded by the sheet's policy date to
  *  two decimals and at least the sheet's floor (a claim bound by a statement: the figure it was bound to). With no rate the due is not
  *  fixed and stays live. Its late charge on the sheet's today is added and fixed with it. Refused for the user who opened it (four eyes), and for a clerk when the due
  *  is above the sheet's clerk limit (a due that is n/a is within any limit; a steward settles anything). */
@@ -34,9 +34,9 @@ public class SettleClaim {
                 LocalDate.parse(claim.getDate()));
         // A claim bound by a statement settles at the figure it was bound to.
         // Its late charge on the sheet's today is frozen in.
-        String due = Dues.shown(claim,
-                rate == null ? null : Dues.of(claim.getAmount(), rate.pct(), settings.floor(claim.getSheetId())),
-                settings.late(claim.getSheetId(), sheets.today(claim.getSheetId())));
+        Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
+        String due = Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
+                settings.floor(claim.getSheetId()), late.rounding(claim.getRoundDate())), late);
         if (due != null && Role.CLERK.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
             BigDecimal limit = settings.clerkLimit(claim.getSheetId());
             if (limit != null && new BigDecimal(due).compareTo(limit) > 0) {
