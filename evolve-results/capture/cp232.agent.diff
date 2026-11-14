@@ -1,0 +1,181 @@
+diff --git a/src/main/frontend/features/summary/SheetCompare.tsx b/src/main/frontend/features/summary/SheetCompare.tsx
+index 06d9c41b8..81cdcb20e 100644
+--- a/src/main/frontend/features/summary/SheetCompare.tsx
++++ b/src/main/frontend/features/summary/SheetCompare.tsx
+@@ -3,7 +3,8 @@ import { getLiveJson, HttpError } from '../../api/http';
+ import type { Claim } from '../claims/claims';
+ import { useClaims } from '../claims/claims';
+ import type { Person } from '../people/people';
+-import { GRADES, usePeople } from '../people/people';
++import { useGradeCodes } from '../grades/grades';
++import { usePeople } from '../people/people';
+ import type { Rate } from '../rates/rates';
+ import { useRates } from '../rates/rates';
+ import type { SheetInfo } from '../session/session';
+@@ -12,9 +13,9 @@ import type { Settings } from '../settings/settings';
+ import { dueRules, useDueRules } from '../settings/settings';
+ import { gradeDueTotal } from './Summary';
+ 
+-// Compare this sheet with another by id: one line per grade, `<grade> <this sheet's summary due-total> <the other's>`,
+-// the other's worked out as its own summary shows it (0.00 for a grade it has no one on). A sheet that does not exist
+-// gives no lines; the other sheet is only read, never created.
++// Compare this sheet with another by id: one line per grade of this sheet (A to C then those added on it),
++// `<grade> <this sheet's summary due-total> <the other's>`, the other's worked out as its own summary shows it (0.00
++// for a grade it has no one on). A sheet that does not exist gives no lines; the other sheet is only read, never created.
+ export function SheetCompare() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+@@ -22,6 +23,7 @@ export function SheetCompare() {
+   const claims = useClaims().data ?? [];
+   const rates = useRates().data ?? [];
+   const rules = useDueRules();
++  const grades = useGradeCodes();
+   const [other, setOther] = useState('');
+   const [lines, setLines] = useState<string[] | null>(null);
+   const [error, setError] = useState('');
+@@ -51,7 +53,7 @@ export function SheetCompare() {
+       ]);
+       const otherRules = dueRules(settings, info.today, otherClaims);
+       setLines(
+-        GRADES.map(
++        grades.map(
+           (g) =>
+             `${g} ${gradeDueTotal(g, people, claims, rates, rules)} ${gradeDueTotal(g, otherPeople, otherClaims, otherRates, otherRules)}`,
+         ),
+diff --git a/src/main/java/net/officefloor/hq/app/grade/GradeMergeMoved.java b/src/main/java/net/officefloor/hq/app/grade/GradeMergeMoved.java
+new file mode 100644
+index 000000000..0d4daa606
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/GradeMergeMoved.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.grade;
++
++import java.util.List;
++
++/** The people a grade merge gave the other grade, by id. */
++public record GradeMergeMoved(List<Long> people) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java b/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
+index 67e1e1574..0382ead6e 100644
+--- a/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
++++ b/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
+@@ -1,6 +1,8 @@
+ package net.officefloor.hq.app.grade;
+ 
+ import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.List;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.CheckPersonNameUnique;
+ import net.officefloor.hq.app.person.InvalidPersonException;
+@@ -18,14 +20,15 @@ import org.springframework.web.bind.annotation.RequestParam;
+ /**
+  * Gives every person whose grade in force on the sheet's today is the merged grade the other one from that today, one
+  * after another in list order, each exactly as the person form saves a grade change: PERSON_EDITED, then the rollup
+- * lines it moved. One the person form would refuse (a name in use across the tree) is left as it is.
++ * lines it moved. One the person form would refuse (a name in use across the tree) is left as it is. Publishes
++ * the people it moved, for the merge to make retroactive.
+  */
+ public class MergeGrade {
+     public void merge(@Val GradeMerge merge, @RequestParam("user") String user, SheetRepository sheets,
+-            PersonRepository people, RollupService rollups, NameTree tree, Audit audit, Out<GradeMerged> merged) {
++            PersonRepository people, RollupService rollups, NameTree tree, Audit audit, Out<GradeMerged> merged, Out<GradeMergeMoved> moved) {
+         String sheetId = merge.sheetId();
+         LocalDate today = sheets.today(sheetId);
+-        int count = 0;
++        List<Long> ids = new ArrayList<>();
+         for (Person person : people.findAll(sheetId)) {
+             if (!merge.from().equals(person.gradeOn(today))) {
+                 continue;
+@@ -44,8 +47,9 @@ public class MergeGrade {
+             audit.record("PERSON_EDITED sheet=" + sheetId + " by=" + user + " name=" + saved.name() + " grade="
+                     + saved.grade());
+             RollupLines.record(before, rollups.compute(sheetId), sheetId, user, audit);
+-            count++;
++            ids.add(saved.id());
+         }
+-        merged.set(new GradeMerged(count));
++        merged.set(new GradeMerged(ids.size()));
++        moved.set(new GradeMergeMoved(List.copyOf(ids)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/grade/RegradeMerged.java b/src/main/java/net/officefloor/hq/app/grade/RegradeMerged.java
+new file mode 100644
+index 000000000..9b53e6c9e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/RegradeMerged.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.grade;
++
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Makes the merge retroactive: every grade record of each person it moved that is on the merged grade becomes the
++ * other grade, so all their claims, whatever their date, use the other grade from then on.
++ */
++public class RegradeMerged {
++    public void regrade(@Val GradeMerge merge, @Val GradeMergeMoved moved, PersonRepository people) {
++        for (Long id : moved.people()) {
++            people.regrade(merge.sheetId(), id, merge.from(), merge.into());
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 484679aee..be28ef08d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -126,6 +126,14 @@ public class PersonRepository {
+         }
+     }
+ 
++    /** Give the person, from the beginning of time, the other grade wherever a grade of theirs is the merged one. */
++    public void regrade(String sheetId, long personId, String from, String into) {
++        jdbc.update("UPDATE person_grade SET grade = ? WHERE sheet_id = ? AND person_id = ? AND grade = ?", into,
++                sheetId, personId, from);
++        jdbc.update("UPDATE person SET grade = ? WHERE sheet_id = ? AND id = ? AND grade = ?", into, sheetId, personId,
++                from);
++    }
++
+     private void insertGrade(String sheetId, long personId, GradeFrom grade) {
+         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date) VALUES (?, ?, ?, ?)", sheetId,
+                 personId, grade.grade(), grade.from() == null ? null : Date.valueOf(grade.from()));
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
+index 502a007f9..e7bbfde7b 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
+@@ -1,6 +1,7 @@
+ # Merge a grade into another (GRADE_MERGED): every person whose grade in force on the sheet's today is the merged one
+ # is given the other from that today, each as the person form saves it (PERSON_EDITED and its rollup lines), in list
+-# order; then the merge's own rollup lines, for the figures it moved as a whole. Anyone but a steward, the same grade
++# order; then every grade record of each person moved that is on the merged grade becomes the other grade (the merge is
++# retroactive), followed by the merge's own rollup lines for the figures that moved. Anyone but a steward, the same grade
+ # twice, a grade other than A, B, C, or a retired grade to merge into is refused (400). Responds with how many people
+ # were given the other grade.
+ archived:
+@@ -19,10 +20,6 @@ load:
+ validate:
+   class: net.officefloor.hq.app.grade.ValidateGradeMergeRequest
+   govern: [ transaction ]
+-  next: before
+-before:
+-  class: net.officefloor.hq.app.rollup.SnapshotRollup
+-  govern: [ transaction ]
+   next: audit
+ audit:
+   class: net.officefloor.hq.app.grade.AuditGradeMerged
+@@ -31,6 +28,14 @@ audit:
+ merge:
+   class: net.officefloor.hq.app.grade.MergeGrade
+   govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
++  next: regrade
++regrade:
++  class: net.officefloor.hq.app.grade.RegradeMerged
++  govern: [ transaction ]
+   next: rollup
+ rollup:
+   class: net.officefloor.hq.app.rollup.AuditRollup
