@@ -1,11 +1,23 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { useUser } from '../features/session/session';
+import { SignIn } from '../features/session/SignIn';
+import { CurrentUser } from '../features/session/CurrentUser';
+import { SheetPicker } from '../features/sheet/SheetPicker';
+import { ActiveSheet } from '../features/sheet/ActiveSheet';
 
-// The base home page (empty). A page is a file under routes/ — `createFileRoute('<its url>')` —
-// with its nav link under features/.
+// The one screen. Sign in first; then choose a sheet, and everything else is on that sheet.
 export const Route = createFileRoute('/')({
   component: Home,
 });
 
 function Home() {
-  return <p data-testid="home-empty">Nothing here yet.</p>;
+  const [user] = useUser();
+  if (!user) return <SignIn />;
+  return (
+    <>
+      <CurrentUser />
+      <SheetPicker />
+      <ActiveSheet />
+    </>
+  );
 }
