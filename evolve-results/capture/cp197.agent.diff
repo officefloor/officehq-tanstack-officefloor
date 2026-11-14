@@ -1,0 +1,133 @@
+diff --git a/src/main/frontend/features/audit/ActivityCounts.tsx b/src/main/frontend/features/audit/ActivityCounts.tsx
+new file mode 100644
+index 000000000..79a5a5960
+--- /dev/null
++++ b/src/main/frontend/features/audit/ActivityCounts.tsx
+@@ -0,0 +1,47 @@
++import { useRef, useState } from 'react';
++import { useMutation } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++
++// The sheet's activity: one line "<user> <EVENT> <count>" for every user and event in its audit lines, sorted by
++// user then event. Read on each press of the show button; the old lines are gone while it reads.
++export function ActivityCounts() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [lines, setLines] = useState<string[]>([]);
++  const pressed = useRef(0);
++
++  const show = useMutation({
++    mutationFn: async (press: number) => ({
++      press,
++      read: await getJson<string[]>(`/api/sheets/${encodeURIComponent(sheet)}/activity`),
++    }),
++    // Only the latest press's answer is shown; an earlier one that arrives late is dropped.
++    onSuccess: ({ press, read }) => {
++      if (press === pressed.current) setLines(read);
++    },
++  });
++
++  if (!user || !sheet) return null;
++
++  const press = () => {
++    setLines([]);
++    pressed.current += 1;
++    show.mutate(pressed.current);
++  };
++
++  return (
++    <section data-testid="activity">
++      <button type="button" data-testid="activity-show" onClick={press}>
++        Show activity
++      </button>
++      <ul data-testid="activity-lines">
++        {lines.map((line, i) => (
++          <li key={i} data-testid="activity-line">
++            {line}
++          </li>
++        ))}
++      </ul>
++    </section>
++  );
++}
+diff --git a/src/main/frontend/features/audit/activity.slot.tsx b/src/main/frontend/features/audit/activity.slot.tsx
+new file mode 100644
+index 000000000..9b305e356
+--- /dev/null
++++ b/src/main/frontend/features/audit/activity.slot.tsx
+@@ -0,0 +1,4 @@
++import { HomeMain } from '../../slots/defs/homeMain';
++import { ActivityCounts } from './ActivityCounts';
++
++export const contribution = HomeMain.fill({ order: 61, Component: ActivityCounts });
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index e40f4a05b..30b8fe013 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -11,6 +11,7 @@ import java.util.Collections;
+ import java.util.List;
+ import java.util.Locale;
+ import java.util.Set;
++import java.util.TreeMap;
+ import java.util.regex.Matcher;
+ import java.util.regex.Pattern;
+ import net.officefloor.hq.app.setting.SettingRepository;
+@@ -132,6 +133,23 @@ public class Audit {
+         return found;
+     }
+ 
++    /**
++     * The sheet's activity: for every user and every event in the sheet's lines, one line {@code <user> <EVENT> <count>},
++     * sorted by user then event. Reads the file; keeps no record of its own.
++     */
++    public synchronized List<String> activity(String sheetId) {
++        TreeMap<String, TreeMap<String, Integer>> counts = new TreeMap<>();
++        for (String line : lines(sheetId, null)) {
++            Matcher head = HEAD.matcher(line);
++            if (head.find()) {
++                counts.computeIfAbsent(head.group(3), u -> new TreeMap<>()).merge(head.group(1), 1, Integer::sum);
++            }
++        }
++        List<String> found = new ArrayList<>();
++        counts.forEach((user, events) -> events.forEach((event, count) -> found.add(user + " " + event + " " + count)));
++        return found;
++    }
++
+     /**
+      * A claim's timeline: the sheet's lines about it exactly as the file holds them, newest first. A claim with a number
+      * has the lines carrying {@code number=<its number>}; one without has the lines carrying no number that name its
+diff --git a/src/main/java/net/officefloor/hq/app/audit/RespondWithActivity.java b/src/main/java/net/officefloor/hq/app/audit/RespondWithActivity.java
+new file mode 100644
+index 000000000..a0e2fec5e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/audit/RespondWithActivity.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.audit;
++
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/** The sheet's activity: one line "<user> <EVENT> <count>" for every user and event in its audit lines, sorted by user then event. */
++public class RespondWithActivity {
++    public void respond(@Val Sheet sheet, Audit audit, ObjectResponse<List<String>> response) {
++        response.send(audit.activity(sheet.id()));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/activity.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/activity.GET.yml
+new file mode 100644
+index 000000000..ec66fc9e6
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/activity.GET.yml
+@@ -0,0 +1,8 @@
++# The sheet's activity: one line "<user> <EVENT> <count>" for every user and event in its audit lines, sorted by user then event.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.audit.RespondWithActivity
++  govern: [ readonly-transaction ]
