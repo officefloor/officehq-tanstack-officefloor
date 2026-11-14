@@ -1,0 +1,153 @@
+diff --git a/src/main/frontend/features/summary/SheetCompare.tsx b/src/main/frontend/features/summary/SheetCompare.tsx
+new file mode 100644
+index 000000000..06d9c41b8
+--- /dev/null
++++ b/src/main/frontend/features/summary/SheetCompare.tsx
+@@ -0,0 +1,82 @@
++import { useState } from 'react';
++import { getLiveJson, HttpError } from '../../api/http';
++import type { Claim } from '../claims/claims';
++import { useClaims } from '../claims/claims';
++import type { Person } from '../people/people';
++import { GRADES, usePeople } from '../people/people';
++import type { Rate } from '../rates/rates';
++import { useRates } from '../rates/rates';
++import type { SheetInfo } from '../session/session';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import type { Settings } from '../settings/settings';
++import { dueRules, useDueRules } from '../settings/settings';
++import { gradeDueTotal } from './Summary';
++
++// Compare this sheet with another by id: one line per grade, `<grade> <this sheet's summary due-total> <the other's>`,
++// the other's worked out as its own summary shows it (0.00 for a grade it has no one on). A sheet that does not exist
++// gives no lines; the other sheet is only read, never created.
++export function SheetCompare() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const people = usePeople().data ?? [];
++  const claims = useClaims().data ?? [];
++  const rates = useRates().data ?? [];
++  const rules = useDueRules();
++  const [other, setOther] = useState('');
++  const [lines, setLines] = useState<string[] | null>(null);
++  const [error, setError] = useState('');
++
++  if (!user || !sheet) return null;
++
++  const compare = async () => {
++    setLines(null);
++    setError('');
++    const path = `/api/sheets/${encodeURIComponent(other.trim())}`;
++    try {
++      let info: SheetInfo;
++      try {
++        info = await getLiveJson<SheetInfo>(path);
++      } catch (e) {
++        if (e instanceof HttpError && e.status === 404) {
++          setLines([]);
++          return;
++        }
++        throw e;
++      }
++      const [otherPeople, otherClaims, otherRates, settings] = await Promise.all([
++        getLiveJson<Person[]>(`${path}/people`),
++        getLiveJson<Claim[]>(`${path}/claims`),
++        getLiveJson<Rate[]>(`${path}/rates`),
++        getLiveJson<Settings>(`${path}/settings`),
++      ]);
++      const otherRules = dueRules(settings, info.today, otherClaims);
++      setLines(
++        GRADES.map(
++          (g) =>
++            `${g} ${gradeDueTotal(g, people, claims, rates, rules)} ${gradeDueTotal(g, otherPeople, otherClaims, otherRates, otherRules)}`,
++        ),
++      );
++    } catch (e) {
++      setError(e instanceof Error ? e.message : String(e));
++    }
++  };
++
++  return (
++    <section>
++      <input data-testid="compare-sheet" value={other} placeholder="Compare with sheet" onChange={(e) => setOther(e.target.value)} />
++      <button type="button" data-testid="compare" disabled={!other.trim()} onClick={compare}>
++        Compare
++      </button>
++      {lines && (
++        <ul>
++          {lines.map((l) => (
++            <li key={l} data-testid="compare-line">
++              {l}
++            </li>
++          ))}
++        </ul>
++      )}
++      {error && <span data-testid="compare-error">{error}</span>}
++    </section>
++  );
++}
+diff --git a/src/main/frontend/features/summary/Summary.tsx b/src/main/frontend/features/summary/Summary.tsx
+index 6f974261e..5f2af2b46 100644
+--- a/src/main/frontend/features/summary/Summary.tsx
++++ b/src/main/frontend/features/summary/Summary.tsx
+@@ -1,10 +1,14 @@
+ import { isActive } from '../active/active';
+ import { useClaims } from '../claims/claims';
++import type { Claim } from '../claims/claims';
+ import { GRADES, liveHolds, usePeople } from '../people/people';
++import type { Person } from '../people/people';
+ import { periodDue, usePeriods } from '../periods/periods';
+ import { personDue, total, useRates } from '../rates/rates';
++import type { Rate } from '../rates/rates';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { useDueRules, useSettings } from '../settings/settings';
++import type { DueRules } from '../settings/settings';
+ import { reviewLate } from '../reviewlate/reviewLate';
+ import { useVoidReasons } from '../voidreasons/voidReasons';
+ 
+@@ -50,14 +54,11 @@ export function Summary() {
+         <tbody>
+           {GRADES.map((g) => {
+             const on = current.filter((p) => p.grade === g);
+-            const dues = on.map((p) =>
+-              personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules),
+-            );
+             return (
+               <tr key={g}>
+                 <td>{g}</td>
+                 <td data-testid={`summary-grade-${g}-count`}>{on.length}</td>
+-                <td data-testid={`summary-grade-${g}-due-total`}>{total(dues)}</td>
++                <td data-testid={`summary-grade-${g}-due-total`}>{gradeDueTotal(g, people, claims, rates, rules)}</td>
+                 <td data-testid={`summary-grade-${g}-active`}>
+                   {on.filter((p) => isActive(claims.filter((c) => c.personId === p.id), liveHolds(p, rules.today), rules.today)).length}
+                 </td>
+@@ -128,6 +129,14 @@ export function Summary() {
+   );
+ }
+ 
++/** The due-total of a grade: the due-totals of the people on it today (retired people left out) added up, skipping n/a. */
++export function gradeDueTotal(grade: string, people: Person[], claims: Claim[], rates: Rate[], rules: DueRules): string {
++  const dues = people
++    .filter((p) => !p.retired && p.grade === grade)
++    .map((p) => personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules));
++  return total(dues);
++}
++
+ /** A two-decimal value as whole hundredths, exactly. */
+ const cents = (value: string) => Math.round(Number(value) * 100);
+ 
+diff --git a/src/main/frontend/features/summary/home.slot.tsx b/src/main/frontend/features/summary/home.slot.tsx
+index e53b39be7..d50d82ea6 100644
+--- a/src/main/frontend/features/summary/home.slot.tsx
++++ b/src/main/frontend/features/summary/home.slot.tsx
+@@ -1,8 +1,10 @@
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { ClassicSummary } from './ClassicSummary';
++import { SheetCompare } from './SheetCompare';
+ import { Summary } from './Summary';
+ 
+ export const contributions = [
+   HomeMain.fill({ order: 50, Component: Summary }),
+   HomeMain.fill({ order: 51, Component: ClassicSummary }),
++  HomeMain.fill({ order: 52, Component: SheetCompare }),
+ ];
