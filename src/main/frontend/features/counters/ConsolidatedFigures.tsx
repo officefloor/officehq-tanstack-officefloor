@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useAliases } from '../aliases/aliases';
 import type { Alias } from '../aliases/aliases';
-import { currentAsOf, getJson, getLiveJson } from '../../api/http';
+import { currentAsOf, currentPreview, getJson, getLiveJson } from '../../api/http';
 import { useClaims } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 import { GRADES, liveHolds, usePeople } from '../people/people';
@@ -80,7 +80,7 @@ async function figuresOf(sheet: string): Promise<Figures> {
 export function useStoredFigures(asOf: string) {
   const [sheet] = useCurrentSheet();
   return useQuery({
-    queryKey: [...descendantFiguresKey(sheet), asOf],
+    queryKey: [...descendantFiguresKey(sheet), asOf, currentPreview()],
     queryFn: async () => {
       const ids = await getLiveJson<string[]>(`/api/sheets/${encodeURIComponent(sheet)}/descendants`);
       return Promise.all(ids.map(figuresOf));

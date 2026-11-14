@@ -22,6 +22,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * stood at the end of the last day on or before that date ({@link SheetDayRepository#schemaAsOf}), with the date
  * standing in for the sheet's today: every endpoint reads it unchanged, as every connection the request takes is
  * pointed at that sheet. Only reads are viewed so; a change is never made as of a date.
+ * <p>
+ * A read with {@code ?preview=<yyyy-MM-dd>} (and no {@code asOf}) reads the sheet's current records with the date
+ * standing in for its today: a preview of its figures on that date. A change always uses the sheet's real today.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -39,6 +42,10 @@ public class AsOfFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         String asOf = request.getParameter("asOf");
+        boolean preview = asOf == null || asOf.isBlank();
+        if (preview) {
+            asOf = request.getParameter("preview");
+        }
         Matcher read = SHEET_READ.matcher(request.getRequestURI());
         if (!"GET".equals(request.getMethod()) || asOf == null || asOf.isBlank() || !read.matches()) {
             AsOfView.set(null);
@@ -54,8 +61,8 @@ public class AsOfFilter extends OncePerRequestFilter {
         }
         String sheetId = URLDecoder.decode(read.group(1), StandardCharsets.UTF_8);
         AsOfView.set(null);
-        String schema = days.schemaAsOf(sheetId, date);
-        AsOfView.set(new AsOfView(schema, date));
+        String schema = preview ? days.liveSchema() : days.schemaAsOf(sheetId, date);
+        AsOfView.set(new AsOfView(schema, date, preview));
         try {
             chain.doFilter(request, response);
         } finally {

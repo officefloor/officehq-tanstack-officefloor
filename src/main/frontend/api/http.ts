@@ -17,6 +17,16 @@ export function currentAsOf(): string {
   return raw.replace(/^"(.*)"$/, '$1');
 }
 
+/**
+ * The date this screen previews the sheet's figures on (yyyy-MM-dd), or '' when it shows them by the sheet's today. It
+ * is the `preview` search param (features/session/Preview), read here so every read of the sheet carries it; a change
+ * is made as ever, by the sheet's real today.
+ */
+export function currentPreview(): string {
+  const raw = new URLSearchParams(window.location.search).get('preview') ?? '';
+  return raw.replace(/^"(.*)"$/, '$1');
+}
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
   // A screen showing the sheet as of a date changes nothing; loading a sheet is not a change.
   if (init?.method && init.method !== 'GET' && path !== '/api/sheets' && currentAsOf()) {
@@ -33,6 +43,10 @@ export function getJson<T>(path: string): Promise<T> {
   const asOf = currentAsOf();
   if (asOf && path.startsWith('/api/sheets/')) {
     return send<T>(`${path}${path.includes('?') ? '&' : '?'}asOf=${encodeURIComponent(asOf)}`);
+  }
+  const preview = currentPreview();
+  if (preview && path.startsWith('/api/sheets/')) {
+    return send<T>(`${path}${path.includes('?') ? '&' : '?'}preview=${encodeURIComponent(preview)}`);
   }
   return send<T>(path);
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson, putJson } from '../../api/http';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { currentAsOf, currentPreview, getLiveJson, postJson, putJson } from '../../api/http';
 import { sheetInfoKey, sheetKey, useCurrentSheet, useCurrentUser } from './session';
 import type { SheetInfo } from './session';
 import { useSheetInfo, useSheetToday } from './sheetToday';
@@ -15,6 +15,8 @@ export function SheetToday() {
   const [sheet] = useCurrentSheet();
   const today = useSheetToday();
   const info = useSheetInfo();
+  // While the screen previews another date, the sheet's real today is still the one shown here.
+  const preview = currentAsOf() ? '' : currentPreview();
   const [date, setDate] = useState('');
   const [error, setError] = useState('');
   const [cloneTo, setCloneTo] = useState('');
@@ -63,7 +65,7 @@ export function SheetToday() {
   return (
     <form onSubmit={submit}>
       <span>
-        Today: <strong data-testid="sheet-today">{today}</strong>{' '}
+        Today: <strong data-testid="sheet-today">{preview ? <RealToday sheet={sheet} preview={preview} /> : today}</strong>{' '}
       </span>
       <input
         data-testid="sheet-today-input"
@@ -121,4 +123,13 @@ export function SheetToday() {
       {error && <span data-testid="sheet-error">{error}</span>}
     </form>
   );
+}
+
+/** The sheet's real today, read past the date the screen previews. */
+function RealToday({ sheet, preview }: { sheet: string; preview: string }) {
+  const real = useQuery({
+    queryKey: [...sheetKey(sheet), 'real-today', preview],
+    queryFn: () => getLiveJson<SheetInfo>(`/api/sheets/${encodeURIComponent(sheet)}`),
+  });
+  return <>{real.data?.today ?? ''}</>;
 }

@@ -80,6 +80,12 @@ public class SheetDayRepository {
         return JSON.readValue(state, SheetState.class);
     }
 
+    /** The schema ({@link AsOfSchemas#LIVE}) holding the sheet as it stands now, read with another date as today. */
+    public String liveSchema() {
+        schemas.ensureShared();
+        return AsOfSchemas.LIVE;
+    }
+
     /** The sheet_day kept as the sheet stood at the end of the date; null: as it stands now; -1: empty. */
     private Long keptAsOf(String sheetId, LocalDate date) {
         List<LocalDate> started = jdbc.query("SELECT started FROM sheet WHERE id = ?",
