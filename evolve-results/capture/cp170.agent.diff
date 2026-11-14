@@ -1,0 +1,251 @@
+diff --git a/src/main/frontend/features/counters/HeaderCounters.tsx b/src/main/frontend/features/counters/HeaderCounters.tsx
+index 19e018e46..80d02caca 100644
+--- a/src/main/frontend/features/counters/HeaderCounters.tsx
++++ b/src/main/frontend/features/counters/HeaderCounters.tsx
+@@ -53,7 +53,7 @@ export function HeaderCounters() {
+   const mine = me ? claims.filter((c) => c.personId === me.id) : [];
+   const myDue = me ? personDue(mine, rates, me.grades, liveHolds(me, rules.today), rules) : '';
+   const myOverdue = me ? personOverdue(mine, rates, me.grades, liveHolds(me, rules.today), rules).total : '';
+-  const led = me ? crews.filter((c) => c.lead.id === me.id) : [];
++  const led = me ? crews.filter((c) => c.lead?.id === me.id) : [];
+   const myCrewDue = led.length ? total(led.map((c) => crewDue(c, dueOf))) : '';
+   const totals = sheetTotals(people, claims, rates, rules);
+   return (
+diff --git a/src/main/frontend/features/crews/Crews.tsx b/src/main/frontend/features/crews/Crews.tsx
+index 2dfd54148..73911dd1a 100644
+--- a/src/main/frontend/features/crews/Crews.tsx
++++ b/src/main/frontend/features/crews/Crews.tsx
+@@ -139,7 +139,7 @@ function CrewRow({ crew, due }: { crew: Crew; due: string }) {
+       return;
+     }
+     const id = Number(member);
+-    if (id === crew.lead.id) {
++    if (id === crew.lead?.id) {
+       setError('That person leads the crew.');
+       return;
+     }
+@@ -152,7 +152,7 @@ function CrewRow({ crew, due }: { crew: Crew; due: string }) {
+ 
+   return (
+     <li data-testid={`crew-row-${crew.name}`}>
+-      <span data-testid="crew-name">{crew.name}</span> lead <span data-testid="crew-lead">{crew.lead.name}</span>{' '}
++      <span data-testid="crew-name">{crew.name}</span> lead <span data-testid="crew-lead">{crew.lead?.name ?? ''}</span>{' '}
+       due-total <span data-testid="crew-due-total">{due}</span>
+       <ul>
+         {crew.members.map((m) => (
+diff --git a/src/main/frontend/features/crews/crews.ts b/src/main/frontend/features/crews/crews.ts
+index 834af6988..b55515813 100644
+--- a/src/main/frontend/features/crews/crews.ts
++++ b/src/main/frontend/features/crews/crews.ts
+@@ -9,8 +9,8 @@ import { NA, personDue, total, useRates } from '../rates/rates';
+ /** A crew's lead or member: a person of the sheet. */
+ export type CrewPerson = { id: number; name: string };
+ 
+-/** A crew on the sheet: its name, its lead and its members in the order they were added. */
+-export type Crew = { id: number; name: string; lead: CrewPerson; members: CrewPerson[] };
++/** A crew on the sheet: its name, its lead (null: none, once its lead was transferred away) and its members in the order they were added. */
++export type Crew = { id: number; name: string; lead: CrewPerson | null; members: CrewPerson[] };
+ 
+ /** The query key for the sheet's crews; under sheetKey, so re-loading the sheet re-reads them. */
+ export const crewsKey = (sheet: string) => [...sheetKey(sheet), 'crews'] as const;
+@@ -41,5 +41,5 @@ export function useDueByPerson(): (personId: number) => string {
+ 
+ /** A crew's due-total: its lead's and members' due-totals added up, skipping n/a. */
+ export function crewDue(crew: Crew, dueOf: (personId: number) => string): string {
+-  return total([crew.lead, ...crew.members].map((p) => dueOf(p.id)));
++  return total([...(crew.lead ? [crew.lead] : []), ...crew.members].map((p) => dueOf(p.id)));
+ }
+diff --git a/src/main/frontend/features/rates/Rates.tsx b/src/main/frontend/features/rates/Rates.tsx
+index c03f5e304..b28a8dbbb 100644
+--- a/src/main/frontend/features/rates/Rates.tsx
++++ b/src/main/frontend/features/rates/Rates.tsx
+@@ -15,8 +15,12 @@ const EMPTY: RateInput = { grade: 'A', rate: '', from: '', to: '' };
+ /** yyyy-MM-dd. */
+ const DATE = /^\d{4}-\d{2}-\d{2}$/;
+ 
++/** The months of a year, as MM. */
++const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
++
+ // Each grade's rate in force on the sheet's today (n/a when none is), every rate the sheet has with
+-// its from- and to-date and version count, and the form that sets one. The rate in force may be inherited from a parent sheet;
++// its from- and to-date and version count, a calendar of each grade's rate in force on the first day of each month
++// of the sheet's today's year, and the form that sets one. The rate in force may be inherited from a parent sheet;
+ // the list shows only the sheet's own.
+ export function Rates() {
+   const [user] = useCurrentUser();
+@@ -41,6 +45,8 @@ export function Rates() {
+ 
+   if (!user || !sheet) return null;
+ 
++  const year = today.slice(0, 4);
++
+   const submit = (e: FormEvent) => {
+     e.preventDefault();
+     setError('');
+@@ -88,6 +94,28 @@ export function Rates() {
+           ))}
+         </tbody>
+       </table>
++      <table data-testid="rate-calendar">
++        <thead>
++          <tr>
++            <th>Grade</th>
++            {MONTHS.map((m) => (
++              <th key={m}>{`${year}-${m}`}</th>
++            ))}
++          </tr>
++        </thead>
++        <tbody>
++          {GRADES.map((g) => (
++            <tr key={g}>
++              <td>{g}</td>
++              {MONTHS.map((m) => (
++                <td key={m} data-testid={`rate-month-${g}-${year}-${m}`}>
++                  {rateFor(rates, g, `${year}-${m}-01`) ?? NA}
++                </td>
++              ))}
++            </tr>
++          ))}
++        </tbody>
++      </table>
+       <table data-testid="rate-list">
+         <thead>
+           <tr>
+diff --git a/src/main/java/net/officefloor/hq/app/crew/Crew.java b/src/main/java/net/officefloor/hq/app/crew/Crew.java
+index ada8f0e3c..ce360289f 100644
+--- a/src/main/java/net/officefloor/hq/app/crew/Crew.java
++++ b/src/main/java/net/officefloor/hq/app/crew/Crew.java
+@@ -2,6 +2,6 @@ package net.officefloor.hq.app.crew;
+ 
+ import java.util.List;
+ 
+-/** A crew on a sheet: its name, its lead and its members, in the order they were added. {@code id} is null until saved. */
++/** A crew on a sheet: its name, its lead (null: none, once its lead was transferred away) and its members, in the order they were added. {@code id} is null until saved. */
+ public record Crew(Long id, String sheetId, String name, CrewPerson lead, List<CrewPerson> members) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/crew/CrewRepository.java b/src/main/java/net/officefloor/hq/app/crew/CrewRepository.java
+index 76f8696d4..8ff44b811 100644
+--- a/src/main/java/net/officefloor/hq/app/crew/CrewRepository.java
++++ b/src/main/java/net/officefloor/hq/app/crew/CrewRepository.java
+@@ -16,14 +16,15 @@ public class CrewRepository {
+         this.jdbc = jdbc;
+     }
+ 
+-    /** The sheet's crews with their leads and members, each in the order they were added. */
++    /** The sheet's crews with their leads (null: none) and members, each in the order they were added. */
+     public List<Crew> findAll(String sheetId) {
+         Map<Long, Crew> crews = new LinkedHashMap<>();
+-        jdbc.query("SELECT c.id, c.name, c.lead_id, p.name AS lead_name FROM crew c JOIN person p ON p.id = c.lead_id"
++        jdbc.query("SELECT c.id, c.name, c.lead_id, p.name AS lead_name FROM crew c LEFT JOIN person p ON p.id = c.lead_id"
+                 + " WHERE c.sheet_id = ? ORDER BY c.id", rs -> {
+                     long id = rs.getLong("id");
+-                    crews.put(id, new Crew(id, sheetId, rs.getString("name"),
+-                            new CrewPerson(rs.getLong("lead_id"), rs.getString("lead_name")), new ArrayList<>()));
++                    long leadId = rs.getLong("lead_id");
++                    CrewPerson lead = rs.wasNull() ? null : new CrewPerson(leadId, rs.getString("lead_name"));
++                    crews.put(id, new Crew(id, sheetId, rs.getString("name"), lead, new ArrayList<>()));
+                 }, sheetId);
+         jdbc.query("SELECT m.crew_id, m.person_id, p.name FROM crew_member m"
+                 + " JOIN person p ON p.id = m.person_id WHERE m.sheet_id = ? ORDER BY m.id",
+diff --git a/src/main/java/net/officefloor/hq/app/crew/ValidateCrewMemberRequest.java b/src/main/java/net/officefloor/hq/app/crew/ValidateCrewMemberRequest.java
+index 37e8c44a9..c66772653 100644
+--- a/src/main/java/net/officefloor/hq/app/crew/ValidateCrewMemberRequest.java
++++ b/src/main/java/net/officefloor/hq/app/crew/ValidateCrewMemberRequest.java
+@@ -28,7 +28,7 @@ public class ValidateCrewMemberRequest {
+         if (person == null) {
+             throw new InvalidCrewException("Choose a person on the sheet.");
+         }
+-        if (crew.lead().id() == person.id()) {
++        if (crew.lead() != null && crew.lead().id() == person.id()) {
+             throw new InvalidCrewException(person.name() + " leads the crew.");
+         }
+         if (crew.members().stream().anyMatch(m -> m.id() == person.id())) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 959e2557c..88d4122cf 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -462,7 +462,7 @@ public class PersonRepository {
+ 
+     /**
+      * Remove the person, transferred to another sheet (their claims already moved), from this sheet entirely: their
+-     * statements, holds, past retirements, patron links either way, pool and crew memberships, crews they lead, watches, plans and closed-period figures go with them.
++     * statements, holds, past retirements, patron links either way, pool and crew memberships, watches, plans and closed-period figures go with them; the crews they lead stay, with no lead.
+      */
+     public void dropTransferred(Person person) {
+         String sheetId = person.sheetId();
+@@ -470,9 +470,8 @@ public class PersonRepository {
+         jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, gone,
+                 gone);
+         jdbc.update("DELETE FROM pool_member WHERE person_id = ?", gone);
+-        jdbc.update("DELETE FROM crew_member WHERE sheet_id = ? AND (person_id = ? OR crew_id IN (SELECT id FROM crew"
+-                + " WHERE sheet_id = ? AND lead_id = ?))", sheetId, gone, sheetId, gone);
+-        jdbc.update("DELETE FROM crew WHERE sheet_id = ? AND lead_id = ?", sheetId, gone);
++        jdbc.update("DELETE FROM crew_member WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
++        jdbc.update("UPDATE crew SET lead_id = NULL WHERE sheet_id = ? AND lead_id = ?", sheetId, gone);
+         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+         jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index fa4c3f22f..aba64c87c 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -67,7 +67,7 @@ public class PoolRepository {
+     /**
+      * The sheet's crews as pools, in the order the crews were added: each named as its crew, with id the crew's id
+      * negated (so it is never a stored pool's), and the lead then the members as its members at equal shares of 100.00
+-     * (each rounded half to even to two decimals, the remainder on the lead, as patrons' shares are split); a person
++     * (each rounded half to even to two decimals, the remainder on the lead — on the first member when it has none — as patrons' shares are split); a person
+      * member is held when a hold of theirs is in force on {@code today} (null: none is held).
+      */
+     public List<Pool> crewPools(String sheetId, LocalDate today) {
+@@ -77,10 +77,13 @@ public class PoolRepository {
+                 + " AND (h.from_date IS NULL OR h.from_date <= CAST(? AS DATE))"
+                 + " AND (h.to_date IS NULL OR h.to_date >= CAST(? AS DATE))) THEN 1 ELSE 0 END AS held";
+         jdbc.query("SELECT c.id, c.name, p.id AS person_id, p.name AS person_name, p.retired_from," + held
+-                + " FROM crew c JOIN person p ON p.id = c.lead_id WHERE c.sheet_id = ? ORDER BY c.id", rs -> {
++                + " FROM crew c LEFT JOIN person p ON p.id = c.lead_id WHERE c.sheet_id = ? ORDER BY c.id", rs -> {
+                     long id = rs.getLong("id");
+                     Pool pool = new Pool(-id, sheetId, rs.getString("name"), new ArrayList<>());
+-                    pool.members().add(crewMember(rs));
++                    rs.getLong("person_id");
++                    if (!rs.wasNull()) {
++                        pool.members().add(crewMember(rs));
++                    }
+                     pools.put(id, pool);
+                 }, on, on, on, sheetId);
+         jdbc.query("SELECT m.crew_id, p.id AS person_id, p.name AS person_name, p.retired_from," + held
+@@ -91,6 +94,10 @@ public class PoolRepository {
+         List<Pool> list = new ArrayList<>();
+         for (Pool pool : pools.values()) {
+             int n = pool.members().size();
++            if (n == 0) {
++                list.add(pool);
++                continue;
++            }
+             BigDecimal share = HUNDRED.divide(BigDecimal.valueOf(n), 2, RoundingMode.HALF_EVEN);
+             BigDecimal lead = HUNDRED.subtract(share.multiply(BigDecimal.valueOf(n))).add(share);
+             List<PoolMember> members = new ArrayList<>();
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index aa0b5cd6c..4b05ecc05 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -110,8 +110,9 @@ public class SheetCloner {
+         for (Map<String, Object> crew : jdbc.queryForList("SELECT id, lead_id FROM crew WHERE sheet_id = ? ORDER BY id",
+                 from)) {
+             long old = ((Number) crew.get("id")).longValue();
+-            crews.put(old, RowCopy.copy(jdbc, "crew", old,
+-                    Map.of("sheet_id", to, "lead_id", people.get(((Number) crew.get("lead_id")).longValue()))));
++            Object lead = crew.get("lead_id");
++            crews.put(old, RowCopy.copy(jdbc, "crew", old, lead == null ? Map.of("sheet_id", to)
++                    : Map.of("sheet_id", to, "lead_id", people.get(((Number) lead).longValue()))));
+         }
+         for (Map<String, Object> member : jdbc.queryForList(
+                 "SELECT id, crew_id, person_id FROM crew_member WHERE sheet_id = ? ORDER BY id", from)) {
+diff --git a/src/main/resources/db/migration/V90__crew_lead_optional.sql b/src/main/resources/db/migration/V90__crew_lead_optional.sql
+new file mode 100644
+index 000000000..38df04e01
+--- /dev/null
++++ b/src/main/resources/db/migration/V90__crew_lead_optional.sql
+@@ -0,0 +1,2 @@
++-- A crew keeps its name and members when its lead is transferred to another sheet: it then has no lead (null).
++ALTER TABLE crew ALTER COLUMN lead_id SET NULL;
