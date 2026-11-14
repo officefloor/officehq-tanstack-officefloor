@@ -14,6 +14,7 @@ public class RecordClaimStatus {
         audit.record(ClaimStatus.valueOf(claim.getStatus()).event() + " sheet=" + claim.getSheetId()
                 + " by=" + (by == null ? "" : by)
                 + " person=" + (person == null ? "" : person.getName())
-                + " amount=" + claim.getAmount() + " date=" + claim.getDate());
+                + " amount=" + claim.getAmount() + " date=" + claim.getDate()
+                + claim.getAuditNumber());
     }
 }

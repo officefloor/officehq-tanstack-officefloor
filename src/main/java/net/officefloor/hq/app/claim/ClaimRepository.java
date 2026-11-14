@@ -12,13 +12,13 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number";
 
     private static final RowMapper<Claim> ROW = (rs, n) -> new Claim(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getLong("person_id"),
             rs.getBigDecimal("amount").setScale(2).toPlainString(),
             rs.getObject("claim_date", LocalDate.class).toString(), rs.getString("note"),
-            rs.getString("status"));
+            rs.getString("status"), rs.getObject("number", Long.class));
 
     private final JdbcTemplate jdbc;
 
@@ -54,13 +54,21 @@ public class ClaimRepository {
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), sheetId, personId, amount.toPlainString(),
-                date.toString(), note, ClaimStatus.DRAFT.name());
+                date.toString(), note, ClaimStatus.DRAFT.name(), null);
     }
 
     public void update(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ? WHERE sheet_id = ? AND id = ?",
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ? WHERE sheet_id = ? AND id = ?",
                 new BigDecimal(claim.getAmount()), LocalDate.parse(claim.getDate()), claim.getNote(),
-                claim.getStatus(),
+                claim.getStatus(), claim.getNumber(),
                 claim.getSheetId(), claim.getId());
+    }
+
+    /** The sheet's next claim number, taken in one atomic statement so two claims opened at the same
+     *  moment never get the same one; rolled back with the request when it is refused. */
+    public long nextNumber(String sheetId) {
+        return jdbc.queryForObject("SELECT last_claim_number FROM FINAL TABLE ("
+                + "UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?)",
+                Long.class, sheetId);
     }
 }

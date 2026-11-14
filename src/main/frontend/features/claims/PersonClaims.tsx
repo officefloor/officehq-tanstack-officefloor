@@ -80,6 +80,7 @@ export function PersonClaims({ sheetId, user, personId, claims, pct }: {
         <tbody>
           {claims.map((c) => (
             <tr key={c.id} data-testid={`claim-row-${c.id}`}>
+              <td data-testid="claim-number">{c.number ?? ''}</td>
               <td data-testid="claim-amount">{Number(c.amount).toFixed(2)}</td>
               <td data-testid="claim-date">{c.date}</td>
               <td data-testid="claim-note">{c.note}</td>

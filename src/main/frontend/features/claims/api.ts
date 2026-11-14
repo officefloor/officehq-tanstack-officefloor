@@ -6,9 +6,11 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 /** A change of a claim's status. */
 export type ClaimAction = 'open' | 'settle' | 'void';
 
-/** A claim: its amount as two-decimal text, its date (yyyy-MM-dd), its note and its status. */
+/** A claim: its amount as two-decimal text, its date (yyyy-MM-dd), its note, its status and its
+ *  number on the sheet (given when opened; null while a draft or once voided). */
 export type Claim = {
   id: number; sheetId: string; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
+  number: number | null;
 };
 export type ClaimInput = { amount: string; date: string; note: string };
 
