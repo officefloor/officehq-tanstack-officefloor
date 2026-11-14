@@ -1,0 +1,100 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+index 4f56813f8..2919bad58 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+@@ -9,12 +9,12 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** A new DRAFT claim; its due-by is fixed now: its date plus the person's own terms, else
+- * those of their grade, else the sheet's, each as in force on that date. */
++ * those of the grade they had, else the sheet's, each as in force on the sheet's today. */
+ public class BuildClaim {
+     public void build(@Val ClaimInput input, @Val Person person, SheetRepository sheets, SettingRepository settings,
+             HolidayRepository holidays, Out<Claim> claim) {
+         LocalDate date = input.date() != null ? input.date() : sheets.entryDate(person.sheetId());
+-        LocalDate dueBy = NewDueBy.of(date, person, settings, holidays);
++        LocalDate dueBy = NewDueBy.of(date, person, sheets, settings, holidays);
+         claim.set(new Claim(null, person.sheetId(), person.id(), input.amount(), date, input.note(), ClaimStatus.DRAFT,
+                 null, null, null, false, null, input.corrects(), dueBy));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckClaimInputPeriodOpen.java b/src/main/java/net/officefloor/hq/app/claim/CheckClaimInputPeriodOpen.java
+index 6ce3efa62..b1bc98cc9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/CheckClaimInputPeriodOpen.java
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckClaimInputPeriodOpen.java
+@@ -17,7 +17,7 @@ public class CheckClaimInputPeriodOpen {
+             SheetRepository sheets, SettingRepository settings, HolidayRepository holidays, PeriodRepository periods)
+             throws InvalidClaimException {
+         LocalDate date = input.date() != null ? input.date() : sheets.entryDate(sheetId);
+-        LocalDate dueBy = NewDueBy.of(date, person, settings, holidays);
++        LocalDate dueBy = NewDueBy.of(date, person, sheets, settings, holidays);
+         Period closed = periods.closedOn(sheetId, dueBy);
+         if (closed != null) {
+             throw new InvalidClaimException("A claim dated " + date + " is due by " + dueBy
+diff --git a/src/main/java/net/officefloor/hq/app/claim/NewDueBy.java b/src/main/java/net/officefloor/hq/app/claim/NewDueBy.java
+index d251f430f..0f6f03896 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/NewDueBy.java
++++ b/src/main/java/net/officefloor/hq/app/claim/NewDueBy.java
+@@ -4,18 +4,19 @@ import java.time.LocalDate;
+ import net.officefloor.hq.app.holiday.HolidayRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
+ 
+ /** The due-by a claim of the person on the date is fixed with when it is created: the terms-th business day after its
+  * date — skipping Saturdays, Sundays and the sheet's holidays (as the list stands now) — for the person's own terms,
+- * else those of their grade, else the sheet's, each as in force on that date. */
++ * else those of the grade they had, else the sheet's, each as in force on the day it is created (the sheet's today). */
+ public final class NewDueBy {
+ 
+     private NewDueBy() {
+     }
+ 
+-    public static LocalDate of(LocalDate date, Person person, SettingRepository settings,
++    public static LocalDate of(LocalDate date, Person person, SheetRepository sheets, SettingRepository settings,
+             HolidayRepository holidays) {
+         return holidays.businessDaysAfter(person.sheetId(), date,
+-                person.termsOn(settings.dated(person.sheetId()), date));
++                person.termsOn(settings.dated(person.sheetId()), sheets.today(person.sheetId())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+index 082837bfb..c94c0ec6c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+@@ -45,8 +45,8 @@ public class SplitClaim {
+         Person person = people.find(claim.sheetId(), claim.personId());
+         LocalDate dueBy = person == null
+                 ? holidays.businessDaysAfter(claim.sheetId(), claim.date(),
+-                        settings.dated(claim.sheetId()).termsFor(null, claim.date()))
+-                : NewDueBy.of(claim.date(), person, settings, holidays);
++                        settings.dated(claim.sheetId()).termsFor(null, sheets.today(claim.sheetId())))
++                : NewDueBy.of(claim.date(), person, sheets, settings, holidays);
+         Claim made = new Claim(null, claim.sheetId(), claim.personId(), off, claim.date(), claim.note(),
+                 ClaimStatus.OPEN, null, null, user, false, null, null, dueBy, null, 0, claim.number());
+         String number = ClaimNumbers.next(made, sheets, settings, periods);
+diff --git a/src/main/java/net/officefloor/hq/app/paste/SavePastedClaims.java b/src/main/java/net/officefloor/hq/app/paste/SavePastedClaims.java
+index 3f64eb11f..2dc99a5ba 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/SavePastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/paste/SavePastedClaims.java
+@@ -83,7 +83,7 @@ public class SavePastedClaims {
+             SettingRepository settings, HolidayRepository holidays, PersonRepository people, RateRepository rates,
+             ClaimRepository claims, ClaimLogRepository logs, Audit audit, LateEntries lateEntries) {
+         LocalDate date = line.input().date() != null ? line.input().date() : sheets.entryDate(person.sheetId());
+-        LocalDate dueBy = NewDueBy.of(date, person, settings, holidays);
++        LocalDate dueBy = NewDueBy.of(date, person, sheets, settings, holidays);
+         Claim claim = claims.save(new Claim(null, person.sheetId(), person.id(), line.input().amount(), date,
+                 line.input().note(), ClaimStatus.DRAFT, null, null, null, false, null, line.input().corrects(),
+                 dueBy));
+diff --git a/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java b/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
+index 6a1bb6f03..522d7c782 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
++++ b/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
+@@ -69,7 +69,7 @@ public class GeneratePlanClaims {
+                 if (settings.find(sheet.id()).roleOf(user) == Role.VIEWER) {
+                     throw new ViewerRefusedException("A viewer cannot change the sheet.");
+                 }
+-                LocalDate dueBy = NewDueBy.of(date, person, settings, holidays);
++                LocalDate dueBy = NewDueBy.of(date, person, sheets, settings, holidays);
+                 Claim claim = claims.save(new Claim(null, sheet.id(), person.id(), plan.amount(), date, "",
+                         ClaimStatus.DRAFT, null, null, null, false, null, null, dueBy));
+                 BigDecimal due = ClaimDueNow.of(claim, sheets, people, rates, settings, claims);
