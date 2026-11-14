@@ -22,7 +22,9 @@ import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.Role;
 import net.officefloor.hq.app.setting.SettingRepository;
+import net.officefloor.hq.app.setting.ViewerRefusedException;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
@@ -35,13 +37,14 @@ import org.springframework.web.bind.annotation.RequestParam;
  * that day in every month from the start's month, on or after the start) up to its end and the sheet's today that it
  * has made none for yet. Each is checked and added as the claim form adds a claim (no claim after the person's
  * retirement date, none due by inside a closed period; due-by fixed, DRAFT logged, CLAIM_ADDED, LATE_ENTRY when its
- * period is soft-closed); a date the form refuses is skipped and tried again next time.
+ * period is soft-closed); a date the form refuses is skipped and tried again next time. A viewer changes nothing: a
+ * viewer's generate that would make a claim is refused (400) before it makes any, one with nothing to make makes none.
  */
 public class GeneratePlanClaims {
     public void generate(@Val Sheet sheet, @RequestParam("user") String user, PlanRepository plans,
             SheetRepository sheets, SettingRepository settings, HolidayRepository holidays, PeriodRepository periods,
             PersonRepository people, RateRepository rates, ClaimRepository claims, ClaimLogRepository logs, Audit audit,
-            LateEntries lateEntries, Out<GenerateResult> result) {
+            LateEntries lateEntries, Out<GenerateResult> result) throws ViewerRefusedException {
         LocalDate today = sheets.today(sheet.id());
         int made = 0;
         for (Plan plan : plans.findAll(sheet.id())) {
@@ -62,6 +65,9 @@ public class GeneratePlanClaims {
                             periods);
                 } catch (InvalidClaimException e) {
                     continue;
+                }
+                if (settings.find(sheet.id()).roleOf(user) == Role.VIEWER) {
+                    throw new ViewerRefusedException("A viewer cannot change the sheet.");
                 }
                 LocalDate dueBy = NewDueBy.of(date, person, settings, holidays);
                 Claim claim = claims.save(new Claim(null, sheet.id(), person.id(), plan.amount(), date, "",
