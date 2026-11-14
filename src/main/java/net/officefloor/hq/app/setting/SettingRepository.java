@@ -53,10 +53,10 @@ public class SettingRepository {
     /** The floor until it is first set. */
     public static final String DEFAULT_FLOOR = "1.00";
 
-    /** Whether a key is dated: every key that carries a figure (the policy date and the period
-     *  numbering date are not). */
+    /** Whether a key is dated: every key that carries a figure (the policy date, the period
+     *  numbering date and the permission matrix are not). */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key);
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !Permissions.isKey(key);
     }
 
     private final JdbcTemplate jdbc;

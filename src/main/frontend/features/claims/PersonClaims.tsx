@@ -23,7 +23,7 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  above the sheet's clerk limit makes it PENDING, which a steward other than its opener approves,
  *  or any steward rejects with a reason typed beside it), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
  *  charge) the number of the SETTLED claim it corrects. Only a DRAFT can be edited:
- *  editing any other claim is refused with an error on the claim. A steward can move a DRAFT, OPEN or
+ *  editing any other claim is refused with an error on the claim. A role the permission matrix allows (by default a steward) can move a DRAFT, OPEN or
  *  PENDING claim to another person picked beside it (any other refused with an error on the claim), and
  *  re-settle a SETTLED one (anyone else, any other status or a claim in a closed period refused likewise).
  *  An OPEN claim can be deferred until a date typed beside it, after the sheet's today (any other claim, date,
@@ -301,14 +301,14 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     : c.deferred && move.variables.action === 'settle'
                     ? `A deferred claim cannot be settled until ${c.deferredUntil}.`
                     : c.status === 'OPEN' && move.variables.action === 'settle'
-                    ? 'The user who opened a claim cannot settle it.'
+                    ? 'The user who opened a claim cannot settle it, nor can a role the permissions do not allow to settle.'
                     : c.status === 'PENDING' && move.variables.action === 'approve'
                     ? 'Only a steward who did not open a claim can approve it.'
                     : c.status === 'PENDING' && move.variables.action === 'reject'
                     ? 'Only a steward can reject a claim.'
                     : c.status === 'SETTLED' && move.variables.action === 'resettle'
                     ? 'Only a steward can re-settle a claim.'
-                    : `A ${c.status} claim cannot be ${DONE[move.variables.action]}.`}</span>
+                    : `A ${c.status} claim cannot be ${DONE[move.variables.action]}, or your role may not ${move.variables.action} a claim.`}</span>
                 )}
                 {deferral.isError && deferral.variables?.id === c.id && (
                   <span data-testid="claim-error">{deferral.error instanceof HttpError && deferral.error.status === 423
@@ -327,7 +327,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     ? 'A claim dated inside a closed period cannot be reassigned.'
                     : c.status === 'SETTLED' || c.status === 'VOID'
                     ? `A ${c.status} claim cannot be reassigned.`
-                    : 'Only a steward can reassign a claim, and only to another person.'}</span>
+                    : 'Only a role the permissions allow can reassign a claim, and only to another person.'}</span>
                 )}
               </td>
             </tr>

@@ -21,15 +21,23 @@ export type Role = { sheetId: string; user: string; role: string };
  *  (terms-<grade>; blank means the sheet's terms) fix the due-by of a claim added for a person of that
  *  grade on its date: its date plus those terms, kept when the terms or its date change later. The proof
  *  threshold (two decimals; blank means none): a claim whose due is above the one in force on its date
- *  cannot be settled or approved while it has no proofs. */
+ *  cannot be settled or approved while it has no proofs. The permission matrix (perm-<action>, a comma
+ *  separated list of roles; blank means the standing rule, PERMISSION_STANDING): who may take each action. */
 export const SETTING_KEYS = ['clerk-limit', 'cap', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
-  'period-numbering-from', 'proof-threshold'] as const;
+  'period-numbering-from', 'proof-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen'] as const;
+
+/** The roles that may take each action of the permission matrix while its entry is blank. */
+export const PERMISSION_STANDING: Record<string, string> = {
+  open: 'clerk,steward', settle: 'clerk,steward', void: 'clerk,steward', close: 'clerk,steward',
+  reassign: 'steward', reopen: 'steward',
+};
 
 /** A setting's value until it is first set. */
 export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00' };
 
 /** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
-export const UNDATED_KEYS: readonly string[] = ['policy-date', 'period-numbering-from'];
+export const UNDATED_KEYS: readonly string[] = ['policy-date', 'period-numbering-from', 'perm-open', 'perm-settle', 'perm-void',
+  'perm-reassign', 'perm-close', 'perm-reopen'];
 
 /** A dated setting's value in force on a date (yyyy-MM-dd). */
 export type DatedOn = (date: string) => string;

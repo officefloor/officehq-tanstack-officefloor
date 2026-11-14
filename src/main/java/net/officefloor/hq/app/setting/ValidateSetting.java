@@ -3,6 +3,7 @@ package net.officefloor.hq.app.setting;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
@@ -17,6 +18,9 @@ public class ValidateSetting {
 
     /** The grades that may have their own terms. */
     private static final Set<String> GRADES = Set.of("A", "B", "C");
+
+    /** The roles a permission may name. */
+    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD);
 
     public void validate(@RequestBody SettingRequest request, Out<SettingRequest> body)
             throws InvalidSettingException {
@@ -75,6 +79,13 @@ public class ValidateSetting {
                 }
             }
             body.set(new SettingRequest(key, value.isEmpty() ? null : value, null));
+            return;
+        } else if (Permissions.isKey(key)) {
+            List<String> roles = Permissions.roles(value);
+            if (!roles.stream().allMatch(ROLES::contains)) {
+                throw new InvalidSettingException("A permission is blank or a comma separated list of clerk and steward");
+            }
+            body.set(new SettingRequest(key, roles.isEmpty() ? null : String.join(",", roles), null));
             return;
         } else {
             throw new InvalidSettingException("Unknown setting: " + key);

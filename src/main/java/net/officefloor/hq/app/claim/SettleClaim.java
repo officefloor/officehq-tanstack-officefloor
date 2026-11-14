@@ -8,6 +8,7 @@ import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.period.PeriodClosedException;
 import net.officefloor.hq.app.period.PeriodRepository;
+import net.officefloor.hq.app.setting.Permissions;
 import net.officefloor.hq.app.setting.Role;
 import net.officefloor.hq.app.setting.RoleRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
@@ -18,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** Settles a claim, fixing its due: its amount at its person's grade's rate in force on its date, rounded by the sheet's policy date to
  *  two decimals and at least the sheet's floor (a claim bound by a statement: the figure it was bound to). With no rate the due is not
  *  fixed and stays live. Its late charge on the sheet's today is added and fixed with it. Refused for the user who opened it (four eyes), and for a claim
- *  that is not OPEN. Settled by a clerk when the due is above the sheet's clerk limit (a due that is n/a is within any limit; a steward settles
+ *  that is not OPEN, and for a role the permission matrix does not let settle. Settled by a clerk when the due is above the sheet's clerk limit (a due that is n/a is within any limit; a steward settles
  *  anything), it goes to PENDING instead (after the proof threshold: one above it with no proofs is refused), nothing fixed, until a steward approves or rejects it. */
 public class SettleClaim {
     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
@@ -32,6 +33,9 @@ public class SettleClaim {
     static void settle(String by, Claim claim, PersonRepository people, RateRepository rates,
             PeriodRepository periods, RoleRepository roles, SettingRepository settings, SheetRepository sheets)
             throws ClaimStatusException, PeriodClosedException {
+        if (!Permissions.allows(claim.getSheetId(), by, Permissions.SETTLE, roles, settings)) {
+            throw new ClaimStatusException("Your role may not settle a claim");
+        }
         periods.requireOpen(claim.getSheetId(), claim.getDate());
         if (!ClaimStatus.OPEN.name().equals(claim.getStatus())) {
             throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be settled");

@@ -12,7 +12,7 @@ const EMPTY: PeriodInput = { name: '', from: '', to: '' };
 
 /** The sheet's periods: a form that adds one, and each period by from-date with its due-total (the
  *  due of the claims that count whose date falls in it, n/a ones and OPEN unbound ones dated within their person's hold skipped; once closed, the one fixed
- *  when it was closed), whether it is closed, and buttons that close it and (a steward only) reopen it. */
+ *  when it was closed), whether it is closed, and buttons that close it and reopen it (each by the roles the permission matrix allows). */
 export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
@@ -110,8 +110,8 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
                 </button>
                 {act.isError && act.variables?.name === p.name && (
                   <span data-testid="period-error">{act.variables.action === 'close'
-                    ? 'The period is already closed.'
-                    : 'Only a steward can reopen a period, and only a closed one.'}</span>
+                    ? 'Your role may not close a period, or it is already closed.'
+                    : 'Your role may not reopen a period, or it is not closed.'}</span>
                 )}
               </td>
             </tr>

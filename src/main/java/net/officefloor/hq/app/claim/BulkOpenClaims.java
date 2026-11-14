@@ -11,6 +11,8 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.setting.Permissions;
+import net.officefloor.hq.app.setting.RoleRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
@@ -22,13 +24,13 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  within a person), each numbered in turn as {@link OpenClaim} numbers one and recorded as it would
  *  record it (its CLAIM_OPENED line, then the rollup lines it moved). A claim that cannot be opened
  *  (its status does not allow it, its date is in a closed period, or it is not on the sheet) is left
- *  as it is and counted as refused. */
+ *  as it is and counted as refused; every one is, for a role the permission matrix does not let open. */
 public class BulkOpenClaims {
     public void open(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by,
             @RequestBody BulkOpenRequest request, ClaimRepository claims, PeriodRepository periods,
             PersonRepository people, RateRepository rates, SheetRepository sheets,
-            SettingRepository settings, ClaimLogRepository log, Audit audit, Out<BulkOpenResult> result) {
+            SettingRepository settings, RoleRepository roles, ClaimLogRepository log, Audit audit, Out<BulkOpenResult> result) {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
         Set<Long> selected = new HashSet<>(request == null || request.claimIds() == null
@@ -45,9 +47,11 @@ public class BulkOpenClaims {
             }
         }
 
+        boolean allowed = Permissions.allows(id, user, Permissions.OPEN, roles, settings);
         int opened = 0;
         Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
         for (Claim claim : ordered) {
+            if (!allowed) continue;
             try {
                 periods.requireOpen(id, claim.getDate());
                 claim.setStatus(ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.OPEN).name());

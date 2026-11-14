@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { useSheetToday } from '../sheet/api';
-import { changeSetting, listSettings, settingOn, settingsKey, SETTING_KEYS, UNDATED_KEYS } from './api';
+import { changeSetting, listSettings, PERMISSION_STANDING, settingOn, settingsKey, SETTING_KEYS, UNDATED_KEYS } from './api';
 
 /** The sheet's settings: each one's value in force on the sheet's today and a form that changes them.
  *  A field shows the value in force until it is edited; saving saves the fields entered (every field
@@ -58,10 +58,12 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
               {key === 'clerk-limit' ? 'Clerk limit' : key === 'cap' ? 'Cap' : key === 'floor' ? 'Floor' : key === 'late-pct' ? 'Late percent'
                 : key === 'policy-date' ? 'Policy date' : key === 'period-numbering-from' ? 'Period numbering from'
                 : key === 'proof-threshold' ? 'Proof threshold'
+                : key.startsWith('perm-') ? `Who may ${key.slice('perm-'.length)} (roles)`
                 : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (days)` : 'Terms (days)'}{' '}
               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
                 placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' ? 'None' : key === 'cap' ? 'No cap' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
-                  : key === 'period-numbering-from' ? 'Off (yyyy-MM-dd)' : key.startsWith('terms-') ? "Sheet's terms" : undefined}
+                  : key === 'period-numbering-from' ? 'Off (yyyy-MM-dd)' : key.startsWith('terms-') ? "Sheet's terms"
+                  : key.startsWith('perm-') ? PERMISSION_STANDING[key.slice('perm-'.length)] : undefined}
                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
             </label>{' '}
             {!UNDATED_KEYS.includes(key) && (
@@ -82,7 +84,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {save.isError && (
           <span data-testid="settings-error">
             The clerk limit and the cap must be blank, and the floor given, as 0.00 or more with up to two decimals;
-            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the policy date and period numbering date blank or a date; a from-date blank or a date.
+            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the policy date and period numbering date blank or a date; a permission blank or a comma separated list of clerk and steward; a from-date blank or a date.
           </span>
         )}
       </form>
