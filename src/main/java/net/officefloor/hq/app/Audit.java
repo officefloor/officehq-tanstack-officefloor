@@ -132,6 +132,37 @@ public class Audit {
         return found;
     }
 
+    /**
+     * A claim's timeline: the sheet's lines about it exactly as the file holds them, newest first. A claim with a number
+     * has the lines carrying {@code number=<its number>}; one without has the lines carrying no number that name its
+     * person, amount and date together. Reads the file; keeps no record of its own.
+     */
+    public synchronized List<String> timeline(String sheetId, String number, String person, String amount, String date) {
+        List<String> found = new ArrayList<>();
+        for (String line : lines(sheetId, null)) {
+            boolean about = number != null
+                    ? carries(line, "number", number)
+                    : !line.contains(" number=") && carries(line, "person", person) && carries(line, "amount", amount)
+                            && carries(line, "date", date);
+            if (about) {
+                found.add(line);
+            }
+        }
+        return found;
+    }
+
+    /** Whether the line carries the field key=value exactly, the value ending the line or followed by a space. */
+    private static boolean carries(String line, String key, String value) {
+        String field = " " + key + "=" + value;
+        for (int at = line.indexOf(field); at >= 0; at = line.indexOf(field, at + 1)) {
+            int end = at + field.length();
+            if (end == line.length() || line.charAt(end) == ' ') {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Whether the line carries name=<wanted> or person=<wanted> (wanted is lower case), the value ending the line or followed by a space. */
     private static boolean isAbout(String line, String wanted) {
         String lower = line.toLowerCase(Locale.ROOT);
