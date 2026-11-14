@@ -73,6 +73,31 @@ public class SheetRepository {
     }
 
     /**
+     * Takes the next claim number of the sheet's tree within a fiscal year (1 for its first in that year), as
+     * {@link #nextClaimNumber} does: one after the last number of that year given on any sheet of the tree, moving
+     * every sheet of the tree on to it in one atomic statement; a number taken is never given out again.
+     */
+    public int nextFiscalClaimNumber(String id, int fiscalYear) {
+        List<String> tree = tree(id);
+        for (String sheetId : tree) {
+            jdbc.update("MERGE INTO fiscal_claim_number f USING (VALUES (CAST(? AS VARCHAR(100)), CAST(? AS INT)))"
+                    + " AS v (sheet_id, fiscal_year) ON f.sheet_id = v.sheet_id AND f.fiscal_year = v.fiscal_year"
+                    + " WHEN NOT MATCHED THEN INSERT (sheet_id, fiscal_year, last_number)"
+                    + " VALUES (v.sheet_id, v.fiscal_year, 0)", sheetId, fiscalYear);
+        }
+        String in = String.join(", ", Collections.nCopies(tree.size(), "?"));
+        List<Object> args = new ArrayList<>(tree);
+        args.add(fiscalYear);
+        args.addAll(tree);
+        args.add(fiscalYear);
+        List<Integer> taken = jdbc.queryForList("SELECT last_number FROM FINAL TABLE (UPDATE fiscal_claim_number SET"
+                + " last_number = (SELECT MAX(t.last_number) FROM fiscal_claim_number t WHERE t.sheet_id IN (" + in
+                + ") AND t.fiscal_year = ?) + 1 WHERE sheet_id IN (" + in + ") AND fiscal_year = ?)", Integer.class,
+                args.toArray());
+        return taken.get(0);
+    }
+
+    /**
      * The ids of the sheets of the sheet's tree, the sheet among them: its topmost existing ancestor and every sheet
      * below that (the sheets naming it as their parent, their children and so on).
      */
