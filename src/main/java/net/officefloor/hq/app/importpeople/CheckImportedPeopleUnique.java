@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.hq.app.person.ApplyPerson;
 import net.officefloor.hq.app.person.BuildPerson;
 import net.officefloor.hq.app.person.CheckPersonNameUnique;
@@ -25,15 +26,16 @@ import net.officefloor.plugin.variable.Val;
  * aliases, contacts). A line whose name is a person's name or alias on the sheet updates that person as the form's
  * edit does (grade from the sheet's today; terms and contact only when the line gives them); any other line adds a
  * person as the form's add does. Two lines for the same person, or any line refused, refuse the whole import, before
- * anything is written. A line with a blank grade takes the sheet's default grade (blank: A).
+ * anything is written. A line with a blank grade takes the sheet's default grade (blank, or retired: A);
+ * a retired grade cannot be chosen.
  */
 public class CheckImportedPeopleUnique {
     public void check(@Val ImportedPeople imported, @Val Sheet sheet, PersonRepository repository, NameTree tree,
-            SheetRepository sheets, SettingRepository settings, Out<ImportedPersons> built) throws InvalidPersonException {
+            SheetRepository sheets, SettingRepository settings, GradeRepository grades, Out<ImportedPersons> built) throws InvalidPersonException {
         List<ImportedPersons.Entry> people = new ArrayList<>();
         Set<Long> updating = new HashSet<>();
         int number = 0;
-        String defaultGrade = settings.defaultGradeOrA(sheet.id());
+        String defaultGrade = grades.fallback(sheet.id(), settings.defaultGradeOrA(sheet.id()));
         for (PersonRequest line : imported.people()) {
             number++;
             PersonRequest request = line.grade().isEmpty()
@@ -44,7 +46,7 @@ public class CheckImportedPeopleUnique {
                 Person existing = repository.findByName(sheet.id(), request.name());
                 if (existing == null) {
                     Person[] person = new Person[1];
-                    new BuildPerson().build(request, sheet, value -> person[0] = value);
+                    new BuildPerson().build(request, sheet, grades, value -> person[0] = value);
                     new CheckPersonNameUnique().check(person[0], repository, tree);
                     people.add(new ImportedPersons.Entry(person[0], null));
                     continue;
@@ -61,7 +63,7 @@ public class CheckImportedPeopleUnique {
                 Person[] person = new Person[1];
                 PersonTermsChange[] change = new PersonTermsChange[1];
                 try {
-                    new ApplyPerson().apply(edit, existing, sheets, value -> person[0] = value,
+                    new ApplyPerson().apply(edit, existing, sheets, grades, value -> person[0] = value,
                             value -> change[0] = value);
                 } catch (StalePersonException e) {
                     throw new InvalidPersonException(e.getMessage());
