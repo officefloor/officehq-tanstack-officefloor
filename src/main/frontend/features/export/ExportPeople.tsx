@@ -1,9 +1,9 @@
-import { useClaims } from '../claims/claims';
-import { gradeOn, liveHolds, usePeople } from '../people/people';
-import { personDue, useRates } from '../rates/rates';
+import { useQueryClient } from '@tanstack/react-query';
+import { gradeOn, liveHolds } from '../people/people';
+import { personDue } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { useSheetToday } from '../session/sheetToday';
-import { useDueRules } from '../settings/settings';
+import { dueRules } from '../settings/settings';
+import { freshClaims, freshPeople, freshRates, freshSettings, freshSheetInfo } from './fresh';
 
 /** A CSV field: wrapped in double quotes, with any quote inside doubled, when it holds a comma, a quote or a line break. */
 export function csvField(value: string): string {
@@ -12,19 +12,25 @@ export function csvField(value: string): string {
 
 // The button that downloads the people as a CSV file: one line per person in list order, retired
 // people included, with the grade in force on the sheet's today, the retired-from date (or nothing)
-// and the due-total as shown. Lines end with a line feed.
+// and the due-total as shown. Lines end with a line feed. The sheet is re-read from the store first, so
+// while the screen is shown as of a date the lines are as of that date.
 export function ExportPeople() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
-  const today = useSheetToday();
-  const people = usePeople().data ?? [];
-  const claims = useClaims().data ?? [];
-  const rates = useRates().data ?? [];
-  const rules = useDueRules();
+  const queryClient = useQueryClient();
 
   if (!user || !sheet) return null;
 
-  const download = () => {
+  const download = async () => {
+    const [info, people, claims, rates, settings] = await Promise.all([
+      freshSheetInfo(queryClient, sheet),
+      freshPeople(queryClient, sheet),
+      freshClaims(queryClient, sheet),
+      freshRates(queryClient, sheet),
+      freshSettings(queryClient, sheet),
+    ]);
+    const today = info.today;
+    const rules = dueRules(settings, today, claims);
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
     for (const p of people) {
       const due = personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules);

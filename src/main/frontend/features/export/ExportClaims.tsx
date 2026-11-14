@@ -1,26 +1,32 @@
-import { useClaims } from '../claims/claims';
-import { periodOf, usePeriods } from '../periods/periods';
-import { usePeople } from '../people/people';
-import { claimDue, useRates } from '../rates/rates';
+import { useQueryClient } from '@tanstack/react-query';
+import { periodOf } from '../periods/periods';
+import { claimDue } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { useDueRules } from '../settings/settings';
+import { dueRules } from '../settings/settings';
 import { csvField } from './ExportPeople';
+import { freshClaims, freshPeople, freshPeriods, freshRates, freshSettings, freshSheetInfo } from './fresh';
 
 // The button that downloads the claims as a CSV file: people in list order (retired people included)
 // and each person's claims oldest first, with the number, due and period as the claim's row shows
-// them (an empty number or period, or n/a, as it is). Quoted and ended as the people export.
+// them (an empty number or period, or n/a, as it is). Quoted and ended as the people export; re-read
+// from the store first, as the people export is.
 export function ExportClaims() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
-  const people = usePeople().data ?? [];
-  const claims = useClaims().data ?? [];
-  const rates = useRates().data ?? [];
-  const periods = usePeriods().data ?? [];
-  const rules = useDueRules();
+  const queryClient = useQueryClient();
 
   if (!user || !sheet) return null;
 
-  const download = () => {
+  const download = async () => {
+    const [info, people, claims, rates, periods, settings] = await Promise.all([
+      freshSheetInfo(queryClient, sheet),
+      freshPeople(queryClient, sheet),
+      freshClaims(queryClient, sheet),
+      freshRates(queryClient, sheet),
+      freshPeriods(queryClient, sheet),
+      freshSettings(queryClient, sheet),
+    ]);
+    const rules = dueRules(settings, info.today, claims);
     const lines = [['person', 'number', 'date', 'amount', 'due', 'status', 'period']];
     for (const p of people) {
       const own = claims.filter((c) => c.personId === p.id).reverse();

@@ -1,14 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { getJson } from '../../api/http';
-import { poolsKey } from '../pools/pools';
-import type { Pool } from '../pools/pools';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { csvField } from './ExportPeople';
+import { freshPools } from './fresh';
 
 // The button that downloads the pools as a CSV file: one line per member, pools in the order added and
 // members in the order added, a pool member as pool:<name> and the cut as the pool's row shows it (empty
-// when none). The pools are re-read from the store first, so the cuts are current. Quoted and ended as
-// the people export.
+// when none). The pools are re-read from the store first, so the cuts are current (as of the screen's
+// as-of date, when one is set). Quoted and ended as the people export.
 export function ExportPools() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -17,11 +15,7 @@ export function ExportPools() {
   if (!user || !sheet) return null;
 
   const download = async () => {
-    const pools = await queryClient.fetchQuery({
-      queryKey: poolsKey(sheet),
-      queryFn: () => getJson<Pool[]>(`/api/sheets/${encodeURIComponent(sheet)}/pools`),
-      staleTime: 0,
-    });
+    const pools = await freshPools(queryClient, sheet);
     const lines = [['pool', 'member', 'share', 'cut']];
     for (const p of pools) {
       for (const m of p.members) {
