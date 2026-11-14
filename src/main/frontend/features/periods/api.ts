@@ -1,4 +1,7 @@
 import { getJson, postJson } from '../../api/http';
+import { counts, liveClaims, type Claim } from '../claims/api';
+import { gradeOn, type Person } from '../people/api';
+import { claimDue, sumDues, type Late, type Rate } from '../rates/api';
 import { sheetKey } from '../sheet/api';
 
 /** A period on the sheet: a name (unique on the sheet) and its from and to dates (yyyy-MM-dd), both
@@ -38,4 +41,14 @@ export function closePeriod(sheetId: string, by: string, name: string): Promise<
  *  steward, and when it is not closed. */
 export function reopenPeriod(sheetId: string, by: string, name: string): Promise<Period> {
   return postJson<Period>(`${base(sheetId)}/${encodeURIComponent(name)}/reopen?by=${encodeURIComponent(by)}`, {});
+}
+
+/** A period's due-total as its row shows it: once closed, the one fixed when it was closed; else the
+ *  due of the live claims that count whose date falls in it (n/a ones skipped). */
+export function periodDueTotal(p: Period, claims: Claim[], people: Person[] | undefined, rates: Rate[] | undefined,
+  floor: string, late: Late): string {
+  if (p.closed && p.closedTotal !== null) return p.closedTotal;
+  const personOf = new Map((people ?? []).map((q) => [q.id, q]));
+  return sumDues(liveClaims(claims, people).filter(counts).filter((c) => p.from <= c.date && c.date <= p.to)
+    .map((c) => claimDue(c, rates, (d) => { const q = personOf.get(c.personId); return q ? gradeOn(q, d) : ''; }, floor, late)));
 }

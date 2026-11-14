@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
-import { claimsKey, counts, listClaims, liveClaims } from '../claims/api';
-import { gradeOn, listPeople, peopleKey } from '../people/api';
-import { claimDue, listRates, ratesKey, sumDues } from '../rates/api';
+import { claimsKey, listClaims } from '../claims/api';
+import { listPeople, peopleKey } from '../people/api';
+import { listRates, ratesKey } from '../rates/api';
 import { useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
-import { addPeriod, closePeriod, listPeriods, periodsKey, reopenPeriod, type PeriodInput } from './api';
+import { addPeriod, closePeriod, listPeriods, periodDueTotal, periodsKey, reopenPeriod, type PeriodInput } from './api';
 
 const EMPTY: PeriodInput = { name: '', from: '', to: '' };
 
@@ -53,12 +53,6 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
     save.reset();
   };
 
-  const personOf = new Map((people.data ?? []).map((p) => [p.id, p]));
-  const counting = liveClaims(claims.data ?? [], people.data).filter(counts);
-  const dueTotal = (from: string, to: string) =>
-    sumDues(counting.filter((c) => from <= c.date && c.date <= to)
-      .map((c) => claimDue(c, rates.data, (d) => { const p = personOf.get(c.personId); return p ? gradeOn(p, d) : ''; }, floor, charges)));
-
   return (
     <section>
       <h3>Periods</h3>
@@ -100,8 +94,7 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
               <td>
-                Due <span data-testid="period-due-total">{p.closed && p.closedTotal !== null
-                  ? p.closedTotal : dueTotal(p.from, p.to)}</span>
+                Due <span data-testid="period-due-total">{periodDueTotal(p, claims.data ?? [], people.data, rates.data, floor, charges)}</span>
               </td>
               <td>
                 Closed <span data-testid="period-closed">{p.closed ? 'yes' : 'no'}</span>
