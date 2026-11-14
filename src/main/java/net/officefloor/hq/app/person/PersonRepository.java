@@ -252,9 +252,10 @@ public class PersonRepository {
 
     /** Add a hold to the person; the person as stored. Not an edit, so it leaves the version alone. */
     public Person hold(Person person, Hold hold) {
-        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
+        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, added_on)"
+                + " SELECT ?, ?, ?, ?, today FROM sheet WHERE id = ?",
                 person.sheetId(), person.id(), hold.from() == null ? null : Date.valueOf(hold.from()),
-                hold.to() == null ? null : Date.valueOf(hold.to()));
+                hold.to() == null ? null : Date.valueOf(hold.to()), person.sheetId());
         return find(person.sheetId(), person.id());
     }
 

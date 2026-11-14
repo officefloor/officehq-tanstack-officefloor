@@ -49,13 +49,13 @@ public class CrewRepository {
 
     /** Adds a crew with its lead and no members. */
     public void add(Crew crew) {
-        jdbc.update("INSERT INTO crew (sheet_id, name, lead_id) VALUES (?, ?, ?)", crew.sheetId(), crew.name(),
-                crew.lead().id());
+        jdbc.update("INSERT INTO crew (sheet_id, name, lead_id, added_on) SELECT ?, ?, ?, today FROM sheet WHERE id = ?",
+                crew.sheetId(), crew.name(), crew.lead().id(), crew.sheetId());
     }
 
     /** Adds a member to the crew. */
     public void addMember(Crew crew, CrewPerson member) {
-        jdbc.update("INSERT INTO crew_member (sheet_id, crew_id, person_id) VALUES (?, ?, ?)", crew.sheetId(),
-                crew.id(), member.id());
+        jdbc.update("INSERT INTO crew_member (sheet_id, crew_id, person_id, added_on) SELECT ?, ?, ?, today FROM sheet"
+                + " WHERE id = ?", crew.sheetId(), crew.id(), member.id(), crew.sheetId());
     }
 }

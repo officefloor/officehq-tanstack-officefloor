@@ -26,7 +26,7 @@ public class SheetCloner {
 
     /** The tables kept per sheet that are copied as they are, under the clone's id. */
     private static final List<String> SHEET_TABLES = List.of("user_role", "permission", "delegation", "setting_from",
-            "grade_terms", "rate", "rate_version", "holiday", "void_reason", "claim_template", "claim_tag");
+            "grade_terms", "rate", "rate_version", "holiday", "void_reason", "claim_template", "claim_tag", "sheet_pot");
 
     /** The tables of a person's own entries, copied under the clone's id and the person's id there. */
     private static final List<String> PERSON_TABLES = List.of("person_grade", "person_terms", "person_hold",

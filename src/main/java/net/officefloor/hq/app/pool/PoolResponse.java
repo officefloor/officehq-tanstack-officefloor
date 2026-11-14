@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * A pool as the screen reads it: its members' shares with two decimals and their membership dates (null: no start /
@@ -17,17 +18,24 @@ import java.util.List;
  * a cut, each is 0.00; when every member in the pool is retired, there are no cuts). Otherwise a member's cut is "" (none). A member is a
  * person ({@code personId}) or another pool ({@code poolId}); the pool's pot is the sheet's when it is a member of no
  * pool, else its cut in the pool above (null: none). A crew's pool ({@code crew}) has the crew's id negated as its id.
+ * Each member also has its cut at the end of each period whose to-date is on or before the sheet's today
+ * ({@code periodCuts}, earliest first), worked out the same way from the pool, its members, the pot and the holds as
+ * they were then with that day as the sheet's today ("" when there was none).
  */
 public record PoolResponse(long id, String name, List<Member> members, String totalShare, boolean balanced,
         boolean crew) {
 
     public record Member(Long personId, Long poolId, String name, String share, boolean retired, String cut,
-            String from, String to) {
+            String from, String to, List<PeriodCut> periodCuts) {
+    }
+
+    /** A member's cut at the end of the named period ("": none). */
+    public record PeriodCut(String period, String cut) {
     }
 
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
 
-    public static PoolResponse from(Pool pool, BigDecimal pot) {
+    public static PoolResponse from(Pool pool, BigDecimal pot, PoolHistory history) {
         BigDecimal total = total(pool);
         boolean balanced = total.compareTo(HUNDRED) == 0;
         List<BigDecimal> cuts = cuts(pool, pot);
@@ -36,9 +44,38 @@ public record PoolResponse(long id, String name, List<Member> members, String to
             PoolMember m = pool.members().get(i);
             members.add(new Member(m.personId(), m.poolId(), m.name(), m.share().setScale(2).toPlainString(),
                     m.retired(), cuts == null || cuts.get(i) == null ? "" : cuts.get(i).toPlainString(),
-                    m.from() == null ? null : m.from().toString(), m.to() == null ? null : m.to().toString()));
+                    m.from() == null ? null : m.from().toString(), m.to() == null ? null : m.to().toString(),
+                    periodCuts(pool, m, history)));
         }
         return new PoolResponse(pool.id(), pool.name(), members, total.toPlainString(), balanced, pool.id() < 0);
+    }
+
+    /** The member's cut at the end of each period of the history: "" when the pool or the member was not there then. */
+    private static List<PeriodCut> periodCuts(Pool pool, PoolMember member, PoolHistory history) {
+        List<PeriodCut> cuts = new ArrayList<>();
+        for (PoolHistory.Ended ended : history.periods()) {
+            cuts.add(new PeriodCut(ended.period(), cutThen(pool, member, ended.pools())));
+        }
+        return cuts;
+    }
+
+    private static String cutThen(Pool pool, PoolMember member, Pools then) {
+        Pool was = then.find(pool.id());
+        if (was == null) {
+            return "";
+        }
+        List<BigDecimal> cuts = cuts(was, then.potOf(was));
+        if (cuts == null) {
+            return "";
+        }
+        for (int i = 0; i < was.members().size(); i++) {
+            PoolMember m = was.members().get(i);
+            if (Objects.equals(m.personId(), member.personId())
+                    && Objects.equals(m.poolId(), member.poolId())) {
+                return cuts.get(i) == null ? "" : cuts.get(i).toPlainString();
+            }
+        }
+        return "";
     }
 
     /** The pool's total share: its members' shares added up, a retired member's counting as given, an out one's not. */

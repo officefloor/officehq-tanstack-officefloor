@@ -128,9 +128,23 @@ public class SettingRepository {
         jdbc.update("UPDATE sheet SET alert_threshold = ? WHERE id = ?", threshold, sheetId);
     }
 
-    /** Set the sheet's pot (null: blank, none). */
+    /** Set the sheet's pot (null: blank, none), kept in its history under the sheet's today when it changes. */
     public void savePot(String sheetId, BigDecimal pot) {
+        BigDecimal was = pot(sheetId);
+        if (was == null ? pot == null : pot != null && was.compareTo(pot) == 0) {
+            return;
+        }
         jdbc.update("UPDATE sheet SET pot = ? WHERE id = ?", pot, sheetId);
+        jdbc.update("INSERT INTO sheet_pot (sheet_id, on_date, pot) SELECT id, today, ? FROM sheet WHERE id = ?", pot,
+                sheetId);
+    }
+
+    /** The sheet's pot as it stood on the date: the one set last on or before it (null: none). */
+    public BigDecimal potOn(String sheetId, LocalDate on) {
+        List<BigDecimal> pot = jdbc.query("SELECT pot FROM sheet_pot WHERE sheet_id = ? AND (on_date IS NULL OR on_date <= ?)"
+                + " ORDER BY on_date DESC NULLS LAST, id DESC LIMIT 1", (rs, n) -> rs.getBigDecimal("pot"), sheetId,
+                Date.valueOf(on));
+        return pot.isEmpty() || pot.get(0) == null ? null : pot.get(0).setScale(2);
     }
 
     /** The sheet's parent sheet id (null: none). */
