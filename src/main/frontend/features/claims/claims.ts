@@ -136,8 +136,8 @@ export function useLastBatch() {
   });
 }
 
-/** The sum of the counted claims' amounts, with two decimals; added in cents so it is exact. `holds` holds each person's holds. */
+/** The sum of the counted claims' amounts, leaving out corrections, with two decimals; added in cents so it is exact. `holds` holds each person's holds. */
 export function claimed(claims: Claim[], holds: Map<number, Hold[]>, today: string): string {
-  const cents = claims.filter((c) => counts(c, holds.get(c.personId) ?? [], today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+  const cents = claims.filter((c) => !c.corrects && counts(c, holds.get(c.personId) ?? [], today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }

@@ -3,7 +3,7 @@ import { usePeople } from '../people/people';
 import { useSheetToday } from '../session/sheetToday';
 import { claimed, holdsById, useClaims } from './claims';
 
-// The sheet's claimed-total: everyone's counting claims added up (open ones a hold covers left out).
+// The sheet's claimed-total: everyone's counting claims added up (corrections and open ones a hold covers left out).
 export function ClaimedTotal() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
