@@ -3,18 +3,20 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PersonClaims } from '../claims/PersonClaims';
 import { claimsKey, listClaims, sumAmounts } from '../claims/api';
 import { dueOf, listRates, rateByGrade, ratesKey, showDue } from '../rates/api';
+import { useSheetToday } from '../sheet/api';
 import { GRADES, addPerson, listPeople, peopleKey, updatePerson, type Person, type PersonInput } from './api';
 
 const EMPTY: PersonInput = { name: '', grade: 'A' };
 
 /** The people on the sheet: a form that adds a person or edits one, and the list in added order,
- *  each with their claimed total, their due-total and their claims. */
+ *  each with their claimed total, their due-total (at their grade's rate in force on the sheet's
+ *  today) and their claims. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
-  const byGrade = rateByGrade(rates.data);
+  const byGrade = rateByGrade(rates.data, useSheetToday(sheetId, user));
   const [form, setForm] = useState<PersonInput>(EMPTY);
   const [editing, setEditing] = useState<number | null>(null);
 
@@ -102,7 +104,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   </button>
                 </td>
                 <td>
-                  <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} pct={pct} />
+                  <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} grade={p.grade} rates={rates.data} />
                 </td>
               </tr>
             );

@@ -13,6 +13,6 @@ public class SetRate {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
         sheets.open(id, user);
-        rate.set(rates.set(id, request.grade(), request.pct(), user));
+        rate.set(rates.set(id, request.grade(), request.pct(), request.from(), user));
     }
 }

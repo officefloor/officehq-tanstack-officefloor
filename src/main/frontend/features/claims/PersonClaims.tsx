@@ -1,16 +1,16 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { claimDue, showDue } from '../rates/api';
+import { claimDue, showDue, type Rate } from '../rates/api';
 import { addClaim, claimsKey, moveClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
 
 /** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
- *  with its status, its due (fixed when settled, else at the person's grade's rate `pct`; none when
- *  the grade has no rate)
+ *  with its status, its due (fixed when settled, else at the person's `grade`'s rate in force on the
+ *  claim's date; none when there is no such rate)
  *  and buttons that change its status. */
-export function PersonClaims({ sheetId, user, personId, claims, pct }: {
-  sheetId: string; user: string; personId: number; claims: Claim[]; pct: string | undefined;
+export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: {
+  sheetId: string; user: string; personId: number; claims: Claim[]; grade: string; rates: Rate[] | undefined;
 }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<ClaimInput>(EMPTY);
@@ -85,7 +85,7 @@ export function PersonClaims({ sheetId, user, personId, claims, pct }: {
               <td data-testid="claim-amount">{Number(c.amount).toFixed(2)}</td>
               <td data-testid="claim-date">{c.date}</td>
               <td data-testid="claim-note">{c.note}</td>
-              <td data-testid="claim-due">{showDue(claimDue(c, pct))}</td>
+              <td data-testid="claim-due">{showDue(claimDue(c, rates, grade))}</td>
               <td data-testid="claim-status">{c.status}</td>
               <td>
                 {(['open', 'settle', 'void'] as const).map((a) => (

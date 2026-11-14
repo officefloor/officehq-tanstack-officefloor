@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 
 /** `today` is the sheet's own date (yyyy-MM-dd): every date decision and default uses it. */
@@ -21,3 +22,9 @@ export function setSheetToday(id: string, by: string, today: string): Promise<Sh
 
 /** Every query about a sheet lives under this key, so loading it again re-reads all of it. */
 export const sheetKey = (id: string) => ['sheet', id] as const;
+
+/** The loaded sheet's today, read from the sheet query `ActiveSheet` keeps; '' until loaded. */
+export function useSheetToday(id: string, by: string): string {
+  const sheet = useQuery({ queryKey: sheetKey(id), queryFn: () => openSheet(id, by) });
+  return sheet.data?.today ?? '';
+}
