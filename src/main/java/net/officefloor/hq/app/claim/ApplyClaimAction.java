@@ -3,6 +3,7 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -29,7 +30,9 @@ import org.springframework.web.bind.annotation.RequestParam;
  * figure it stays live. A clerk settling a claim whose due is above the sheet's clerk limit (a due of n/a is within any
  * limit) makes it PENDING instead, live and unfixed. A claim with no proofs whose due is above the proof threshold in force on its date —
  * its person's grade's own, when that grade has one then, else the sheet's — is refused settling or approving — before the clerk limit is considered, so it never goes PENDING.
- * A claim with an empty note whose due (as shown now) is above the sheet's note threshold in force on its date is refused opening. Only a steward approves a PENDING claim (fixing its due at its live
+ * A claim with an empty note whose due (as shown now) is above the sheet's note threshold in force on its date is refused opening.
+ * Opening a claim due by a date in a period with a cap is refused while its person already has that many OPEN or PENDING
+ * claims due by a date in that period. Only a steward approves a PENDING claim (fixing its due at its live
  * figure, plus any late charge, at that moment) — not the user who opened it — or rejects it, with a reason, back to OPEN.
  * Only a steward re-settles a SETTLED claim, fixing its due again at the figure it would have today as an open claim
  * bound by no statement (today's rates, grades, floor and late charge); its previous due is kept for the audit.
@@ -115,6 +118,9 @@ public class ApplyClaimAction {
                         ClaimDueNow.of(claim, sheets, people, rates, settings, claims))) {
             throw new InvalidClaimException("The claim's due is above the note threshold: it needs a note to be opened.");
         }
+        if (found == ClaimAction.OPEN) {
+            checkCap(claim, periods, claims);
+        }
         if ((found == ClaimAction.SETTLE || found == ClaimAction.APPROVE) && claim.proofs() == 0
                 && settings.dated(claim.sheetId()).needsProof(proofGrade(claim, people), claim.date(), due)) {
             throw new InvalidClaimException("The claim's due is above the proof threshold: it needs a proof to be "
@@ -132,6 +138,23 @@ public class ApplyClaimAction {
         previous.set(new PreviousDue(claim.due(), claim.status() == ClaimStatus.SETTLED));
         number.set(new ClaimNumber(next));
         updated.set(claim.withStatus(found.to(), next, due, found == ClaimAction.OPEN ? user : claim.openedBy()));
+    }
+
+    /** Refuses opening the claim when its period's cap on its person's OPEN and PENDING claims is already reached. */
+    private static void checkCap(Claim claim, PeriodRepository periods, ClaimRepository claims) throws InvalidClaimException {
+        Period period = periods.findAll(claim.sheetId()).stream()
+                .filter((p) -> p.cap() != null && claim.dueBy() != null && p.contains(claim.dueBy())).findFirst().orElse(null);
+        if (period == null) {
+            return;
+        }
+        long open = claims.findForPerson(claim.sheetId(), claim.personId()).stream()
+                .filter((c) -> !c.id().equals(claim.id()) && c.dueBy() != null && period.contains(c.dueBy())
+                        && (c.status() == ClaimStatus.OPEN || c.status() == ClaimStatus.PENDING))
+                .count();
+        if (open >= period.cap()) {
+            throw new InvalidClaimException("The person already has " + period.cap() + " open claims in period "
+                    + period.name() + ": its cap.");
+        }
     }
 
     /** The grade whose proof threshold the claim falls under: its person's grade in force on its date (null: no person). */

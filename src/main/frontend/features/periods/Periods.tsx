@@ -11,7 +11,7 @@ import { fiscalYearOf, periodDue, periodsKey, usePeriods } from './periods';
 import type { Period, PeriodInput } from './periods';
 import { useOneAtATime } from '../../query/useOneAtATime';
 
-const EMPTY: PeriodInput = { name: '', from: '', to: '' };
+const EMPTY: PeriodInput = { name: '', from: '', to: '', cap: '' };
 
 /** yyyy-MM-dd. */
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -102,7 +102,7 @@ export function Periods() {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    const input = { name: form.name.trim(), from: form.from.trim(), to: form.to.trim() };
+    const input = { name: form.name.trim(), from: form.from.trim(), to: form.to.trim(), cap: form.cap.trim() };
     if (input.name === '') {
       setError('Type a name for the period.');
       return;
@@ -113,6 +113,10 @@ export function Periods() {
     }
     if (input.to < input.from) {
       setError('The to-date must not be before the from-date.');
+      return;
+    }
+    if (input.cap !== '' && (!/^\d+$/.test(input.cap) || Number(input.cap) < 1)) {
+      setError('Type the cap as a whole number of at least 1, or leave it blank for none.');
       return;
     }
     once(() => add.mutateAsync(input));
@@ -167,6 +171,7 @@ export function Periods() {
             <th>Due</th>
             <th>Closed</th>
             <th>Fiscal year</th>
+            <th>Cap</th>
             <th />
           </tr>
         </thead>
@@ -179,6 +184,7 @@ export function Periods() {
               <td data-testid="period-due-total">{periodDue(p, claims, people, rates, rules)}</td>
               <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
               <td data-testid="period-fy">{fiscalYearOf(p.from, fiscalStartMonth)}</td>
+              <td data-testid="period-cap">{p.cap ?? ''}</td>
               <td>
                 <button
                   type="button"
@@ -237,6 +243,12 @@ export function Periods() {
           placeholder="To yyyy-mm-dd"
           value={form.to}
           onChange={(e) => change({ to: e.target.value })}
+        />
+        <input
+          data-testid="period-form-cap"
+          placeholder="Cap per person (blank: none)"
+          value={form.cap}
+          onChange={(e) => change({ cap: e.target.value })}
         />
         <button type="submit" data-testid="period-form-submit" disabled={add.isPending}>
           Add period

@@ -8,6 +8,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class AuditPeriodAdded {
     public void audit(@Val Period period, @RequestParam("user") String user, Audit audit) {
         audit.record("PERIOD_ADDED sheet=" + period.sheetId() + " by=" + user + " period=" + period.name()
-                + " from=" + period.from() + " to=" + period.to());
+                + " from=" + period.from() + " to=" + period.to() + (period.cap() == null ? "" : " cap=" + period.cap()));
     }
 }

@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PeriodRepository {
 
-    private static final String COLUMNS = "sheet_id, name, from_date, to_date, closed, closed_total, soft_closed";
+    private static final String COLUMNS = "sheet_id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap";
 
     private final JdbcTemplate jdbc;
 
@@ -60,8 +60,8 @@ public class PeriodRepository {
     }
 
     public void insert(Period period) {
-        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date) VALUES (?, ?, ?, ?)",
-                period.sheetId(), period.name(), period.from(), period.to());
+        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, claim_cap) VALUES (?, ?, ?, ?, ?)",
+                period.sheetId(), period.name(), period.from(), period.to(), period.cap());
     }
 
     /** Store the period's closed and soft-closed flags, fixed due-total (null when reopened) and fixed per-person due-totals. */
@@ -78,6 +78,6 @@ public class PeriodRepository {
     private static Period map(ResultSet rs, int n) throws SQLException {
         return new Period(rs.getString("sheet_id"), rs.getString("name"), rs.getObject("from_date", LocalDate.class),
                 rs.getObject("to_date", LocalDate.class), rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of(),
-                rs.getBoolean("soft_closed"));
+                rs.getBoolean("soft_closed"), rs.getObject("claim_cap", Integer.class));
     }
 }

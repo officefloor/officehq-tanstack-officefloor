@@ -13,7 +13,8 @@ import type { DueRules } from '../settings/settings';
  * A period as the store holds it: its name (unique on the sheet), its from and to dates (yyyy-MM-dd),
  * both inclusive, whether it is closed and, when closed, the due-total fixed then (null while open) and each
  * person's due-total fixed then, by person id (empty while open). A soft-closed period (soft; never also closed)
- * keeps its figures fixed the same way, while claims dated in it can still be added and changed.
+ * keeps its figures fixed the same way, while claims dated in it can still be added and changed. cap is the most OPEN
+ * or PENDING claims due by a date in it a person may have when another of theirs is opened (null: none).
  */
 export type Period = {
   name: string;
@@ -23,10 +24,11 @@ export type Period = {
   closedTotal: string | null;
   personTotals: Record<string, string>;
   soft: boolean;
+  cap: number | null;
 };
 
-/** The fields the period form submits. */
-export type PeriodInput = { name: string; from: string; to: string };
+/** The fields the period form submits; cap is a whole number of at least 1, or blank for none. */
+export type PeriodInput = { name: string; from: string; to: string; cap: string };
 
 /** The query key for the sheet's periods; under sheetKey, so re-loading the sheet re-reads them. */
 export const periodsKey = (sheet: string) => [...sheetKey(sheet), 'periods'] as const;

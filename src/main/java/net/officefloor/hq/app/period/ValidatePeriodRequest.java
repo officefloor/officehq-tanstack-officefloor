@@ -18,7 +18,11 @@ public class ValidatePeriodRequest {
         if (to.isBefore(from)) {
             throw new InvalidPeriodException("The to-date must not be before the from-date.");
         }
-        body.set(new PeriodRequest(name, from.toString(), to.toString()));
+        String cap = request.cap() == null ? "" : request.cap().trim();
+        if (!cap.isEmpty() && (!cap.matches("\\d{1,9}") || Integer.parseInt(cap) < 1)) {
+            throw new InvalidPeriodException("The cap must be a whole number of at least 1, or blank for none.");
+        }
+        body.set(new PeriodRequest(name, from.toString(), to.toString(), cap.isEmpty() ? "" : String.valueOf(Integer.parseInt(cap))));
     }
 
     private static LocalDate date(String value, String label) throws InvalidPeriodException {
