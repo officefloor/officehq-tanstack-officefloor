@@ -1,0 +1,55 @@
+diff --git a/src/main/frontend/features/score/PersonScore.tsx b/src/main/frontend/features/score/PersonScore.tsx
+new file mode 100644
+index 000000000..93a8efaea
+--- /dev/null
++++ b/src/main/frontend/features/score/PersonScore.tsx
+@@ -0,0 +1,18 @@
++import { useClaims } from '../claims/claims';
++import { liveHolds } from '../people/people';
++import type { Person } from '../people/people';
++import { personSplit, useRates } from '../rates/rates';
++import { useDueRules } from '../settings/settings';
++import { personOverdue } from '../overdue/overdue';
++import { score } from './score';
++
++// A person's score: their settled counting figures / 100, minus 5 per overdue counting claim, rounded half to even.
++export function PersonScore({ person }: { person: Person }) {
++  const rates = useRates().data ?? [];
++  const rules = useDueRules();
++  const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
++  const holds = liveHolds(person, rules.today);
++  const { settled } = personSplit(claims, rates, person.grades, holds, rules);
++  const { count } = personOverdue(claims, rates, person.grades, holds, rules);
++  return <td data-testid="person-score">{score(settled, count)}</td>;
++}
+diff --git a/src/main/frontend/features/score/score.slot.tsx b/src/main/frontend/features/score/score.slot.tsx
+new file mode 100644
+index 000000000..ea08484c2
+--- /dev/null
++++ b/src/main/frontend/features/score/score.slot.tsx
+@@ -0,0 +1,7 @@
++import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
++import { PersonScore } from './PersonScore';
++
++export const contributions = [
++  PersonColumnHeads.fill({ order: 17.5, Component: () => <th>Score</th> }),
++  PersonColumns.fill({ order: 17.5, Component: PersonScore }),
++];
+diff --git a/src/main/frontend/features/score/score.ts b/src/main/frontend/features/score/score.ts
+new file mode 100644
+index 000000000..ac9aea1f9
+--- /dev/null
++++ b/src/main/frontend/features/score/score.ts
+@@ -0,0 +1,12 @@
++/**
++ * A person's score: their settled figures (in cents) divided by 100, minus 5 for every overdue claim of theirs that
++ * counts, rounded half to even to a whole number. Worked in whole cents so it is exact: (cents − 50000 × overdue) / 10000.
++ */
++export function score(settled: string, overdueCount: number): string {
++  const value = Math.round(Number(settled) * 100) - 50000 * overdueCount;
++  const whole = Math.floor(Math.abs(value) / 10000);
++  const rest = Math.abs(value) - whole * 10000;
++  const up = rest > 5000 || (rest === 5000 && whole % 2 === 1);
++  const result = Math.sign(value) * (whole + (up ? 1 : 0));
++  return String(result === 0 ? 0 : result);
++}
