@@ -2,16 +2,19 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PersonClaims } from '../claims/PersonClaims';
 import { claimsKey, listClaims, sumAmounts } from '../claims/api';
+import { dueOf, listRates, rateByGrade, ratesKey, showDue } from '../rates/api';
 import { GRADES, addPerson, listPeople, peopleKey, updatePerson, type Person, type PersonInput } from './api';
 
 const EMPTY: PersonInput = { name: '', grade: 'A' };
 
 /** The people on the sheet: a form that adds a person or edits one, and the list in added order,
- *  each with their claimed total and their claims. */
+ *  each with their claimed total, their due-total and their claims. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
+  const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
+  const byGrade = rateByGrade(rates.data);
   const [form, setForm] = useState<PersonInput>(EMPTY);
   const [editing, setEditing] = useState<number | null>(null);
 
@@ -81,12 +84,17 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
         <tbody>
           {(people.data ?? []).map((p) => {
             const own = (claims.data ?? []).filter((c) => c.personId === p.id);
+            const claimed = sumAmounts(own);
+            const pct = byGrade.get(p.grade);
             return (
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
                 <td data-testid="person-name">{p.name}</td>
                 <td data-testid="person-grade">{p.grade}</td>
                 <td>
-                  Claimed <span data-testid="person-claimed">{sumAmounts(own)}</span>
+                  Claimed <span data-testid="person-claimed">{claimed}</span>
+                </td>
+                <td>
+                  Due <span data-testid="person-due-total">{showDue(dueOf(claimed, pct))}</span>
                 </td>
                 <td>
                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
@@ -94,7 +102,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   </button>
                 </td>
                 <td>
-                  <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} />
+                  <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} pct={pct} />
                 </td>
               </tr>
             );

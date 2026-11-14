@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { dueOf, showDue } from '../rates/api';
 import { addClaim, claimsKey, updateClaim, type Claim, type ClaimInput } from './api';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
 
-/** A person's claims: a form that adds a claim or edits one, and the claims newest first. */
-export function PersonClaims({ sheetId, user, personId, claims }: {
-  sheetId: string; user: string; personId: number; claims: Claim[];
+/** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
+ *  with its due at the person's grade's rate (`pct`; none when the grade has no rate). */
+export function PersonClaims({ sheetId, user, personId, claims, pct }: {
+  sheetId: string; user: string; personId: number; claims: Claim[]; pct: string | undefined;
 }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<ClaimInput>(EMPTY);
@@ -68,6 +70,7 @@ export function PersonClaims({ sheetId, user, personId, claims }: {
               <td data-testid="claim-amount">{Number(c.amount).toFixed(2)}</td>
               <td data-testid="claim-date">{c.date}</td>
               <td data-testid="claim-note">{c.note}</td>
+              <td data-testid="claim-due">{showDue(dueOf(c.amount, pct))}</td>
               <td>
                 <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                   Edit
