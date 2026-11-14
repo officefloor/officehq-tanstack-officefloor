@@ -162,10 +162,10 @@ export function useLastBatch() {
 
 /**
  * The sum of the counted claims' amounts (held ones too), leaving out corrections and the claims of people whose retirement
- * date has been reached on `today` (unless a statement binds them), with two decimals; added in cents so it is exact.
+ * date has been reached on `today` (unless settled or a statement binds them), with two decimals; added in cents so it is exact.
  */
 export function claimed(claims: Claim[], today: string, people: { id: number; retiredFrom: string | null }[]): string {
   const retired = new Set(people.filter((p) => retiredOn(p, today)).map((p) => p.id));
-  const cents = claims.filter((c) => !c.corrects && (!retired.has(c.personId) || bound(c)) && countsClaimed(c, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+  const cents = claims.filter((c) => !c.corrects && (!retired.has(c.personId) || bound(c) || c.status === 'SETTLED') && countsClaimed(c, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }
