@@ -1,0 +1,147 @@
+diff --git a/src/main/frontend/features/policy/PolicyVersions.tsx b/src/main/frontend/features/policy/PolicyVersions.tsx
+new file mode 100644
+index 000000000..dbdef5c97
+--- /dev/null
++++ b/src/main/frontend/features/policy/PolicyVersions.tsx
+@@ -0,0 +1,30 @@
++import { useState } from 'react';
++import { useClaims } from '../claims/claims';
++import { useSettings } from '../settings/settings';
++import { policyVersionOn } from './policy';
++
++// The sheet's policy versions, oldest first, once shown: each its number, its from-date ("start" when it has none), the
++// setting and value it set, and how many claims it is the policy version of (the one in force on the claim's date).
++export function PolicyVersions() {
++  const [shown, setShown] = useState(false);
++  const versions = useSettings().data?.policyVersions ?? [];
++  const claims = (useClaims().data ?? []).filter((c) => c.status !== 'DELETED');
++
++  return (
++    <div>
++      <button type="button" data-testid="policy-show" onClick={() => setShown(true)}>
++        Show policy versions
++      </button>
++      {shown && (
++        <ul>
++          {versions.map((v) => (
++            <li key={v.number} data-testid="policy-line">
++              {v.number} {v.from || 'start'} {v.key}={v.value}{' '}
++              {claims.filter((c) => policyVersionOn(versions, c.date) === v.number).length}
++            </li>
++          ))}
++        </ul>
++      )}
++    </div>
++  );
++}
+diff --git a/src/main/frontend/features/policy/policy.slot.tsx b/src/main/frontend/features/policy/policy.slot.tsx
+index 9bbf4a4a9..cd4187b47 100644
+--- a/src/main/frontend/features/policy/policy.slot.tsx
++++ b/src/main/frontend/features/policy/policy.slot.tsx
+@@ -2,8 +2,10 @@ import { AppHeader } from '../../slots/defs/appHeader';
+ import { ClaimRowValues } from '../../slots/defs/claimRow';
+ import { ClaimPolicy } from './ClaimPolicy';
+ import { PolicyVersion } from './PolicyVersion';
++import { PolicyVersions } from './PolicyVersions';
+ 
+ export const contributions = [
+   AppHeader.fill({ order: 27, Component: PolicyVersion }),
++  AppHeader.fill({ order: 27.5, Component: PolicyVersions }),
+   ClaimRowValues.fill({ order: 10.5, Component: ClaimPolicy }),
+ ];
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index 686f6a8aa..58080e1b8 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -67,8 +67,11 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: number
+  */
+ export type Delegation = { user: string; from: string; to: string; by: string };
+ 
+-/** A policy version: its number, the setting changed and the date it is in force from (yyyy-MM-dd; '': none, it counts always). */
+-export type PolicyVersion = { number: number; key: string; from: string };
++/**
++ * A policy version: its number, the setting changed, the date it is in force from (yyyy-MM-dd; '': none, it counts
++ * always) and the value it set ('': blank).
++ */
++export type PolicyVersion = { number: number; key: string; from: string; value: string };
+ 
+ /** A dated setting's value recorded from a date (yyyy-MM-dd); '': blank. */
+ export type FromValue = { from: string; value: string };
+diff --git a/src/main/java/net/officefloor/hq/app/setting/PolicyVersion.java b/src/main/java/net/officefloor/hq/app/setting/PolicyVersion.java
+index d6c3e9890..6b349e3a4 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/PolicyVersion.java
++++ b/src/main/java/net/officefloor/hq/app/setting/PolicyVersion.java
+@@ -6,9 +6,9 @@ import java.util.List;
+ /**
+  * A version of the sheet's policy: every change to one of its policy settings (the rounding mode, the floor, the cap, the
+  * terms, the late percent and the clerk limit) is a new one, numbered from 1 in the order made, in force from the
+- * from-date it was saved with (null: none, it counts always).
++ * from-date it was saved with (null: none, it counts always), setting its key to the value (null: blank).
+  */
+-public record PolicyVersion(int number, String key, LocalDate from) {
++public record PolicyVersion(int number, String key, LocalDate from, String value) {
+ 
+     /** The version in force on the date: how many versions are from a date on or before it (one with none counts always). */
+     public static int inForce(List<PolicyVersion> versions, LocalDate date) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 618b58916..5261ff05a 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -67,9 +67,11 @@ public class SettingRepository {
+ 
+     /** The sheet's policy versions, in the order made (the first is number 1). */
+     public List<PolicyVersion> policyVersions(String sheetId) {
+-        return jdbc.query("SELECT number, setting_key, from_date FROM policy_version WHERE sheet_id = ? ORDER BY number",
++        return jdbc.query("SELECT number, setting_key, from_date, setting_value FROM policy_version WHERE sheet_id = ?"
++                + " ORDER BY number",
+                 (rs, n) -> new PolicyVersion(rs.getInt("number"), rs.getString("setting_key"),
+-                        rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate()), sheetId);
++                        rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate(),
++                        rs.getString("setting_value")), sheetId);
+     }
+ 
+     /**
+@@ -78,9 +80,9 @@ public class SettingRepository {
+      */
+     public void saveDated(String sheetId, String key, LocalDate from, String value) {
+         if (POLICY_KEYS.contains(key)) {
+-            jdbc.update("INSERT INTO policy_version (sheet_id, number, setting_key, from_date) SELECT ?,"
+-                    + " COALESCE(MAX(number), 0) + 1, ?, ? FROM policy_version WHERE sheet_id = ?",
+-                    sheetId, key, from == null ? null : Date.valueOf(from), sheetId);
++            jdbc.update("INSERT INTO policy_version (sheet_id, number, setting_key, from_date, setting_value) SELECT ?,"
++                    + " COALESCE(MAX(number), 0) + 1, ?, ?, ? FROM policy_version WHERE sheet_id = ?",
++                    sheetId, key, from == null ? null : Date.valueOf(from), value, sheetId);
+         }
+         jdbc.update("DELETE FROM setting_from WHERE sheet_id = ? AND setting_key = ? AND from_date = ?",
+                 sheetId, key, Date.valueOf(from));
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index a9ad5357e..6da39fdea 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -17,8 +17,8 @@ public record SettingsResponse(String clerkLimit, String floor, int terms, Map<S
+         String escalateAfter, String reviewSla, String proofKinds, String defaultGrade, String scoreMid, String scoreHigh,
+         String scoreLog, String maxOpen, String pendingSla, int policyVersion, List<PolicyVersionResponse> policyVersions) {
+ 
+-    /** A policy version: its number, the setting changed and its from-date ("": none, it counts always). */
+-    public record PolicyVersionResponse(int number, String key, String from) {
++    /** A policy version: its number, the setting changed, its from-date ("": none, it counts always) and the value set ("": blank). */
++    public record PolicyVersionResponse(int number, String key, String from, String value) {
+     }
+ 
+     public record RoleResponse(String user, String role) {
+@@ -72,6 +72,6 @@ public record SettingsResponse(String clerkLimit, String floor, int terms, Map<S
+                 settings.pendingSla() == null ? "" : settings.pendingSla().toString(),
+                 settings.policyVersions().size(),
+                 settings.policyVersions().stream().map((v) -> new PolicyVersionResponse(v.number(), v.key(),
+-                        v.from() == null ? "" : v.from().toString())).toList());
++                        v.from() == null ? "" : v.from().toString(), v.value() == null ? "" : v.value())).toList());
+     }
+ }
+diff --git a/src/main/resources/db/migration/V122__policy_version_value.sql b/src/main/resources/db/migration/V122__policy_version_value.sql
+new file mode 100644
+index 000000000..038e61ece
+--- /dev/null
++++ b/src/main/resources/db/migration/V122__policy_version_value.sql
+@@ -0,0 +1,2 @@
++-- The value each policy version set its setting to (null: blank).
++ALTER TABLE policy_version ADD COLUMN setting_value VARCHAR(100);
