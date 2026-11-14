@@ -74,6 +74,21 @@ export function Periods() {
     onError: () => setGenError('No periods were generated: type the fiscal year as yyyy.'),
   });
 
+  // The quarters form: the four calendar quarters of the year typed, named yyyy-Q1 to yyyy-Q4.
+  const [quarterYear, setQuarterYear] = useState('');
+  const generateQuarters = useMutation({
+    mutationFn: (input: { year: string }) =>
+      postJson<{ made: number }>(
+        `/api/sheets/${encodeURIComponent(sheet)}/generate-quarters?user=${encodeURIComponent(user)}`,
+        input,
+      ),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheet) });
+      setMade(result.made);
+    },
+    onError: () => setGenError('No periods were generated: type the year as yyyy.'),
+  });
+
   // The period whose close, reopen, lock or unlock was refused, and why; cleared by the next action on a period.
   const [rowError, setRowError] = useState<{ name: string; message: string } | null>(null);
   const act = useMutation({
@@ -152,6 +167,18 @@ export function Periods() {
       return;
     }
     once(() => generateFy.mutateAsync({ year }));
+  };
+
+  const submitGenerateQuarters = (e: FormEvent) => {
+    e.preventDefault();
+    setGenError('');
+    setMade(undefined);
+    const year = quarterYear.trim();
+    if (!/^\d{4}$/.test(year)) {
+      setGenError('Type the year as yyyy.');
+      return;
+    }
+    once(() => generateQuarters.mutateAsync({ year }));
   };
 
   const changeGenerate = (patch: Partial<{ from: string; to: string }>) => {
@@ -319,6 +346,20 @@ export function Periods() {
         />
         <button type="submit" data-testid="period-generate-fy" disabled={generateFy.isPending}>
           Generate fiscal year
+        </button>
+      </form>
+      <form onSubmit={submitGenerateQuarters} data-testid="period-generate-quarters-form">
+        <input
+          data-testid="period-generate-quarters-year"
+          placeholder="Year yyyy"
+          value={quarterYear}
+          onChange={(e) => {
+            setQuarterYear(e.target.value);
+            setGenError('');
+          }}
+        />
+        <button type="submit" data-testid="period-generate-quarters" disabled={generateQuarters.isPending}>
+          Generate quarters
         </button>
       </form>
     </section>
