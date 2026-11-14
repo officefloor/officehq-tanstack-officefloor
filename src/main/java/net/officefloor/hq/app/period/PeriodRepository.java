@@ -54,6 +54,13 @@ public class PeriodRepository {
                 total.toPlainString());
     }
 
+    /** Reopen the period: its due-total is live again. */
+    public Period reopen(Period period) {
+        jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL, closed_by = NULL, "
+                + "closed_at = NULL WHERE sheet_id = ? AND name = ?", period.sheetId(), period.name());
+        return new Period(period.sheetId(), period.name(), period.from(), period.to(), false, null);
+    }
+
     /** Whether another period on the sheet has the name, compared without regard to case. */
     public boolean nameTaken(String sheetId, String name) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM period WHERE sheet_id = ? AND name_key = LOWER(?)",

@@ -33,3 +33,9 @@ export function periodOf(periods: Period[] | undefined, date: string): Period | 
 export function closePeriod(sheetId: string, by: string, name: string): Promise<Period> {
   return postJson<Period>(`${base(sheetId)}/${encodeURIComponent(name)}/close?by=${encodeURIComponent(by)}`, {});
 }
+
+/** Reopen a closed period, making its due-total live again; refused (rejects) for anyone but a
+ *  steward, and when it is not closed. */
+export function reopenPeriod(sheetId: string, by: string, name: string): Promise<Period> {
+  return postJson<Period>(`${base(sheetId)}/${encodeURIComponent(name)}/reopen?by=${encodeURIComponent(by)}`, {});
+}

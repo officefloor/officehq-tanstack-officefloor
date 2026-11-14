@@ -6,13 +6,13 @@ import { gradeOn, listPeople, peopleKey } from '../people/api';
 import { claimDue, listRates, ratesKey, sumDues } from '../rates/api';
 import { useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
-import { addPeriod, closePeriod, listPeriods, periodsKey, type PeriodInput } from './api';
+import { addPeriod, closePeriod, listPeriods, periodsKey, reopenPeriod, type PeriodInput } from './api';
 
 const EMPTY: PeriodInput = { name: '', from: '', to: '' };
 
 /** The sheet's periods: a form that adds one, and each period by from-date with its due-total (the
  *  due of the claims that count whose date falls in it, n/a ones and OPEN ones of people on hold skipped; once closed, the one fixed
- *  when it was closed), whether it is closed, and a button that closes it. */
+ *  when it was closed), whether it is closed, and buttons that close it and (a steward only) reopen it. */
 export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
@@ -34,16 +34,17 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const submitOnce = useSubmitOnce();
   const actOnce = useSubmitOnce();
 
-  // The period whose last close was refused; cleared by the next close.
-  const close = useMutation({
-    mutationFn: (name: string) => closePeriod(sheetId, user, name),
+  // The period whose last close or reopen was refused; cleared by the next action.
+  const act = useMutation({
+    mutationFn: ({ name, action }: { name: string; action: 'close' | 'reopen' }) =>
+      action === 'close' ? closePeriod(sheetId, user, name) : reopenPeriod(sheetId, user, name),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
   });
 
-  const closeOne = (name: string) => {
+  const actOne = (name: string, action: 'close' | 'reopen') => {
     actOnce(() => {
-      close.reset();
-      return close.mutateAsync(name);
+      act.reset();
+      return act.mutateAsync({ name, action });
     });
   };
 
@@ -106,12 +107,18 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
                 Closed <span data-testid="period-closed">{p.closed ? 'yes' : 'no'}</span>
               </td>
               <td>
-                <button type="button" data-testid="period-close" disabled={close.isPending}
-                  onClick={() => closeOne(p.name)}>
+                <button type="button" data-testid="period-close" disabled={act.isPending}
+                  onClick={() => actOne(p.name, 'close')}>
                   Close
+                </button>{' '}
+                <button type="button" data-testid="period-reopen" disabled={act.isPending}
+                  onClick={() => actOne(p.name, 'reopen')}>
+                  Reopen
                 </button>
-                {close.isError && close.variables === p.name && (
-                  <span data-testid="period-error">The period is already closed.</span>
+                {act.isError && act.variables?.name === p.name && (
+                  <span data-testid="period-error">{act.variables.action === 'close'
+                    ? 'The period is already closed.'
+                    : 'Only a steward can reopen a period, and only a closed one.'}</span>
                 )}
               </td>
             </tr>
