@@ -8,12 +8,13 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { plansKey, usePlans } from './plans';
 import type { Plan } from './plans';
 
-type PlanFields = { amount: string; start: string; every: string; end: string };
-const EMPTY: PlanFields = { amount: '', start: '', every: '', end: '' };
+type PlanFields = { amount: string; start: string; every: string; day: string; end: string };
+const EMPTY: PlanFields = { amount: '', start: '', every: '', day: '', end: '' };
 
-// A person's plans (each its amount, start, interval, end and how many claims it has made so far) and the form that
-// adds one: an amount, a start (blank: the sheet's today), every N days and an end. The server refuses a bad
-// amount or interval, or an end before the start.
+// A person's plans (each its amount, start, interval or day of the month, end and how many claims it has made so far)
+// and the form that adds one: an amount, a start (blank: the sheet's today), every N days or a day of the month (1 to
+// 31), and an end. The server refuses a bad amount, interval or day, both an interval and a day, or an end before the
+// start.
 export function PersonPlans({ person }: { person: Person }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -33,7 +34,7 @@ export function PersonPlans({ person }: { person: Person }) {
       setFields(EMPTY);
       await queryClient.invalidateQueries({ queryKey: plansKey(sheet) });
     },
-    onError: () => setError('The plan was refused: check its amount, interval and dates.'),
+    onError: () => setError('The plan was refused: check its amount, interval or day, and dates.'),
   });
 
   const change = (key: keyof PlanFields) => (e: { target: { value: string } }) => {
@@ -50,13 +51,14 @@ export function PersonPlans({ person }: { person: Person }) {
     <td>
       {mine.map((p) => (
         <div key={p.id} data-testid={`plan-row-${p.id}`}>
-          {p.amount} from {p.start} every {p.every} days to {p.end}, made{' '}
+          {p.amount} from {p.start} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end}, made{' '}
           <span data-testid="plan-generated">{p.generated}</span>
         </div>
       ))}
       <input data-testid="plan-form-amount" placeholder="amount" size={7} value={fields.amount} onChange={change('amount')} />
       <input data-testid="plan-form-start" type="date" value={fields.start} onChange={change('start')} />
       <input data-testid="plan-form-every" placeholder="every N days" size={4} value={fields.every} onChange={change('every')} />
+      <input data-testid="plan-form-day" placeholder="or day of month" size={4} value={fields.day} onChange={change('day')} />
       <input data-testid="plan-form-end" type="date" value={fields.end} onChange={change('end')} />
       <button type="button" data-testid="plan-form-submit" disabled={add.isPending} onClick={submit}>
         Add plan

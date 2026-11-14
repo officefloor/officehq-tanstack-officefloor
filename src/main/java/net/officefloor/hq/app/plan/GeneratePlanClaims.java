@@ -31,7 +31,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * For every plan on the sheet, in the order they were added, adds a DRAFT claim of the plan's amount, dated that day
- * with an empty note, for each plan date (the start, then every N days) up to its end and the sheet's today that it
+ * with an empty note, for each plan date (the start, then every N days; or
+ * that day in every month from the start's month, on or after the start) up to its end and the sheet's today that it
  * has made none for yet. Each is checked and added as the claim form adds a claim (no claim after the person's
  * retirement date, none due by inside a closed period; due-by fixed, DRAFT logged, CLAIM_ADDED, LATE_ENTRY when its
  * period is soft-closed); a date the form refuses is skipped and tried again next time.
@@ -50,7 +51,7 @@ public class GeneratePlanClaims {
             }
             LocalDate last = plan.end().isBefore(today) ? plan.end() : today;
             Set<LocalDate> done = new HashSet<>(plans.datesMade(plan.id()));
-            for (LocalDate date = plan.start(); !date.isAfter(last); date = date.plusDays(plan.every())) {
+            for (LocalDate date : plan.dates(last)) {
                 if (done.contains(date)) {
                     continue;
                 }

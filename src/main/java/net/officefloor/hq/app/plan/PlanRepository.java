@@ -2,6 +2,7 @@ package net.officefloor.hq.app.plan;
 
 import java.sql.Date;
 import java.sql.PreparedStatement;
+import java.sql.Types;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,7 +15,8 @@ public class PlanRepository {
 
     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getDate("start_date").toLocalDate(),
-            rs.getInt("every_days"), rs.getDate("end_date").toLocalDate(), rs.getInt("generated"));
+            rs.getObject("every_days", Integer.class), rs.getObject("month_day", Integer.class),
+            rs.getDate("end_date").toLocalDate(), rs.getInt("generated"));
 
     private final JdbcTemplate jdbc;
 
@@ -33,17 +35,19 @@ public class PlanRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement p = c.prepareStatement("INSERT INTO person_plan (sheet_id, person_id, amount, start_date,"
-                    + " every_days, end_date) VALUES (?, ?, ?, ?, ?, ?)", new String[] { "id" });
+                    + " every_days, month_day, end_date) VALUES (?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
             p.setString(1, plan.sheetId());
             p.setLong(2, plan.personId());
             p.setBigDecimal(3, plan.amount());
             p.setDate(4, Date.valueOf(plan.start()));
-            p.setInt(5, plan.every());
-            p.setDate(6, Date.valueOf(plan.end()));
+            p.setObject(5, plan.every(), Types.INTEGER);
+            p.setObject(6, plan.day(), Types.INTEGER);
+            p.setDate(7, Date.valueOf(plan.end()));
             return p;
         }, keys);
         long id = keys.getKey().longValue();
-        return new Plan(id, plan.sheetId(), plan.personId(), plan.amount(), plan.start(), plan.every(), plan.end(), 0);
+        return new Plan(id, plan.sheetId(), plan.personId(), plan.amount(), plan.start(), plan.every(), plan.day(),
+                plan.end(), 0);
     }
 
     /** The dates the plan has made a claim for. */

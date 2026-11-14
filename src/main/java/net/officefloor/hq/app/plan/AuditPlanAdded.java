@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class AuditPlanAdded {
     public void audit(@Val Person person, @Val Plan plan, @RequestParam("user") String user, Audit audit) {
         audit.record("PLAN_ADDED sheet=" + person.sheetId() + " by=" + user + " name=" + person.name() + " amount="
-                + plan.amount().setScale(2).toPlainString() + " start=" + plan.start() + " every=" + plan.every()
+                + plan.amount().setScale(2).toPlainString() + " start=" + plan.start() + (plan.day() != null ? " day=" + plan.day() : " every=" + plan.every())
                 + " end=" + plan.end());
     }
 }
