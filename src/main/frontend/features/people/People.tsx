@@ -1,13 +1,17 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { PersonClaims } from '../claims/PersonClaims';
+import { claimsKey, listClaims, sumAmounts } from '../claims/api';
 import { GRADES, addPerson, listPeople, peopleKey, updatePerson, type Person, type PersonInput } from './api';
 
 const EMPTY: PersonInput = { name: '', grade: 'A' };
 
-/** The people on the sheet: a form that adds a person or edits one, and the list in added order. */
+/** The people on the sheet: a form that adds a person or edits one, and the list in added order,
+ *  each with their claimed total and their claims. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
+  const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   const [form, setForm] = useState<PersonInput>(EMPTY);
   const [editing, setEditing] = useState<number | null>(null);
 
@@ -75,17 +79,26 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
       <table>
         <tbody>
-          {(people.data ?? []).map((p) => (
-            <tr key={p.id} data-testid={`person-row-${p.id}`}>
-              <td data-testid="person-name">{p.name}</td>
-              <td data-testid="person-grade">{p.grade}</td>
-              <td>
-                <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
-                  Edit
-                </button>
-              </td>
-            </tr>
-          ))}
+          {(people.data ?? []).map((p) => {
+            const own = (claims.data ?? []).filter((c) => c.personId === p.id);
+            return (
+              <tr key={p.id} data-testid={`person-row-${p.id}`}>
+                <td data-testid="person-name">{p.name}</td>
+                <td data-testid="person-grade">{p.grade}</td>
+                <td>
+                  Claimed <span data-testid="person-claimed">{sumAmounts(own)}</span>
+                </td>
+                <td>
+                  <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
+                    Edit
+                  </button>
+                </td>
+                <td>
+                  <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} />
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </section>
