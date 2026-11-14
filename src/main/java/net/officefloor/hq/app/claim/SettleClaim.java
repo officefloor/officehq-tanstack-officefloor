@@ -25,6 +25,13 @@ public class SettleClaim {
             PersonRepository people, RateRepository rates, PeriodRepository periods,
             RoleRepository roles, SettingRepository settings, SheetRepository sheets)
             throws ClaimStatusException, PeriodClosedException {
+        settle(by, claim, people, rates, periods, roles, settings, sheets);
+    }
+
+    /** The rules of settling one claim, shared with {@link BulkSettleClaims}: moves the claim (unsaved) or throws. */
+    static void settle(String by, Claim claim, PersonRepository people, RateRepository rates,
+            PeriodRepository periods, RoleRepository roles, SettingRepository settings, SheetRepository sheets)
+            throws ClaimStatusException, PeriodClosedException {
         periods.requireOpen(claim.getSheetId(), claim.getDate());
         if (!ClaimStatus.OPEN.name().equals(claim.getStatus())) {
             throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be settled");

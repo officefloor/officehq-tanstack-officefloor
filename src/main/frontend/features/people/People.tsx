@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { BulkOpen } from '../claims/BulkOpen';
+import { BulkSettle } from '../claims/BulkSettle';
 import { PersonClaims } from '../claims/PersonClaims';
 import { claimsKey, listClaims, liveClaims, sumAmounts } from '../claims/api';
 import { claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, sumDues } from '../rates/api';
@@ -231,6 +232,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       <ShowRetired />{' '}
       <ExportPeople rows={() => everyone.map((p) => [p.name, gradeOn(p, today), p.retiredFrom ?? '', showDue(dueOf.get(p.id) ?? null)])} />
       <BulkOpen sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
+      <BulkSettle sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
       <table>
         <tbody>

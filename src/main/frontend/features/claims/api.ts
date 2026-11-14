@@ -107,3 +107,14 @@ export type BulkOpenResult = { opened: number; refused: number };
 export function bulkOpenClaims(sheetId: string, by: string, claimIds: number[]): Promise<BulkOpenResult> {
   return postJson<BulkOpenResult>(`${sheetBase(sheetId)}/bulk-open?by=${encodeURIComponent(by)}`, { claimIds });
 }
+
+/** How many of the selected claims a bulk settle settled (one gone to PENDING counts), and how many
+ *  it refused (left as they were). */
+export type BulkSettleResult = { settled: number; refused: number };
+
+/** Settle the selected claims together in list order (people in added order, newest claim first
+ *  within a person), each by the rules of settling one; each that cannot be settled is left as it is
+ *  and counted as refused. */
+export function bulkSettleClaims(sheetId: string, by: string, claimIds: number[]): Promise<BulkSettleResult> {
+  return postJson<BulkSettleResult>(`${sheetBase(sheetId)}/bulk-settle?by=${encodeURIComponent(by)}`, { claimIds });
+}
