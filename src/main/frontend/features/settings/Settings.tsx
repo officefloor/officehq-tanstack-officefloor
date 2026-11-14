@@ -57,9 +57,10 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
             <label>
               {key === 'clerk-limit' ? 'Clerk limit' : key === 'cap' ? 'Cap' : key === 'floor' ? 'Floor' : key === 'late-pct' ? 'Late percent'
                 : key === 'policy-date' ? 'Policy date' : key === 'period-numbering-from' ? 'Period numbering from'
+                : key === 'proof-threshold' ? 'Proof threshold'
                 : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (days)` : 'Terms (days)'}{' '}
               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
-                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'cap' ? 'No cap' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
+                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' ? 'None' : key === 'cap' ? 'No cap' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
                   : key === 'period-numbering-from' ? 'Off (yyyy-MM-dd)' : key.startsWith('terms-') ? "Sheet's terms" : undefined}
                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
             </label>{' '}

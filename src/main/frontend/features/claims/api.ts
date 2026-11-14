@@ -28,12 +28,14 @@ export const isBound = (c: Claim) => c.stated && c.statedDue !== null && c.statu
  *  first: `<STATUS> by <user> on <date> due=<due>`, the sheet's today and its due at each change.
  *  `deferredUntil` is the date it was last deferred until (null: never), and `deferred` whether it is
  *  deferred on the sheet's today (OPEN and deferred until a later date): a deferred claim counts in no
- *  total, is not overdue, cannot be settled and is left unbound by a statement. */
+ *  total, is not overdue, cannot be settled and is left unbound by a statement. `proofs` is how many
+ *  proofs it has: one whose due is above the proof threshold in force on its date cannot be settled or
+ *  approved with none. */
 export type Claim = {
   id: number; sheetId: string; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null;
   stated: boolean; statedDue: string | null; corrects: string | null; roundDate: string; dueBy: string;
-  log: string[]; deferredUntil: string | null; deferred: boolean;
+  log: string[]; deferredUntil: string | null; deferred: boolean; proofs: number;
 };
 /** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects. */
 export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
@@ -75,6 +77,12 @@ export function moveClaim(sheetId: string, by: string, id: number, action: Claim
  *  the date is not after today, or it is dated in a closed period. */
 export function deferClaim(sheetId: string, by: string, id: number, until: string): Promise<Claim> {
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/defer?by=${encodeURIComponent(by)}&until=${encodeURIComponent(until)}`, {});
+}
+
+/** Raise a claim's proofs count by one; refused (rejects) for a SETTLED or VOID claim, or one dated
+ *  in a closed period. */
+export function addProof(sheetId: string, by: string, id: number): Promise<Claim> {
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/proofs?by=${encodeURIComponent(by)}`, {});
 }
 
 /** A steward moves a DRAFT, OPEN or PENDING claim to another person (`toPersonId`): it keeps its

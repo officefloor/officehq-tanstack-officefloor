@@ -28,6 +28,7 @@ public class Claim {
     private List<String> log = List.of();
     private String deferredUntil;
     private boolean deferred;
+    private int proofs;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, String number, String settledDue, String openedBy) {
@@ -104,6 +105,10 @@ public class Claim {
     public void defer(String until) {
         setDeferral(until, true);
     }
+
+    /** How many proofs it has (0 until one is added). */
+    public int getProofs() { return proofs; }
+    public void setProofs(int proofs) { this.proofs = proofs; }
 
     public boolean isStated() { return stated; }
     public String getStatedDue() { return statedDue; }

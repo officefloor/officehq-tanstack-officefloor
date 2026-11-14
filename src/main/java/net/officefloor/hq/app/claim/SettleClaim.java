@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  two decimals and at least the sheet's floor (a claim bound by a statement: the figure it was bound to). With no rate the due is not
  *  fixed and stays live. Its late charge on the sheet's today is added and fixed with it. Refused for the user who opened it (four eyes), and for a claim
  *  that is not OPEN. Settled by a clerk when the due is above the sheet's clerk limit (a due that is n/a is within any limit; a steward settles
- *  anything), it goes to PENDING instead, nothing fixed, until a steward approves or rejects it. */
+ *  anything), it goes to PENDING instead (after the proof threshold: one above it with no proofs is refused), nothing fixed, until a steward approves or rejects it. */
 public class SettleClaim {
     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
             PersonRepository people, RateRepository rates, PeriodRepository periods,
@@ -51,6 +51,7 @@ public class SettleClaim {
         Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
         String due = Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
                 settings.floor(claim.getSheetId()).on(claim.getDate()), late.rounding(claim.getRoundDate())), late);
+        requireProof(claim, due, settings);
         if (due != null && Role.CLERK.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
             BigDecimal limit = settings.clerkLimit(claim.getSheetId());
             if (limit != null && new BigDecimal(due).compareTo(limit) > 0) {
@@ -60,5 +61,15 @@ public class SettleClaim {
         }
         claim.setStatus(settled.name());
         claim.setSettledDue(due);
+    }
+
+    /** Refuses settling or approving a claim with no proofs whose due (null: n/a, never above) is above
+     *  the sheet's proof threshold in force on the claim's date. */
+    static void requireProof(Claim claim, String due, SettingRepository settings) throws ClaimStatusException {
+        if (due == null || claim.getProofs() > 0) return;
+        BigDecimal threshold = settings.proofThreshold(claim.getSheetId(), claim.getDate());
+        if (threshold != null && new BigDecimal(due).compareTo(threshold) > 0) {
+            throw new ClaimStatusException("A claim whose due is above the proof threshold needs a proof");
+        }
     }
 }

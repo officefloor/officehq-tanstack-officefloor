@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, "
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, "
             // Deferred now: OPEN and deferred until a date after the sheet's today.
             + "(status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > "
             + "(SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred, "
@@ -33,10 +33,11 @@ public class ClaimRepository {
                     : rs.getBigDecimal("stated_due").setScale(2).toPlainString()), rs.getString("corrects"),
             rs.getObject("round_date", LocalDate.class).toString(),
             rs.getObject("due_by", LocalDate.class).toString(),
-            rs.getObject("deferred_until", LocalDate.class), rs.getBoolean("deferred"));
+            rs.getObject("deferred_until", LocalDate.class), rs.getBoolean("deferred"), rs.getInt("proofs"));
 
     private static Claim withCorrects(Claim claim, String corrects, String roundDate, String dueBy,
-            LocalDate deferredUntil, boolean deferred) {
+            LocalDate deferredUntil, boolean deferred, int proofs) {
+        claim.setProofs(proofs);
         claim.setCorrects(corrects);
         claim.setDeferral(deferredUntil == null ? null : deferredUntil.toString(), deferred);
         claim.setDueBy(dueBy);
@@ -124,6 +125,12 @@ public class ClaimRepository {
         jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ?",
                 claim.getDeferredUntil() == null ? null : LocalDate.parse(claim.getDeferredUntil()),
                 claim.getSheetId(), claim.getId());
+    }
+
+    /** Save a claim's proofs count. */
+    public void updateProofs(Claim claim) {
+        jdbc.update("UPDATE claim SET proofs = ? WHERE sheet_id = ? AND id = ?",
+                claim.getProofs(), claim.getSheetId(), claim.getId());
     }
 
     /** Save a claim's binding by its person's last statement. */

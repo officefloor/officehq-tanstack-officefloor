@@ -16,6 +16,10 @@ public class SettingRepository {
     /** The clerk limit: the largest due a clerk may settle (two decimals; blank: no limit). */
     public static final String CLERK_LIMIT = "clerk-limit";
 
+    /** The proof threshold: a claim whose due is above the one in force on its date cannot be settled
+     *  or approved without a proof (two decimals; blank: none). */
+    public static final String PROOF_THRESHOLD = "proof-threshold";
+
     /** The cap: the most a person's due-total can be (two decimals; blank: no cap). */
     public static final String CAP = "cap";
 
@@ -89,6 +93,12 @@ public class SettingRepository {
     /** The sheet's clerk limit in force on its today; null when there is none. */
     public BigDecimal clerkLimit(String sheetId) {
         String value = dated(sheetId, CLERK_LIMIT, null).on(sheets.today(sheetId).toString());
+        return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The sheet's proof threshold in force on a date (yyyy-MM-dd); null when there is none. */
+    public BigDecimal proofThreshold(String sheetId, String date) {
+        String value = dated(sheetId, PROOF_THRESHOLD, null).on(date);
         return value == null ? null : new BigDecimal(value);
     }
 

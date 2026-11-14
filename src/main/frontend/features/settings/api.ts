@@ -19,9 +19,11 @@ export type Role = { sheetId: string; user: string; role: string };
  *  period numbering date (yyyy-MM-dd; blank means off: once the sheet's today is on or after it, a
  *  claim opened is numbered within its period, <period>-<n>, or X-<n> in no period). A grade's own terms
  *  (terms-<grade>; blank means the sheet's terms) fix the due-by of a claim added for a person of that
- *  grade on its date: its date plus those terms, kept when the terms or its date change later. */
+ *  grade on its date: its date plus those terms, kept when the terms or its date change later. The proof
+ *  threshold (two decimals; blank means none): a claim whose due is above the one in force on its date
+ *  cannot be settled or approved while it has no proofs. */
 export const SETTING_KEYS = ['clerk-limit', 'cap', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
-  'period-numbering-from'] as const;
+  'period-numbering-from', 'proof-threshold'] as const;
 
 /** A setting's value until it is first set. */
 export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00' };
@@ -70,6 +72,12 @@ export function setRole(sheetId: string, by: string, user: string, role: string)
 export function useFloor(sheetId: string): DatedOn {
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
   return (date) => settingOn(settings.data, 'floor', date) || SETTING_DEFAULTS.floor;
+}
+
+/** The sheet's proof threshold by date (null: none in force on that date). */
+export function useProofThreshold(sheetId: string): (date: string) => string | null {
+  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+  return (date) => settingOn(settings.data, 'proof-threshold', date) || null;
 }
 
 /** The sheet's cap in force on its today: the most a person's due-total can be; null when there is none. */

@@ -16,7 +16,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /** Approves a PENDING claim: it becomes SETTLED, its due fixed at the figure it shows at that moment
  *  (its live figure, a statement does not bind a PENDING claim, with its late charge on the sheet's
- *  today). Refused unless the user is a steward, and for the user who opened it. */
+ *  today). Refused unless the user is a steward, and for the user who opened it, and for one
+ *  with no proofs whose due is above the proof threshold in force on its date. */
 public class ApproveClaim {
     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
             PersonRepository people, RateRepository rates, PeriodRepository periods,
@@ -39,6 +40,7 @@ public class ApproveClaim {
         Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
         String due = Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
                 settings.floor(claim.getSheetId()).on(claim.getDate()), late.rounding(claim.getRoundDate())), late);
+        SettleClaim.requireProof(claim, due, settings);
         claim.setStatus(ClaimStatus.PENDING.moveTo(ClaimStatus.SETTLED).name());
         claim.setSettledDue(due);
     }

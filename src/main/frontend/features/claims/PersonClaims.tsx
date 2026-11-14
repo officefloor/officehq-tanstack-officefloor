@@ -4,8 +4,8 @@ import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
-import type { DatedOn } from '../settings/api';
-import { addClaim, claimsKey, deferClaim, dueBy, isOverdue, moveClaim, reassignClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
+import { useProofThreshold, type DatedOn } from '../settings/api';
+import { addClaim, addProof, claimsKey, deferClaim, dueBy, isOverdue, moveClaim, reassignClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
 
@@ -27,7 +27,10 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  PENDING claim to another person picked beside it (any other refused with an error on the claim), and
  *  re-settle a SETTLED one (anyone else, any other status or a claim in a closed period refused likewise).
  *  An OPEN claim can be deferred until a date typed beside it, after the sheet's today (any other claim, date,
- *  or a claim in a closed period refused with an error on the claim); whether it is deferred, and until when, is shown. */
+ *  or a claim in a closed period refused with an error on the claim); whether it is deferred, and until when, is shown.
+ *  Its proofs count is shown and raised by one with a button beside it (a SETTLED or VOID claim, or one in a
+ *  closed period, refused with an error on the claim); one with no proofs whose due is above the sheet's proof
+ *  threshold in force on its date cannot be settled or approved. */
 export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, today, charges, selected, onSelect, people }: {
   sheetId: string; user: string; personId: number; claims: Claim[]; gradeOn: GradeOn; rates: Rate[] | undefined;
   floor: DatedOn; today: string; charges: Late;
@@ -86,9 +89,34 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       move.reset();
       reassign.reset();
       deferral.reset();
+      proof.reset();
       setEditRefused(null);
       return deferral.mutateAsync({ id, until });
     });
+  };
+
+  const proof = useMutation({
+    mutationFn: (id: number) => addProof(sheetId, user, id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
+
+  const prove = (id: number) => {
+    actOnce(() => {
+      move.reset();
+      reassign.reset();
+      deferral.reset();
+      proof.reset();
+      setEditRefused(null);
+      return proof.mutateAsync(id);
+    });
+  };
+
+  const proofThreshold = useProofThreshold(sheetId);
+  // Whether a claim needs a proof before it is settled or approved: none yet, and its due above the threshold.
+  const needsProof = (c: Claim) => {
+    const threshold = proofThreshold(c.date);
+    const due = claimDue(c, rates, gradeOn, floor, charges);
+    return c.proofs === 0 && threshold !== null && due !== null && Number(due) > Number(threshold);
   };
 
   const reassign = useMutation({
@@ -102,6 +130,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       move.reset();
       reassign.reset();
       deferral.reset();
+      proof.reset();
       setEditRefused(null);
       return reassign.mutateAsync({ id, to });
     });
@@ -112,6 +141,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       move.reset();
       reassign.reset();
       deferral.reset();
+      proof.reset();
       setEditRefused(null);
       return move.mutateAsync({ id, action });
     });
@@ -126,6 +156,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     move.reset();
     reassign.reset();
     deferral.reset();
+    proof.reset();
     if (c.status !== 'DRAFT') {
       setEditRefused(c.id);
       return;
@@ -198,7 +229,14 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
               </td>
               <td>
                 Deferred <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
-                until <span data-testid="claim-deferred-until">{c.deferred ? c.deferredUntil ?? '' : ''}</span>
+                until <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>
+              </td>
+              <td>
+                Proofs <span data-testid="claim-proofs">{c.proofs ?? 0}</span>{' '}
+                <button type="button" data-testid="claim-proof" disabled={proof.isPending}
+                  onClick={() => prove(c.id)}>
+                  Add proof
+                </button>
               </td>
               <td data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</td>
               <td>
@@ -258,6 +296,8 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     ? 'A claim dated inside a closed period cannot be changed.'
                     : move.error instanceof HttpError && move.error.status === 400
                     ? 'A rejection needs a reason.'
+                    : (move.variables.action === 'settle' || move.variables.action === 'approve') && needsProof(c)
+                    ? 'A claim whose due is above the proof threshold needs a proof first.'
                     : c.deferred && move.variables.action === 'settle'
                     ? `A deferred claim cannot be settled until ${c.deferredUntil}.`
                     : c.status === 'OPEN' && move.variables.action === 'settle'
@@ -276,6 +316,11 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     : deferral.error instanceof HttpError && deferral.error.status === 400
                     ? 'A claim can only be deferred to a date after the sheet\'s today.'
                     : `A ${c.status} claim cannot be deferred.`}</span>
+                )}
+                {proof.isError && proof.variables === c.id && (
+                  <span data-testid="claim-error">{proof.error instanceof HttpError && proof.error.status === 423
+                    ? 'A claim dated inside a closed period cannot gain a proof.'
+                    : `A ${c.status} claim cannot gain a proof.`}</span>
                 )}
                 {reassign.isError && reassign.variables?.id === c.id && (
                   <span data-testid="claim-error">{reassign.error instanceof HttpError && reassign.error.status === 423
