@@ -17,7 +17,7 @@ public class CheckClaimInputPeriodOpen {
             SheetRepository sheets, SettingRepository settings, HolidayRepository holidays, PeriodRepository periods)
             throws InvalidClaimException {
         LocalDate date = input.date() != null ? input.date() : sheets.entryDate(sheetId);
-        LocalDate dueBy = NewDueBy.of(date, person, settings, holidays);
+        LocalDate dueBy = NewDueBy.of(date, person, sheets, settings, holidays);
         Period closed = periods.closedOn(sheetId, dueBy);
         if (closed != null) {
             throw new InvalidClaimException("A claim dated " + date + " is due by " + dueBy

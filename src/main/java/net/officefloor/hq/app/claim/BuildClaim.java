@@ -9,12 +9,12 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** A new DRAFT claim; its due-by is fixed now: its date plus the person's own terms, else
- * those of their grade, else the sheet's, each as in force on that date. */
+ * those of the grade they had, else the sheet's, each as in force on the sheet's today. */
 public class BuildClaim {
     public void build(@Val ClaimInput input, @Val Person person, SheetRepository sheets, SettingRepository settings,
             HolidayRepository holidays, Out<Claim> claim) {
         LocalDate date = input.date() != null ? input.date() : sheets.entryDate(person.sheetId());
-        LocalDate dueBy = NewDueBy.of(date, person, settings, holidays);
+        LocalDate dueBy = NewDueBy.of(date, person, sheets, settings, holidays);
         claim.set(new Claim(null, person.sheetId(), person.id(), input.amount(), date, input.note(), ClaimStatus.DRAFT,
                 null, null, null, false, null, input.corrects(), dueBy));
     }

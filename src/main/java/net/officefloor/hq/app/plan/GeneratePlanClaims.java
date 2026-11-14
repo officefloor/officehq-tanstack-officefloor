@@ -69,7 +69,7 @@ public class GeneratePlanClaims {
                 if (settings.find(sheet.id()).roleOf(user) == Role.VIEWER) {
                     throw new ViewerRefusedException("A viewer cannot change the sheet.");
                 }
-                LocalDate dueBy = NewDueBy.of(date, person, settings, holidays);
+                LocalDate dueBy = NewDueBy.of(date, person, sheets, settings, holidays);
                 Claim claim = claims.save(new Claim(null, sheet.id(), person.id(), plan.amount(), date, "",
                         ClaimStatus.DRAFT, null, null, null, false, null, null, dueBy));
                 BigDecimal due = ClaimDueNow.of(claim, sheets, people, rates, settings, claims);
