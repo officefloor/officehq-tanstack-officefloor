@@ -28,12 +28,12 @@ export type Hold = { from: string | null; to: string | null };
 export const covers = (h: Hold, date: string) => (h.from === null || h.from <= date) && (h.to === null || date <= h.to);
 
 /**
- * The holds that apply to a person's live totals on the sheet's `today`: their own, and — from the day their
- * retirement date is reached — one covering every date, so their open and pending claims leave the totals as a
- * hold's would (settled ones, and ones a statement binds, still count).
+ * What leaves a person's open claims out of the live totals on the sheet's `today`: from the day their retirement
+ * date is reached, a span covering every date (settled ones, and ones a statement binds, still count). Their own
+ * holds do not: a hold only takes away their pool cut.
  */
 export const liveHolds = (p: { holds: Hold[]; retiredFrom: string | null }, today: string): Hold[] =>
-  retiredOn(p, today) ? [...p.holds, { from: null, to: null }] : p.holds;
+  retiredOn(p, today) ? [{ from: null, to: null }] : [];
 
 /** Whether the person's retirement date has been reached on the sheet's `today` (on or after it). */
 export const retiredOn = (p: { retiredFrom: string | null }, today: string): boolean =>

@@ -21,7 +21,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * Works out a sheet's figures as the screen shows them: a person's claimed is their counting claims' amounts
- * added up (a held claim's too: a hold leaves out only the due figures; none once their retirement date is reached), leaving out corrections; their due-total those claims' dues (live figures rounded by its policy date, plus
+ * added up (a held claim's too, in every figure: a hold only takes away a pool cut; none once their retirement date is reached), leaving out corrections; their due-total those claims' dues (live figures rounded by its policy date, plus
  * any late charge, at the late percent in force on each 30-day boundary, on the overdue ones, then raised to the floor in force on each claim's date) added up, at most the cap in force on the sheet's today; n/a when their grade on the sheet's today has no
  * rate there and no counting claim has a figure (kept, or at the rate for the grade in force on its date). Their overdue-total
  * is the dues of their overdue counting claims added up (skipping n/a, not capped). The sheet's totals add these up, skipping n/a;

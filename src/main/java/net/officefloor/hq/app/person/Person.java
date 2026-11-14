@@ -160,10 +160,11 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
 
     /**
      * Whether the claim counts toward this person's live totals on the given today: a claim deferred then does not,
-     * nor do their open claims dated within a hold, nor their open claims held themselves, unless a statement binds them.
+     * nor, once their retirement date is reached, do their open claims, unless a statement binds them. A hold (theirs
+     * or the claim's own) does not take a claim out.
      */
     public boolean counts(Claim claim, LocalDate today) {
-        return !claim.deferred(today) && claim.counts(!claim.bound() && (claim.held() || heldOn(claim.date(), today)));
+        return !claim.deferred(today) && claim.counts(!claim.bound() && heldOn(claim.date(), today));
     }
 
     /**
@@ -175,11 +176,11 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
     }
 
     /**
-     * Whether the person's open claims on this date are held on the given today: a hold covers the date, or their
-     * retirement date has been reached (then all of them are, as a hold's would be).
+     * Whether the person's open claims on this date are left out of the live totals on the given today: their
+     * retirement date has been reached. A hold does not leave them out (it only takes away their pool cut).
      */
     public boolean heldOn(LocalDate date, LocalDate today) {
-        return retiredOn(today) || holds.stream().anyMatch((h) -> h.covers(date));
+        return retiredOn(today);
     }
 
     /** Whether the person's retirement date has been reached on the given today (on or after it). */

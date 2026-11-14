@@ -101,12 +101,13 @@ export type ClaimLogLine = { status: ClaimStatus; by: string; date: string; due:
 
 /**
  * Whether a claim counts toward due-total and every live total but claimed (see countsClaimed): only OPEN, PENDING and SETTLED do,
- * and an open (or pending) one not when it is held or one of its person's `holds` covers its date and no statement binds it,
+ * and an open (or pending) one not when one of its person's live `holds` (their retirement) covers its date and no statement binds it
+ * (a held claim, or one a hold of its person covers, still counts),
  * nor while it is deferred on the sheet's `today`.
  */
 export const counts = (c: Claim, holds: Hold[], today: string) =>
   c.status === 'SETTLED' ||
-  (isOpen(c) && !deferred(c, today) && (bound(c) || !(c.held || holds.some((h) => covers(h, c.date)))));
+  (isOpen(c) && !deferred(c, today) && (bound(c) || !holds.some((h) => covers(h, c.date))));
 
 /** Whether a claim counts toward claimed: as {@link counts}, but a hold (the person's or the claim's) does not take it out. */
 export const countsClaimed = (c: Claim, today: string) =>
