@@ -51,6 +51,7 @@ public class PersonRepository {
         withClashing(sheetId, people);
         withRetirements(sheetId, people);
         withSnapshots(sheetId, people);
+        withStatements(sheetId, people);
         jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY added_at, patron_id",
                 (rs) -> {
                     Person p = byId.get(rs.getLong("person_id"));
@@ -74,6 +75,7 @@ public class PersonRepository {
             withClashing(sheetId, List.of(person));
             withRetirements(sheetId, List.of(person));
             withSnapshots(sheetId, List.of(person));
+            withStatements(sheetId, List.of(person));
         }
         return person;
     }
@@ -177,6 +179,24 @@ public class PersonRepository {
                             .add(new Snapshot(rs.getObject("day_left", LocalDate.class).toString(), rs.getString("due_total")));
                 }, sheetId);
         people.forEach((p) -> p.setSnapshots(snapshots.getOrDefault(p.getId(), new ArrayList<>())));
+    }
+
+    /** Give each person their statements still standing, oldest first: by date, then in the order taken
+     *  (those a merge or transfer brought over among them by their date). */
+    private void withStatements(String sheetId, List<Person> people) {
+        if (people.isEmpty()) {
+            return;
+        }
+        Map<Long, List<StatementLine>> statements = new HashMap<>();
+        jdbc.query("SELECT person_id, stated_total, statement_date FROM person_statement WHERE sheet_id = ? "
+                + "ORDER BY person_id, statement_date, taken_at, id",
+                (rs) -> {
+                    String total = rs.getString("stated_total");
+                    statements.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())
+                            .add(new StatementLine(rs.getObject("statement_date", LocalDate.class).toString(),
+                                    total == null ? "n/a" : total));
+                }, sheetId);
+        people.forEach((p) -> p.setStatements(statements.getOrDefault(p.getId(), new ArrayList<>())));
     }
 
     /** Keep a SNAPSHOT written for the person: the day being left and their due-total on it (or n/a). */

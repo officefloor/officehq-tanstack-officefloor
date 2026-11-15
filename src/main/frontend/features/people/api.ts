@@ -25,6 +25,9 @@ export type Retirement = { from: string; to: string };
 
 export type Snapshot = { day: string; dueTotal: string };
 
+/** A statement still standing: its date (yyyy-MM-dd) and the due-total it recorded (or n/a). */
+export type StatementLine = { date: string; dueTotal: string };
+
 export type Person = {
   id: number; sheetId: string; name: string; grade: Grade; grades: GradeFrom[]; version: number;
   statementCount: number; statedTotal: string | null; statementDate: string | null;
@@ -33,6 +36,8 @@ export type Person = {
   retirements: Retirement[];
   /** The SNAPSHOTs written for them, oldest first: the day being left and their due-total on it (or n/a). */
   snapshots: Snapshot[];
+  /** Their statements still standing (a cancelled one is gone), oldest first: by date, then as taken. */
+  statements: StatementLine[];
   held: boolean; holds: Hold[]; patronIds: number[];
   /** Their own terms in whole days (null: none): a claim's due-by goes by them before their grade's or the sheet's. */
   terms: number | null;

@@ -33,7 +33,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
  *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap, with the excess above it, and split into settled and open (see `splitDues`); n/a
  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
  *  their statements (a button that takes one, now or as of the date typed beside it, a button that cancels the last, the count, the last one's due-total and date), whether
- *  they are retired and from when (with a date and a button that retires them, a button that unretires them, and their past retirements, each `<from> to <to>`), their snapshot lines (one per SNAPSHOT written for them, oldest first, each `<the day being left> <due-total>`), whether they have
+ *  they are retired and from when (with a date and a button that retires them, a button that unretires them, and their past retirements, each `<from> to <to>`), their snapshot lines (one per SNAPSHOT written for them, oldest first, each `<the day being left> <due-total>`), their statement lines (one per statement still standing, oldest first, each `<statement date> <due-total>`), whether they have
  *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
  *  patrons (each `<name> <share>`, sorted by name (see `patronShares`), with a picker that names one more), their plans (see `PersonPlans`), their aliases (sorted as names are
@@ -662,6 +662,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   Snapshots{' '}
                   {p.snapshots.map((s, i) => (
                     <Fragment key={i}><span data-testid="person-snapshot-line">{s.day} {s.dueTotal}</span>; </Fragment>
+                  ))}
+                  Statements{' '}
+                  {p.statements.map((s, i) => (
+                    <Fragment key={i}><span data-testid="person-statement-line-line">{s.date} {s.dueTotal}</span>; </Fragment>
                   ))}
                 </td>
                 <td>

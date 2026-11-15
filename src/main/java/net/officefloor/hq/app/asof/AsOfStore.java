@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import javax.sql.DataSource;
+import net.officefloor.hq.app.rate.RateRepository;
 import org.springframework.stereotype.Component;
 
 /**
@@ -121,6 +122,24 @@ public class AsOfStore {
                 ps.setString(1, sheetId);
                 ps.executeUpdate();
             }
+            // A grade without a rate of its own goes by its ancestors' (as they are now, like the link):
+            // their rates and parent links come along, up as far as rates are looked.
+            Set<String> chain = new HashSet<>(Set.of(sheetId));
+            for (String at = liveParent(c, sheetId); at != null && chain.size() <= RateRepository.LEVELS
+                    && chain.add(at); at = liveParent(c, at)) {
+                for (String table : List.of("RATE", "RATE_VERSION", "RATE_HISTORY")) {
+                    try (PreparedStatement ps = c.prepareStatement("INSERT INTO " + q(schema) + "." + q(table)
+                            + " SELECT * FROM PUBLIC." + q(table) + " WHERE SHEET_ID = ?")) {
+                        ps.setString(1, at);
+                        ps.executeUpdate();
+                    }
+                }
+                try (PreparedStatement ps = c.prepareStatement("INSERT INTO " + q(schema) + ".SHEET_SETTING SELECT * FROM "
+                        + "PUBLIC.SHEET_SETTING WHERE SHEET_ID = ? AND SETTING = 'parent'")) {
+                    ps.setString(1, at);
+                    ps.executeUpdate();
+                }
+            }
             // A SNAPSHOT is written when its day is left: as of that day (or before) it was not there yet.
             try (PreparedStatement ps = c.prepareStatement(
                     "DELETE FROM " + q(schema) + ".PERSON_SNAPSHOT WHERE SHEET_ID = ? AND DAY_LEFT >= ?")) {
@@ -157,6 +176,21 @@ public class AsOfStore {
             ps.setString(1, sheetId);
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next() ? new String[] { rs.getString(1), rs.getObject(2, LocalDate.class).toString() } : null;
+            }
+        }
+    }
+
+    /** The sheet's parent as the live store names it now; null when it has none. */
+    private static String liveParent(Connection c, String sheetId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT val FROM PUBLIC.SHEET_SETTING WHERE SHEET_ID = ? AND SETTING = 'parent'")) {
+            ps.setString(1, sheetId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String v = rs.getString(1);
+                    if (v != null && !v.isEmpty()) return v;
+                }
+                return null;
             }
         }
     }
