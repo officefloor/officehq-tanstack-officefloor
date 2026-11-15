@@ -1,0 +1,120 @@
+diff --git a/src/main/frontend/features/settings/Delegations.tsx b/src/main/frontend/features/settings/Delegations.tsx
+index 7f642653d..8459c7f10 100644
+--- a/src/main/frontend/features/settings/Delegations.tsx
++++ b/src/main/frontend/features/settings/Delegations.tsx
+@@ -1,7 +1,7 @@
+ import { useState } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { useSubmitOnce } from '../../forms/useSubmitOnce';
+-import { delegate, delegationsKey, listDelegations } from './api';
++import { delegate, delegationsKey, listDelegations, rolesKey } from './api';
+ 
+ const EMPTY = { user: '', from: '', to: '' };
+ 
+@@ -16,6 +16,7 @@ export function Delegations({ sheetId, user }: { sheetId: string; user: string }
+     mutationFn: (input: typeof EMPTY) => delegate(sheetId, user, input.user, input.from, input.to),
+     onSuccess: () => {
+       setForm(EMPTY);
++      queryClient.invalidateQueries({ queryKey: rolesKey(sheetId) });
+       return queryClient.invalidateQueries({ queryKey: delegationsKey(sheetId) });
+     },
+   });
+diff --git a/src/main/frontend/features/settings/api.ts b/src/main/frontend/features/settings/api.ts
+index 310b25b4d..d1970c780 100644
+--- a/src/main/frontend/features/settings/api.ts
++++ b/src/main/frontend/features/settings/api.ts
+@@ -113,6 +113,14 @@ export function listRoles(sheetId: string): Promise<Role[]> {
+   return getJson<Role[]>(`${base(sheetId)}/roles`);
+ }
+ 
++/** The role the user acts in on the sheet on its today: their own, or steward while a delegation to
++ *  them covers it (as the sheet stood then while it is shown as of a date). */
++export function roleOf(sheetId: string, user: string): Promise<Role> {
++  return getJson<Role>(`${base(sheetId)}/role?user=${encodeURIComponent(user)}`);
++}
++
++export const roleOfKey = (sheetId: string, user: string) => [...rolesKey(sheetId), 'of', user] as const;
++
+ /** Assign a user name a role; refused (rejects) when the role is not clerk or steward. */
+ export function setRole(sheetId: string, by: string, user: string, role: string): Promise<Role> {
+   return postJson<Role>(`${base(sheetId)}/roles?by=${encodeURIComponent(by)}`, { user, role });
+diff --git a/src/main/frontend/features/summary/Dashboard.tsx b/src/main/frontend/features/summary/Dashboard.tsx
+new file mode 100644
+index 000000000..8b9527614
+--- /dev/null
++++ b/src/main/frontend/features/summary/Dashboard.tsx
+@@ -0,0 +1,22 @@
++import { useQuery } from '@tanstack/react-query';
++import { claimsKey, listClaims } from '../claims/api';
++import { useOverdue } from '../rates/Overdue';
++import { roleOf, roleOfKey } from '../settings/api';
++import { statusCount } from './Summary';
++
++/** The steward's dashboard: how many of the sheet's claims are PENDING, how many REVIEW, and how many
++ *  of those that count are overdue (as the overdue line counts them). Blank for anyone not acting as a
++ *  steward; shown as of a date, the counts and the role are as they stood then. */
++export function Dashboard({ sheetId, user }: { sheetId: string; user: string }) {
++  const role = useQuery({ queryKey: roleOfKey(sheetId, user), queryFn: () => roleOf(sheetId, user) });
++  const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
++  const late = useOverdue(sheetId, user);
++  const steward = role.data?.role === 'steward' && claims.data !== undefined;
++  return (
++    <p>
++      Steward's dashboard: pending <span data-testid="dash-pending-count">{steward ? statusCount(claims.data, 'PENDING') : ''}</span>
++      {' · '}review <span data-testid="dash-review-count">{steward ? statusCount(claims.data, 'REVIEW') : ''}</span>
++      {' · '}overdue <span data-testid="dash-overdue-count">{steward ? late.count : ''}</span>
++    </p>
++  );
++}
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 7dfb439b4..d4b4d1b8b 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -1,6 +1,7 @@
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { Classic } from './Classic';
+ import { Consolidated } from './Consolidated';
++import { Dashboard } from './Dashboard';
+ import { Header } from './Header';
+ import { Summary } from './Summary';
+ import { TreeSearch } from './TreeSearch';
+@@ -9,6 +10,7 @@ export const contributions = [
+   SheetBody.fill({ order: -100, Component: Header }),
+   SheetBody.fill({ order: -99, Component: Consolidated }),
+   SheetBody.fill({ order: -98, Component: TreeSearch }),
++  SheetBody.fill({ order: -97, Component: Dashboard }),
+   SheetBody.fill({ order: 27, Component: Summary }),
+   SheetBody.fill({ order: 28, Component: Classic }),
+ ];
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RoleOfUser.java b/src/main/java/net/officefloor/hq/app/setting/RoleOfUser.java
+new file mode 100644
+index 000000000..f7150a117
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/RoleOfUser.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.setting;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** The role the user acts in on the sheet on its today (a delegation covering it makes them a steward). */
++public class RoleOfUser {
++    public void role(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "user", required = false) String user, RoleRepository roles,
++            ObjectResponse<Role> response) {
++        String id = sheetId.trim();
++        String name = user == null ? "" : user;
++        response.send(new Role(id, name, roles.roleOf(id, name)));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/role.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/role.GET.yml
+new file mode 100644
+index 000000000..c44b95881
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/role.GET.yml
+@@ -0,0 +1,4 @@
++# GET /api/sheets/{sheetId}/role?user= — the role the user acts in on the sheet on its today.
++role:
++  class: net.officefloor.hq.app.setting.RoleOfUser
++  govern: [ readonly-transaction ]
