@@ -76,9 +76,9 @@ export type Late = { pct: DatedOn; today: string; policy: string; lateFrom: (c: 
  *  date of the claim it corrects) is before the policy date; else they round half to even. */
 export const roundsHalfUp = (c: Claim, late: Late) => (c.roundDate ?? c.date) < late.policy;
 
-/** The late charge on an open (OPEN or PENDING) claim's `figure`: for each full 30 days it is past its due-by plus
- *  its grace days (`late.lateFrom`) on the sheet's today, the late percent in force on that boundary date (that date
- *  plus 30, 60, 90 ... days) of it,
+/** The late charge on an open (OPEN or PENDING) claim's `figure`, compounding: for each full 30 days it is past its
+ *  due-by plus its grace days (`late.lateFrom`) on the sheet's today, the late percent in force on that boundary date
+ *  (that date plus 30, 60, 90 ... days) of the figure plus the charges of the boundaries before it,
  *  each rounded by the policy date to two decimals, added up (0 when not overdue, and on a correction). */
 export function lateCharge(c: Claim, figure: string, late: Late): bigint {
   const from = late.lateFrom(c);
@@ -88,7 +88,7 @@ export function lateCharge(c: Claim, figure: string, late: Late): bigint {
   let total = 0n;
   for (let k = 1; k <= periods; k++) {
     const boundary = new Date(start + k * 30 * 86_400_000).toISOString().slice(0, 10);
-    total += roundPct(hundredths(figure) * hundredths(late.pct(boundary)), roundsHalfUp(c, late));
+    total += roundPct((hundredths(figure) + total) * hundredths(late.pct(boundary)), roundsHalfUp(c, late));
   }
   return total;
 }

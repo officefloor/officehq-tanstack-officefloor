@@ -44,7 +44,8 @@ public final class Dues {
 
     /** The late charge on a claim's figure: for each full 30 days its open (OPEN or PENDING) claim is past its
      *  due-by (fixed when it was added) plus its grace days on the sheet's today, the late percent in force on that
-     *  boundary date (its due-by plus grace plus 30, 60, 90 ... days) of it, each rounded by the policy date to two decimals, added up;
+     *  boundary date (its due-by plus grace plus 30, 60, 90 ... days) of the figure plus the charges of
+     *  the boundaries before it (compounding), each rounded by the policy date to two decimals, added up;
      *  none (0.00) when it is not overdue (a deferred claim never is), or on a correction. */
     public static BigDecimal charge(Claim claim, String figure, Late late) {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
@@ -55,7 +56,7 @@ public final class Dues {
         for (long k = 1; k <= periods; k++) {
             String pct = late.pct().on(dueBy.plusDays(30 * k).toString());
             if (pct == null) continue;
-            total = total.add(new BigDecimal(figure).multiply(new BigDecimal(pct))
+            total = total.add(new BigDecimal(figure).add(total).multiply(new BigDecimal(pct))
                     .divide(BigDecimal.valueOf(100), 2, rounding));
         }
         return total;
