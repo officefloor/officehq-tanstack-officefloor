@@ -134,6 +134,7 @@ public class PasteClaims {
             }
 
             // Opened as the open button opens it.
+            OpenChecks.requireFlagSteward(claim, user, people, roles);
             periods.requireOpen(id, claim.getDueBy());
             ClaimStatus opened = OpenChecks.opensTo(claim, people, rates, settings, sheets);
             OpenChecks.requireNote(claim, people, rates, settings, sheets);

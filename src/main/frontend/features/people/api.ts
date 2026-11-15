@@ -39,6 +39,9 @@ export type Person = {
   /** Their statements still standing (a cancelled one is gone), oldest first: by date, then as taken. */
   statements: StatementLine[];
   held: boolean; holds: Hold[]; patronIds: number[];
+  /** Their flag's reason while it is in force (the sheet's today on or before its until-date; null:
+   *  none): only a steward may open their claims then. */
+  flagShown: string | null;
   /** Their own terms in whole days in force on the sheet's today (null: none): a claim's due-by goes by
    *  those in force on its date before their grade's or the sheet's. */
   terms: number | null;
@@ -147,6 +150,12 @@ export function movePerson(sheetId: string, by: string, id: number, direction: '
  *  refused (rejects) when a date is not a date or `to` is before `from`. */
 export function holdPerson(sheetId: string, by: string, id: number, from: string, to: string): Promise<Person> {
   return postJson<Person>(`${base(sheetId)}/${id}/hold?by=${encodeURIComponent(by)}`, { from, to });
+}
+
+/** A steward flags the person with `reason` until `until` (blank: the sheet's today), replacing any
+ *  flag before; refused (rejects) for anyone else, a blank reason, or an until that is not a date. */
+export function flagPerson(sheetId: string, by: string, id: number, reason: string, until: string): Promise<Person> {
+  return postJson<Person>(`${base(sheetId)}/${id}/flag?by=${encodeURIComponent(by)}`, { reason, until });
 }
 
 /** Name another person on the sheet as one of the person's patrons; refused (rejects) for the

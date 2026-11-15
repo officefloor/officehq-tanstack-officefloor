@@ -10,6 +10,7 @@ import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.Permissions;
+import net.officefloor.hq.app.setting.Role;
 import net.officefloor.hq.app.setting.RoleRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
@@ -18,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /** Opens a claim, giving it its number (see {@link ClaimNumbers}) and recording who opened it; one
  *  whose due is above the review threshold in force on its date goes to REVIEW instead, unnumbered
- *  until a steward reviews it (see {@link ReviewClaim}). Refused for a REVIEW claim,  for a role the permission matrix does not let open, and for a claim with an empty note
+ *  until a steward reviews it (see {@link ReviewClaim}). Refused for a REVIEW claim, for anyone but a steward while the person's flag is in force, for a role the permission matrix does not let open, and for a claim with an empty note
  *  whose due is above the note threshold in force on its date. */
 public class OpenClaim {
     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
@@ -28,6 +29,7 @@ public class OpenClaim {
         if (!Permissions.allows(claim.getSheetId(), by, Permissions.OPEN, roles, settings)) {
             throw new ClaimStatusException("Your role may not open a claim");
         }
+        requireFlagSteward(claim, by, people, roles);
         periods.requireOpen(claim.getSheetId(), claim.getDueBy());
         ClaimStatus opened = opensTo(claim, people, rates, settings, sheets);
         requireNote(claim, people, rates, settings, sheets);
@@ -67,6 +69,18 @@ public class OpenClaim {
         Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
         return Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
                 late.rounding(claim.getRoundDate())), settings.floor(claim.getSheetId()).on(claim.getDate()), late);
+    }
+
+    /** Refuses opening a claim of a person whose flag is in force (the sheet's today on or before its
+     *  until-date) for anyone but a steward; shared with {@link BulkOpenClaims}. */
+    static void requireFlagSteward(Claim claim, String by, PersonRepository people, RoleRepository roles)
+            throws ClaimStatusException {
+        Person person = people.find(claim.getSheetId(), claim.getPersonId());
+        if (person == null || !person.isFlagged()) return;
+        if (!Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
+            throw new ClaimStatusException("Only a steward can open a claim of " + person.getName()
+                    + " while they are flagged: " + person.getFlagReason());
+        }
     }
 
     /** Refuses opening a claim that belongs to a period with a cap (its due-by falls in it) when its

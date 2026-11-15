@@ -23,7 +23,7 @@ import { QuickAdd } from './QuickAdd';
 import { ColumnChooser, useColumns } from './Columns';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { SortBy, sortPeople, useSortBy } from './SortBy';
-import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, takeStatement, transferPerson, undoTransfer, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+import { GRADES, addAlias, addPatron, addPerson, cancelStatement, flagPerson, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, takeStatement, transferPerson, undoTransfer, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 import { Fig } from '../session/Fig';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFrom: '', contact: '', tags: '' };
@@ -34,7 +34,8 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', ter
  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
  *  their statements (a button that takes one, now or as of the date typed beside it, a button that cancels the last, the count, the last one's due-total and date), whether
  *  they are retired and from when (with a date and a button that retires them, a button that unretires them, and their past retirements, each `<from> to <to>`), their snapshot lines (one per SNAPSHOT written for them, oldest first, each `<the day being left> <due-total>`), their statement lines (one per statement still standing, oldest first, each `<statement date> <due-total>`), whether they have
- *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
+ *  any hold, their flag's reason while it is in force (with a reason, an until-date and a button that
+ *  flags them; only a steward may), their holds (each from a date to an optional date, with dates and a button that adds one;
  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
  *  patrons (each `<name> <share>`, sorted by name (see `patronShares`), with a picker that names one more), their plans (see `PersonPlans`), their aliases (sorted as names are
  *  compared, with an entry and a button that adds one) and backing (see `backing`), and
@@ -76,6 +77,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const [asOfDates, setAsOfDates] = useState<Record<number, string>>({});
   // The hold dates typed on each person's row (blank from: the sheet's today; blank to: open-ended).
   const [holdDates, setHoldDates] = useState<Record<number, { from: string; to: string }>>({});
+  // The flag reason and until-date typed on each person's row (blank until: the sheet's today).
+  const [flagInputs, setFlagInputs] = useState<Record<number, { reason: string; until: string }>>({});
   // The patron picked on each person's row (blank: none picked).
   const [patronPicks, setPatronPicks] = useState<Record<number, string>>({});
   // The person picked on each person's row to merge them into (blank: none picked).
@@ -190,6 +193,12 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     ]),
   });
 
+  // The person whose last flag was refused; cleared by the next action on the row.
+  const flagging = useMutation({
+    mutationFn: (v: { id: number; reason: string; until: string }) => flagPerson(sheetId, user, v.id, v.reason, v.until),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+  });
+
   // The person whose last patron added was refused; cleared by the next action on the row.
   const patronage = useMutation({
     mutationFn: (v: { id: number; patronId: number }) => addPatron(sheetId, user, v.id, v.patronId),
@@ -279,6 +288,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     retirement.reset();
     unretirement.reset();
     holding.reset();
+    flagging.reset();
     patronage.reset();
     aliasing.reset();
     merging.reset();
@@ -350,6 +360,19 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const changeHold = (id: number, patch: Partial<{ from: string; to: string }>) => {
     setHoldDates((d) => ({ ...d, [id]: { from: '', to: '', ...d[id], ...patch } }));
     holding.reset();
+  };
+
+  const flag = (id: number) => {
+    const { reason = '', until = '' } = flagInputs[id] ?? {};
+    stateOnce(() => {
+      resetRowActions();
+      return flagging.mutateAsync({ id, reason, until });
+    });
+  };
+
+  const changeFlag = (id: number, patch: Partial<{ reason: string; until: string }>) => {
+    setFlagInputs((d) => ({ ...d, [id]: { reason: '', until: '', ...d[id], ...patch } }));
+    flagging.reset();
   };
 
   const patronize = (id: number) => {
@@ -643,6 +666,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   {holding.isError && holding.variables?.id === p.id && (
                     <span data-testid="person-error">The person could not be held: the dates must be dates, the to-date not before the from-date.</span>
                   )}
+                  {flagging.isError && flagging.variables?.id === p.id && (
+                    <span data-testid="person-error">The person could not be flagged: only a steward can, with a reason, until a date.</span>
+                  )}
                   {aliasing.isError && aliasing.variables?.id === p.id && (
                     <span data-testid="person-error">The alias could not be added: it needs to be given, and not be a name or alias already in use.</span>
                   )}
@@ -709,6 +735,17 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   <button type="button" data-testid="person-hold-toggle" disabled={holding.isPending}
                     onClick={() => hold(p.id)}>
                     Hold
+                  </button>
+                </td>
+                <td>
+                  Flag <span data-testid="person-flag-shown">{p.flagShown ?? ''}</span>{' '}
+                  <input data-testid="person-flag-reason" value={flagInputs[p.id]?.reason ?? ''} placeholder="reason"
+                    onChange={(e) => changeFlag(p.id, { reason: e.target.value })} />{' '}
+                  <input type="date" data-testid="person-flag-until" value={flagInputs[p.id]?.until ?? ''}
+                    onChange={(e) => changeFlag(p.id, { until: e.target.value })} />{' '}
+                  <button type="button" data-testid="person-flag" disabled={flagging.isPending}
+                    onClick={() => flag(p.id)}>
+                    Flag
                   </button>
                 </td>
                 <td>

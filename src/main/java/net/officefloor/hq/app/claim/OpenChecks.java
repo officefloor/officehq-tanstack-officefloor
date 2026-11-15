@@ -3,6 +3,7 @@ package net.officefloor.hq.app.claim;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.RoleRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 
@@ -16,6 +17,12 @@ public final class OpenChecks {
     public static ClaimStatus opensTo(Claim claim, PersonRepository people, RateRepository rates,
             SettingRepository settings, SheetRepository sheets) throws ClaimStatusException {
         return OpenClaim.opensTo(claim, people, rates, settings, sheets);
+    }
+
+    /** See {@link OpenClaim#requireFlagSteward}. */
+    public static void requireFlagSteward(Claim claim, String by, PersonRepository people, RoleRepository roles)
+            throws ClaimStatusException {
+        OpenClaim.requireFlagSteward(claim, by, people, roles);
     }
 
     /** See {@link OpenClaim#requireNote}. */

@@ -278,4 +278,23 @@ public class Person {
     @JsonIgnore
     public String getStatedAsOf() { return statedAsOf; }
     public void setStatedAsOf(String statedAsOf) { this.statedAsOf = statedAsOf; }
+
+    /** Their flag's reason and until-date (yyyy-MM-dd; both null: never flagged). */
+    private String flagReason;
+    private String flagUntil;
+    @JsonIgnore
+    public String getFlagReason() { return flagReason; }
+    @JsonIgnore
+    public String getFlagUntil() { return flagUntil; }
+    public void setFlag(String reason, String until) {
+        this.flagReason = reason;
+        this.flagUntil = until;
+    }
+    /** Whether their flag is in force: the sheet's today is on or before its until-date. */
+    @JsonIgnore
+    public boolean isFlagged() {
+        return flagUntil != null && today != null && today.toString().compareTo(flagUntil) <= 0;
+    }
+    /** The reason their flag shows while it is in force (null: none). */
+    public String getFlagShown() { return isFlagged() ? flagReason : null; }
 }

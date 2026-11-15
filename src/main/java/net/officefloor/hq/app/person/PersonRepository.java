@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, terms, contact, tags, origin, arrived_on";
+    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, terms, contact, tags, origin, arrived_on, flag_reason, flag_until";
 
     private static final RowMapper<Person> ROW = (rs, n) -> {
         LocalDate stated = rs.getObject("statement_date", LocalDate.class);
@@ -29,6 +29,8 @@ public class PersonRepository {
         person.setOrigin(rs.getString("origin"));
         LocalDate arrived = rs.getObject("arrived_on", LocalDate.class);
         person.setArrivedOn(arrived == null ? null : arrived.toString());
+        LocalDate flagUntil = rs.getObject("flag_until", LocalDate.class);
+        person.setFlag(rs.getString("flag_reason"), flagUntil == null ? null : flagUntil.toString());
         return person;
     };
 
@@ -500,6 +502,12 @@ public class PersonRepository {
         jdbc.update("INSERT INTO person_retired_history (sheet_id, person_id, retired_from, on_date) "
                 + "VALUES (?, ?, NULL, (SELECT today FROM sheet WHERE id = ?))", person.getSheetId(), person.getId(),
                 person.getSheetId());
+    }
+
+    /** Save the person's flag (not an edit: the version stays). */
+    public void updateFlag(Person person) {
+        jdbc.update("UPDATE person SET flag_reason = ?, flag_until = ? WHERE sheet_id = ? AND id = ?",
+                person.getFlagReason(), LocalDate.parse(person.getFlagUntil()), person.getSheetId(), person.getId());
     }
 
     /** Add a hold on the person (not an edit: the version stays). */
