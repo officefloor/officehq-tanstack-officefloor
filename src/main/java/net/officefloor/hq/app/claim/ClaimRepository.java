@@ -18,8 +18,9 @@ import org.springframework.stereotype.Repository;
 public class ClaimRepository {
 
     private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, void_reason, edited_by, settle_batch, "
-            // Deferred now: OPEN and deferred until a date after the sheet's today.
-            + "(status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > "
+            // Deferred now: OPEN (or VOID, voided while deferred: it keeps showing the deferral) and
+            // deferred until a date after the sheet's today.
+            + "(status IN ('OPEN', 'VOID') AND deferred_until IS NOT NULL AND deferred_until > "
             + "(SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred, "
             // The date it rounds by: a correction's is the date of the claim it corrects.
             + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = claim.sheet_id AND k.number = claim.corrects), "

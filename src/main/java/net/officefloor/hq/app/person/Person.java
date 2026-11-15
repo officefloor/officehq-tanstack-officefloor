@@ -38,6 +38,8 @@ public class Person {
     private java.time.LocalDate today;
     /** The ids of the people they name as patrons, in the order named. */
     private java.util.List<Long> patronIds = new java.util.ArrayList<>();
+    /** Their aliases, sorted as names are compared. */
+    private java.util.List<String> aliases = new java.util.ArrayList<>();
     /** The date the statement this request took was taken as of (null: now), for its audit line. */
     private String statedAsOf;
     /** How many claims the statement this request took bound, for its audit line. */
@@ -142,6 +144,8 @@ public class Person {
     public void setHolds(java.util.List<Hold> holds) { this.holds = holds; }
     public java.util.List<Long> getPatronIds() { return patronIds; }
     public void setPatronIds(java.util.List<Long> patronIds) { this.patronIds = patronIds; }
+    public java.util.List<String> getAliases() { return aliases; }
+    public void setAliases(java.util.List<String> aliases) { this.aliases = aliases; }
 
     /** Whether the claim counts in live totals: it counts by status, and is not an open (OPEN or
      *  PENDING) claim dated within one of their holds, or of a person whose retirement date is reached,

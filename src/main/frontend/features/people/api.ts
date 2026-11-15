@@ -28,6 +28,8 @@ export type Person = {
   terms: number | null;
   /** Their contact, trimmed and lower-cased (null: none); no two people on a sheet share one. */
   contact: string | null;
+  /** Their aliases, sorted as names are compared; the quick-add bar and the paste box find them by one. */
+  aliases: string[];
 };
 /** `gradeFrom` is the date an edit's grade applies from (blank: the sheet's today); `terms` their
  *  own terms in whole days (blank: none); `contact` their contact (blank: none). */
@@ -94,6 +96,12 @@ export function holdPerson(sheetId: string, by: string, id: number, from: string
  *  person themselves or a patron already named. */
 export function addPatron(sheetId: string, by: string, id: number, patronId: number): Promise<Person> {
   return postJson<Person>(`${base(sheetId)}/${id}/patrons?by=${encodeURIComponent(by)}`, { patronId });
+}
+
+/** Give the person an alias; refused (rejects) when it is blank or equals, as names are compared,
+ *  any name or alias on the sheet. */
+export function addAlias(sheetId: string, by: string, id: number, alias: string): Promise<Person> {
+  return postJson<Person>(`${base(sheetId)}/${id}/aliases?by=${encodeURIComponent(by)}`, { alias });
 }
 
 export type QuickAddInput = { name: string; amount: string };

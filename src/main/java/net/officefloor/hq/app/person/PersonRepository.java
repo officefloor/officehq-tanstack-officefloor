@@ -42,6 +42,7 @@ public class PersonRepository {
         people.forEach((p) -> byId.put(p.getId(), p));
         withGrades(sheetId, people);
         withHolds(sheetId, people);
+        withAliases(sheetId, people);
         jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY added_at, patron_id",
                 (rs) -> {
                     Person p = byId.get(rs.getLong("person_id"));
@@ -61,6 +62,7 @@ public class PersonRepository {
                     Long.class, sheetId, id)));
             withGrades(sheetId, List.of(person));
             withHolds(sheetId, List.of(person));
+            withAliases(sheetId, List.of(person));
         }
         return person;
     }
@@ -132,6 +134,27 @@ public class PersonRepository {
         people.forEach((p) -> p.setHolds(holds.getOrDefault(p.getId(), new ArrayList<>())));
     }
 
+    /** Give each person their aliases, sorted as names are compared. */
+    private void withAliases(String sheetId, List<Person> people) {
+        if (people.isEmpty()) {
+            return;
+        }
+        Map<Long, List<String>> aliases = new HashMap<>();
+        jdbc.query("SELECT person_id, alias FROM person_alias WHERE sheet_id = ? ORDER BY person_id, alias_key",
+                (rs) -> {
+                    aliases.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(rs.getString("alias"));
+                }, sheetId);
+        people.forEach((p) -> p.setAliases(aliases.getOrDefault(p.getId(), new ArrayList<>())));
+    }
+
+    /** Give the person the alias (stored as given, trimmed). */
+    public void addAlias(Person person, String alias, String user) {
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, added_by) VALUES (?, ?, ?, ?)",
+                person.getSheetId(), person.getId(), alias, user);
+        person.getAliases().add(alias);
+        person.getAliases().sort(String.CASE_INSENSITIVE_ORDER);
+    }
+
     /** Name the patron as one of the person's patrons. */
     public void addPatron(Person person, Person patron, String user) {
         jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, added_by) VALUES (?, ?, ?, ?)",
@@ -139,18 +162,21 @@ public class PersonRepository {
         person.getPatronIds().add(patron.getId());
     }
 
-    /** The person on the sheet with this name, compared ignoring case and surrounding spaces; null when none. */
+    /** The person on the sheet with this name or alias, compared ignoring case and surrounding spaces; null when none. */
     public Person findByName(String sheetId, String name) {
-        Person found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))",
-                ROW, sheetId, name).stream().findFirst().orElse(null);
+        Person found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND (name_key = LOWER(TRIM(?)) "
+                + "OR id IN (SELECT person_id FROM person_alias WHERE sheet_id = ? AND alias_key = LOWER(TRIM(?))))",
+                ROW, sheetId, name, sheetId, name).stream().findFirst().orElse(null);
         return found == null ? null : find(sheetId, found.getId());
     }
 
-    /** Whether another person on the sheet already has this name, compared ignoring case and surrounding spaces. */
+    /** Whether another person on the sheet (not {@code exceptId}) already has this name, or anyone
+     *  on the sheet has it as an alias, compared ignoring case and surrounding spaces. */
     public boolean nameTaken(String sheetId, String name, Long exceptId) {
         Integer n = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?)) AND (? IS NULL OR id <> ?)",
-                Integer.class, sheetId, name, exceptId, exceptId);
+                "SELECT (SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?)) AND (? IS NULL OR id <> ?)) "
+                        + "+ (SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND alias_key = LOWER(TRIM(?)))",
+                Integer.class, sheetId, name, exceptId, exceptId, sheetId, name);
         return n != null && n > 0;
     }
 

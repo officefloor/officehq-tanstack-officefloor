@@ -16,7 +16,7 @@ import { BulkGrade } from './BulkGrade';
 import { ExportPeople } from './ExportPeople';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
-import { GRADES, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, peopleKey, retirePerson, takeStatement, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, peopleKey, retirePerson, takeStatement, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '' };
 
@@ -27,7 +27,8 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
  *  they are retired and from when (with a date and a button that retires them), whether they have
  *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
- *  patrons (names sorted, with a picker that names one more) and backing (see `backing`), and
+ *  patrons (names sorted, with a picker that names one more), their aliases (sorted as names are
+ *  compared, with an entry and a button that adds one) and backing (see `backing`), and
  *  their due-total for each period (see `personPeriodDue`), the due of their open claims by age (see `agedDues`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
  *  with a checkbox that selects it for a button that opens the selected claims together.
  *  Each person has a checkbox that selects them for a grade given to the selected people together.
@@ -60,6 +61,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const [holdDates, setHoldDates] = useState<Record<number, { from: string; to: string }>>({});
   // The patron picked on each person's row (blank: none picked).
   const [patronPicks, setPatronPicks] = useState<Record<number, string>>({});
+  // The alias typed on each person's row.
+  const [aliasInputs, setAliasInputs] = useState<Record<number, string>>({});
   // The people selected for a bulk grade.
   const [selectedPeople, setSelectedPeople] = useState<ReadonlySet<number>>(new Set());
   const selectPerson = (id: number, on: boolean) => setSelectedPeople((s) => {
@@ -155,6 +158,15 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
   });
 
+  // The person whose last alias added was refused; cleared by the next action on the row.
+  const aliasing = useMutation({
+    mutationFn: (v: { id: number; alias: string }) => addAlias(sheetId, user, v.id, v.alias),
+    onSuccess: (_, v) => {
+      setAliasInputs((d) => ({ ...d, [v.id]: '' }));
+      return queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+    },
+  });
+
   // The person whose last watch was refused; cleared by the next action on the row.
   const watching = useMutation({
     mutationFn: (v: { id: number; on: boolean }) => watchPerson(sheetId, user, v.id, v.on),
@@ -168,6 +180,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     retirement.reset();
     holding.reset();
     patronage.reset();
+    aliasing.reset();
   };
 
   const state = (id: number) => {
@@ -217,6 +230,14 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     stateOnce(() => {
       resetRowActions();
       return patronage.mutateAsync({ id, patronId });
+    });
+  };
+
+  const alias = (id: number) => {
+    const typed = aliasInputs[id] ?? '';
+    stateOnce(() => {
+      resetRowActions();
+      return aliasing.mutateAsync({ id, alias: typed });
     });
   };
 
@@ -402,6 +423,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   {holding.isError && holding.variables?.id === p.id && (
                     <span data-testid="person-error">The person could not be held: the dates must be dates, the to-date not before the from-date.</span>
                   )}
+                  {aliasing.isError && aliasing.variables?.id === p.id && (
+                    <span data-testid="person-error">The alias could not be added: it needs to be given, and not be a name or alias already in use.</span>
+                  )}
                 </td>
                 <td>
                   Watched <span data-testid="person-watched">{watched.has(p.id) ? 'yes' : 'no'}</span>{' '}
@@ -435,6 +459,18 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   <button type="button" data-testid="person-hold-toggle" disabled={holding.isPending}
                     onClick={() => hold(p.id)}>
                     Hold
+                  </button>
+                </td>
+                <td>
+                  Aliases <span data-testid="person-aliases">{p.aliases.join(', ')}</span>{' '}
+                  <input data-testid="person-alias-input" value={aliasInputs[p.id] ?? ''}
+                    onChange={(e) => {
+                      setAliasInputs((d) => ({ ...d, [p.id]: e.target.value }));
+                      aliasing.reset();
+                    }} />{' '}
+                  <button type="button" data-testid="person-alias-add" disabled={aliasing.isPending}
+                    onClick={() => alias(p.id)}>
+                    Add alias
                   </button>
                 </td>
                 <td>

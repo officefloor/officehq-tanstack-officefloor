@@ -120,7 +120,8 @@ public class Claim {
     /** The date it was last deferred until (yyyy-MM-dd; none: never deferred). */
     public String getDeferredUntil() { return deferredUntil; }
 
-    /** Whether it is deferred on the sheet's today: OPEN and deferred until a later date. A deferred
+    /** Whether it is deferred on the sheet's today: OPEN (or VOID, voided while deferred) and deferred
+     *  until a later date. A deferred
      *  claim counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
     public boolean isDeferred() { return deferred; }
 

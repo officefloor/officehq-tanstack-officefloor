@@ -27,7 +27,7 @@ export const isBound = (c: Claim) => c.stated && c.statedDue !== null && c.statu
  *  grade in force on that date (the grade's own, else the sheet's). `log` is its status log, oldest
  *  first: `<STATUS> by <user> on <date> due=<due>`, the sheet's today and its due at each change.
  *  `deferredUntil` is the date it was last deferred until (null: never), and `deferred` whether it is
- *  deferred on the sheet's today (OPEN and deferred until a later date): a deferred claim counts in no
+ *  deferred on the sheet's today (OPEN, or VOID voided while deferred, and deferred until a later date): a deferred claim counts in no
  *  total, is not overdue, cannot be settled and is left unbound by a statement. `proofs` is how many
  *  proofs it has: one whose due is above the proof threshold in force on its date cannot be settled or
  *  approved with none. */
