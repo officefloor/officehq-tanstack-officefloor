@@ -1,0 +1,73 @@
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index ee6dc0fcf..5d7f59f27 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -8,7 +8,7 @@ import { BulkSettle } from '../claims/BulkSettle';
+ import { PersonClaims } from '../claims/PersonClaims';
+ import { backing, claimsKey, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
+ import { listPeriods, periodsKey, personPeriodDue } from '../periods/api';
+-import { claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
++import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
+ import { useCap, useFloor, useLate } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+ import { BulkGrade } from './BulkGrade';
+@@ -27,7 +27,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '' };
+  *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
+  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
+  *  patrons (names sorted, with a picker that names one more) and backing (see `backing`), and
+- *  their due-total for each period (see `personPeriodDue`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
++ *  their due-total for each period (see `personPeriodDue`), the due of their open claims by age (see `agedDues`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
+  *  with a checkbox that selects it for a button that opens the selected claims together.
+  *  Each person has a checkbox that selects them for a grade given to the selected people together.
+  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
+@@ -312,6 +312,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+             const claimed = sumAmounts(live);
+             const pct = byGrade.get(p.grade);
+             const late = overdue(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
++            const aged = agedDues(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
+             return (
+               <tr key={p.id} data-testid={`person-row-${p.id}`}>
+                 <td>
+@@ -339,6 +340,11 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                       {personPeriodDue(q, p, claims.data ?? [], people.data, rates.data, floor, charges)}</span>
+                   </td>
+                 ))}
++                <td>
++                  Aged 0-30 <span data-testid="person-aged-0-30">{aged.upTo30}</span>{' '}
++                  31-60 <span data-testid="person-aged-31-60">{aged.upTo60}</span>{' '}
++                  61+ <span data-testid="person-aged-61">{aged.over60}</span>
++                </td>
+                 <td>
+                   Overdue <span data-testid="person-overdue-count">{late.count}</span>{' '}
+                   totalling <span data-testid="person-overdue-total">{late.total}</span>
+diff --git a/src/main/frontend/features/rates/api.ts b/src/main/frontend/features/rates/api.ts
+index 3a87dcf9d..fd2be9ec9 100644
+--- a/src/main/frontend/features/rates/api.ts
++++ b/src/main/frontend/features/rates/api.ts
+@@ -1,5 +1,5 @@
+ import { getJson, postJson } from '../../api/http';
+-import { counts, dueBy, isBound, isCorrection, isOverdue, type Claim } from '../claims/api';
++import { counts, dueBy, isBound, isCorrection, isOpen, isOverdue, type Claim } from '../claims/api';
+ import { sheetKey } from '../sheet/api';
+ import type { DatedOn } from '../settings/api';
+ 
+@@ -146,6 +146,19 @@ export function overdue(claims: Claim[], today: string, dueOfClaim: (c: Claim) =
+   return { count: late.length, total: sumDues(late.map(dueOfClaim)) };
+ }
+ 
++/** The due of the open (OPEN or PENDING) claims among those that count (`claims`, the live ones), split by
++ *  their age on the sheet's `today` (the days from the claim's date): 0 to 30, 31 to 60, and 61 or more
++ *  (one dated after today is 0 to 30); n/a ones skipped. */
++export function agedDues(claims: Claim[], today: string, dueOfClaim: (c: Claim) => string | null) {
++  const buckets: Array<Array<string | null>> = [[], [], []];
++  const now = Date.parse(`${today}T00:00:00Z`);
++  for (const c of claims.filter(isOpen)) {
++    const age = today === '' ? 0 : Math.round((now - Date.parse(`${c.date}T00:00:00Z`)) / 86_400_000);
++    buckets[age <= 30 ? 0 : age <= 60 ? 1 : 2].push(dueOfClaim(c));
++  }
++  return { upTo30: sumDues(buckets[0]), upTo60: sumDues(buckets[1]), over60: sumDues(buckets[2]) };
++}
++
+ /** Add up two-decimal dues, skipping n/a. */
+ export function sumDues(dues: Array<string | null>): string {
+   return formatCents(dues.reduce<bigint>((t, d) => (d === null ? t : t + hundredths(d)), 0n));
