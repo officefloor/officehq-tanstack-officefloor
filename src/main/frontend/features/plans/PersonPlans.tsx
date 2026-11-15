@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
-import { addPlan, listPlans, plansKey, type PlanInput } from './api';
+import { addPlan, listPlans, pausePlan, plansKey, type Plan, type PlanInput } from './api';
 import { Fig } from '../session/Fig';
 
 const EMPTY: PlanInput = { amount: '', start: '', every: '', day: '', end: '' };
 
-/** A person's plans (each its amount, start, every N days or day of the month, end, how many claims it has made so far and its next dates)
+/** A person's plans (each its amount, start, every N days or day of the month, end, how many claims it has made so far, its next dates and whether it is paused, with pause and resume buttons)
  *  and a form that adds one; a refused add shows an error on the row and adds nothing. */
 export function PersonPlans({ sheetId, user, personId }: { sheetId: string; user: string; personId: number }) {
   const queryClient = useQueryClient();
@@ -42,6 +42,7 @@ export function PersonPlans({ sheetId, user, personId }: { sheetId: string; user
               <td>to <span data-testid="plan-end">{pl.end}</span></td>
               <td>made <span data-testid="plan-generated">{pl.generated}</span></td>
               <td>next <span data-testid="plan-next-dates">{(pl.nextDates ?? []).join(', ')}</span></td>
+              <PlanPause sheetId={sheetId} user={user} plan={pl} />
             </tr>
           ))}
         </tbody>
@@ -74,5 +75,30 @@ export function PersonPlans({ sheetId, user, personId }: { sheetId: string; user
         )}
       </form>
     </div>
+  );
+}
+
+/** The plan's paused yes/no and its pause and resume buttons; a refused pause or resume shows an error on the row. */
+function PlanPause({ sheetId, user, plan }: { sheetId: string; user: string; plan: Plan }) {
+  const queryClient = useQueryClient();
+  const submitOnce = useSubmitOnce();
+  const pause = useMutation({
+    mutationFn: (on: boolean) => pausePlan(sheetId, user, plan.id, on),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: plansKey(sheetId) }),
+  });
+  const act = (on: boolean) => submitOnce(() => {
+    pause.reset();
+    return pause.mutateAsync(on);
+  });
+
+  return (
+    <td>
+      paused <span data-testid="plan-paused">{plan.paused ? 'yes' : 'no'}</span>{' '}
+      <button type="button" data-testid="plan-pause" disabled={pause.isPending} onClick={() => act(true)}>Pause</button>{' '}
+      <button type="button" data-testid="plan-resume" disabled={pause.isPending} onClick={() => act(false)}>Resume</button>
+      {pause.isError && (
+        <span data-testid="plan-error">A paused plan cannot be paused again, nor a running plan resumed.</span>
+      )}
+    </td>
   );
 }

@@ -21,7 +21,7 @@ public class PlanRepository {
     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount").setScale(2), rs.getDate("start_date").toLocalDate(),
             rs.getObject("every_days", Integer.class), rs.getObject("month_day", Integer.class),
-            rs.getDate("end_date").toLocalDate(), rs.getString("added_by"), rs.getInt("made"));
+            rs.getDate("end_date").toLocalDate(), rs.getString("added_by"), rs.getInt("made"), List.of());
 
     private final JdbcTemplate jdbc;
 
@@ -31,12 +31,31 @@ public class PlanRepository {
 
     /** The sheet's plans, in the order they were added. */
     public List<Plan> list(String sheetId) {
-        return jdbc.query(SELECT + "WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId);
+        return jdbc.query(SELECT + "WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId).stream()
+                .map(this::withPauses).toList();
     }
 
     public Plan find(long id) {
         List<Plan> found = jdbc.query(SELECT + "WHERE p.id = ?", ROW, id);
-        return found.isEmpty() ? null : found.get(0);
+        return found.isEmpty() ? null : withPauses(found.get(0));
+    }
+
+    private Plan withPauses(Plan plan) {
+        return plan.withPauses(jdbc.query("SELECT paused_on, resumed_on FROM plan_pause WHERE plan_id = ? ORDER BY id",
+                (rs, n) -> new PlanPause(rs.getDate("paused_on").toLocalDate(),
+                        rs.getDate("resumed_on") == null ? null : rs.getDate("resumed_on").toLocalDate()),
+                plan.id()));
+    }
+
+    /** Pauses the plan from that day. */
+    public void pause(long planId, LocalDate day) {
+        jdbc.update("INSERT INTO plan_pause (plan_id, paused_on) VALUES (?, ?)", planId, Date.valueOf(day));
+    }
+
+    /** Resumes the plan's open pause on that day. */
+    public void resume(long planId, LocalDate day) {
+        jdbc.update("UPDATE plan_pause SET resumed_on = ? WHERE plan_id = ? AND resumed_on IS NULL",
+                Date.valueOf(day), planId);
     }
 
     /** Adds the plan to the person. */
