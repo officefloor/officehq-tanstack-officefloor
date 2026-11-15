@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -12,7 +14,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** Adds a person of the sheet, or another pool of the sheet, to the pool with a share percent (at most two
  *  decimals, more than 0.00 and at most 100.00): refused (nothing written) for no such pool or person, a
  *  person already in the pool, or a bad share; and for a pool that is already a member of a pool, that
- *  would contain itself through any chain, or that would make a chain of pools more than three deep. */
+ *  would contain itself through any chain, or that would make a chain of pools more than three deep. The
+ *  membership may run from and/or to a date (optional); refused for a date that is not one, or a to-date
+ *  before the from-date. */
 public class AddPoolMember {
 
     private static final Pattern SHARE = Pattern.compile("\\d+(\\.\\d{1,2})?");
@@ -55,13 +59,18 @@ public class AddPoolMember {
         if (share.signum() <= 0 || share.compareTo(MAX) > 0) {
             throw new InvalidPoolException("A share is more than 0.00 and at most 100.00");
         }
+        String from = date(request.from());
+        String to = date(request.to());
+        if (from != null && to != null && to.compareTo(from) < 0) {
+            throw new InvalidPoolException("The membership ends before it starts: " + from + " to " + to);
+        }
         String user = by == null ? "" : by;
         if (person != null) {
             if (pools.hasMember(poolId, person.getId())) {
                 throw new InvalidPoolException(person.getName() + " is already in " + pool);
             }
-            pools.addMember(id, poolId, person.getId(), share, user);
-            added.set(new PoolMemberAdded(id, pool, person.getName(), share.toPlainString(), user));
+            pools.addMember(id, poolId, person.getId(), share, from, to, user);
+            added.set(new PoolMemberAdded(id, pool, person.getName(), share.toPlainString(), from, to, user));
             return;
         }
         long child = request.memberPoolId();
@@ -78,8 +87,21 @@ public class AddPoolMember {
         if (level + height(pools, child, 1) > MAX_DEPTH) {
             throw new InvalidPoolException("A chain of pools is at most " + MAX_DEPTH + " deep");
         }
-        pools.addPoolMember(id, poolId, child, share, user);
-        added.set(new PoolMemberAdded(id, pool, memberPool, share.toPlainString(), user));
+        pools.addPoolMember(id, poolId, child, share, from, to, user);
+        added.set(new PoolMemberAdded(id, pool, memberPool, share.toPlainString(), from, to, user));
+    }
+
+    /** The date as yyyy-mm-dd, or null when blank. */
+    private static String date(String text) throws InvalidPoolException {
+        String value = text == null ? "" : text.trim();
+        if (value.isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(value).toString();
+        } catch (DateTimeParseException e) {
+            throw new InvalidPoolException("Not a date: " + value);
+        }
     }
 
     /** The most pools in a chain down from {@code poolId}, itself counting as one (stops past the limit). */

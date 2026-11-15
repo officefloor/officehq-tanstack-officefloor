@@ -10,7 +10,8 @@ import type { MemberRef, Pool } from './api';
  *  lists its members with their shares, its total share (a retired member's counting as 0.00) and
  *  whether it is balanced (exactly 100.00), each member's cut of
  *  the pool's pot (blank when unbalanced or no pot), and adds a member — a person or another pool, listed
- *  as pool:<name> — from its row. A pool that is a member of another cuts its cut there. */
+ *  as pool:<name> — from its row, with optional from/to dates (a member whose dates leave out the sheet's
+ *  today counts for nothing and has no cut). A pool that is a member of another cuts its cut there. */
 export function Pools({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const pools = useQuery({ queryKey: poolsKey(sheetId), queryFn: () => listPools(sheetId) });
@@ -70,13 +71,17 @@ function PoolRow({ sheetId, user, pool, people, pools }: { sheetId: string; user
   const queryClient = useQueryClient();
   const [member, setMember] = useState('');
   const [share, setShare] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
 
   const add = useMutation({
-    mutationFn: (input: { member: MemberRef; share: string }) =>
-      addPoolMember(sheetId, user, pool.id, input.member, input.share),
+    mutationFn: (input: { member: MemberRef; share: string; from: string; to: string }) =>
+      addPoolMember(sheetId, user, pool.id, input.member, input.share, input.from, input.to),
     onSuccess: (data) => {
       setMember('');
       setShare('');
+      setFrom('');
+      setTo('');
       queryClient.setQueryData(poolsKey(sheetId), data);
     },
   });
@@ -93,6 +98,7 @@ function PoolRow({ sheetId, user, pool, people, pools }: { sheetId: string; user
           <li key={m.poolId !== null ? `pool-${m.poolId}` : m.personId}
             data-testid={`pool-member-${pool.name}-${m.poolId !== null ? `pool-${m.name}` : m.personId}`}>
             {m.poolId !== null ? `pool:${m.name}` : m.name}{m.retired ? ' (retired)' : ''} share <span data-testid="pool-share">{m.share}</span>{' '}
+            {m.from || m.to ? `${m.from ?? '…'} to ${m.to ?? '…'}${m.current ? '' : ' (not current)'} ` : ''}
             cut <span data-testid="pool-cut">{m.cut}</span>
           </li>
         ))}
@@ -100,7 +106,7 @@ function PoolRow({ sheetId, user, pool, people, pools }: { sheetId: string; user
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          const input = { member: memberRef(member), share };
+          const input = { member: memberRef(member), share, from, to };
           submitOnce(() => {
             add.reset();
             return add.mutateAsync(input);
@@ -125,11 +131,21 @@ function PoolRow({ sheetId, user, pool, people, pools }: { sheetId: string; user
             setShare(e.target.value);
             add.reset();
           }} />{' '}
+        <input type="date" data-testid="pool-member-from" value={from}
+          onChange={(e) => {
+            setFrom(e.target.value);
+            add.reset();
+          }} />{' '}
+        <input type="date" data-testid="pool-member-to" value={to}
+          onChange={(e) => {
+            setTo(e.target.value);
+            add.reset();
+          }} />{' '}
         <button type="submit" data-testid="pool-member-add" disabled={add.isPending}>
           Add member
         </button>
         {add.isError && (
-          <span data-testid="pool-error">The member could not be added: a person not already in the pool, or a pool not already in one that keeps chains acyclic and at most three deep, with a share more than 0.00 and at most 100.00 (two decimals).</span>
+          <span data-testid="pool-error">The member could not be added: a person not already in the pool, or a pool not already in one that keeps chains acyclic and at most three deep, with a share more than 0.00 and at most 100.00 (two decimals), and a to-date not before the from-date.</span>
         )}
       </form>
     </li>

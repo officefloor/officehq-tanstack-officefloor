@@ -5,8 +5,11 @@ import { sheetKey } from '../sheet/api';
  *  percent (two decimals); a `retired` member's share counts as 0.00 toward the pool's total. `cut` is
  *  their cut of the pool's pot (two decimals; a retired member's or one on a hold in force on the sheet's
  *  today 0.00, their share spread over the others in proportion; the remainder going to the largest share), "" when the pool is unbalanced or has no pot. A pool that is a member of none cuts the sheet's
- *  pot; a member pool cuts its own cut in the pool above. */
-export type PoolMember = { personId: number | null; poolId: number | null; name: string; share: string; retired: boolean; cut: string };
+ *  pot; a member pool cuts its own cut in the pool above. `from`/`to` are the dates the membership runs
+ *  (null: no bound); a member that is not `current` (its dates leave out the sheet's today) is left out of
+ *  the total share and has no cut (""). */
+export type PoolMember = { personId: number | null; poolId: number | null; name: string; share: string; retired: boolean;
+  from: string | null; to: string | null; current: boolean; cut: string };
 
 /** A pool on the sheet: its members in the order added, the total of their shares and whether that
  *  total is exactly 100.00 (`balanced`). */
@@ -32,9 +35,11 @@ export type MemberRef = { personId: number } | { memberPoolId: number };
 
 /** Add a person or another pool to a pool with a share percent; refused (rejects) for a person already in
  *  the pool, a share that is not more than 0.00 and at most 100.00 with at most two decimals, or a pool
- *  already a member of a pool, that would contain itself or make a chain of pools more than three deep. */
-export function addPoolMember(sheetId: string, by: string, poolId: number, member: MemberRef, share: string): Promise<Pool[]> {
-  return postJson<Pool[]>(`${base(sheetId)}/${poolId}/members?by=${encodeURIComponent(by)}`, { ...member, share });
+ *  already a member of a pool, that would contain itself or make a chain of pools more than three deep, or
+ *  a to-date before the from-date (both optional, blank: none). */
+export function addPoolMember(sheetId: string, by: string, poolId: number, member: MemberRef, share: string,
+  from: string, to: string): Promise<Pool[]> {
+  return postJson<Pool[]>(`${base(sheetId)}/${poolId}/members?by=${encodeURIComponent(by)}`, { ...member, share, from, to });
 }
 
 /** Add up cuts (two decimals) in cents, a blank cut adding nothing. */

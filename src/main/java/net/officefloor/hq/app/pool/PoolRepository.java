@@ -38,7 +38,9 @@ public class PoolRepository {
             members.put(rs.getLong("id"), new ArrayList<>());
         }, sheetId);
         jdbc.query("SELECT m.pool_id, m.person_id, m.member_pool_id, COALESCE(p.name, q.name) AS name, m.share, "
-                + "p.retired_from FROM pool_member m LEFT JOIN person p ON p.id = m.person_id "
+                + "p.retired_from, m.from_date, m.to_date, CASE WHEN (m.from_date IS NULL OR m.from_date <= s.today) "
+                + "AND (m.to_date IS NULL OR m.to_date >= s.today) THEN TRUE ELSE FALSE END AS current "
+                + "FROM pool_member m JOIN sheet s ON s.id = m.sheet_id LEFT JOIN person p ON p.id = m.person_id "
                 + "LEFT JOIN pool q ON q.id = m.member_pool_id WHERE m.sheet_id = ? ORDER BY m.id", rs -> {
                     List<PoolMember> of = members.get(rs.getLong("pool_id"));
                     if (of != null) {
@@ -47,7 +49,10 @@ public class PoolRepository {
                         if (poolId != null) parents.put(poolId, rs.getLong("pool_id"));
                         of.add(new PoolMember(personId, poolId, rs.getString("name"),
                                 rs.getBigDecimal("share").setScale(2).toPlainString(),
-                                rs.getObject("retired_from") != null, ""));
+                                rs.getObject("retired_from") != null,
+                                rs.getObject("from_date") == null ? null : rs.getDate("from_date").toLocalDate().toString(),
+                                rs.getObject("to_date") == null ? null : rs.getDate("to_date").toLocalDate().toString(),
+                                rs.getBoolean("current"), ""));
                     }
                 }, sheetId);
         BigDecimal pot = settings.pot(sheetId);
@@ -58,7 +63,7 @@ public class PoolRepository {
         for (Map.Entry<Long, List<PoolMember>> pool : members.entrySet()) {
             BigDecimal total = BigDecimal.ZERO.setScale(2);
             for (PoolMember m : pool.getValue()) {
-                if (!m.retired()) total = total.add(new BigDecimal(m.share()));
+                if (!m.retired() && m.current()) total = total.add(new BigDecimal(m.share()));
             }
             totals.put(pool.getKey(), total);
         }
@@ -95,7 +100,8 @@ public class PoolRepository {
     }
 
     /** The members with their cuts of the pot. A member with a cut is one neither retired nor on a hold in
-     *  force on the sheet's today ({@code held}); the others' cut is 0.00. Each member with a cut gets the pot
+     *  force on the sheet's today ({@code held}); the others' cut is 0.00, but a member whose dates do not
+     *  include the sheet's today is left out entirely (cut ""). Each member with a cut gets the pot
      *  times their share over the shares of the members with a cut added up, rounded half to even to two
      *  decimals; the remainder goes to the member with a cut with the largest share (the earliest added on a
      *  tie), so the cuts total exactly the pot (all 0.00 when no member has a cut). */
@@ -105,7 +111,7 @@ public class PoolRepository {
         BigDecimal shares = BigDecimal.ZERO.setScale(2);
         for (int i = 0; i < members.size(); i++) {
             PoolMember m = members.get(i);
-            cutting[i] = !m.retired() && (m.personId() == null || !held.contains(m.personId()));
+            cutting[i] = m.current() && !m.retired() && (m.personId() == null || !held.contains(m.personId()));
             if (cutting[i]) shares = shares.add(new BigDecimal(m.share()));
         }
         BigDecimal sum = BigDecimal.ZERO.setScale(2);
@@ -121,7 +127,9 @@ public class PoolRepository {
         }
         if (largest >= 0) cuts[largest] = cuts[largest].add(pot.subtract(sum));
         List<PoolMember> cut = new ArrayList<>();
-        for (int i = 0; i < members.size(); i++) cut.add(members.get(i).withCut(cuts[i].toPlainString()));
+        for (int i = 0; i < members.size(); i++) {
+            cut.add(members.get(i).withCut(members.get(i).current() ? cuts[i].toPlainString() : ""));
+        }
         return cut;
     }
 
@@ -157,18 +165,24 @@ public class PoolRepository {
                 + "AND member_pool_id IS NOT NULL ORDER BY id", Long.class, poolId);
     }
 
-    public void addPoolMember(String sheetId, long poolId, long memberPoolId, BigDecimal share, String by) {
-        jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, member_pool_id, share, added_by) VALUES (?, ?, ?, ?, ?)",
-                sheetId, poolId, memberPoolId, share, by);
+    public void addPoolMember(String sheetId, long poolId, long memberPoolId, BigDecimal share, String from,
+            String to, String by) {
+        jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, member_pool_id, share, from_date, to_date, added_by) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?)", sheetId, poolId, memberPoolId, share, date(from), date(to), by);
     }
 
     public void add(String sheetId, String name, String by) {
         jdbc.update("INSERT INTO pool (sheet_id, name, added_by) VALUES (?, ?, ?)", sheetId, name, by);
     }
 
-    public void addMember(String sheetId, long poolId, long personId, BigDecimal share, String by) {
-        jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, person_id, share, added_by) VALUES (?, ?, ?, ?, ?)",
-                sheetId, poolId, personId, share, by);
+    public void addMember(String sheetId, long poolId, long personId, BigDecimal share, String from, String to,
+            String by) {
+        jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, person_id, share, from_date, to_date, added_by) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?)", sheetId, poolId, personId, share, date(from), date(to), by);
+    }
+
+    private static java.sql.Date date(String value) {
+        return value == null ? null : java.sql.Date.valueOf(value);
     }
 
     /** Move the person {@code fromId}'s pool memberships to {@code intoId}: their share added to
