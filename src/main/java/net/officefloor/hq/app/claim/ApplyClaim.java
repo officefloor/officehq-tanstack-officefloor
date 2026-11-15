@@ -39,5 +39,6 @@ public class ApplyClaim {
         claim.setNote(request.note());
         claim.setRef(request.ref());
         claim.setTags(request.tags());
+        claim.setEditedBy(by == null ? "" : by);
     }
 }

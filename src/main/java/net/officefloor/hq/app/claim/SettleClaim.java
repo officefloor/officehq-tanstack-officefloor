@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /** Settles a claim, fixing its due: its amount at its person's grade's rate in force on its date, rounded by the sheet's policy date to
  *  two decimals (a claim bound by a statement: the figure it was bound to). With no rate the due is not
- *  fixed and stays live. Its late charge on the sheet's today is added, then the sheet's floor applied last, and fixed with it. Refused for the user who opened it (four eyes), and for a claim
+ *  fixed and stays live. Its late charge on the sheet's today is added, then the sheet's floor applied last, and fixed with it. Refused for the user who opened it or last edited it (four eyes), and for a claim
  *  that is not OPEN, and for a role the permission matrix does not let settle. Settled by a clerk when the due is above the sheet's clerk limit (a due that is n/a is within any limit; a steward settles
  *  anything), it goes to PENDING instead (after the proof threshold: one above it with no proofs is refused), nothing fixed, until a steward approves or rejects it. */
 public class SettleClaim {
@@ -46,6 +46,9 @@ public class SettleClaim {
         ClaimStatus settled = ClaimStatus.OPEN.moveTo(ClaimStatus.SETTLED);
         if (claim.getOpenedBy() != null && claim.getOpenedBy().equals(by == null ? "" : by)) {
             throw new ClaimStatusException("The user who opened a claim cannot settle it");
+        }
+        if (claim.getEditedBy() != null && claim.getEditedBy().equals(by == null ? "" : by)) {
+            throw new ClaimStatusException("The user who last edited a claim cannot settle it");
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),

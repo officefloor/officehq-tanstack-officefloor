@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /** Approves a PENDING claim: it becomes SETTLED, its due fixed at the figure it shows at that moment
  *  (its live figure, a statement does not bind a PENDING claim, with its late charge on the sheet's
- *  today). Refused unless the user is a steward, and for the user who opened it, and for one
+ *  today). Refused unless the user is a steward, and for the user who opened it or last edited it, and for one
  *  with no proofs whose due is above the proof threshold in force on its date. */
 public class ApproveClaim {
     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
@@ -33,6 +33,9 @@ public class ApproveClaim {
         }
         if (claim.getOpenedBy() != null && claim.getOpenedBy().equals(user)) {
             throw new ClaimStatusException("The user who opened a claim cannot approve it");
+        }
+        if (claim.getEditedBy() != null && claim.getEditedBy().equals(user)) {
+            throw new ClaimStatusException("The user who last edited a claim cannot approve it");
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),

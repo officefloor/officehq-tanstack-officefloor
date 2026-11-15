@@ -38,6 +38,7 @@ public class Claim {
     private String ref;
     private String tags;
     private String voidReason;
+    private String editedBy;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, String number, String settledDue, String openedBy) {
@@ -84,6 +85,10 @@ public class Claim {
 
     public String getOpenedBy() { return openedBy; }
     public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
+
+    /** The user who last edited it (none: never edited); like its opener, they may not settle or approve it. */
+    public String getEditedBy() { return editedBy; }
+    public void setEditedBy(String editedBy) { this.editedBy = editedBy; }
 
     public String getCorrects() { return corrects; }
     public void setCorrects(String corrects) { this.corrects = corrects; }
