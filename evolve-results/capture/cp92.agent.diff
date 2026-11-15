@@ -1,0 +1,139 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index 11039f48d..a74938dc8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -39,5 +39,6 @@ public class ApplyClaim {
+         claim.setNote(request.note());
+         claim.setRef(request.ref());
+         claim.setTags(request.tags());
++        claim.setEditedBy(by == null ? "" : by);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
+index e3fd2b843..fd9f2dc30 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
+@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** Approves a PENDING claim: it becomes SETTLED, its due fixed at the figure it shows at that moment
+  *  (its live figure, a statement does not bind a PENDING claim, with its late charge on the sheet's
+- *  today). Refused unless the user is a steward, and for the user who opened it, and for one
++ *  today). Refused unless the user is a steward, and for the user who opened it or last edited it, and for one
+  *  with no proofs whose due is above the proof threshold in force on its date. */
+ public class ApproveClaim {
+     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
+@@ -34,6 +34,9 @@ public class ApproveClaim {
+         if (claim.getOpenedBy() != null && claim.getOpenedBy().equals(user)) {
+             throw new ClaimStatusException("The user who opened a claim cannot approve it");
+         }
++        if (claim.getEditedBy() != null && claim.getEditedBy().equals(user)) {
++            throw new ClaimStatusException("The user who last edited a claim cannot approve it");
++        }
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+         Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),
+                 LocalDate.parse(claim.getDate()));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 2c14d4c95..925b487ef 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -38,6 +38,7 @@ public class Claim {
+     private String ref;
+     private String tags;
+     private String voidReason;
++    private String editedBy;
+ 
+     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
+             String status, String number, String settledDue, String openedBy) {
+@@ -85,6 +86,10 @@ public class Claim {
+     public String getOpenedBy() { return openedBy; }
+     public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
+ 
++    /** The user who last edited it (none: never edited); like its opener, they may not settle or approve it. */
++    public String getEditedBy() { return editedBy; }
++    public void setEditedBy(String editedBy) { this.editedBy = editedBy; }
++
+     public String getCorrects() { return corrects; }
+     public void setCorrects(String corrects) { this.corrects = corrects; }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index a49283cb1..53e0e2ef0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class ClaimRepository {
+ 
+-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, void_reason, "
++    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, void_reason, edited_by, "
+             // Deferred now: OPEN and deferred until a date after the sheet's today.
+             + "(status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > "
+             + "(SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred, "
+@@ -22,7 +22,7 @@ public class ClaimRepository {
+             + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = claim.sheet_id AND k.number = claim.corrects), "
+             + "claim_date) AS round_date";
+ 
+-    private static final RowMapper<Claim> ROW = (rs, n) -> withVoidReason(withTags(withRef(withReminded(withCorrects(new Claim(rs.getLong("id"),
++    private static final RowMapper<Claim> ROW = (rs, n) -> withEditedBy(withVoidReason(withTags(withRef(withReminded(withCorrects(new Claim(rs.getLong("id"),
+             rs.getString("sheet_id"), rs.getLong("person_id"),
+             rs.getBigDecimal("amount").setScale(2).toPlainString(),
+             rs.getObject("claim_date", LocalDate.class).toString(), rs.getString("note"),
+@@ -35,7 +35,12 @@ public class ClaimRepository {
+             rs.getObject("round_date", LocalDate.class).toString(),
+             rs.getObject("due_by", LocalDate.class).toString(),
+             rs.getObject("deferred_until", LocalDate.class), rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"), rs.getString("locked_by"), rs.getBoolean("late_entry")),
+-            rs.getObject("reminded_on", LocalDate.class)), rs.getString("ref")), rs.getString("tags")), rs.getString("void_reason"));
++            rs.getObject("reminded_on", LocalDate.class)), rs.getString("ref")), rs.getString("tags")), rs.getString("void_reason")), rs.getString("edited_by"));
++
++    private static Claim withEditedBy(Claim claim, String editedBy) {
++        claim.setEditedBy(editedBy);
++        return claim;
++    }
+ 
+     private static Claim withVoidReason(Claim claim, String voidReason) {
+         claim.setVoidReason(voidReason);
+@@ -154,12 +159,12 @@ public class ClaimRepository {
+     }
+ 
+     public void update(Claim claim) {
+-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, settled_due = ?, opened_by = ?, corrects = ?, ref = ?, ref_key = ?, tags = ?, void_reason = ? WHERE sheet_id = ? AND id = ?",
++        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, settled_due = ?, opened_by = ?, corrects = ?, ref = ?, ref_key = ?, tags = ?, void_reason = ?, edited_by = ? WHERE sheet_id = ? AND id = ?",
+                 new BigDecimal(claim.getAmount()), LocalDate.parse(claim.getDate()), claim.getNote(),
+                 claim.getStatus(), claim.getNumber(),
+                 claim.getSettledDue() == null ? null : new BigDecimal(claim.getSettledDue()),
+                 claim.getOpenedBy(), claim.getCorrects(), claim.getRef(), refKey(claim.getRef()), claim.getTags(),
+-                claim.getVoidReason(), claim.getSheetId(), claim.getId());
++                claim.getVoidReason(), claim.getEditedBy(), claim.getSheetId(), claim.getId());
+         snapshot(claim.getSheetId(), claim.getId());
+         useTags(claim.getSheetId(), claim.getTags());
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+index d2abb8780..e797e05f7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** Settles a claim, fixing its due: its amount at its person's grade's rate in force on its date, rounded by the sheet's policy date to
+  *  two decimals (a claim bound by a statement: the figure it was bound to). With no rate the due is not
+- *  fixed and stays live. Its late charge on the sheet's today is added, then the sheet's floor applied last, and fixed with it. Refused for the user who opened it (four eyes), and for a claim
++ *  fixed and stays live. Its late charge on the sheet's today is added, then the sheet's floor applied last, and fixed with it. Refused for the user who opened it or last edited it (four eyes), and for a claim
+  *  that is not OPEN, and for a role the permission matrix does not let settle. Settled by a clerk when the due is above the sheet's clerk limit (a due that is n/a is within any limit; a steward settles
+  *  anything), it goes to PENDING instead (after the proof threshold: one above it with no proofs is refused), nothing fixed, until a steward approves or rejects it. */
+ public class SettleClaim {
+@@ -47,6 +47,9 @@ public class SettleClaim {
+         if (claim.getOpenedBy() != null && claim.getOpenedBy().equals(by == null ? "" : by)) {
+             throw new ClaimStatusException("The user who opened a claim cannot settle it");
+         }
++        if (claim.getEditedBy() != null && claim.getEditedBy().equals(by == null ? "" : by)) {
++            throw new ClaimStatusException("The user who last edited a claim cannot settle it");
++        }
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+         Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),
+                 LocalDate.parse(claim.getDate()));
+diff --git a/src/main/resources/db/migration/V50__claim_edited_by.sql b/src/main/resources/db/migration/V50__claim_edited_by.sql
+new file mode 100644
+index 000000000..dc5e87cc2
+--- /dev/null
++++ b/src/main/resources/db/migration/V50__claim_edited_by.sql
+@@ -0,0 +1,2 @@
++-- The user who last edited a claim (null: never edited). Like its opener, they may not settle or approve it.
++ALTER TABLE claim ADD COLUMN edited_by VARCHAR(200);
