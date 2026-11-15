@@ -1,0 +1,95 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkReassignClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkReassignClaims.java
+index 2116ebc4e..12a7f91f1 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkReassignClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkReassignClaims.java
+@@ -54,7 +54,8 @@ public class BulkReassignClaims {
+             if (archived) continue;
+             Reassignment reassignment;
+             try {
+-                reassignment = ReassignClaim.reassign(user, claim, target, people, roles, periods, settings);
++                reassignment = ReassignClaim.reassign(user, claim, target, people, roles, periods, settings,
++                        claims, sheets);
+             } catch (ClaimStatusException | PeriodClosedException refused) {
+                 continue;
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index c9fbe572b..1c1481831 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -194,12 +194,12 @@ public class ClaimRepository {
+         return jdbc.queryForList("SELECT tag FROM sheet_tag WHERE sheet_id = ? ORDER BY tag", String.class, sheetId);
+     }
+ 
+-    /** Save a claim moved to another person: its person, its binding (dropped), and its place in the
+-     *  list, now the newest. */
++    /** Save a claim moved to another person: its person, its number (renumbered), its binding
++     *  (dropped), and its place in the list, now the newest. */
+     public void reassign(Claim claim) {
+-        jdbc.update("UPDATE claim SET person_id = ?, stated = ?, stated_due = ?, list_seq = " + NEXT_SEQ
+-                + " WHERE sheet_id = ? AND id = ?",
+-                claim.getPersonId(), claim.isStated(),
++        jdbc.update("UPDATE claim SET person_id = ?, number = ?, stated = ?, stated_due = ?, list_seq = "
++                + NEXT_SEQ + " WHERE sheet_id = ? AND id = ?",
++                claim.getPersonId(), claim.getNumber(), claim.isStated(),
+                 claim.getStatedDue() == null ? null : new BigDecimal(claim.getStatedDue()),
+                 claim.getSheetId(), claim.getSheetId(), claim.getId());
+         snapshot(claim.getSheetId(), claim.getId());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java b/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
+index 8adcb8d61..f9c27cc1e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
+@@ -7,12 +7,14 @@ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.setting.Permissions;
+ import net.officefloor.hq.app.setting.RoleRepository;
+ import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** A role the permission matrix lets reassign (by default a steward) moves a DRAFT, OPEN or PENDING claim to another person on the sheet ({@code to}, their
+- *  id): it keeps its number and date and loses any figure a statement bound it to (live again until
++ *  id): it keeps its date, takes the next number in the sequence it would be numbered in (see
++ *  {@link ClaimNumbers}; its old number is never used again; a draft gets none), and loses any figure a statement bound it to (live again until
+  *  its new person's next statement). Refused for anyone else, for a SETTLED or VOID claim, for a claim
+  *  due by a day in a closed period, for a claim dated after the new person's retirement, and when
+  *  {@code to} is not another person on the sheet. */
+@@ -20,20 +22,22 @@ public class ReassignClaim {
+     public void move(@RequestParam(name = "by", required = false) String by,
+             @RequestParam(name = "to", required = false) Long to, @Val Claim claim,
+             PersonRepository people, RoleRepository roles, PeriodRepository periods,
+-            SettingRepository settings, Out<Reassignment> reassignment) throws ClaimStatusException, PeriodClosedException {
++            SettingRepository settings, ClaimRepository claims, SheetRepository sheets,
++            Out<Reassignment> reassignment) throws ClaimStatusException, PeriodClosedException {
+         Person target = to == null ? null : people.find(claim.getSheetId(), to);
+         if (target != null && target.getId() == claim.getPersonId()) {
+             throw new ClaimStatusException("A claim can only be reassigned to another person on the sheet");
+         }
+-        reassignment.set(reassign(by == null ? "" : by, claim, target, people, roles, periods, settings));
++        reassignment.set(reassign(by == null ? "" : by, claim, target, people, roles, periods, settings,
++                claims, sheets));
+     }
+ 
+-    /** Move the claim to {@code target} by the rules of reassigning one (its person changed in place;
+-     *  nothing is saved): refused for a role that may not reassign, a SETTLED or VOID claim, a claim
++    /** Move the claim to {@code target} by the rules of reassigning one (its person, and a numbered
++     *  claim's number, changed in place; nothing else is saved): refused for a role that may not reassign, a SETTLED or VOID claim, a claim
+      *  due by a day in a closed period, no target, or a target retired before the claim's date. */
+     static Reassignment reassign(String user, Claim claim, Person target, PersonRepository people,
+-            RoleRepository roles, PeriodRepository periods, SettingRepository settings)
+-            throws ClaimStatusException, PeriodClosedException {
++            RoleRepository roles, PeriodRepository periods, SettingRepository settings,
++            ClaimRepository claims, SheetRepository sheets) throws ClaimStatusException, PeriodClosedException {
+         if (!Permissions.allows(claim.getSheetId(), user, Permissions.REASSIGN, roles, settings)) {
+             throw new ClaimStatusException("Your role may not reassign a claim");
+         }
+@@ -51,6 +55,9 @@ public class ReassignClaim {
+         Person from = people.find(claim.getSheetId(), claim.getPersonId());
+         claim.setPersonId(target.getId());
+         claim.bind(false, null);
++        if (claim.getNumber() != null) {
++            claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
++        }
+         return new Reassignment(from == null ? "" : from.getName(), target.getName());
+     }
+ }
