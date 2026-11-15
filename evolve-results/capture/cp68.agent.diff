@@ -1,0 +1,60 @@
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index 7ba4d19e8..1494010d5 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -132,6 +132,20 @@ export function isActive(live: Claim[], today: string): boolean {
+   return live.some((c) => isOpen(c) && from <= c.date && c.date <= today);
+ }
+ 
++/** A person's backing: the frozen settled figures of their patrons' SETTLED claims dated within the 90 days up to
++ *  and including the sheet's `today`, added up (0.00 with none). */
++export function backing(claims: Claim[], patronIds: number[], today: string): string {
++  if (today === '') return '0.00';
++  const since = new Date(`${today}T00:00:00Z`);
++  since.setUTCDate(since.getUTCDate() - 89);
++  const from = since.toISOString().slice(0, 10);
++  const patrons = new Set(patronIds);
++  const cents = claims
++    .filter((c) => patrons.has(c.personId) && c.status === 'SETTLED' && c.settledDue !== null && from <= c.date && c.date <= today)
++    .reduce((t, c) => t + Math.round(Number(c.settledDue) * 100), 0);
++  return (cents / 100).toFixed(2);
++}
++
+ /** Sum the amounts of the claims that count (see `counts`) exactly (in cents), shown with two decimals. */
+ export function sumAmounts(claims: Claim[]): string {
+   const cents = claims.filter(counts).reduce((t, c) => t + Math.round(Number(c.amount) * 100), 0);
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 8c1651f35..d5ab57ca8 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -6,9 +6,9 @@ import { BulkOpen } from '../claims/BulkOpen';
+ import { PasteClaims } from '../claims/PasteClaims';
+ import { BulkSettle } from '../claims/BulkSettle';
+ import { PersonClaims } from '../claims/PersonClaims';
+-import { claimsKey, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
++import { backing, claimsKey, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
+ import { listPeriods, periodsKey, personPeriodDue } from '../periods/api';
+-import { claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, sumDues } from '../rates/api';
++import { claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
+ import { useCap, useFloor, useLate } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+ import { ExportPeople } from './ExportPeople';
+@@ -25,8 +25,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '' };
+  *  they are retired and from when (with a date and a button that retires them), whether they have
+  *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
+  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
+- *  patrons (names sorted, with a picker that names one more) and backing (their patrons' due-totals
+- *  added up, skipping n/a), and
++ *  patrons (names sorted, with a picker that names one more) and backing (see `backing`), and
+  *  their due-total for each period (see `personPeriodDue`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
+  *  with a checkbox that selects it for a button that opens the selected claims together.
+  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
+@@ -368,7 +367,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   Patrons <span data-testid="person-patrons">
+                     {p.patronIds.map((id) => nameOf.get(id) ?? '').sort((x, y) => x.localeCompare(y)).join(', ')}
+                   </span>{' '}
+-                  backing <span data-testid="person-backing">{sumDues(p.patronIds.map((id) => dueOf.get(id) ?? null))}</span>{' '}
++                  backing <span data-testid="person-backing">{backing(claims.data ?? [], p.patronIds, today)}</span>{' '}
+                   <select data-testid="person-patron-select" value={patronPicks[p.id] ?? ''}
+                     onChange={(e) => {
+                       setPatronPicks((d) => ({ ...d, [p.id]: e.target.value }));
