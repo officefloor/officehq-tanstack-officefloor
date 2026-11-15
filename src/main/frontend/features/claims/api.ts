@@ -3,7 +3,7 @@ import { sheetKey } from '../sheet/api';
 
 /** A claim's status: DRAFT, opened to OPEN, settled to SETTLED (or, by a clerk above the clerk limit,
  *  to PENDING, which a steward approves to SETTLED or rejects back to OPEN); a DRAFT, OPEN or PENDING
- *  claim can be voided. */
+ *  claim can be voided, and a SETTLED one by a steward within 7 days of its settlement. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 /** A change of a claim's status. */
 export type ClaimAction = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle';

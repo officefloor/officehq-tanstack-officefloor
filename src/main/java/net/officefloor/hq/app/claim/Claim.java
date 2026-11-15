@@ -30,6 +30,7 @@ public class Claim {
     private boolean deferred;
     private int proofs;
     private String splitFrom;
+    private boolean reversal;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, String number, String settledDue, String openedBy) {
@@ -68,6 +69,10 @@ public class Claim {
     public String getNumber() { return number; }
     public void setNumber(String number) { this.number = number; }
     public String getSettledDue() { return settledDue; }
+    /** Whether this change voided a SETTLED claim, reversing its frozen figure (not stored). */
+    @JsonIgnore
+    public boolean isReversal() { return reversal; }
+    public void setReversal(boolean reversal) { this.reversal = reversal; }
     public void setSettledDue(String settledDue) { this.settledDue = settledDue; }
 
     public String getOpenedBy() { return openedBy; }

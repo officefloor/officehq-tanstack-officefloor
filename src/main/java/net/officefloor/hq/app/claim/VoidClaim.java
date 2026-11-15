@@ -1,23 +1,50 @@
 package net.officefloor.hq.app.claim;
 
+import java.time.LocalDate;
 import net.officefloor.hq.app.period.PeriodClosedException;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.setting.Permissions;
+import net.officefloor.hq.app.setting.Role;
 import net.officefloor.hq.app.setting.RoleRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** Voids a claim; an opened claim keeps its number (still never reused). Refused for a role the
- *  permission matrix does not let void. */
+ *  permission matrix does not let void. A SETTLED claim may be voided only by a steward, within
+ *  {@link #SETTLED_DAYS} days of its settlement (its status log's SETTLED date) by the sheet's today:
+ *  its frozen figure leaves every total (it is kept on the claim, and reported as reversed). */
 public class VoidClaim {
+    public static final int SETTLED_DAYS = 7;
+
     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
-            PeriodRepository periods, RoleRepository roles, SettingRepository settings)
+            PeriodRepository periods, RoleRepository roles, SettingRepository settings,
+            ClaimLogRepository log, SheetRepository sheets)
             throws ClaimStatusException, PeriodClosedException {
+        if (ClaimStatus.SETTLED.name().equals(claim.getStatus())) {
+            voidSettled(by, claim, periods, roles, log, sheets);
+            return;
+        }
         if (!Permissions.allows(claim.getSheetId(), by, Permissions.VOID, roles, settings)) {
             throw new ClaimStatusException("Your role may not void a claim");
         }
         periods.requireOpen(claim.getSheetId(), claim.getDate());
         claim.setStatus(ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.VOID).name());
+    }
+
+    private static void voidSettled(String by, Claim claim, PeriodRepository periods, RoleRepository roles,
+            ClaimLogRepository log, SheetRepository sheets) throws ClaimStatusException, PeriodClosedException {
+        if (!Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
+            throw new ClaimStatusException("Only a steward can void a SETTLED claim");
+        }
+        periods.requireOpen(claim.getSheetId(), claim.getDate());
+        LocalDate settledOn = log.settledOn(claim.getSheetId(), claim.getId());
+        if (settledOn == null || sheets.today(claim.getSheetId()).isAfter(settledOn.plusDays(SETTLED_DAYS))) {
+            throw new ClaimStatusException("A SETTLED claim can be voided only within " + SETTLED_DAYS
+                    + " days of its settlement");
+        }
+        claim.setStatus(ClaimStatus.VOID.name());
+        claim.setReversal(true);
     }
 }

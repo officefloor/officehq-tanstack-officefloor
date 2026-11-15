@@ -11,7 +11,8 @@ public class RecordClaimStatus {
     public void record(@RequestParam(name = "by", required = false) String by,
             @Val Claim claim, PersonRepository people, Audit audit) {
         audit.record(line(ClaimStatus.valueOf(claim.getStatus()).event(), by, claim, people)
-                + (ClaimStatus.SETTLED.name().equals(claim.getStatus()) ? due(claim) : ""));
+                + (ClaimStatus.SETTLED.name().equals(claim.getStatus()) ? due(claim) : "")
+                + (claim.isReversal() ? reversed(claim) : ""));
     }
 
     /** A claim line: the event, the sheet, the user, then the claim's person, amount, date and number. */
@@ -22,6 +23,11 @@ public class RecordClaimStatus {
                 + " person=" + (person == null ? "" : person.getName())
                 + " amount=" + claim.getAmount() + " date=" + claim.getDate()
                 + claim.getAuditNumber();
+    }
+
+    /** The reversed suffix of a voided SETTLED claim: the frozen figure that left the totals. */
+    static String reversed(Claim claim) {
+        return " reversed=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue());
     }
 
     /** The fixed due suffix of a settled claim. */
