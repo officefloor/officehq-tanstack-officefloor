@@ -1,0 +1,281 @@
+diff --git a/src/main/frontend/features/pools/Pools.tsx b/src/main/frontend/features/pools/Pools.tsx
+index 630638998..2ba330cb0 100644
+--- a/src/main/frontend/features/pools/Pools.tsx
++++ b/src/main/frontend/features/pools/Pools.tsx
+@@ -8,7 +8,8 @@ import type { Pool } from './api';
+ 
+ /** The sheet's pools and a form to add one (name trimmed; a blank or repeated one refused). Each pool
+  *  lists its members with their shares, its total share (a retired member's counting as 0.00) and
+- *  whether it is balanced (exactly 100.00), and adds a member from its row. */
++ *  whether it is balanced (exactly 100.00), each member's cut of
++ *  the sheet's pot (blank when unbalanced or no pot), and adds a member from its row. */
+ export function Pools({ sheetId, user }: { sheetId: string; user: string }) {
+   const queryClient = useQueryClient();
+   const pools = useQuery({ queryKey: poolsKey(sheetId), queryFn: () => listPools(sheetId) });
+@@ -84,7 +85,8 @@ function PoolRow({ sheetId, user, pool, people }: { sheetId: string; user: strin
+       <ul>
+         {pool.members.map((m) => (
+           <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
+-            {m.name}{m.retired ? ' (retired)' : ''} share <span data-testid="pool-share">{m.share}</span>
++            {m.name}{m.retired ? ' (retired)' : ''} share <span data-testid="pool-share">{m.share}</span>{' '}
++            cut <span data-testid="pool-cut">{m.cut}</span>
+           </li>
+         ))}
+       </ul>
+diff --git a/src/main/frontend/features/pools/api.ts b/src/main/frontend/features/pools/api.ts
+index c0c534110..77cab6cff 100644
+--- a/src/main/frontend/features/pools/api.ts
++++ b/src/main/frontend/features/pools/api.ts
+@@ -2,8 +2,9 @@ import { getJson, postJson } from '../../api/http';
+ import { sheetKey } from '../sheet/api';
+ 
+ /** A person in a pool, with their share percent (two decimals); a `retired` member's share counts as
+- *  0.00 toward the pool's total. */
+-export type PoolMember = { personId: number; name: string; share: string; retired: boolean };
++ *  0.00 toward the pool's total. `cut` is their cut of the sheet's pot (two decimals; a retired member's
++ *  0.00, the remainder going to the largest share), "" when the pool is unbalanced or there is no pot. */
++export type PoolMember = { personId: number; name: string; share: string; retired: boolean; cut: string };
+ 
+ /** A pool on the sheet: its members in the order added, the total of their shares and whether that
+  *  total is exactly 100.00 (`balanced`). */
+diff --git a/src/main/frontend/features/settings/Settings.tsx b/src/main/frontend/features/settings/Settings.tsx
+index 7ee6161b7..c0dae4450 100644
+--- a/src/main/frontend/features/settings/Settings.tsx
++++ b/src/main/frontend/features/settings/Settings.tsx
+@@ -2,6 +2,7 @@ import { useState } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { useSubmitOnce } from '../../forms/useSubmitOnce';
+ import { useSheetToday } from '../sheet/api';
++import { poolsKey } from '../pools/api';
+ import { changeSetting, listSettings, PERMISSION_STANDING, settingOn, settingsKey, SETTING_KEYS, UNDATED_KEYS } from './api';
+ 
+ /** The sheet's settings: each one's value in force on the sheet's today and a form that changes them.
+@@ -19,7 +20,10 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+     mutationFn: async ({ values, from }: { values: Record<string, string>; from: Record<string, string> }) => {
+       for (const [key, value] of Object.entries(values)) await changeSetting(sheetId, user, key, value, from[key] ?? '');
+     },
+-    onSettled: () => queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) }),
++    onSettled: () => Promise.all([
++      queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) }),
++      queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
++    ]),
+   });
+ 
+   const submitOnce = useSubmitOnce();
+@@ -55,7 +59,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+         {SETTING_KEYS.map((key) => (
+           <div key={key}>
+             <label>
+-              {key === 'clerk-limit' ? 'Clerk limit' : key === 'cap' ? 'Cap' : key === 'floor' ? 'Floor' : key === 'late-pct' ? 'Late percent'
++              {key === 'clerk-limit' ? 'Clerk limit' : key === 'cap' ? 'Cap' : key === 'pot' ? 'Pot' : key === 'floor' ? 'Floor' : key === 'late-pct' ? 'Late percent'
+                 : key === 'policy-date' ? 'Policy date' : key === 'period-numbering-from' ? 'Period numbering from'
+                 : key === 'entry-date' ? 'Entry date'
+                 : key === 'grace-days' ? 'Grace days'
+@@ -66,7 +70,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+                 : key.startsWith('grace-') ? `Grace days for grade ${key.slice('grace-'.length)}`
+                 : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (business days)` : 'Terms (business days)'}{' '}
+               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
+-                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key === 'cap' ? 'No cap' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
++                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key === 'cap' ? 'No cap' : key === 'pot' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
+                   : key === 'period-numbering-from' || key === 'entry-date' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' ? 'Off' : key.startsWith('grace-') ? 'None' : key.startsWith('terms-') ? "Sheet's terms"
+                   : key.startsWith('perm-') ? PERMISSION_STANDING[key.slice('perm-'.length)] : undefined}
+                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
+@@ -88,7 +92,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+         </button>
+         {save.isError && (
+           <span data-testid="settings-error">
+-            The clerk limit, the cap, the proof threshold, a grade's proof threshold and the note threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
++            The clerk limit, the cap, the pot, the proof threshold, a grade's proof threshold and the note threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
+             the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the policy date, period numbering date and entry date blank or a date; the grace days and a grade's grace days blank or a whole number of days; a permission blank or a comma separated list of clerk and steward; a from-date blank or a date.
+           </span>
+         )}
+diff --git a/src/main/frontend/features/settings/api.ts b/src/main/frontend/features/settings/api.ts
+index 07bd6f60f..92c09a08e 100644
+--- a/src/main/frontend/features/settings/api.ts
++++ b/src/main/frontend/features/settings/api.ts
+@@ -13,7 +13,8 @@ export type Setting = { sheetId: string; key: string; value: string; from: strin
+ export type Role = { sheetId: string; user: string; role: string };
+ 
+ /** The settings the screen offers: the clerk limit (two decimals; blank means no limit), the cap
+- *  (two decimals; blank means none: the most a person's due-total can be), the
++ *  (two decimals; blank means none: the most a person's due-total can be), the pot (two decimals;
++ *  blank means none; not dated: the sum a balanced pool's members cut between them), the
+  *  floor (two decimals; the least a claim's live due can be) and the terms (whole days after its
+  *  date by which a claim is due) and the late percent (two decimals; the share of an overdue claim's
+  *  figure it gains for every full 30 days it is overdue) and the policy date (yyyy-MM-dd; blank means
+@@ -35,7 +36,7 @@ export type Role = { sheetId: string; user: string; role: string };
+  *  blank means none): a claim whose person's grade in force on its date has them in force on that date is
+  *  overdue only once its due-by plus them is before the sheet's today, and its late charge's 30-day
+  *  boundaries count from there; the due-by it shows is unchanged. */
+-export const SETTING_KEYS = ['clerk-limit', 'cap', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
++export const SETTING_KEYS = ['clerk-limit', 'cap', 'pot', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
+   'period-numbering-from', 'entry-date', 'grace-days', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen'] as const;
+ 
+ /** The roles that may take each action of the permission matrix while its entry is blank. */
+@@ -48,7 +49,7 @@ export const PERMISSION_STANDING: Record<string, string> = {
+ export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00' };
+ 
+ /** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
+-export const UNDATED_KEYS: readonly string[] = ['policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'perm-open', 'perm-settle', 'perm-void',
++export const UNDATED_KEYS: readonly string[] = ['pot', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'perm-open', 'perm-settle', 'perm-void',
+   'perm-reassign', 'perm-close', 'perm-reopen'];
+ 
+ /** A dated setting's value in force on a date (yyyy-MM-dd). */
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolMember.java b/src/main/java/net/officefloor/hq/app/pool/PoolMember.java
+index 1bdad8d95..a16d7746f 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolMember.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolMember.java
+@@ -1,5 +1,10 @@
+ package net.officefloor.hq.app.pool;
+ 
+-/** A person in a pool, with their share percent (two decimals) and whether they are retired. */
+-public record PoolMember(long personId, String name, String share, boolean retired) {
++/** A person in a pool, with their share percent (two decimals), whether they are retired and their cut
++ *  of the sheet's pot (two decimals; "" when the pool is unbalanced or there is no pot). */
++public record PoolMember(long personId, String name, String share, boolean retired, String cut) {
++
++    public PoolMember withCut(String cut) {
++        return new PoolMember(personId, name, share, retired, cut);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index c9a78bdd3..e139bb65d 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -1,10 +1,12 @@
+ package net.officefloor.hq.app.pool;
+ 
+ import java.math.BigDecimal;
++import java.math.RoundingMode;
+ import java.util.ArrayList;
+ import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.Map;
++import net.officefloor.hq.app.setting.SettingRepository;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+@@ -13,10 +15,14 @@ public class PoolRepository {
+ 
+     private static final BigDecimal FULL = new BigDecimal("100.00");
+ 
++    private static final BigDecimal HUNDRED = new BigDecimal("100");
++
+     private final JdbcTemplate jdbc;
++    private final SettingRepository settings;
+ 
+-    public PoolRepository(JdbcTemplate jdbc) {
++    public PoolRepository(JdbcTemplate jdbc, SettingRepository settings) {
+         this.jdbc = jdbc;
++        this.settings = settings;
+     }
+ 
+     /** The sheet's pools in the order they were added, each with its members in the order they were added. */
+@@ -33,9 +39,10 @@ public class PoolRepository {
+                     if (of != null) {
+                         of.add(new PoolMember(rs.getLong("person_id"), rs.getString("name"),
+                                 rs.getBigDecimal("share").setScale(2).toPlainString(),
+-                                rs.getObject("retired_from") != null));
++                                rs.getObject("retired_from") != null, ""));
+                     }
+                 }, sheetId);
++        BigDecimal pot = settings.pot(sheetId);
+         List<Pool> pools = new ArrayList<>();
+         for (Map.Entry<Long, String> pool : names.entrySet()) {
+             List<PoolMember> of = members.get(pool.getKey());
+@@ -43,12 +50,36 @@ public class PoolRepository {
+             for (PoolMember m : of) {
+                 if (!m.retired()) total = total.add(new BigDecimal(m.share()));
+             }
+-            pools.add(new Pool(pool.getKey(), sheetId, pool.getValue(), of, total.toPlainString(),
+-                    total.compareTo(FULL) == 0));
++            boolean balanced = total.compareTo(FULL) == 0;
++            pools.add(new Pool(pool.getKey(), sheetId, pool.getValue(),
++                    balanced && pot != null ? cut(of, pot) : of, total.toPlainString(), balanced));
+         }
+         return pools;
+     }
+ 
++    /** The members with their cuts of the pot: the pot times their share over 100, rounded half to even
++     *  to two decimals (a retired member's 0.00); the remainder goes to the member with the largest share
++     *  (the earliest added on a tie), so the cuts total exactly the pot. */
++    private static List<PoolMember> cut(List<PoolMember> members, BigDecimal pot) {
++        BigDecimal[] cuts = new BigDecimal[members.size()];
++        BigDecimal sum = BigDecimal.ZERO.setScale(2);
++        int largest = -1;
++        for (int i = 0; i < members.size(); i++) {
++            PoolMember m = members.get(i);
++            BigDecimal share = new BigDecimal(m.share());
++            cuts[i] = m.retired() ? BigDecimal.ZERO.setScale(2)
++                    : pot.multiply(share).divide(HUNDRED).setScale(2, RoundingMode.HALF_EVEN);
++            sum = sum.add(cuts[i]);
++            if (!m.retired() && (largest < 0 || share.compareTo(new BigDecimal(members.get(largest).share())) > 0)) {
++                largest = i;
++            }
++        }
++        if (largest >= 0) cuts[largest] = cuts[largest].add(pot.subtract(sum));
++        List<PoolMember> cut = new ArrayList<>();
++        for (int i = 0; i < members.size(); i++) cut.add(members.get(i).withCut(cuts[i].toPlainString()));
++        return cut;
++    }
++
+     public boolean contains(String sheetId, String name) {
+         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM pool WHERE sheet_id = ? AND name = ?",
+                 Integer.class, sheetId, name);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 57784c362..96ccec315 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -41,6 +41,9 @@ public class SettingRepository {
+     /** The cap: the most a person's due-total can be (two decimals; blank: no cap). */
+     public static final String CAP = "cap";
+ 
++    /** The pot: the sum a balanced pool's members cut between them (two decimals; blank: none; not dated). */
++    public static final String POT = "pot";
++
+     /** The floor: the least a claim's live due can be (two decimals). */
+     public static final String FLOOR = "floor";
+ 
+@@ -85,10 +88,10 @@ public class SettingRepository {
+     public static final String DEFAULT_FLOOR = "1.00";
+ 
+     /** Whether a key is dated: every key that carries a figure (the policy date, the period
+-     *  numbering date, the grace days and the permission matrix are not). */
++     *  numbering date, the grace days, the pot and the permission matrix are not). */
+     public static boolean isDated(String key) {
+         return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
+-                && !ENTRY_DATE.equals(key) && !Permissions.isKey(key);
++                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !Permissions.isKey(key);
+     }
+ 
+     private final JdbcTemplate jdbc;
+@@ -150,6 +153,12 @@ public class SettingRepository {
+         return dated(sheetId, key, null).on("9999-12-31");
+     }
+ 
++    /** The sheet's pot; null when there is none. */
++    public BigDecimal pot(String sheetId) {
++        String value = find(sheetId, POT);
++        return value == null ? null : new BigDecimal(value);
++    }
++
+     /** The sheet's clerk limit in force on its today; null when there is none. */
+     public BigDecimal clerkLimit(String sheetId) {
+         String value = dated(sheetId, CLERK_LIMIT, null).on(sheets.today(sheetId).toString());
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 9de004d2c..60e987125 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -57,6 +57,12 @@ public class ValidateSetting {
+             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
+                 throw new InvalidSettingException("The cap is blank or 0.00 or more with up to two decimals");
+             }
++        } else if (SettingRepository.POT.equals(key)) {
++            if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
++                throw new InvalidSettingException("The pot is blank or 0.00 or more with up to two decimals");
++            }
++            body.set(new SettingRequest(key, value.isEmpty() ? null : new BigDecimal(value).setScale(2).toPlainString(), null));
++            return;
+         } else if (SettingRepository.FLOOR.equals(key)) {
+             if (!MONEY.matcher(value).matches()) {
+                 throw new InvalidSettingException("The floor is 0.00 or more with up to two decimals");
