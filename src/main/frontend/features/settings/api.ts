@@ -24,10 +24,12 @@ export type Role = { sheetId: string; user: string; role: string };
  *  cannot be settled or approved while it has no proofs. The note threshold (two decimals; blank means none):
  *  a claim whose due is above the one in force on its date cannot be opened with an empty note. The permission matrix (perm-<action>, a comma
  *  separated list of roles; blank means the standing rule, PERMISSION_STANDING): who may take each action.
+ *  The entry date (yyyy-MM-dd; blank means off): while set, a new claim with a blank date (the claim form,
+ *  the quick-add bar, a pasted line, a correction) takes it instead of the sheet's today.
  *  The grace days (whole days; blank means off): when the sheet's today changes, every open period whose
  *  to-date plus them is before the new today is closed. */
 export const SETTING_KEYS = ['clerk-limit', 'cap', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
-  'period-numbering-from', 'grace-days', 'proof-threshold', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen'] as const;
+  'period-numbering-from', 'entry-date', 'grace-days', 'proof-threshold', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen'] as const;
 
 /** The roles that may take each action of the permission matrix while its entry is blank. */
 export const PERMISSION_STANDING: Record<string, string> = {
@@ -39,7 +41,7 @@ export const PERMISSION_STANDING: Record<string, string> = {
 export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00' };
 
 /** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
-export const UNDATED_KEYS: readonly string[] = ['policy-date', 'period-numbering-from', 'grace-days', 'perm-open', 'perm-settle', 'perm-void',
+export const UNDATED_KEYS: readonly string[] = ['policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'perm-open', 'perm-settle', 'perm-void',
   'perm-reassign', 'perm-close', 'perm-reopen'];
 
 /** A dated setting's value in force on a date (yyyy-MM-dd). */

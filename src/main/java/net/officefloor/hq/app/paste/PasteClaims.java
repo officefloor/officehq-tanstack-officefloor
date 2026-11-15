@@ -43,7 +43,7 @@ public class PasteClaims {
                 throw new InvalidClaimException("Not on the sheet: " + line.name());
             }
             ValidClaim request = line.claim();
-            LocalDate date = request.date() != null ? request.date() : sheets.today(id);
+            LocalDate date = request.date() != null ? request.date() : settings.entryDate(id);
             if (person.retiredBefore(date)) {
                 throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
             }

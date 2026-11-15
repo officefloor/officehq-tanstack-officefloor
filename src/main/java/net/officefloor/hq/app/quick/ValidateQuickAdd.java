@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Checks the name as the person form does and the amount as the claim form does (a blank date:
- *  the sheet's today; an empty note). */
+ *  the sheet's entry date when set, else its today; an empty note). */
 public class ValidateQuickAdd {
     public void validate(@RequestBody QuickAddRequest request, Out<QuickAddName> name,
             Out<ValidClaim> claim) throws InvalidPersonException, InvalidClaimException {

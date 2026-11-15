@@ -60,7 +60,7 @@ export function listClaims(sheetId: string): Promise<Claim[]> {
 
 /** Add a claim to a person; refused (rejects) when the amount is missing or has more than two
  *  decimals, the date is not a date, or it is a correction (negative) that does not name by number a
- *  SETTLED claim of the person. A blank date takes the sheet's today. */
+ *  SETTLED claim of the person. A blank date takes the sheet's entry date when set, else its today. */
 export function addClaim(sheetId: string, by: string, personId: number, input: ClaimInput): Promise<Claim> {
   return postJson<Claim>(`${sheetBase(sheetId)}/people/${personId}/claims?by=${encodeURIComponent(by)}`, input);
 }
@@ -203,7 +203,7 @@ export function bulkSettleClaims(sheetId: string, by: string, claimIds: number[]
 export type PasteResult = { added: number };
 
 /** Add a DRAFT claim per line of name,amount,date,note (the note may hold commas; a blank date takes
- *  the sheet's today; the note may be absent), in order, to the named person; refused (rejects),
+ *  the sheet's entry date when set, else its today; the note may be absent), in order, to the named person; refused (rejects),
  *  adding nothing, when any line would be refused by the claim form or names no one on the sheet. */
 export function pasteClaims(sheetId: string, by: string, text: string): Promise<PasteResult> {
   return postJson<PasteResult>(`${sheetBase(sheetId)}/paste-claims?by=${encodeURIComponent(by)}`, { text });

@@ -7,7 +7,10 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.setting.Role;
+import net.officefloor.hq.app.setting.RoleRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
+import net.officefloor.hq.app.sheet.SheetArchivedException;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
@@ -17,15 +20,23 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** Gives the selected people the grade in list order (the order they were added), each as the
  *  person form would (see {@link ApplyPerson}: from the from-date, blank the sheet's today) and
  *  recorded as it would record it (its PERSON_EDITED line, then the rollup lines it moved). A
- *  selected id not on the sheet is skipped. */
+ *  selected id not on the sheet is skipped. A viewer may grade no one: none are given it. Refused on an
+ *  archived sheet. */
 public class BulkGradePeople {
     public void grade(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by, @Val BulkGradeRequest request,
             PersonRepository people, ClaimRepository claims, RateRepository rates,
-            SheetRepository sheets, SettingRepository settings, Audit audit, Out<BulkGradeResult> result)
-            throws PersonConflictException {
+            SheetRepository sheets, SettingRepository settings, RoleRepository roles, Audit audit, Out<BulkGradeResult> result)
+            throws PersonConflictException, SheetArchivedException {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
+        if (sheets.isArchived(id)) {
+            throw new SheetArchivedException("The sheet is archived");
+        }
+        if (Role.VIEWER.equals(roles.roleOf(id, user))) {
+            result.set(new BulkGradeResult(0));
+            return;
+        }
         Set<Long> selected = new HashSet<>(request.personIds());
         LocalDate today = sheets.today(id);
         int graded = 0;

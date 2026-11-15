@@ -80,7 +80,8 @@ public class ValidateSetting {
             body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null));
             return;
         } else if (SettingRepository.POLICY_DATE.equals(key)
-                || SettingRepository.PERIOD_NUMBERING_FROM.equals(key)) {
+                || SettingRepository.PERIOD_NUMBERING_FROM.equals(key)
+                || SettingRepository.ENTRY_DATE.equals(key)) {
             if (!value.isEmpty()) {
                 try {
                     value = LocalDate.parse(value).toString();

@@ -57,6 +57,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
             <label>
               {key === 'clerk-limit' ? 'Clerk limit' : key === 'cap' ? 'Cap' : key === 'floor' ? 'Floor' : key === 'late-pct' ? 'Late percent'
                 : key === 'policy-date' ? 'Policy date' : key === 'period-numbering-from' ? 'Period numbering from'
+                : key === 'entry-date' ? 'Entry date'
                 : key === 'grace-days' ? 'Grace days'
                 : key === 'proof-threshold' ? 'Proof threshold'
                 : key === 'note-threshold' ? 'Note threshold'
@@ -64,7 +65,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
                 : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (days)` : 'Terms (days)'}{' '}
               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
                 placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' ? 'None' : key === 'cap' ? 'No cap' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
-                  : key === 'period-numbering-from' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' ? 'Off' : key.startsWith('terms-') ? "Sheet's terms"
+                  : key === 'period-numbering-from' || key === 'entry-date' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' ? 'Off' : key.startsWith('terms-') ? "Sheet's terms"
                   : key.startsWith('perm-') ? PERMISSION_STANDING[key.slice('perm-'.length)] : undefined}
                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
             </label>{' '}
@@ -86,7 +87,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {save.isError && (
           <span data-testid="settings-error">
             The clerk limit, the cap, the proof threshold and the note threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
-            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the policy date and period numbering date blank or a date; the grace days blank or a whole number of days; a permission blank or a comma separated list of clerk and steward; a from-date blank or a date.
+            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the policy date, period numbering date and entry date blank or a date; the grace days blank or a whole number of days; a permission blank or a comma separated list of clerk and steward; a from-date blank or a date.
           </span>
         )}
       </form>

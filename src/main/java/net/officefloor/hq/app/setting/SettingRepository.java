@@ -48,6 +48,10 @@ public class SettingRepository {
      *  a claim opened is numbered within its period. */
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
 
+    /** The entry date (yyyy-MM-dd; blank: off): while set, a new claim with no date of its own takes
+     *  it instead of the sheet's today. */
+    public static final String ENTRY_DATE = "entry-date";
+
     /** The grace days (a whole number; blank: off): when the sheet's today changes, an open period
      *  whose to-date plus them is before the new today is closed. */
     public static final String GRACE_DAYS = "grace-days";
@@ -64,7 +68,8 @@ public class SettingRepository {
     /** Whether a key is dated: every key that carries a figure (the policy date, the period
      *  numbering date, the grace days and the permission matrix are not). */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !Permissions.isKey(key);
+        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
+                && !ENTRY_DATE.equals(key) && !Permissions.isKey(key);
     }
 
     private final JdbcTemplate jdbc;
@@ -182,6 +187,12 @@ public class SettingRepository {
     public LocalDate periodNumberingFrom(String sheetId) {
         String value = find(sheetId, PERIOD_NUMBERING_FROM);
         return value == null ? null : LocalDate.parse(value);
+    }
+
+    /** The date a new claim with no date of its own takes: the sheet's entry date when set, else its today. */
+    public LocalDate entryDate(String sheetId) {
+        String value = find(sheetId, ENTRY_DATE);
+        return value == null ? sheets.today(sheetId) : LocalDate.parse(value);
     }
 
     /** What a claim's late charge and rounding go by on the sheet now. */
