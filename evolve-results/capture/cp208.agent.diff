@@ -1,0 +1,266 @@
+diff --git a/src/main/frontend/features/claims/PersonClaims.tsx b/src/main/frontend/features/claims/PersonClaims.tsx
+index 6f63ad0a4..042abb90b 100644
+--- a/src/main/frontend/features/claims/PersonClaims.tsx
++++ b/src/main/frontend/features/claims/PersonClaims.tsx
+@@ -26,7 +26,8 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
+  *  or any steward (or the person's approver) rejects with a reason typed beside it; opening one whose due is above the review threshold in
+  *  force on its date makes it REVIEW, unnumbered and counted nowhere, which only a steward's review button
+  *  opens), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
+- *  charge) the number of the SETTLED claim it corrects. A DRAFT can be deleted with a button beside it (any other
++ *  charge) the number of the SETTLED claim it corrects. A claim is numbered only when settled or approved (claims
++ *  numbered earlier keep theirs): an OPEN, PENDING or REVIEW claim shows none. A DRAFT can be deleted with a button beside it (any other
+  *  status, or one in a closed period, refused with an error on the claim): DELETED, it counts nowhere and cannot be
+  *  edited, opened or voided, and a restore button makes it a DRAFT again on the sheet's today it was deleted
+  *  (refused on a later day). Only a DRAFT can be edited:
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
+index 9b30e76d0..4b9ba618e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
+@@ -14,14 +14,14 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** Approves a PENDING claim: it becomes SETTLED, its due fixed at the figure it shows at that moment
++/** Approves a PENDING claim: it becomes SETTLED and gets its number (see {@link ClaimNumbers}), its due fixed at the figure it shows at that moment
+  *  (the figure a statement bound it to, else its live figure, with its late charge on the sheet's
+  *  today). Refused unless the user is a steward or the person's approver, and for the user who opened it or last edited it, and for one
+  *  with no proofs whose due is above the proof threshold in force on its date. */
+ public class ApproveClaim {
+     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
+             PersonRepository people, RateRepository rates, PeriodRepository periods,
+-            RoleRepository roles, SettingRepository settings, SheetRepository sheets)
++            RoleRepository roles, SettingRepository settings, SheetRepository sheets, ClaimRepository claims)
+             throws ClaimStatusException, PeriodClosedException {
+         periods.requireOpen(claim.getSheetId(), claim.getDueBy());
+         String user = by == null ? "" : by;
+@@ -46,6 +46,7 @@ public class ApproveClaim {
+         SettleClaim.requireProof(claim, person, due, settings);
+         claim.setStatus(ClaimStatus.PENDING.moveTo(ClaimStatus.SETTLED).name());
+         claim.setSettledDue(due);
++        ClaimNumbers.settled(claim, claims, periods, settings, sheets);
+     }
+ 
+     /** Whether the user is the person's approver: they may approve or reject the person's PENDING
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+index 36b66a2f9..9fbde356b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+@@ -67,9 +67,6 @@ public class BulkOpenClaims {
+             } catch (ClaimStatusException | PeriodClosedException refused) {
+                 continue;
+             }
+-            if (ClaimStatus.OPEN.name().equals(claim.getStatus())) {
+-                claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
+-            }
+             claim.setOpenedBy(user);
+             claims.update(claim);
+             log.record(claim, user);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
+index 3ef9c53af..3c8be0981 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
+@@ -74,6 +74,7 @@ public class BulkSettleClaims {
+         Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
+         for (Claim claim : ordered) {
+             claim.setSettleBatch(batch);
++            ClaimNumbers.settled(claim, claims, periods, settings, sheets);
+             claims.update(claim);
+             log.record(claim, user);
+             audit.record(RecordClaimStatus.line(ClaimStatus.valueOf(claim.getStatus()).event(), user, claim, people)
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java
+index a2342a21b..220feb535 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java
+@@ -6,7 +6,8 @@ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ 
+-/** The number a claim gets when opened: while the sheet's period numbering is in force (its
++/** The number a claim gets when settled or approved (an OPEN, PENDING or REVIEW claim has none;
++ *  claims numbered when opened before this keep their numbers): while the sheet's period numbering is in force (its
+  *  period-numbering-from is a date on or before the sheet's today) the next in the sequence of the
+  *  period its due-by falls in ({@code <period>-<n>}; {@code X-<n>} in no period), else the next in the
+  *  sequence the sheets of its tree share for the fiscal year its due-by falls in ({@code FY<yyyy>-<n>},
+@@ -29,6 +30,15 @@ public final class ClaimNumbers {
+         return claims.nextPeriodNumber(sheetId, period);
+     }
+ 
++    /** Gives a claim just SETTLED (settled or approved) its number, the next in its sequence by the
++     *  sheet's today and its due-by now; a claim that already has one keeps it. */
++    public static void settled(Claim claim, ClaimRepository claims, PeriodRepository periods,
++            SettingRepository settings, SheetRepository sheets) {
++        if (ClaimStatus.SETTLED.name().equals(claim.getStatus()) && claim.getNumber() == null) {
++            claim.setNumber(next(claim, claims, periods, settings, sheets));
++        }
++    }
++
+     /** The fiscal year a date falls in, FY<yyyy> by the calendar year of the fiscal year's first day. */
+     static String fiscalYear(LocalDate date, int startMonth) {
+         return "FY" + (date.getMonthValue() >= startMonth ? date.getYear() : date.getYear() - 1);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java b/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
+index ae6cbfdd5..5adfb71c8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
+@@ -17,9 +17,9 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** Opens a claim, giving it its number (see {@link ClaimNumbers}) and recording who opened it; one
+- *  whose due is above the review threshold in force on its date goes to REVIEW instead, unnumbered
+- *  until a steward reviews it (see {@link ReviewClaim}). Refused for a REVIEW claim, for anyone but a steward while the person's flag is in force, for a role the permission matrix does not let open, and for a claim with an empty note
++/** Opens a claim, recording who opened it (it is numbered only when settled or approved, see
++ *  {@link ClaimNumbers}); one whose due is above the review threshold in force on its date goes to
++ *  REVIEW instead, until a steward reviews it (see {@link ReviewClaim}). Refused for a REVIEW claim, for anyone but a steward while the person's flag is in force, for a role the permission matrix does not let open, and for a claim with an empty note
+  *  whose due is above the note threshold in force on its date. */
+ public class OpenClaim {
+     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
+@@ -35,9 +35,6 @@ public class OpenClaim {
+         requireNote(claim, people, rates, settings, sheets);
+         requireUnderCap(claim, claims, periods);
+         claim.setStatus(opened.name());
+-        if (opened == ClaimStatus.OPEN) {
+-            claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
+-        }
+         claim.setOpenedBy(by == null ? "" : by);
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimSplit.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimSplit.java
+index 92a1d1124..0746de11a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RecordClaimSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimSplit.java
+@@ -11,7 +11,7 @@ public class RecordClaimSplit {
+     public void record(@RequestParam(name = "by", required = false) String by,
+             @Val Split split, PersonRepository people, Audit audit) {
+         audit.record(RecordClaimStatus.line("CLAIM_SPLIT", by, split.original(), people)
+-                + " into=" + split.created().getNumber());
++                + " into=" + (split.created().getNumber() == null ? "" : split.created().getNumber()));
+         audit.record(RecordClaimStatus.line(ClaimStatus.OPEN.event(), by, split.created(), people));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReviewClaim.java b/src/main/java/net/officefloor/hq/app/claim/ReviewClaim.java
+index 09c08490a..1630f4d49 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ReviewClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ReviewClaim.java
+@@ -9,7 +9,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** Reviews a REVIEW claim: it becomes OPEN and gets its number (see {@link ClaimNumbers}); who opened it
++/** Reviews a REVIEW claim: it becomes OPEN (still unnumbered until settled, see {@link ClaimNumbers}); who opened it
+  *  stays as it was. Refused unless the user is a steward, when it is not REVIEW, for one due by a day
+  *  in a closed period, and when its period caps its person's open claims and they already have that many. */
+ public class ReviewClaim {
+@@ -26,6 +26,5 @@ public class ReviewClaim {
+         periods.requireOpen(claim.getSheetId(), claim.getDueBy());
+         OpenClaim.requireUnderCap(claim, claims, periods);
+         claim.setStatus(ClaimStatus.REVIEW.moveTo(ClaimStatus.OPEN).name());
+-        claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveSettledPart.java b/src/main/java/net/officefloor/hq/app/claim/SaveSettledPart.java
+index 0971ab7e8..f0264c4ee 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveSettledPart.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveSettledPart.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.person.WatchRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+@@ -16,13 +17,14 @@ public class SaveSettledPart {
+     public void save(@RequestParam(name = "by", required = false) String by, @Val Split split,
+             @Val PartSettle part, ClaimRepository claims, ClaimLogRepository log, PersonRepository people,
+             WatchRepository watches, RateRepository rates, SheetRepository sheets, SettingRepository settings,
+-            Audit audit) {
++            PeriodRepository periods, Audit audit) {
+         Claim created = split.created();
+         String sheetId = created.getSheetId();
+         Rollup before = Rollup.of(sheetId, people, claims, rates, sheets, settings);
+         created.setStatus(part.status());
+         created.setSettledDue(part.settledDue());
+         created.setSettleBatch(null);
++        ClaimNumbers.settled(created, claims, periods, settings, sheets);
+         claims.update(created);
+         log.record(created, by);
+         new RecordClaimStatus().record(by, created, people, audit);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+index f006165ef..04224b18f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+@@ -57,6 +57,7 @@ public class SettleClaim {
+             claim.setSettledAsOf(date.toString());
+         }
+         settle(by, claim, true, people, rates, periods, roles, settings, sheets, asOfDue);
++        ClaimNumbers.settled(claim, claims, periods, settings, sheets);
+         // Settled one at a time: in no batch.
+         claim.setSettleBatch(null);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+index cecde0d38..3e97d042a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+@@ -16,7 +16,7 @@ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** Splits an OPEN claim: it keeps the rest of its amount and is unbound; a new OPEN claim of the
+- *  split-off amount, with its date and note, the next number, opened by the user and a due-by fixed
++ *  split-off amount, with its date and note, unnumbered until settled, opened by the user and a due-by fixed
+  *  now from the terms in force on its date (counted in business days), carrying its tags, is split from its number (a late entry when its due-by
+  *  falls in a soft-closed period). The split is judged by the original claim alone: refused for a claim
+  *  due by a day in a closed period, one not OPEN or deferred, a role that may not open a claim, and an amount that is
+@@ -58,7 +58,6 @@ public class SplitClaim {
+                 null, dueBy, user, null, claim.getTags());
+         if (periods.softClosedOn(sheetId, created.getDueBy())) claims.markLateEntry(created);
+         created.setStatus(ClaimStatus.OPEN.name());
+-        created.setNumber(ClaimNumbers.next(created, claims, periods, settings, sheets));
+         created.setOpenedBy(user);
+         created.setSplitFrom(claim.getNumber());
+         split.set(new Split(claim, created));
+diff --git a/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java b/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
+index 80cdaa610..8398d4c8d 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
++++ b/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
+@@ -12,7 +12,6 @@ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimLineRepository;
+ import net.officefloor.hq.app.claim.ClaimLockedException;
+ import net.officefloor.hq.app.claim.ClaimLogRepository;
+-import net.officefloor.hq.app.claim.ClaimNumbers;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.claim.ClaimStatus;
+ import net.officefloor.hq.app.claim.ClaimStatusException;
+@@ -140,9 +139,6 @@ public class PasteClaims {
+             OpenChecks.requireNote(claim, people, rates, settings, sheets);
+             OpenChecks.requireUnderCap(claim, claims, periods);
+             claim.setStatus(opened.name());
+-            if (opened == ClaimStatus.OPEN) {
+-                claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
+-            }
+             claim.setOpenedBy(user);
+             claims.update(claim);
+             log.record(claim, user);
+diff --git a/src/main/java/net/officefloor/hq/app/period/RollOver.java b/src/main/java/net/officefloor/hq/app/period/RollOver.java
+index d48711a79..58f1c038d 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RollOver.java
++++ b/src/main/java/net/officefloor/hq/app/period/RollOver.java
+@@ -27,7 +27,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** Rolls fiscal year FY<yyyy> over: makes the next fiscal year's twelve monthly periods exactly as the fiscal
+- *  year generator does, then adds each person's open figure at the end of the old year's last period (the
++ *  year generator does, then adds each person's open figure (a person with none: nothing) at the end of the old year's last period (the
+  *  due, as shown now, of their claims that count, due by a day in a period of the old year, whose status at
+  *  that period's end was OPEN or PENDING) to their opening balance for the new year's first period, each
+  *  recorded as OPENING_SET, then ROLLOVER. Refused, with nothing written, for anyone but a steward, a year
+@@ -65,7 +65,9 @@ public class RollOver {
+         Period firstNew = periods.containing(id, next.toString());
+         if (firstNew != null) {
+             for (Person p : people.list(id)) {
+-                BigDecimal amount = open.getOrDefault(p.getId(), BigDecimal.ZERO.setScale(2));
++                BigDecimal amount = open.get(p.getId());
++                // A person with no open figure has nothing to carry.
++                if (amount == null) continue;
+                 periods.addOpening(id, firstNew.name(), p.getId(), amount);
+                 audit.record("OPENING_SET sheet=" + id + " by=" + user + " name=" + p.getName() + " period="
+                         + firstNew.name() + " amount=" + amount.toPlainString());
