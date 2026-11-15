@@ -357,12 +357,18 @@ public class ClaimRepository {
         snapshot(claim.getSheetId(), claim.getId());
     }
 
-    /** The sheet's next claim number, taken in one atomic statement so two claims opened at the same
-     *  moment never get the same one; rolled back with the request when it is refused. */
-    public String nextNumber(String sheetId) {
+    /** The next claim number in the sequence shared by the sheets of a tree ({@code tree}, the sheet
+     *  among them): one after the last number given on any of them. The tree's root is locked first so
+     *  two claims opened at the same moment anywhere in the tree never get the same one; rolled back
+     *  with the request when it is refused. */
+    public String nextNumber(String sheetId, java.util.List<String> tree) {
+        jdbc.queryForList("SELECT id FROM sheet WHERE id = ? FOR UPDATE", String.class, tree.get(0));
+        String in = String.join(", ", java.util.Collections.nCopies(tree.size(), "?"));
+        java.util.List<Object> args = new java.util.ArrayList<>(tree);
+        args.add(sheetId);
         return String.valueOf(jdbc.queryForObject("SELECT last_claim_number FROM FINAL TABLE ("
-                + "UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?)",
-                Long.class, sheetId));
+                + "UPDATE sheet SET last_claim_number = (SELECT COALESCE(MAX(last_claim_number), 0) FROM sheet "
+                + "WHERE id IN (" + in + ")) + 1 WHERE id = ?)", Long.class, args.toArray()));
     }
 
     /** The next number in a period's own sequence on the sheet ({@code <period>-<n>}, from 1), or

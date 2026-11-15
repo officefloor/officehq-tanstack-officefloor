@@ -41,6 +41,25 @@ public class SheetRepository {
         return found;
     }
 
+    /** The sheets of the sheet's tree: its root (the top of its parent chain, stopping at a sheet named
+     *  twice) first, then the root's descendants, nearest first. */
+    public java.util.List<String> tree(String id) {
+        String root = id;
+        java.util.Set<String> seen = new java.util.HashSet<>(java.util.List.of(id));
+        for (String up = parent(root); up != null && seen.add(up); up = parent(up)) {
+            root = up;
+        }
+        java.util.List<String> tree = new java.util.ArrayList<>(java.util.List.of(root));
+        tree.addAll(descendants(root));
+        if (!tree.contains(id)) tree.add(id);
+        return tree;
+    }
+
+    private String parent(String id) {
+        return jdbc.queryForList("SELECT val FROM sheet_setting WHERE sheet_id = ? AND setting = 'parent'",
+                String.class, id).stream().filter((v) -> v != null && !v.isEmpty()).findFirst().orElse(null);
+    }
+
     /** The sheet's today: the date every date decision and default on the sheet uses. */
     public LocalDate today(String id) {
         Sheet sheet = find(id);
