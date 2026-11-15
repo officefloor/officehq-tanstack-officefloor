@@ -1,0 +1,269 @@
+diff --git a/src/main/frontend/features/settings/Holidays.tsx b/src/main/frontend/features/settings/Holidays.tsx
+index 095e889a8..9d8664c24 100644
+--- a/src/main/frontend/features/settings/Holidays.tsx
++++ b/src/main/frontend/features/settings/Holidays.tsx
+@@ -2,9 +2,12 @@ import { useState } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { useSubmitOnce } from '../../forms/useSubmitOnce';
+ import { addHoliday, holidaysKey, listHolidays } from './api';
++import { claimsKey } from '../claims/api';
++import { peopleKey } from '../people/api';
+ 
+ /** The sheet's holidays (by date) and a form to add one. A claim's due-by, fixed when it is created,
+- *  counts its terms in business days, skipping weekends and these holidays. */
++ *  counts its terms in business days, skipping weekends and these holidays; adding one works out again
++ *  the due-by of every claim not SETTLED or VOID due by it or later. */
+ export function Holidays({ sheetId, user }: { sheetId: string; user: string }) {
+   const queryClient = useQueryClient();
+   const holidays = useQuery({ queryKey: holidaysKey(sheetId), queryFn: () => listHolidays(sheetId) });
+@@ -14,7 +17,11 @@ export function Holidays({ sheetId, user }: { sheetId: string; user: string }) {
+     mutationFn: (input: string) => addHoliday(sheetId, user, input),
+     onSuccess: () => {
+       setDate('');
+-      return queryClient.invalidateQueries({ queryKey: holidaysKey(sheetId) });
++      return Promise.all([
++        queryClient.invalidateQueries({ queryKey: holidaysKey(sheetId) }),
++        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
++      ]);
+     },
+   });
+ 
+diff --git a/src/main/java/db/migration/V51__claim_terms.java b/src/main/java/db/migration/V51__claim_terms.java
+new file mode 100644
+index 000000000..f9a4098e0
+--- /dev/null
++++ b/src/main/java/db/migration/V51__claim_terms.java
+@@ -0,0 +1,74 @@
++package db.migration;
++
++import java.sql.Connection;
++import java.sql.PreparedStatement;
++import java.sql.ResultSet;
++import java.sql.Statement;
++import java.sql.Timestamp;
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Map;
++import java.util.Set;
++import net.officefloor.hq.app.holiday.BusinessDays;
++import org.flywaydb.core.api.migration.BaseJavaMigration;
++import org.flywaydb.core.api.migration.Context;
++
++/**
++ * A claim keeps the terms its due-by was fixed with, so a holiday added later can work its due-by out
++ * again. Those of an existing claim are recovered from its due-by: the business days from the date it was
++ * fixed from (its first recorded date, as a re-date or an edit leaves the due-by as it was) up to its
++ * due-by, past the holidays that were on the sheet when the claim was added.
++ */
++public class V51__claim_terms extends BaseJavaMigration {
++
++    private record Fixed(long id, String sheetId, LocalDate date, LocalDate dueBy, Timestamp createdAt) {
++    }
++
++    private record Holiday(LocalDate day, Timestamp addedAt) {
++    }
++
++    @Override
++    public void migrate(Context context) throws Exception {
++        Connection connection = context.getConnection();
++        try (Statement st = connection.createStatement()) {
++            st.execute("ALTER TABLE claim ADD COLUMN terms INT");
++        }
++        Map<String, List<Holiday>> holidays = new HashMap<>();
++        try (Statement st = connection.createStatement();
++                ResultSet rs = st.executeQuery("SELECT sheet_id, holiday, added_at FROM holiday")) {
++            while (rs.next()) {
++                holidays.computeIfAbsent(rs.getString("sheet_id"), (k) -> new ArrayList<>())
++                        .add(new Holiday(rs.getObject("holiday", LocalDate.class), rs.getTimestamp("added_at")));
++            }
++        }
++        List<Fixed> claims = new ArrayList<>();
++        try (Statement st = connection.createStatement();
++                ResultSet rs = st.executeQuery("SELECT c.id, c.sheet_id, c.due_by, c.created_at, COALESCE("
++                        + "(SELECT h.claim_date FROM claim_history h WHERE h.claim_id = c.id ORDER BY h.id LIMIT 1), "
++                        + "c.claim_date) AS fixed_date FROM claim c")) {
++            while (rs.next()) {
++                claims.add(new Fixed(rs.getLong("id"), rs.getString("sheet_id"),
++                        rs.getObject("fixed_date", LocalDate.class), rs.getObject("due_by", LocalDate.class),
++                        rs.getTimestamp("created_at")));
++            }
++        }
++        try (PreparedStatement update = connection.prepareStatement("UPDATE claim SET terms = ? WHERE id = ?")) {
++            for (Fixed c : claims) {
++                Set<LocalDate> then = new HashSet<>();
++                for (Holiday h : holidays.getOrDefault(c.sheetId(), List.of())) {
++                    if (!h.addedAt().after(c.createdAt())) then.add(h.day());
++                }
++                update.setInt(1, BusinessDays.between(c.date(), c.dueBy(), then));
++                update.setLong(2, c.id());
++                update.addBatch();
++            }
++            update.executeBatch();
++        }
++        try (Statement st = connection.createStatement()) {
++            st.execute("ALTER TABLE claim ALTER COLUMN terms SET NOT NULL");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 925b487ef..fc997f161 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -99,7 +99,8 @@ public class Claim {
+     public void setRoundDate(String roundDate) { this.roundDate = roundDate; }
+ 
+     /** Its due-by (yyyy-MM-dd), fixed when it was added: the terms-th business day after its date then, by
+-     *  the terms in force on that date (skipping weekends and the sheet's holidays then). */
++     *  the terms in force on that date (skipping weekends and the sheet's holidays then); a holiday added
++     *  later works it out again, with those terms, while the claim is not SETTLED or VOID. */
+     public String getDueBy() { return dueBy; }
+     public void setDueBy(String dueBy) { this.dueBy = dueBy; }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 53e0e2ef0..e700bfb84 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -3,8 +3,11 @@ package net.officefloor.hq.app.claim;
+ import java.math.BigDecimal;
+ import java.sql.PreparedStatement;
+ import java.time.LocalDate;
++import java.util.HashSet;
+ import java.util.List;
+ import java.util.Locale;
++import java.util.Set;
++import net.officefloor.hq.app.holiday.BusinessDays;
+ import org.springframework.dao.DuplicateKeyException;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+@@ -116,11 +119,13 @@ public class ClaimRepository {
+     /** Add a claim with its due-by, fixed now, its reference and its tags (null: none; see {@link ClaimForm#tags}). */
+     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+             String corrects, LocalDate dueBy, String user, String ref, String tags) {
++        // The terms it is fixed with: the business days up to its due-by, past the sheet's holidays now.
++        int terms = BusinessDays.between(date, dueBy, holidays(sheetId));
+         GeneratedKeyHolder key = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, created_by, corrects, due_by, ref, ref_key, tags) "
+-                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
++                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, created_by, corrects, due_by, ref, ref_key, tags, terms) "
++                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     new String[] { "id" });
+             ps.setString(1, sheetId);
+             ps.setLong(2, personId);
+@@ -133,6 +138,7 @@ public class ClaimRepository {
+             ps.setString(9, ref);
+             ps.setString(10, refKey(ref));
+             ps.setString(11, tags);
++            ps.setInt(12, terms);
+             return ps;
+         }, key);
+         long id = key.getKey().longValue();
+@@ -200,6 +206,27 @@ public class ClaimRepository {
+         snapshot(claim.getSheetId(), claim.getId());
+     }
+ 
++    /** Work out again, after a holiday was added, the due-by of every claim on the sheet that is not
++     *  SETTLED or VOID and is due by the holiday or later: from its date, with the terms it was fixed
++     *  with, past the sheet's holidays now. A claim whose due-by moves is kept in its history. */
++    public void refixDueBys(String sheetId, LocalDate holiday) {
++        Set<LocalDate> holidays = holidays(sheetId);
++        jdbc.query("SELECT id, claim_date, terms, due_by FROM claim WHERE sheet_id = ? "
++                + "AND status NOT IN ('SETTLED', 'VOID') AND due_by >= ? ORDER BY id", (rs) -> {
++                    long id = rs.getLong("id");
++                    LocalDate dueBy = BusinessDays.dueBy(rs.getObject("claim_date", LocalDate.class),
++                            rs.getInt("terms"), holidays);
++                    if (!dueBy.equals(rs.getObject("due_by", LocalDate.class))) {
++                        jdbc.update("UPDATE claim SET due_by = ? WHERE sheet_id = ? AND id = ?", dueBy, sheetId, id);
++                        snapshot(sheetId, id);
++                    }
++                }, sheetId, holiday);
++    }
++
++    private Set<LocalDate> holidays(String sheetId) {
++        return new HashSet<>(jdbc.queryForList("SELECT holiday FROM holiday WHERE sheet_id = ?", LocalDate.class, sheetId));
++    }
++
+     /** The person's claims, newest first. */
+     public List<Claim> listOf(String sheetId, long personId) {
+         return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY list_seq DESC, id DESC",
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/BusinessDays.java b/src/main/java/net/officefloor/hq/app/holiday/BusinessDays.java
+index 722db1f1f..2d8c2abec 100644
+--- a/src/main/java/net/officefloor/hq/app/holiday/BusinessDays.java
++++ b/src/main/java/net/officefloor/hq/app/holiday/BusinessDays.java
+@@ -25,4 +25,14 @@ public final class BusinessDays {
+         }
+         return due;
+     }
++
++    /** The terms a due-by was fixed with: the business days after {@code date} up to and including
++     *  {@code dueBy} (none when it is not after the date). */
++    public static int between(LocalDate date, LocalDate dueBy, Set<LocalDate> holidays) {
++        int terms = 0;
++        for (LocalDate day = date.plusDays(1); !day.isAfter(dueBy); day = day.plusDays(1)) {
++            if (isBusinessDay(day, holidays)) terms++;
++        }
++        return terms;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/RefixDueBys.java b/src/main/java/net/officefloor/hq/app/holiday/RefixDueBys.java
+new file mode 100644
+index 000000000..28d3fa15d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/holiday/RefixDueBys.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.holiday;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.plugin.variable.Val;
++
++/** A holiday added moves the due-by of every claim not SETTLED or VOID due by it or later: see
++ *  {@link ClaimRepository#refixDueBys}. */
++public class RefixDueBys {
++    public void refix(@Val Holiday holiday, ClaimRepository claims) {
++        claims.refixDueBys(holiday.sheetId(), LocalDate.parse(holiday.date()));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml
+index 74e94a513..3ef5817b5 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml
+@@ -1,19 +1,33 @@
+ # POST /api/sheets/{sheetId}/holidays — add a holiday to the sheet; refused for a date that is not one
+ # or one already on the list. A viewer may change nothing: refused before anything is read or written.
++# Every claim not SETTLED or VOID due by the holiday or later has its due-by worked out again; the
++# rollup lines follow HOLIDAY_ADDED when a figure moved.
+ guard:
+   class: net.officefloor.hq.app.setting.RefuseViewer
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.holiday.ValidateHoliday
+   govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
+   next: add
+ add:
+   class: net.officefloor.hq.app.holiday.AddHoliday
+   govern: [ transaction ]
++  next: refix
++refix:
++  class: net.officefloor.hq.app.holiday.RefixDueBys
++  govern: [ transaction ]
+   next: audit
+ audit:
+   class: net.officefloor.hq.app.holiday.RecordHolidayAdded
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.holiday.RespondWithHoliday
