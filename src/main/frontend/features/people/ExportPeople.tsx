@@ -16,22 +16,23 @@ export function downloadCsv(name: string, lines: string[][]) {
 }
 
 /** The "export people" button: downloads `rows` as a CSV file under a header line, each line
- *  ending with a line feed. */
-export function ExportPeople({ rows }: { rows: () => string[][] }) {
+ *  ending with a line feed. Disabled while the figures are still being read (as when the as-of date
+ *  has just changed), so the file holds the figures the screen shows once they are in. */
+export function ExportPeople({ rows, loading }: { rows: () => string[][]; loading: boolean }) {
   const download = () => downloadCsv('people.csv', [['name', 'grade', 'retired-from', 'due-total'], ...rows()]);
   return (
-    <button type="button" data-testid="export-people" onClick={download}>
+    <button type="button" data-testid="export-people" disabled={loading} onClick={download}>
       Export people
     </button>
   );
 }
 
-/** The "export claims" button: downloads `rows` as a CSV file under a header line, quoted and
- *  ended as the people export. */
-export function ExportClaims({ rows }: { rows: () => string[][] }) {
+/** The "export claims" button: downloads `rows` as a CSV file under a header line, quoted, ended
+ *  and disabled as the people export. */
+export function ExportClaims({ rows, loading }: { rows: () => string[][]; loading: boolean }) {
   const download = () => downloadCsv('claims.csv', [['person', 'number', 'date', 'amount', 'due', 'status', 'period'], ...rows()]);
   return (
-    <button type="button" data-testid="export-claims" onClick={download}>
+    <button type="button" data-testid="export-claims" disabled={loading} onClick={download}>
       Export claims
     </button>
   );

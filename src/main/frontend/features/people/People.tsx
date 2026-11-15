@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { BulkOpen } from '../claims/BulkOpen';
@@ -393,6 +393,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     liveClaims((claims.data ?? []).filter((c) => c.personId === q.id), [q]),
     rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges, cap)]));
   const nameOf = new Map(everyone.map((q) => [q.id, q.name]));
+  // The exports wait for every read in flight: after the as-of date changes the screen re-reads all.
+  const reading = useIsFetching() > 0;
 
   return (
     <section>
@@ -463,11 +465,11 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       <ShowRetired />{' '}
       <SortBy />{' '}
       <ColumnChooser sheetId={sheetId} user={user} />
-      <ExportPeople rows={() => everyone.map((p) => [p.name, gradeOn(p, today), p.retiredFrom ?? '', showDue(dueOf.get(p.id) ?? null)])} />
+      <ExportPeople rows={() => everyone.map((p) => [p.name, gradeOn(p, today), p.retiredFrom ?? '', showDue(dueOf.get(p.id) ?? null)])} loading={reading} />
       <ExportClaims rows={() => everyone.flatMap((p) => (claims.data ?? []).filter((c) => c.personId === p.id).reverse().map((c) => [
         p.name, c.number ?? '', c.date, Number(c.amount).toFixed(2),
         showDue(claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges)), c.status,
-        periodOf(periods.data, c.dueBy)?.name ?? '']))} />
+        periodOf(periods.data, c.dueBy)?.name ?? '']))} loading={reading} />
       <BulkOpen sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
       <BulkGrade sheetId={sheetId} user={user} selected={[...selectedPeople]} onDone={() => setSelectedPeople(new Set())} />
       <BulkRetire sheetId={sheetId} user={user} selected={[...selectedPeople]} onDone={() => setSelectedPeople(new Set())} />
