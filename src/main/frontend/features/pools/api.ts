@@ -12,9 +12,11 @@ export type PoolMember = { personId: number | null; poolId: number | null; name:
   from: string | null; to: string | null; current: boolean; cut: string };
 
 /** A pool on the sheet: its members in the order added, the total of their shares and whether that
- *  total is exactly 100.00 (`balanced`). */
+ *  total is exactly 100.00 (`balanced`). A `crew` pool is a crew's, after the others: its lead and members
+ *  at equal shares of 100.00 (the remainder on the lead), cutting the sheet's pot; none can be added to it,
+ *  nor it to another pool. */
 export type Pool = { id: number; sheetId: string; name: string; members: PoolMember[]; totalShare: string; balanced: boolean;
-  parentId: number | null };
+  parentId: number | null; crew: boolean };
 
 const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/pools`;
 
@@ -25,7 +27,8 @@ export function listPools(sheetId: string): Promise<Pool[]> {
   return getJson<Pool[]>(base(sheetId));
 }
 
-/** Add a pool (name trimmed); refused (rejects) for a blank name or one already used on the sheet. */
+/** Add a pool (name trimmed); refused (rejects) for a blank name or one already used on the sheet by a pool
+ *  or a crew. */
 export function addPool(sheetId: string, by: string, name: string): Promise<Pool[]> {
   return postJson<Pool[]>(`${base(sheetId)}?by=${encodeURIComponent(by)}`, { name });
 }

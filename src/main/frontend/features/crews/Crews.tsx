@@ -6,6 +6,7 @@ import { gradeOn, listPeople, peopleKey } from '../people/api';
 import type { Person } from '../people/api';
 import { listRates, personDue, rateByGrade, ratesKey } from '../rates/api';
 import { useCap, useFloor, useLate } from '../settings/api';
+import { poolsKey } from '../pools/api';
 import { useSheetToday } from '../sheet/api';
 import { addCrew, addCrewMember, crewDueTotal, crewsKey, listCrews } from './api';
 import type { Crew } from './api';
@@ -26,7 +27,7 @@ export function useDueOf(sheetId: string, user: string): Map<number, string | nu
     rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges, cap)]));
 }
 
-/** The sheet's crews and a form to add one: a name (trimmed; a blank or repeated one refused) and a lead
+/** The sheet's crews and a form to add one: a name (trimmed; a blank one, or one used by a crew or a pool, refused) and a lead
  *  picked from the people. Each crew shows its lead, its members, and its due-total (see `crewDueTotal`),
  *  and adds a member from its row (the lead, or someone already in the crew, refused). */
 export function Crews({ sheetId, user }: { sheetId: string; user: string }) {
@@ -44,6 +45,7 @@ export function Crews({ sheetId, user }: { sheetId: string; user: string }) {
       setName('');
       setLead('');
       queryClient.setQueryData(crewsKey(sheetId), data);
+      void queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
     },
   });
 
@@ -81,7 +83,7 @@ export function Crews({ sheetId, user }: { sheetId: string; user: string }) {
           Add crew
         </button>
         {save.isError && (
-          <span data-testid="crew-form-error">A crew needs a name not already used on the sheet and a lead.</span>
+          <span data-testid="crew-form-error">A crew needs a name not already used on the sheet by a crew or a pool, and a lead.</span>
         )}
       </form>
       <ul>
@@ -103,6 +105,7 @@ function CrewRow({ sheetId, user, crew, people, dueTotal }: { sheetId: string; u
     onSuccess: (data) => {
       setMember('');
       queryClient.setQueryData(crewsKey(sheetId), data);
+      void queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
     },
   });
 

@@ -9,6 +9,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.officefloor.hq.app.crew.Crew;
+import net.officefloor.hq.app.crew.CrewMember;
+import net.officefloor.hq.app.crew.CrewRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -20,15 +23,18 @@ public class PoolRepository {
 
     private final JdbcTemplate jdbc;
     private final SettingRepository settings;
+    private final CrewRepository crews;
 
-    public PoolRepository(JdbcTemplate jdbc, SettingRepository settings) {
+    public PoolRepository(JdbcTemplate jdbc, SettingRepository settings, CrewRepository crews) {
         this.jdbc = jdbc;
         this.settings = settings;
+        this.crews = crews;
     }
 
     /** The sheet's pools in the order they were added, each with its members in the order they were added.
      *  A pool that is a member of none cuts the sheet's pot; one that is a member of another cuts its cut
-     *  there (none when that pool has no cuts). */
+     *  there (none when that pool has no cuts). After them come the sheet's crews, each a pool of its own
+     *  (see {@link #crewPools}). */
     public List<Pool> list(String sheetId) {
         Map<Long, String> names = new LinkedHashMap<>();
         Map<Long, List<PoolMember>> members = new LinkedHashMap<>();
@@ -73,7 +79,39 @@ public class PoolRepository {
         for (Map.Entry<Long, String> pool : names.entrySet()) {
             BigDecimal total = totals.get(pool.getKey());
             pools.add(new Pool(pool.getKey(), sheetId, pool.getValue(), cut.get(pool.getKey()),
-                    total.toPlainString(), total.compareTo(FULL) == 0, parents.get(pool.getKey())));
+                    total.toPlainString(), total.compareTo(FULL) == 0, parents.get(pool.getKey()), false));
+        }
+        pools.addAll(crewPools(sheetId, pot, held));
+        return pools;
+    }
+
+    /** The sheet's crews in the order they were added, each as a pool under its name (id: the crew's id
+     *  negated; a member of no pool, and taking none): the lead then the members in the order added, at
+     *  equal shares of 100.00 as a person's patrons' shares are (the remainder on the lead), cutting the
+     *  sheet's pot like any pool. */
+    private List<Pool> crewPools(String sheetId, BigDecimal pot, Set<Long> held) {
+        Set<Long> retired = new HashSet<>(jdbc.queryForList(
+                "SELECT id FROM person WHERE sheet_id = ? AND retired_from IS NOT NULL", Long.class, sheetId));
+        List<Pool> pools = new ArrayList<>();
+        for (Crew crew : crews.list(sheetId)) {
+            List<Long> ids = new ArrayList<>();
+            List<String> names = new ArrayList<>();
+            ids.add(crew.leadId());
+            names.add(crew.lead());
+            for (CrewMember m : crew.members()) {
+                ids.add(m.personId());
+                names.add(m.name());
+            }
+            long hundredths = FULL.movePointRight(2).longValueExact();
+            long each = hundredths / ids.size();
+            List<PoolMember> members = new ArrayList<>();
+            for (int i = 0; i < ids.size(); i++) {
+                long share = i == 0 ? hundredths - each * (ids.size() - 1) : each;
+                members.add(new PoolMember(ids.get(i), null, names.get(i),
+                        BigDecimal.valueOf(share, 2).toPlainString(), retired.contains(ids.get(i)), null, null, true, ""));
+            }
+            pools.add(new Pool(-crew.id(), sheetId, crew.name(), pot != null ? cut(members, pot, held) : members,
+                    FULL.toPlainString(), true, null, true));
         }
         return pools;
     }

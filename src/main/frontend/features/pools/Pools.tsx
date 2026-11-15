@@ -13,7 +13,8 @@ import { Fig } from '../session/Fig';
  *  whether it is balanced (exactly 100.00), each member's cut of
  *  the pool's pot (blank when unbalanced or no pot), and adds a member — a person or another pool, listed
  *  as pool:<name> — from its row, with optional from/to dates (a member whose dates leave out the sheet's
- *  today counts for nothing and has no cut). A pool that is a member of another cuts its cut there. */
+ *  today counts for nothing and has no cut). A pool that is a member of another cuts its cut there. Each
+ *  crew is a pool too, listed after the others, its members the crew's (no member form). */
 export function Pools({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const pools = useQuery({ queryKey: poolsKey(sheetId), queryFn: () => listPools(sheetId) });
@@ -61,7 +62,7 @@ export function Pools({ sheetId, user }: { sheetId: string; user: string }) {
           Add pool
         </button>
         {save.isError && (
-          <span data-testid="pool-form-error">A pool needs a name not already used on the sheet.</span>
+          <span data-testid="pool-form-error">A pool needs a name not already used on the sheet by a pool or a crew.</span>
         )}
       </form>
       <ul>
@@ -121,7 +122,7 @@ function PoolRow({ sheetId, user, pool, people, pools }: { sheetId: string; user
           </li>
         ))}
       </ul>
-      <form
+      {!pool.crew && <form
         onSubmit={(e) => {
           e.preventDefault();
           const input = { member: memberRef(member), share, from, to };
@@ -140,7 +141,7 @@ function PoolRow({ sheetId, user, pool, people, pools }: { sheetId: string; user
           {people.map((person) => (
             <option key={person.id} value={String(person.id)}>{person.name}</option>
           ))}
-          {pools.map((p) => (
+          {pools.filter((p) => !p.crew).map((p) => (
             <option key={`pool-${p.id}`} value={`pool:${p.id}`}>{`pool:${p.name}`}</option>
           ))}
         </select>{' '}
@@ -165,7 +166,7 @@ function PoolRow({ sheetId, user, pool, people, pools }: { sheetId: string; user
         {add.isError && (
           <span data-testid="pool-error">The member could not be added: a person not already in the pool, or a pool not already in one that keeps chains acyclic and at most three deep, with a share more than 0.00 and at most 100.00 (two decimals), and a to-date not before the from-date.</span>
         )}
-      </form>
+      </form>}
     </li>
   );
 }
