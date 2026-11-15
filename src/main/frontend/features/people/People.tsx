@@ -14,7 +14,7 @@ import { useSheetToday } from '../sheet/api';
 import { ExportPeople } from './ExportPeople';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
-import { GRADES, addPatron, addPerson, gradeOn, holdPerson, listPeople, peopleKey, retirePerson, takeStatement, updatePerson, type Person, type PersonInput } from './api';
+import { GRADES, addPatron, addPerson, gradeOn, holdPerson, listPeople, listWatches, peopleKey, retirePerson, takeStatement, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '' };
 
@@ -30,12 +30,15 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '' };
  *  their due-total for each period (see `personPeriodDue`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
  *  with a checkbox that selects it for a button that opens the selected claims together.
  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
+ *  Whether the signed-in user watches each person, with a button that starts or stops it.
  *  A button exports everyone, retired people included, as a CSV file. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
+  const watches = useQuery({ queryKey: watchesKey(sheetId, user), queryFn: () => listWatches(sheetId, user) });
+  const watched = new Set(watches.data ?? []);
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
   const floor = useFloor(sheetId);
   const today = useSheetToday(sheetId, user);
@@ -116,8 +119,15 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
   });
 
+  // The person whose last watch was refused; cleared by the next action on the row.
+  const watching = useMutation({
+    mutationFn: (v: { id: number; on: boolean }) => watchPerson(sheetId, user, v.id, v.on),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: watchesKey(sheetId, user) }),
+  });
+
   const resetRowActions = () => {
     statement.reset();
+    watching.reset();
     retirement.reset();
     holding.reset();
     patronage.reset();
@@ -127,6 +137,13 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     stateOnce(() => {
       resetRowActions();
       return statement.mutateAsync(id);
+    });
+  };
+
+  const watch = (id: number, on: boolean) => {
+    stateOnce(() => {
+      resetRowActions();
+      return watching.mutateAsync({ id, on });
     });
   };
 
@@ -283,12 +300,22 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   {statement.isError && statement.variables === p.id && (
                     <span data-testid="person-error">The statement could not be taken.</span>
                   )}
+                  {watching.isError && watching.variables?.id === p.id && (
+                    <span data-testid="person-error">The person could not be watched.</span>
+                  )}
                   {retirement.isError && retirement.variables?.id === p.id && (
                     <span data-testid="person-error">The person could not be retired: the date must be a date.</span>
                   )}
                   {holding.isError && holding.variables?.id === p.id && (
                     <span data-testid="person-error">The person could not be held: the dates must be dates, the to-date not before the from-date.</span>
                   )}
+                </td>
+                <td>
+                  Watched <span data-testid="person-watched">{watched.has(p.id) ? 'yes' : 'no'}</span>{' '}
+                  <button type="button" data-testid="person-watch" disabled={watching.isPending || !watches.isSuccess}
+                    onClick={() => watch(p.id, !watched.has(p.id))}>
+                    {watched.has(p.id) ? 'Unwatch' : 'Watch'}
+                  </button>
                 </td>
                 <td>
                   Retired <span data-testid="person-retired">{p.retired ? 'yes' : 'no'}</span>{' '}

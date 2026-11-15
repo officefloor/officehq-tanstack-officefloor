@@ -88,3 +88,16 @@ export type QuickAddInput = { name: string; amount: string };
 export function quickAdd(sheetId: string, by: string, input: QuickAddInput): Promise<Claim> {
   return postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/quick-add?by=${encodeURIComponent(by)}`, input);
 }
+
+export const watchesKey = (sheetId: string, user: string) => [...sheetKey(sheetId), 'watches', user] as const;
+
+/** The ids of the people the user watches on the sheet (each user watches for themselves). */
+export function listWatches(sheetId: string, user: string): Promise<number[]> {
+  return getJson<number[]>(`/api/sheets/${encodeURIComponent(sheetId)}/watches?by=${encodeURIComponent(user)}`);
+}
+
+/** Start (`on`) or stop the user watching the person: a watched person's claim settled, approved or
+ *  re-settled notifies each watcher. */
+export function watchPerson(sheetId: string, by: string, id: number, on: boolean): Promise<{ personId: number; watched: boolean }> {
+  return postJson(`${base(sheetId)}/${id}/watch?by=${encodeURIComponent(by)}`, { on });
+}
