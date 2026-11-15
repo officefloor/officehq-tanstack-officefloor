@@ -8,8 +8,9 @@ import net.officefloor.hq.app.claim.ClaimStatus;
  *  first from the beginning of time), with {@code grade} the one in force on the sheet's today, the version raised by each saved edit, and
  *  their statements: how many have been taken, and the last one's due-total and date (none until the
  *  first), and the date they are retired from (null: not retired; set at all, they count as retired),
- *  and their holds, by when they were added (their OPEN claims dated within one, and not bound by a
- *  statement, count in no live total; nor, from their retirement date on, do any of their open ones). */
+ *  and their holds, by when they were added (a held person gets no cut of a pool; their claims still
+ *  count in every total), and from their retirement date on their open claims not bound by a statement
+ *  count in no live total. */
 public class Person {
     private final long id;
     private final String sheetId;
@@ -220,26 +221,24 @@ public class Person {
     public void setClashing(boolean clashing) { this.clashing = clashing; }
 
     /** Whether the claim counts in live totals: it counts by status, and is not an open (OPEN or
-     *  PENDING) claim dated within one of their holds, or of a person whose retirement date is reached,
-     *  that no statement bound, nor a deferred one. */
+     *  PENDING) claim of a person whose retirement date is reached that no statement bound, nor a
+     *  deferred one. A hold (theirs or the claim's own) leaves nothing out: it only matters in the pools. */
     public boolean countsLive(Claim claim) {
         return claim.isCounting() && !leftOutLive(claim);
     }
 
-    /** Whether the claim counts in claimed (and the claimed-total): as {@link #countsLive}, but a hold
-     *  (theirs or the claim's own) does not leave it out; only the due figures leave it out while held. */
+    /** Whether the claim counts in claimed (and the claimed-total): as {@link #countsLive}. */
     public boolean countsClaimed(Claim claim) {
         return claim.isCounting() && !claim.isDeferred()
                 && !(ClaimStatus.isOpen(claim.getStatus()) && !claim.isStated() && isRetiredReached());
     }
 
     /** Whether the live rules leave the claim out whatever its status counts: it is deferred, or an
-     *  open (OPEN or PENDING) claim that no statement bound, held itself, dated within one of their holds
-     *  or of a person whose retirement date the sheet's today has reached. */
+     *  open (OPEN or PENDING) claim that no statement bound of a person whose retirement date the
+     *  sheet's today has reached. */
     public boolean leftOutLive(Claim claim) {
         return claim.isDeferred()
-                || (ClaimStatus.isOpen(claim.getStatus()) && !claim.isStated()
-                        && (claim.isHeld() || isRetiredReached() || holds.stream().anyMatch((h) -> h.covers(claim.getDate()))));
+                || (ClaimStatus.isOpen(claim.getStatus()) && !claim.isStated() && isRetiredReached());
     }
 
     /** Whether a claim on this date is refused: the person is retired from a date before it, or it

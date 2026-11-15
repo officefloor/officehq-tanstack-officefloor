@@ -41,7 +41,7 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  A steward can waive an OPEN or PENDING claim's late charge with a button beside it (anyone else, any other
  *  status, or a claim already waived refused with an error on the claim); whether it is waived is shown.
  *  An OPEN or PENDING claim can be held and released with a toggle beside it (any other status refused with
- *  an error on the claim); held, it leaves the live totals as a held person's claims do; whether it is held is shown.
+ *  an error on the claim); held, it still counts in every total; whether it is held is shown.
  *  An OPEN claim can be deferred until a date typed beside it, after the sheet's today (any other claim, date,
  *  or a claim in a closed period refused with an error on the claim); whether it is deferred, and until when, is shown.
  *  Its proofs count is shown, with how many are of each kind, and raised by one with a button beside it, of the

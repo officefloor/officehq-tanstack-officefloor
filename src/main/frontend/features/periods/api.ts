@@ -127,7 +127,7 @@ export const countedOn = (c: Claim, date: string) => {
 /** A person's due-total for a period: once closed or soft-closed, the one fixed for them when it was closed (0.00
  *  for a person added later); else the due as shown now of their claims due by a day in it that counted by
  *  their status at the end of its last day (see `statusOn`), less those the live rules leave out
- *  (deferred, held; see `liveClaims`), n/a ones skipped. */
+ *  (deferred, retired; see `liveClaims`), n/a ones skipped. */
 export function personPeriodDue(p: Period, person: Person, claims: Claim[], people: Person[] | undefined,
   rates: Rate[] | undefined, floor: DatedOn, late: Late): string {
   if (p.closed || p.soft) return p.personTotals[String(person.id)] ?? '0.00';

@@ -191,7 +191,7 @@ public class Claim {
 
     private boolean held;
 
-    /** Whether it is held: while open (OPEN or PENDING) and bound by no statement, it counts in no due figure (it still counts in claimed). */
+    /** Whether it is held: shown only; a held claim counts in every total as any other. */
     public boolean isHeld() { return held; }
     public void setHeld(boolean held) { this.held = held; }
 

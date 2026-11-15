@@ -19,7 +19,7 @@ import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 
 /** The sheet's figures at one moment, as the screen shows them: each person's claimed (corrections
- *  left out; a held claim counts, see {@link Person#countsClaimed}) and
+ *  left out; held ones count, see {@link Person#countsClaimed}) and
  *  due-total (null: n/a; else at most the sheet's cap) and overdue-total, in the order they were added, and the
  *  sheet's claimed-total, due-total and overdue-total (these two leave out the single highest and
  *  lowest person's figure when three or more people have one), with the sheet's alert threshold

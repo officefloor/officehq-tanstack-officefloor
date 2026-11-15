@@ -53,7 +53,7 @@ export type Claim = {
   reminded: string | null;
   /** Whether a steward waived its late charge: it bears none from then on, whatever its overdue state. */
   waived: boolean;
-  /** Whether it is held: while open (OPEN or PENDING) and bound by no statement, it counts in no due figure (it still counts in claimed). */
+  /** Whether it is held: shown only; a held claim counts in every total as any other. */
   held: boolean;
   /** Its external reference (null: none); used once per sheet, compared without regard to case. */
   ref: string | null;
@@ -231,25 +231,16 @@ export function reassignClaim(sheetId: string, by: string, id: number, toPersonI
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED do. */
 export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
 
-/** The claims that count in live totals: all but the deferred claims and the open claims that no statement bound,
- *  held themselves or dated within one of their person's holds (`to` null: open-ended) or of a person whose retirement date the sheet's
- *  today has reached (`retiredReached`) (SETTLED and bound claims still count). */
-export function liveClaims(claims: Claim[],
-  people: Array<{ id: number; holds: Array<{ from: string; to: string | null }>; retiredReached?: boolean }> | undefined): Claim[] {
-  const byId = new Map((people ?? []).map((p) => [p.id, p]));
-  const held = (c: Claim) => {
-    const p = byId.get(c.personId);
-    return c.held || (!!p && (!!p.retiredReached || p.holds.some((h) => h.from <= c.date && (h.to === null || c.date <= h.to))));
-  };
-  return claims.filter((c) => !c.deferred && !(isOpen(c) && !c.stated && held(c)));
-}
-
-/** The claims that count in claimed and the claimed-total: as `liveClaims`, but a hold (the person's or the
- *  claim's own) does not leave a claim out; only the due figures leave it out while held. */
-export function claimedClaims(claims: Claim[], people: Array<{ id: number; retiredReached?: boolean }> | undefined): Claim[] {
+/** The claims that count in live totals: all but the deferred claims and the open claims that no statement bound
+ *  of a person whose retirement date the sheet's today has reached (`retiredReached`) (SETTLED and bound claims still
+ *  count). A hold (the person's or the claim's own) leaves nothing out: it only matters in the pools. */
+export function liveClaims(claims: Claim[], people: Array<{ id: number; retiredReached?: boolean }> | undefined): Claim[] {
   const byId = new Map((people ?? []).map((p) => [p.id, p]));
   return claims.filter((c) => !c.deferred && !(isOpen(c) && !c.stated && !!byId.get(c.personId)?.retiredReached));
 }
+
+/** The claims that count in claimed and the claimed-total: as `liveClaims`. */
+export const claimedClaims = liveClaims;
 
 /** Whether a person is active: one of their claims that count (`live`, see `liveClaims`) is open (OPEN or
  *  PENDING) and dated within the 30 days up to and including the sheet's `today`. */
