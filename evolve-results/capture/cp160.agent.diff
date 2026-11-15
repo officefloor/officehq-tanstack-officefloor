@@ -1,0 +1,337 @@
+diff --git a/src/main/frontend/features/periods/api.ts b/src/main/frontend/features/periods/api.ts
+index f0839c59e..58bfa3ad3 100644
+--- a/src/main/frontend/features/periods/api.ts
++++ b/src/main/frontend/features/periods/api.ts
+@@ -15,6 +15,8 @@ export type Period = {
+   soft: boolean;
+   /** The most OPEN or PENDING claims a person may have in it (claims due by a day in it); null for none. */
+   cap: number | null;
++  /** Once closed or soft-closed, each person's carried figure for it fixed when it was closed, by person id. */
++  personCarried: Record<string, string>;
+ };
+ /** cap: a whole number above zero, blank for none. */
+ export type PeriodInput = { name: string; from: string; to: string; cap: string };
+@@ -107,11 +109,13 @@ export function personPeriodDue(p: Period, person: Person, claims: Claim[], peop
+     .map((c) => claimDue(c, rates, (d) => gradeOn(person, d), floor, late)));
+ }
+ 
+-/** A person's carried figure for a period: the due as shown now of their claims that count (see `liveClaims`)
++/** A person's carried figure for a period: once closed or soft-closed, the one fixed for them when it was closed
++ *  (0.00 for a person added later); else the due as shown now of their claims that count (see `liveClaims`)
+  *  due by a day in a period ending before this one starts, whose status at the end of this period's last day
+  *  (see `statusOn`) was OPEN or PENDING; n/a ones skipped. */
+ export function personPeriodCarried(p: Period, periods: Period[], person: Person, claims: Claim[],
+   people: Person[] | undefined, rates: Rate[] | undefined, floor: DatedOn, late: Late): string {
++  if (p.closed || p.soft) return p.personCarried[String(person.id)] ?? '0.00';
+   const earlier = periods.filter((e) => e.to < p.from);
+   return sumDues(liveClaims(claims.filter((c) => c.personId === person.id), people)
+     .filter((c) => { const s = statusOn(c, p.to); return s === 'OPEN' || s === 'PENDING'; })
+diff --git a/src/main/frontend/features/summary/Consolidated.tsx b/src/main/frontend/features/summary/Consolidated.tsx
+index a5cf0f9e7..a06d112e2 100644
+--- a/src/main/frontend/features/summary/Consolidated.tsx
++++ b/src/main/frontend/features/summary/Consolidated.tsx
+@@ -11,26 +11,28 @@ import { Fig } from '../session/Fig';
+ /** A sheet's own figures, as that sheet shows them in its header. */
+ type Figures = { people: number; due: string; overdue: string };
+ 
+-/** `live`: as the sheet is now, even while the screen shows it as of a date. */
+-function useFigures(sheetId: string, user: string, live: boolean): Figures {
+-  const people = useQuery({ queryKey: liveKey(peopleKey(sheetId), live), queryFn: () => listPeople(sheetId, live) });
+-  return { people: (people.data ?? []).length, due: useDueTotal(sheetId, user, live), overdue: useOverdue(sheetId, user, live).total };
++/** As the screen shows the sheet: as of its date while one is set, each sheet as it stood then. */
++function useFigures(sheetId: string, user: string): Figures {
++  const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
++  return { people: (people.data ?? []).length, due: useDueTotal(sheetId, user), overdue: useOverdue(sheetId, user).total };
+ }
+ 
+ /** Works out one descendant sheet's own figures and hands them up; shows nothing. */
+-function Descendant({ sheetId, user, live, report }: { sheetId: string; user: string; live: boolean; report: (id: string, f: Figures) => void }) {
+-  const f = useFigures(sheetId, user, live);
++function Descendant({ sheetId, user, report }: { sheetId: string; user: string; report: (id: string, f: Figures) => void }) {
++  const f = useFigures(sheetId, user);
+   useEffect(() => report(sheetId, f), [sheetId, f.people, f.due, f.overdue]);
+   return null;
+ }
+ 
+ /** The consolidated figures over the sheet and all its descendants (its children, theirs, ...): the
+  *  number of people, and each sheet's due- and overdue-total as that sheet shows it, added up. They
+- *  are the sheets as they are now, also while the screen shows the sheet as of a date. */
++ *  While the screen shows the sheet as of a date, every sheet of the tree is as it stood at the end of
++ *  that day, with that date as its today; the tree itself is the one the sheets' parents make now. */
+ export function Consolidated({ sheetId, user }: { sheetId: string; user: string }) {
+   const [asOf] = useAsOf();
++  // The tree is the one the sheets' parents make now, even while the screen shows a date.
+   const live = asOf !== '';
+-  const own = useFigures(sheetId, user, live);
++  const own = useFigures(sheetId, user);
+   const descendants = useQuery({ queryKey: liveKey(descendantsKey(sheetId), live), queryFn: () => listDescendants(sheetId, live) });
+   const ids = descendants.data ?? [];
+   const [reported, setReported] = useState<Record<string, Figures>>({});
+@@ -42,7 +44,7 @@ export function Consolidated({ sheetId, user }: { sheetId: string; user: string
+   const sum = (pick: (f: Figures) => string) => formatCents(all.reduce((t, f) => t + hundredths(pick(f)), 0n));
+   return (
+     <p>
+-      {ids.map((id) => <Descendant key={id} sheetId={id} user={user} live={live} report={report} />)}
++      {ids.map((id) => <Descendant key={id} sheetId={id} user={user} report={report} />)}
+       Consolidated: people <span data-testid="consolidated-people-count">{ready ? all.reduce((t, f) => t + f.people, 0) : ''}</span>
+       {' · '}due <span data-testid="consolidated-due-total"><Fig>{ready ? sum((f) => f.due) : ''}</Fig></span>
+       {' · '}overdue <span data-testid="consolidated-overdue-total"><Fig>{ready ? sum((f) => f.overdue) : ''}</Fig></span>
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java b/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java
+index 15874f397..0091efa83 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java
+@@ -7,8 +7,10 @@ import java.sql.SQLException;
+ import java.sql.Statement;
+ import java.time.LocalDate;
+ import java.util.ArrayList;
++import java.util.HashMap;
+ import java.util.HashSet;
+ import java.util.List;
++import java.util.Map;
+ import java.util.Set;
+ import java.util.concurrent.atomic.AtomicLong;
+ import javax.sql.DataSource;
+@@ -37,6 +39,11 @@ public class AsOfStore {
+ 
+     private final AtomicLong views = new AtomicLong();
+ 
++    /** The live tables and their columns: the schema is migrated before the app serves, so they are read once. */
++    private List<String> liveTables;
++
++    private final Map<String, Set<String>> liveColumns = new HashMap<>();
++
+     public AsOfStore(DataSource dataSource) {
+         this.dataSource = dataSource;
+     }
+@@ -155,9 +162,11 @@ public class AsOfStore {
+     }
+ 
+     /** Copy the sheet's rows of every table from {@code source} (null: none) into a new schema. */
+-    private static void copy(Connection c, String source, String target, String sheetId) throws SQLException {
+-        List<String> tables = tables(c, LIVE);
+-        Set<String> inSource = source == null ? Set.of() : new HashSet<>(tables(c, source));
++    private void copy(Connection c, String source, String target, String sheetId) throws SQLException {
++        if (liveTables == null) liveTables = tables(c, LIVE);
++        List<String> tables = liveTables;
++        // A snapshot is a copy of every live table, all taken since the app started.
++        Set<String> inSource = source == null ? Set.of() : new HashSet<>(source.equals(LIVE) || source.startsWith("SNAP_") ? tables : tables(c, source));
+         String sheet = "'" + sheetId.replace("'", "''") + "'";
+         try (Statement s = c.createStatement()) {
+             s.execute("CREATE SCHEMA " + q(target));
+@@ -172,9 +181,13 @@ public class AsOfStore {
+     }
+ 
+     /** The condition picking the sheet's rows of a table. */
+-    private static String filter(Connection c, String table, String from, String sheet) throws SQLException {
++    private String filter(Connection c, String table, String from, String sheet) throws SQLException {
+         if (table.equals("SHEET")) return "ID = " + sheet;
+-        Set<String> columns = columns(c, table);
++        Set<String> columns = liveColumns.get(table);
++        if (columns == null) {
++            columns = columns(c, table);
++            liveColumns.put(table, columns);
++        }
+         if (columns.contains("SHEET_ID")) return "SHEET_ID = " + sheet;
+         for (String owner : List.of("PERIOD", "PERSON", "CLAIM")) {
+             if (columns.contains(owner + "_ID")) {
+diff --git a/src/main/java/net/officefloor/hq/app/period/Period.java b/src/main/java/net/officefloor/hq/app/period/Period.java
+index 410a4ec1e..92674a027 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Period.java
++++ b/src/main/java/net/officefloor/hq/app/period/Period.java
+@@ -7,9 +7,10 @@ import java.util.Map;
+  *  due-total for it fixed then too, by person id (a person not in it shows 0.00). A soft-closed period
+  *  ({@code soft}, not {@code closed}) has its figures fixed the same way, but claims due by a day in it can
+  *  still be added and changed. Its cap (null: none) is the most OPEN or PENDING claims a person may
+- *  have in it. */
++ *  have in it. Once fixed, each person's carried figure for it is fixed then too ({@code personCarried}). */
+ public record Period(String sheetId, String name, String from, String to, boolean closed,
+-        String closedTotal, Map<Long, String> personTotals, boolean soft, Integer cap) {
++        String closedTotal, Map<Long, String> personTotals, boolean soft, Integer cap,
++        Map<Long, String> personCarried) {
+ 
+     /** Whether its figures are fixed: closed or soft-closed. */
+     public boolean fixed() {
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodClosing.java b/src/main/java/net/officefloor/hq/app/period/PeriodClosing.java
+index 59dacd55a..faef25028 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodClosing.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodClosing.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.period;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.util.LinkedHashMap;
++import java.util.List;
+ import java.util.Map;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimLogRepository;
+@@ -31,7 +32,7 @@ public final class PeriodClosing {
+         return fixNow(found, user, false, periods, claims, log, people, rates, settings, sheets);
+     }
+ 
+-    /** Close or (soft) soft-close the period now, fixing its figures as they are now (no permission check). */
++    /** Close or (soft) soft-close the period now, fixing its figures (and everyone's carried figure) as they are now (no permission check). */
+     public static Period fixNow(Period found, String user, boolean soft, PeriodRepository periods, ClaimRepository claims,
+             ClaimLogRepository log, PersonRepository people, RateRepository rates, SettingRepository settings,
+             SheetRepository sheets) {
+@@ -40,22 +41,33 @@ public final class PeriodClosing {
+         Dues.Late late = settings.late(id, sheets.today(id));
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+         Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
+-        for (Person p : people.list(id)) personTotals.put(p.getId(), BigDecimal.ZERO.setScale(2));
++        Map<Long, BigDecimal> personCarried = new LinkedHashMap<>();
++        for (Person p : people.list(id)) {
++            personTotals.put(p.getId(), BigDecimal.ZERO.setScale(2));
++            personCarried.put(p.getId(), BigDecimal.ZERO.setScale(2));
++        }
++        List<Period> earlier = periods.list(id).stream().filter((e) -> e.to().compareTo(found.from()) < 0).toList();
+         Map<Long, String> atEnd = log.statusesOn(id, LocalDate.parse(found.to()));
+         for (Claim c : claims.list(id)) {
+-            if (!found.contains(c.getDueBy())) continue;
++            boolean in = found.contains(c.getDueBy());
++            // Carried: due by a day in an earlier period, still OPEN or PENDING at the end of this one.
++            boolean carried = !in && earlier.stream().anyMatch((e) -> e.contains(c.getDueBy()));
++            if (!in && !carried) continue;
+             String status = atEnd.containsKey(c.getId()) ? atEnd.get(c.getId()) : c.getStatus();
+-            if (status == null || !(ClaimStatus.isOpen(status) || ClaimStatus.SETTLED.name().equals(status))) continue;
++            if (status == null || !(ClaimStatus.isOpen(status) || (in && ClaimStatus.SETTLED.name().equals(status)))) continue;
+             Person person = people.find(id, c.getPersonId());
+             if (person != null && person.leftOutLive(c)) continue;
+             Rate rate = person == null ? null
+                     : rates.find(id, person.gradeOn(c.getDate()), LocalDate.parse(c.getDate()), c.getId());
+             String due = Dues.shown(c, rate == null ? null : Dues.of(c.getAmount(), rate.pct(), late.rounding(c.getRoundDate())), floor.on(c.getDate()), late);
+-            if (due != null) {
+-                total = total.add(new BigDecimal(due));
+-                if (person != null) personTotals.merge(person.getId(), new BigDecimal(due), BigDecimal::add);
++            if (due == null) continue;
++            if (carried) {
++                if (person != null) personCarried.merge(person.getId(), new BigDecimal(due), BigDecimal::add);
++                continue;
+             }
++            total = total.add(new BigDecimal(due));
++            if (person != null) personTotals.merge(person.getId(), new BigDecimal(due), BigDecimal::add);
+         }
+-        return periods.close(found, total, personTotals, user, soft);
++        return periods.close(found, total, personTotals, personCarried, user, soft);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+index a7fb922bf..e9c91a8e1 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+@@ -17,7 +17,7 @@ public class PeriodRepository {
+             rs.getObject("to_date", LocalDate.class).toString(), rs.getBoolean("closed"),
+             rs.getBigDecimal("closed_total") == null ? null
+                     : rs.getBigDecimal("closed_total").setScale(2).toPlainString(), Map.of(),
+-            rs.getBoolean("soft_closed"), (Integer) rs.getObject("claim_cap", Integer.class));
++            rs.getBoolean("soft_closed"), (Integer) rs.getObject("claim_cap", Integer.class), Map.of());
+ 
+     private static final String COLUMNS = "SELECT sheet_id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap FROM period ";
+ 
+@@ -33,15 +33,20 @@ public class PeriodRepository {
+                 .map(this::withPersonTotals).toList();
+     }
+ 
+-    /** The period with each person's due-total fixed when it was closed. */
++    /** The period with each person's due-total and carried figure fixed when it was closed. */
+     private Period withPersonTotals(Period p) {
+         if (!p.fixed()) return p;
+         Map<Long, String> totals = new LinkedHashMap<>();
+-        jdbc.query("SELECT t.person_id, t.total FROM period_person_total t JOIN period p ON p.id = t.period_id "
++        Map<Long, String> carried = new LinkedHashMap<>();
++        jdbc.query("SELECT t.person_id, t.total, t.carried FROM period_person_total t JOIN period p ON p.id = t.period_id "
+                 + "WHERE p.sheet_id = ? AND p.name = ? ORDER BY t.person_id",
+-                rs -> { totals.put(rs.getLong("person_id"), rs.getBigDecimal("total").setScale(2).toPlainString()); },
++                rs -> {
++                    totals.put(rs.getLong("person_id"), rs.getBigDecimal("total").setScale(2).toPlainString());
++                    carried.put(rs.getLong("person_id"), rs.getBigDecimal("carried").setScale(2).toPlainString());
++                },
+                 p.sheetId(), p.name());
+-        return new Period(p.sheetId(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(), totals, p.soft(), p.cap());
++        return new Period(p.sheetId(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(), totals, p.soft(), p.cap(),
++                carried);
+     }
+ 
+     /** The sheet's period with the name; null when there is none. */
+@@ -69,24 +74,27 @@ public class PeriodRepository {
+         return n != null && n > 0;
+     }
+ 
+-    /** Close the period, fixing its due-total and each person's due-total for it (afresh when it was
+-     *  soft-closed); soft: soft-close it instead, claims in it can still be added and changed. */
+-    public Period close(Period period, BigDecimal total, Map<Long, BigDecimal> personTotals, String user,
+-            boolean soft) {
++    /** Close the period, fixing its due-total and each person's due-total and carried figure for it (afresh
++     *  when it was soft-closed); soft: soft-close it instead, claims in it can still be added and changed. */
++    public Period close(Period period, BigDecimal total, Map<Long, BigDecimal> personTotals,
++            Map<Long, BigDecimal> personCarried, String user, boolean soft) {
+         jdbc.update("DELETE FROM period_person_total WHERE period_id IN "
+                 + "(SELECT id FROM period WHERE sheet_id = ? AND name = ?)", period.sheetId(), period.name());
+         for (Map.Entry<Long, BigDecimal> e : personTotals.entrySet()) {
+-            jdbc.update("INSERT INTO period_person_total (period_id, person_id, total) SELECT id, ?, ? "
+-                    + "FROM period WHERE sheet_id = ? AND name = ?",
+-                    e.getKey(), e.getValue(), period.sheetId(), period.name());
++            jdbc.update("INSERT INTO period_person_total (period_id, person_id, total, carried) SELECT id, ?, ?, ? "
++                    + "FROM period WHERE sheet_id = ? AND name = ?", e.getKey(), e.getValue(),
++                    personCarried.getOrDefault(e.getKey(), BigDecimal.ZERO.setScale(2)), period.sheetId(), period.name());
+         }
+         jdbc.update("UPDATE period SET closed = ?, soft_closed = ?, closed_total = ?, closed_by = ?, "
+                 + "closed_at = CURRENT_TIMESTAMP WHERE sheet_id = ? AND name = ?",
+                 !soft, soft, total, user, period.sheetId(), period.name());
+         Map<Long, String> shown = new LinkedHashMap<>();
+         personTotals.forEach((id, t) -> shown.put(id, t.toPlainString()));
++        Map<Long, String> carried = new LinkedHashMap<>();
++        personTotals.keySet().forEach((id) -> carried.put(id,
++                personCarried.getOrDefault(id, BigDecimal.ZERO.setScale(2)).toPlainString()));
+         return new Period(period.sheetId(), period.name(), period.from(), period.to(), !soft,
+-                total.toPlainString(), shown, soft, period.cap());
++                total.toPlainString(), shown, soft, period.cap(), carried);
+     }
+ 
+     /** Reopen the closed or soft-closed period: its due-total is live again. */
+@@ -95,7 +103,7 @@ public class PeriodRepository {
+                 + "(SELECT id FROM period WHERE sheet_id = ? AND name = ?)", period.sheetId(), period.name());
+         jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL, closed_by = NULL, "
+                 + "closed_at = NULL WHERE sheet_id = ? AND name = ?", period.sheetId(), period.name());
+-        return new Period(period.sheetId(), period.name(), period.from(), period.to(), false, null, Map.of(), false, period.cap());
++        return new Period(period.sheetId(), period.name(), period.from(), period.to(), false, null, Map.of(), false, period.cap(), Map.of());
+     }
+ 
+     /** Whether another period on the sheet has the name, compared without regard to case. */
+@@ -120,7 +128,7 @@ public class PeriodRepository {
+     public Period add(String sheetId, String name, LocalDate from, LocalDate to, String user, Integer cap) {
+         jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, created_by, claim_cap) "
+                 + "VALUES (?, ?, ?, ?, ?, ?)", sheetId, name, from, to, user, cap);
+-        return new Period(sheetId, name, from.toString(), to.toString(), false, null, Map.of(), false, cap);
++        return new Period(sheetId, name, from.toString(), to.toString(), false, null, Map.of(), false, cap, Map.of());
+     }
+ 
+     /** The sheet's period whose dates contain the date (yyyy-MM-dd); null when there is none. */
+@@ -130,14 +138,15 @@ public class PeriodRepository {
+                 .stream().findFirst().orElse(null);
+     }
+ 
+-    /** Move the person {@code fromId}'s fixed due-totals of closed periods to {@code intoId}, added
+-     *  to into's where into has one. */
++    /** Move the person {@code fromId}'s fixed due-totals and carried figures of closed periods to
++     *  {@code intoId}, added to into's where into has one. */
+     public void moveTotals(String sheetId, long fromId, long intoId) {
+         String ofSheet = "period_id IN (SELECT id FROM period WHERE sheet_id = ?)";
+         jdbc.update("UPDATE period_person_total t SET total = total + (SELECT f.total FROM period_person_total f "
+-                + "WHERE f.period_id = t.period_id AND f.person_id = ?) WHERE t.person_id = ? AND t." + ofSheet
++                + "WHERE f.period_id = t.period_id AND f.person_id = ?), carried = carried + (SELECT f.carried "
++                + "FROM period_person_total f WHERE f.period_id = t.period_id AND f.person_id = ?) WHERE t.person_id = ? AND t." + ofSheet
+                 + " AND t.period_id IN (SELECT f.period_id FROM period_person_total f WHERE f.person_id = ?)",
+-                fromId, intoId, sheetId, fromId);
++                fromId, fromId, intoId, sheetId, fromId);
+         jdbc.update("DELETE FROM period_person_total WHERE person_id = ? AND " + ofSheet + " AND period_id IN "
+                 + "(SELECT t.period_id FROM period_person_total t WHERE t.person_id = ?)", fromId, sheetId, intoId);
+         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE person_id = ? AND " + ofSheet,
+diff --git a/src/main/resources/db/migration/V74__period_person_carried.sql b/src/main/resources/db/migration/V74__period_person_carried.sql
+new file mode 100644
+index 000000000..60f09b11b
+--- /dev/null
++++ b/src/main/resources/db/migration/V74__period_person_carried.sql
+@@ -0,0 +1,4 @@
++-- A closed or soft-closed period's carried figure per person: the due of their claims due by a day in
++-- an earlier period still OPEN or PENDING at the end of its last day, fixed when it was (soft-)closed
++-- with their due-total. Removed with it when the period is reopened.
++ALTER TABLE period_person_total ADD COLUMN carried DECIMAL(19, 2) DEFAULT 0 NOT NULL;
