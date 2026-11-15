@@ -1,0 +1,49 @@
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RecordSnapshots.java b/src/main/java/net/officefloor/hq/app/sheet/RecordSnapshots.java
+new file mode 100644
+index 000000000..d2016e74c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RecordSnapshots.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app.sheet;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Before a new today takes effect: one SNAPSHOT line per person, in list order, with the
++ *  due-total as it stood on the day being left; nothing when the today does not change. */
++public class RecordSnapshots {
++    public void record(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "by", required = false) String by, @Val LocalDate today,
++            @Val Rollup before, SheetRepository sheets, Audit audit) {
++        String id = sheetId.trim();
++        if (today.equals(sheets.today(id))) return;
++        String head = "SNAPSHOT sheet=" + id + " by=" + (by == null ? "" : by);
++        before.people().values().forEach(figures -> audit.record(head + " name=" + figures.name()
++                + " due-total=" + (figures.dueTotal() == null ? "n/a" : figures.dueTotal())));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+index 5293f23a7..820de96f7 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+@@ -1,4 +1,5 @@
+ # POST /api/sheets/{sheetId}/today — change the sheet's today (the date everything on it goes by).
++# Before the change takes effect, a SNAPSHOT line per person with the due-total on the day being left.
+ # With grace days set, the open periods past them are closed (auto=yes) before the rollup lines.
+ # A viewer may change nothing: refused before anything is read or written.
+ guard:
+@@ -10,6 +11,10 @@ validate:
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+   govern: [ transaction ]
++  next: snapshot
++snapshot:
++  class: net.officefloor.hq.app.sheet.RecordSnapshots
++  govern: [ transaction ]
+   next: apply
+ apply:
+   class: net.officefloor.hq.app.sheet.ApplySheetToday
