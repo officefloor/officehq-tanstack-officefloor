@@ -3,7 +3,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { importPeople, peopleKey } from './api';
 
-/** A box that adds a person per pasted line of name,grade,terms,contact, and how many it added.
+/** A box that adds a person per pasted line of name,grade,terms,contact, or updates the person the
+ *  line's name (or alias) matches, and how many it added and updated.
  *  The count is cleared while it runs; a refused import adds nothing and shows an error. */
 export function ImportPeople({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
@@ -41,10 +42,11 @@ export function ImportPeople({ sheetId, user }: { sheetId: string; user: string 
       {imported.isSuccess && (
         <>
           {' '}Added <span data-testid="import-added">{imported.data.added}</span>
+          {', '}updated <span data-testid="import-updated">{imported.data.updated}</span>
         </>
       )}
       {imported.isError && (
-        <span data-testid="import-error">Every line needs a name and contact (if any) not already in use nor repeated, a grade of A, B or C, and terms (if any) a whole number of days: nothing was imported.</span>
+        <span data-testid="import-error">Every line needs a name not repeated (a name or alias on the sheet updates that person, once), a contact (if any) not used by anyone else nor repeated, a grade of A, B or C, and terms (if any) a whole number of days: nothing was imported.</span>
       )}
     </form>
   );
