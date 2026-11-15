@@ -3,6 +3,7 @@ import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query';
 import { claimsKey, listClaims, liveClaims } from '../claims/api';
 import { gradeOn, listPeople, peopleKey, shownName } from '../people/api';
 import { listRates, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
+import { heldOf } from '../rates/shares';
 import { useCap, useFloor, useLate } from '../settings/api';
 import { listTree, sheetKey, treeKey, useSheetToday } from '../sheet/api';
 
@@ -25,7 +26,8 @@ function useSheetPeople(sheetId: string, user: string): Found[] | undefined {
     shown: shownName(p),
     aliases: p.aliases,
     due: showDue(personDue(liveClaims(claims.data.filter((c) => c.personId === p.id), [p]),
-      rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap)),
+      rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap,
+      heldOf(p.id, claims.data, people.data, rates.data, floor, charges))),
   }));
 }
 

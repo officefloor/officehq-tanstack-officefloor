@@ -3,6 +3,7 @@ import { claimsKey, listClaims, liveClaims } from '../claims/api';
 import { gradeOn, listPeople, peopleKey } from '../people/api';
 import { classicPeriodDueTotal, listPeriods, periodsKey } from '../periods/api';
 import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
+import { heldOf } from '../rates/shares';
 import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { Fig } from '../session/Fig';
@@ -23,7 +24,8 @@ export function Classic({ sheetId, user }: { sheetId: string; user: string }) {
   const all = claims.data ?? [];
   const live = liveClaims(all, people.data);
   const dueTotal = sumDues((people.data ?? []).map((p) =>
-    personDue(live.filter((c) => c.personId === p.id), rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap)));
+    personDue(live.filter((c) => c.personId === p.id), rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap,
+      heldOf(p.id, all, people.data, rates.data, floor, charges))));
   const byStart = [...(periods.data ?? [])].sort((a, b) => a.from.localeCompare(b.from));
 
   return (

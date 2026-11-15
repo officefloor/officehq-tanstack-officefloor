@@ -14,6 +14,7 @@ import { backing, claimedClaims, claimsKey, patronShares, isActive, correctsAnot
 import { listPeriods, periodOf, periodsKey, personPeriodCarried, personPeriodDue } from '../periods/api';
 import { listPools, personCutTotal, poolsKey } from '../pools/api';
 import { agedDues, claimDue, excessOf, listRates, overdue, personDue, personScore, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
+import { heldOf } from '../rates/shares';
 import { roleOf, roleOfKey, scoreBand, useCap, useFloor, useLate, useScoreThresholds } from '../settings/api';
 import { crewsKey, listCrews, type Crew } from '../crews/api';
 import { useSheetToday } from '../sheet/api';
@@ -476,7 +477,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const everyone = people.data ?? [];
   const dueOf = new Map(everyone.map((q) => [q.id, personDue(
     liveClaims((claims.data ?? []).filter((c) => c.personId === q.id), [q]),
-    rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges, cap)]));
+    rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges, cap,
+    heldOf(q.id, claims.data ?? [], everyone, rates.data, floor, charges))]));
   const nameOf = new Map(everyone.map((q) => [q.id, q.name]));
   const shownOf = new Map(everyone.map((q) => [q.id, shownName(q)]));
   // The exports wait for every read in flight: after the as-of date changes the screen re-reads all.
@@ -598,8 +600,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
             const pct = byGrade.get(p.grade);
             const late = overdue(live, charges, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
             const aged = agedDues(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
-            const split = splitDues(live, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
-            const scored = splitDues(live.filter((c) => !correctsAnother(c)), (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
+            const held = heldOf(p.id, claims.data ?? [], people.data, rates.data, floor, charges);
+            const split = splitDues(live, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges), held);
+            const scored = splitDues(live.filter((c) => !correctsAnother(c)), (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges),
+              held.filter((h) => !correctsAnother(h.claim)));
             return (
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
                 <td>
@@ -658,10 +662,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                 {(shows('due-total') || shows('excess')) && (
                   <td>
                     {shows('due-total') && (
-                      <>Due <span data-testid="person-due-total"><Fig>{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap))}</Fig></span>{' '}</>
+                      <>Due <span data-testid="person-due-total"><Fig>{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap, held))}</Fig></span>{' '}</>
                     )}
                     {shows('excess') && (
-                      <>excess <span data-testid="person-excess"><Fig>{excessOf(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap)}</Fig></span></>
+                      <>excess <span data-testid="person-excess"><Fig>{excessOf(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap, held)}</Fig></span></>
                     )}
                   </td>
                 )}

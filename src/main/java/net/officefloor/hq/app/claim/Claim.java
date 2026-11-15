@@ -29,6 +29,7 @@ public class Claim {
     private List<String> log = List.of();
     private List<String> comments = List.of();
     private List<String> lines = List.of();
+    private List<ClaimShare> shares = List.of();
     private String deferredUntil;
     private boolean deferred;
     private int proofs;
@@ -128,6 +129,10 @@ public class Claim {
     /** Its lines, in the order they were added: {@code <label> <qty> x <unit>} (see {@link ClaimLineRepository}). */
     public List<String> getLines() { return lines; }
     public void setLines(List<String> lines) { this.lines = lines; }
+
+    /** Its shares held by other people on the sheet, in the order they were added (see {@link ClaimShare}). */
+    public List<ClaimShare> getShares() { return shares; }
+    public void setShares(List<ClaimShare> shares) { this.shares = shares; }
 
     /** The date it was last deferred until (yyyy-MM-dd; none: never deferred). */
     public String getDeferredUntil() { return deferredUntil; }

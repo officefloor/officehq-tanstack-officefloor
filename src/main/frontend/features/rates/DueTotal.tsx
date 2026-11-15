@@ -4,6 +4,7 @@ import { gradeOn, listPeople, peopleKey } from '../people/api';
 import { useCap, useFloor, useLate } from '../settings/api';
 import { liveKey, useSheetToday } from '../sheet/api';
 import { agedDues, claimDue, listRates, personDue, rateByGrade, ratesKey, splitDues, sumDues, trimmedSum } from './api';
+import { heldOf } from '../rates/shares';
 import { Fig } from '../session/Fig';
 
 /** The sheet's due-total: everyone's due-total added up, skipping those shown n/a, less the single
@@ -24,7 +25,8 @@ export function usePersonDues(sheetId: string, user: string, current = false): A
   const byGrade = rateByGrade(rates.data, today);
   const live = liveClaims(claims.data ?? [], people.data);
   return (people.data ?? []).map((p) =>
-    personDue(live.filter((c) => c.personId === p.id), rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap),
+    personDue(live.filter((c) => c.personId === p.id), rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap,
+      heldOf(p.id, claims.data ?? [], people.data, rates.data, floor, charges)),
   );
 }
 
@@ -41,7 +43,7 @@ function useSplitTotals(sheetId: string, user: string) {
   const splits = (people.data ?? []).map((p) => {
     const own = live.filter((c) => c.personId === p.id);
     const dueOf = (c: (typeof own)[number]) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges);
-    return { ...splitDues(own, dueOf), aged: agedDues(own, today, dueOf) };
+    return { ...splitDues(own, dueOf, heldOf(p.id, claims.data ?? [], people.data, rates.data, floor, charges)), aged: agedDues(own, today, dueOf) };
   });
   return {
     settled: sumDues(splits.map((s) => s.settled)),

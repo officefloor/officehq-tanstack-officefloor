@@ -7,6 +7,7 @@ import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { useOverdue } from '../rates/Overdue';
 import { STATUSES, statusCount } from './Summary';
+import { heldOf } from '../rates/shares';
 import { Fig } from '../session/Fig';
 import { crewDueTotal, crewsKey, listCrews } from '../crews/api';
 import { useDueOf } from '../crews/Crews';
@@ -30,7 +31,8 @@ function useMyFigures(sheetId: string, user: string): { due: string; overdue: st
   if (!p || !claims.data) return null;
   const live = liveClaims(claims.data.filter((c) => c.personId === p.id), [p]);
   const dueOfClaim = (c: (typeof live)[number]) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges);
-  const due = personDue(live, rates.data, (d) => gradeOn(p, d), rateByGrade(rates.data, today).get(p.grade), floor, charges, cap);
+  const due = personDue(live, rates.data, (d) => gradeOn(p, d), rateByGrade(rates.data, today).get(p.grade), floor, charges, cap,
+    heldOf(p.id, claims.data, people.data, rates.data, floor, charges));
   return { due: showDue(due), overdue: overdue(live, charges, dueOfClaim).total };
 }
 

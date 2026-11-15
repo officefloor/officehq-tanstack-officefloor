@@ -157,38 +157,67 @@ function roundPct(product: bigint, halfUp: boolean): bigint {
   return rest > 5_000n || (rest === 5_000n && (halfUp || whole % 2n === 1n)) ? whole + 1n : whole;
 }
 
-/** A person's due-total: the sum of their counting claims' due figures (n/a ones skipped), at
- *  most the sheet's `cap` (null: no cap); n/a
- *  when their grade today has no rate today (`pct`) and none of those claims keeps a settled or bound
+/** A holder's part of a claim's due: the due times their share divided by 100, rounded half to even. */
+export function sharePart(due: string, share: string): string {
+  return formatCents(roundPct(hundredths(due) * hundredths(share), false));
+}
+
+/** What a claim's due counts for its own person: the due less its holders' parts (n/a stays n/a). */
+export function ownPart(c: Claim, due: string | null): string | null {
+  if (due === null || (c.shares ?? []).length === 0) return due;
+  return formatCents((c.shares ?? []).reduce((t, s) => t - hundredths(sharePart(due, s.share)), hundredths(due)));
+}
+
+/** A part of another person's claim a person holds (see `Claim.shares`). */
+export type HeldPart = { claim: Claim; part: string };
+
+/** The parts a person (`personId`) holds of the claims among `claims` (the live ones) that count, each by the
+ *  claim's due as its own person's row shows it (`dueOfClaim`); n/a ones skipped. */
+export function heldParts(personId: number, claims: Claim[], dueOfClaim: (c: Claim) => string | null): HeldPart[] {
+  const held: HeldPart[] = [];
+  for (const c of claims) {
+    const share = counts(c) ? (c.shares ?? []).find((s) => s.personId === personId) : undefined;
+    const due = share === undefined ? null : dueOfClaim(c);
+    if (share !== undefined && due !== null) held.push({ claim: c, part: sharePart(due, share.share) });
+  }
+  return held;
+}
+
+/** A person's due-total: the sum of their counting claims' due figures (n/a ones skipped; a shared one less its
+ *  holders' parts) and the parts they hold of others' (`held`), at most the sheet's `cap` (null: no cap); n/a
+ *  when their grade today has no rate today (`pct`), they hold no part, and none of those claims keeps a settled or bound
  *  figure, or a live one at a grade no longer in force on the sheet's today or dated on or before it
  *  (its rate since ended). */
 export function personDue(claims: Claim[], rates: Rate[] | undefined, gradeOn: GradeOn, pct: string | undefined,
-  floor: DatedOn, late: Late, cap: string | null) {
+  floor: DatedOn, late: Late, cap: string | null, held: HeldPart[] = []) {
   const own = claims.filter(counts);
   const now = gradeOn(late.today);
   const kept = (c: Claim) => c.settledDue !== null || isBound(c)
     || ((gradeOn(c.date) !== now || c.date <= late.today) && rateOn(rates, gradeOn(c.date), c.date, c.id) !== undefined);
-  if (pct === undefined && !own.some(kept)) return null;
-  const sum = sumDues(own.map((c) => claimDue(c, rates, gradeOn, floor, late)));
+  if (pct === undefined && !own.some(kept) && held.length === 0) return null;
+  const sum = sumDues([...own.map((c) => ownPart(c, claimDue(c, rates, gradeOn, floor, late))), ...held.map((h) => h.part)]);
   return cap !== null && hundredths(sum) > hundredths(cap) ? formatCents(hundredths(cap)) : sum;
 }
 
 /** What a person's due figures add up to above the sheet's `cap` (null: no cap); 0.00 when they do
  *  not exceed it, or their due-total is n/a. */
 export function excessOf(claims: Claim[], rates: Rate[] | undefined, gradeOn: GradeOn, pct: string | undefined,
-  floor: DatedOn, late: Late, cap: string | null): string {
-  const full = personDue(claims, rates, gradeOn, pct, floor, late, null);
+  floor: DatedOn, late: Late, cap: string | null, held: HeldPart[] = []): string {
+  const full = personDue(claims, rates, gradeOn, pct, floor, late, null, held);
   return full === null || cap === null || hundredths(full) <= hundredths(cap) ? '0.00'
     : formatCents(hundredths(full) - hundredths(cap));
 }
 
 /** A person's due split by status among their claims that count (`claims`, the live ones): settled (their SETTLED
- *  claims, at their frozen figures, corrections included) and open (their OPEN and PENDING ones); n/a ones skipped.
+ *  claims, at their frozen figures, corrections included) and open (their OPEN and PENDING ones); n/a ones skipped;
+ *  a shared claim less its holders' parts, and the parts they hold of others' (`held`) by those claims' status.
  *  The two add up to their due-total before the cap. */
-export function splitDues(claims: Claim[], dueOfClaim: (c: Claim) => string | null) {
+export function splitDues(claims: Claim[], dueOfClaim: (c: Claim) => string | null, held: HeldPart[] = []) {
+  const own = (c: Claim) => ownPart(c, dueOfClaim(c));
   return {
-    settled: sumDues(claims.filter((c) => c.status === 'SETTLED').map(dueOfClaim)),
-    open: sumDues(claims.filter(isOpen).map(dueOfClaim)),
+    settled: sumDues([...claims.filter((c) => c.status === 'SETTLED').map(own),
+      ...held.filter((h) => h.claim.status === 'SETTLED').map((h) => h.part)]),
+    open: sumDues([...claims.filter(isOpen).map(own), ...held.filter((h) => isOpen(h.claim)).map((h) => h.part)]),
   };
 }
 

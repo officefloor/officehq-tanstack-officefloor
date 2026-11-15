@@ -106,13 +106,34 @@ public class ClaimRepository {
 
     /** The sheet's claims, newest first. */
     public List<Claim> list(String sheetId) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY list_seq DESC, id DESC",
-                ROW, sheetId);
+        return withShares(sheetId, jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY list_seq DESC, id DESC",
+                ROW, sheetId));
     }
 
     public Claim find(String sheetId, long id) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND id = ?",
+        Claim found = jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND id = ?",
                 ROW, sheetId, id).stream().findFirst().orElse(null);
+        if (found != null) withShares(sheetId, List.of(found));
+        return found;
+    }
+
+    /** Give each claim its shares, in the order they were added, each with its holder's name now. */
+    private List<Claim> withShares(String sheetId, List<Claim> claims) {
+        java.util.Map<Long, List<ClaimShare>> shares = new java.util.HashMap<>();
+        jdbc.query("SELECT s.claim_id, s.person_id, p.name, s.share FROM claim_share s JOIN person p ON p.id = s.person_id "
+                + "WHERE s.sheet_id = ? ORDER BY s.id", (rs) -> {
+                    shares.computeIfAbsent(rs.getLong("claim_id"), (k) -> new java.util.ArrayList<>())
+                            .add(new ClaimShare(rs.getLong("person_id"), rs.getString("name"),
+                                    rs.getBigDecimal("share").setScale(2).toPlainString()));
+                }, sheetId);
+        for (Claim c : claims) c.setShares(shares.getOrDefault(c.getId(), List.of()));
+        return claims;
+    }
+
+    /** Add a share of the claim held by another person. */
+    public void addShare(Claim claim, ClaimShare share) {
+        jdbc.update("INSERT INTO claim_share (sheet_id, claim_id, person_id, share) VALUES (?, ?, ?, ?)",
+                claim.getSheetId(), claim.getId(), share.personId(), new BigDecimal(share.share()));
     }
 
     /** The claim on the sheet with that number; null when none has it. */
@@ -245,7 +266,7 @@ public class ClaimRepository {
             jdbc.update("UPDATE claim SET sheet_id = ?, list_seq = ?, number = NULL, "
                     + "ref = NULL, ref_key = NULL, locked_by = NULL, settle_batch = NULL WHERE sheet_id = ? AND id = ?",
                     to, ++seq, sheetId, id);
-            for (String table : List.of("claim_log", "claim_comment", "claim_line", "claim_history")) {
+            for (String table : List.of("claim_log", "claim_comment", "claim_line", "claim_share", "claim_history")) {
                 jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND claim_id = ?", to, sheetId, id);
             }
             snapshot(to, id);

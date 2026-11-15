@@ -63,7 +63,12 @@ export type Claim = {
   voidReason: string | null;
   /** The number of the bulk settle batch that settled it (null: not settled by a bulk settle). */
   settleBatch: number | null;
+  /** Its shares held by other people on the sheet, in the order they were added: each holder's id and name and
+   *  their percent of its due (two decimals). */
+  shares: ClaimShare[];
 };
+/** A share of a claim held by another person on the sheet (see `Claim.shares`). */
+export type ClaimShare = { personId: number; name: string; share: string };
 /** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects.
  *  `ref`: its external reference (trimmed; blank: none), refused when already used on the sheet.
  *  `tags`: its tags, comma separated (each trimmed and lower-cased, repeats dropped; blank: none). */
@@ -227,6 +232,17 @@ export type ClaimLineInput = { label: string; qty: string; unit: string };
 export function reassignClaim(sheetId: string, by: string, id: number, toPersonId: number): Promise<Claim> {
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/reassign?by=${encodeURIComponent(by)}&to=${toPersonId}`, {});
 }
+
+/** Share a claim with another person on the sheet at a percent (two decimals, more than 0.00); refused (rejects)
+ *  for a SETTLED, VOID or DELETED claim, its own person, a person already holding a share of it, and shares
+ *  adding up to more than 100.00. */
+export function shareClaim(sheetId: string, by: string, id: number, withPersonId: number, share: string): Promise<Claim> {
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/share?by=${encodeURIComponent(by)}`
+    + `&with=${withPersonId}&share=${encodeURIComponent(share)}`, {});
+}
+
+/** A claim's holders as shown: `<name> <share>`, comma and space separated. */
+export const showShares = (c: Claim) => (c.shares ?? []).map((s) => `${s.name} ${s.share}`).join(', ');
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED do. */
 export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';

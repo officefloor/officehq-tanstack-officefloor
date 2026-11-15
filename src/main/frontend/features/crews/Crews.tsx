@@ -5,6 +5,7 @@ import { claimsKey, listClaims, liveClaims } from '../claims/api';
 import { gradeOn, listPeople, peopleKey, shownName } from '../people/api';
 import type { Person } from '../people/api';
 import { listRates, personDue, rateByGrade, ratesKey } from '../rates/api';
+import { heldOf } from '../rates/shares';
 import { useCap, useFloor, useLate } from '../settings/api';
 import { poolsKey } from '../pools/api';
 import { useSheetToday } from '../sheet/api';
@@ -24,7 +25,8 @@ export function useDueOf(sheetId: string, user: string): Map<number, string | nu
   const byGrade = rateByGrade(rates.data, today);
   return new Map((people.data ?? []).map((q) => [q.id, personDue(
     liveClaims((claims.data ?? []).filter((c) => c.personId === q.id), [q]),
-    rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges, cap)]));
+    rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges, cap,
+    heldOf(q.id, claims.data ?? [], people.data, rates.data, floor, charges))]));
 }
 
 /** The sheet's crews and a form to add one: a name (trimmed; a blank one, or one used by a crew or a pool, refused) and a lead

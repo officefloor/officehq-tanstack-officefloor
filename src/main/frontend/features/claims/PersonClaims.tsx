@@ -6,7 +6,7 @@ import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import { isReviewLate, useNoteThreshold, useProofKinds, useProofThreshold, useReviewSla, type DatedOn } from '../settings/api';
 import { claimFromTemplate, listTemplates, templatesKey } from '../templates/api';
-import { addClaim, addClaimLine, claimTimeline, addProof, PROOF_KINDS, proofsOf, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, waiveClaim, holdClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, settlePartClaim, unlockClaim, updateClaim, type Claim, type ProofKind, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
+import { addClaim, addClaimLine, claimTimeline, addProof, PROOF_KINDS, proofsOf, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, waiveClaim, holdClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, shareClaim, showShares, showTags, splitClaim, settlePartClaim, unlockClaim, updateClaim, type Claim, type ProofKind, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
 import { Fig } from '../session/Fig';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
@@ -67,7 +67,9 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  four-eyes and proof rules judged on the original claim; a refused split or settle refuses it all, with an
  *  error on the claim.
  *  A DRAFT's amount can be changed in its row, by an amount typed beside its edit button: saved as the
- *  claim form saves it (its date, note and corrected claim kept), refused likewise with an error on the claim. */
+ *  claim form saves it (its date, note and corrected claim kept), refused likewise with an error on the claim.
+ *  A claim can be shared with another person picked beside it at a share typed there (see `shareClaim`): its
+ *  holders show as `<name> <share>`; a refused share shows an error on the claim. */
 export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, today, charges, selected, onSelect, people }: {
   sheetId: string; user: string; personId: number; claims: Claim[]; gradeOn: GradeOn; rates: Rate[] | undefined;
   floor: DatedOn; today: string; charges: Late;
@@ -161,6 +163,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     actOnce(() => {
       move.reset();
       reassign.reset();
+      sharing.reset();
       deferral.reset();
       reminder.reset();
       waiver.reset();
@@ -187,6 +190,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     actOnce(() => {
       move.reset();
       reassign.reset();
+      sharing.reset();
       deferral.reset();
       reminder.reset();
       waiver.reset();
@@ -218,6 +222,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     actOnce(() => {
       move.reset();
       reassign.reset();
+      sharing.reset();
       deferral.reset();
       reminder.reset();
       waiver.reset();
@@ -239,6 +244,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     actOnce(() => {
       move.reset();
       reassign.reset();
+      sharing.reset();
       deferral.reset();
       reminder.reset();
       waiver.reset();
@@ -277,6 +283,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     actOnce(() => {
       move.reset();
       reassign.reset();
+      sharing.reset();
       deferral.reset();
       reminder.reset();
       waiver.reset();
@@ -321,6 +328,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     actOnce(() => {
       move.reset();
       reassign.reset();
+      sharing.reset();
       deferral.reset();
       reminder.reset();
       waiver.reset();
@@ -343,6 +351,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     actOnce(() => {
       move.reset();
       reassign.reset();
+      sharing.reset();
       deferral.reset();
       reminder.reset();
       waiver.reset();
@@ -376,6 +385,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     actOnce(() => {
       move.reset();
       reassign.reset();
+      sharing.reset();
       deferral.reset();
       reminder.reset();
       waiver.reset();
@@ -408,6 +418,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     actOnce(() => {
       move.reset();
       reassign.reset();
+      sharing.reset();
       deferral.reset();
       reminder.reset();
       waiver.reset();
@@ -441,6 +452,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     actOnce(() => {
       move.reset();
       reassign.reset();
+      sharing.reset();
       deferral.reset();
       reminder.reset();
       waiver.reset();
@@ -475,6 +487,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     actOnce(() => {
       move.reset();
       reassign.reset();
+      sharing.reset();
       deferral.reset();
       reminder.reset();
       waiver.reset();
@@ -517,11 +530,48 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
 
+  // The person picked for each claim to share it with, and the share typed.
+  const [shareWith, setShareWith] = useState<Record<number, string>>({});
+  const [sharePcts, setSharePcts] = useState<Record<number, string>>({});
+
+  const sharing = useMutation({
+    mutationFn: (v: { id: number; with: number; share: string }) => shareClaim(sheetId, user, v.id, v.with, v.share),
+    onSuccess: (_, v) => {
+      setSharePcts((s) => ({ ...s, [v.id]: '' }));
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+
+  const share = (id: number) => {
+    const to = Number(shareWith[id] ?? people[0]?.id ?? NaN);
+    const pct = (sharePcts[id] ?? '').trim();
+    actOnce(() => {
+      move.reset();
+      reassign.reset();
+      sharing.reset();
+      deferral.reset();
+      reminder.reset();
+      waiver.reset();
+      holding.reset();
+      redating.reset();
+      proof.reset();
+      commenting.reset();
+      lining.reset();
+      division.reset();
+      partSettling.reset();
+      inline.reset();
+      setEditRefused(null);
+      locking.reset();
+      return sharing.mutateAsync({ id, with: to, share: pct });
+    });
+  };
+
   const moveTo = (id: number) => {
     const to = Number(targets[id] ?? others[0]?.id ?? NaN);
     actOnce(() => {
       move.reset();
       reassign.reset();
+      sharing.reset();
       deferral.reset();
       reminder.reset();
       waiver.reset();
@@ -543,6 +593,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     actOnce(() => {
       move.reset();
       reassign.reset();
+      sharing.reset();
       deferral.reset();
       reminder.reset();
       waiver.reset();
@@ -582,6 +633,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       fromTemplate.reset();
       move.reset();
       reassign.reset();
+      sharing.reset();
       deferral.reset();
       reminder.reset();
       waiver.reset();
@@ -601,6 +653,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
   const open = (c: Claim) => {
     move.reset();
     reassign.reset();
+    sharing.reset();
     deferral.reset();
     reminder.reset();
     waiver.reset();
@@ -892,6 +945,23 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                   onClick={() => moveTo(c.id)}>
                   Reassign
                 </button>{' '}
+                Shared with <span data-testid="claim-shares">{showShares(c)}</span>{' '}
+                <select data-testid="claim-share-select" value={shareWith[c.id] ?? String(people[0]?.id ?? '')}
+                  onChange={(e) => {
+                    setShareWith((t) => ({ ...t, [c.id]: e.target.value }));
+                    if (sharing.variables?.id === c.id) sharing.reset();
+                  }}>
+                  {people.map((p) => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
+                </select>{' '}
+                <input data-testid="claim-share-pct" placeholder="Share %" size={6} value={sharePcts[c.id] ?? ''}
+                  onChange={(e) => {
+                    setSharePcts((s) => ({ ...s, [c.id]: e.target.value }));
+                    if (sharing.variables?.id === c.id) sharing.reset();
+                  }} />{' '}
+                <button type="button" data-testid="claim-share-add" disabled={sharing.isPending || people.length === 0}
+                  onClick={() => share(c.id)}>
+                  Share
+                </button>{' '}
                 <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                   Edit
                 </button>{' '}
@@ -1047,6 +1117,13 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     : c.status === 'SETTLED' || c.status === 'VOID'
                     ? `A ${c.status} claim cannot be reassigned.`
                     : 'Only a role the permissions allow can reassign a claim, and only to another person.'}</span>
+                )}
+                {sharing.isError && sharing.variables?.id === c.id && (
+                  <span data-testid="claim-error">{sharing.error instanceof HttpError && sharing.error.status === 409
+                    ? `A ${c.status} claim cannot be shared.`
+                    : sharing.error instanceof HttpError && sharing.error.status === 403
+                    ? 'Your role may not change anything on this sheet.'
+                    : 'A claim is shared with another person not already holding a share, at a share more than 0.00 with up to two decimals; its shares add up to at most 100.00.'}</span>
                 )}
               </td>
             </tr>

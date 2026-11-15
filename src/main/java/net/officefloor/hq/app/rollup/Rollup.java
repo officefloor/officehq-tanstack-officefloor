@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.ClaimShare;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Dues;
 import net.officefloor.hq.app.person.Person;
@@ -23,7 +24,8 @@ import net.officefloor.hq.app.sheet.SheetRepository;
  *  due-total (null: n/a; else at most the sheet's cap) and overdue-total, in the order they were added, and the
  *  sheet's claimed-total, due-total and overdue-total (these two leave out the single highest and
  *  lowest person's figure when three or more people have one), with the sheet's alert threshold
- *  (null: off). */
+ *  (null: off). A shared claim's due counts toward each holder's due-total (and settled figures) by their part
+ *  (see {@link ClaimShare#partOf}), its own person's by the rest. */
 public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueTotal, String overdueTotal,
         BigDecimal alertThreshold) {
 
@@ -53,7 +55,14 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
         BigDecimal claimedTotal = zero();
         List<BigDecimal> dues = new ArrayList<>();
         List<BigDecimal> overdues = new ArrayList<>();
-        for (Person p : people.list(sheetId)) {
+        List<Person> listed = people.list(sheetId);
+        // The parts of shared claims' dues each holder holds (and of those, of SETTLED claims, corrections left out).
+        Map<Long, BigDecimal> heldDue = new java.util.HashMap<>();
+        Map<Long, BigDecimal> heldSettled = new java.util.HashMap<>();
+        Map<Long, BigDecimal[]> own = new LinkedHashMap<>();
+        Map<Long, int[]> overdueCounts = new java.util.HashMap<>();
+        Map<Long, Boolean> keeps = new java.util.HashMap<>();
+        for (Person p : listed) {
             BigDecimal claimed = zero();
             BigDecimal due = zero();
             BigDecimal overdue = zero();
@@ -70,17 +79,41 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 String d = Dues.shown(c, pct == null ? null : Dues.of(c.getAmount(), pct, late.rounding(c.getRoundDate())), floor.on(c.getDate()), late);
                 kept |= c.getSettledDue() != null || c.isBound()
                         || (pct != null && (!grade.equals(p.getGrade()) || c.getDate().compareTo(today) <= 0));
-                if (d != null) due = due.add(new BigDecimal(d));
-                if (d != null && !corrects(c) && ClaimStatus.SETTLED.name().equals(c.getStatus())) settled = settled.add(new BigDecimal(d));
+                boolean settles = !corrects(c) && ClaimStatus.SETTLED.name().equals(c.getStatus());
+                if (d != null) {
+                    BigDecimal full = new BigDecimal(d);
+                    BigDecimal net = full;
+                    for (ClaimShare share : c.getShares()) {
+                        BigDecimal part = share.partOf(full);
+                        net = net.subtract(part);
+                        heldDue.merge(share.personId(), part, BigDecimal::add);
+                        if (settles) heldSettled.merge(share.personId(), part, BigDecimal::add);
+                    }
+                    due = due.add(net);
+                    if (settles) settled = settled.add(net);
+                }
                 if (ClaimStatus.isOpen(c.getStatus()) && late.lateFrom(c).isBefore(todayDate)) {
                     overdueCount++;
                     if (d != null) overdue = overdue.add(new BigDecimal(d));
                 }
             }
+            own.put(p.getId(), new BigDecimal[] { claimed, due, overdue, settled });
+            overdueCounts.put(p.getId(), new int[] { overdueCount });
+            keeps.put(p.getId(), kept);
+        }
+        for (Person p : listed) {
+            BigDecimal[] f = own.get(p.getId());
+            BigDecimal claimed = f[0];
+            BigDecimal held = heldDue.get(p.getId());
+            BigDecimal due = held == null ? f[1] : f[1].add(held);
+            BigDecimal overdue = f[2];
+            BigDecimal settled = f[3].add(heldSettled.getOrDefault(p.getId(), zero()));
+            boolean kept = keeps.get(p.getId()) || held != null;
             boolean na = rateOn(sheetRates, p.getGrade(), today) == null && !kept;
             if (cap != null && due.compareTo(cap) > 0) due = cap.setScale(2);
             figures.put(p.getId(), new Figures(p.getName(), claimed.toPlainString(),
-                    na ? null : due.toPlainString(), overdue.toPlainString(), score(settled, overdueCount)));
+                    na ? null : due.toPlainString(), overdue.toPlainString(),
+                    score(settled, overdueCounts.get(p.getId())[0])));
             claimedTotal = claimedTotal.add(claimed);
             if (!na) dues.add(due);
             overdues.add(overdue);

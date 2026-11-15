@@ -3,6 +3,7 @@ import { claimsKey, isActive, listClaims, listVoidReasons, liveClaims, voidReaso
 import { GRADES, gradeOn, listPeople, peopleKey } from '../people/api';
 import { listPeriods, periodDueTotal, periodsKey } from '../periods/api';
 import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
+import { heldOf } from '../rates/shares';
 import { isReviewLate, useCap, useFloor, useLate, useReviewSla } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { Fig } from '../session/Fig';
@@ -29,7 +30,8 @@ export function useGradeDues(sheetId: string, user: string): Record<string, stri
   const all = claims.data ?? [];
   const active = (people.data ?? []).filter((p) => !p.retired);
   const dueOf = (p: (typeof active)[number]) => personDue(liveClaims(all.filter((c) => c.personId === p.id), [p]),
-    rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap);
+    rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap,
+    heldOf(p.id, all, people.data, rates.data, floor, charges));
   return Object.fromEntries(GRADES.map((g) => [g, sumDues(active.filter((p) => p.grade === g).map(dueOf))]));
 }
 
