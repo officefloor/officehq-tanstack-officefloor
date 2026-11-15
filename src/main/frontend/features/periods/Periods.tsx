@@ -9,6 +9,7 @@ import { useSheetToday } from '../sheet/api';
 import { addPeriod, closePeriod, generateFiscalYear, generatePeriods, generateQuarters, listPeriods, lockPeriod, periodDueTotal, periodsKey, reopenPeriod, softClosePeriod, type PeriodInput } from './api';
 import { Fig } from '../session/Fig';
 import { ImportOpenings } from './ImportOpenings';
+import { Rollover } from './Rollover';
 
 type PeriodAction = 'close' | 'soft-close' | 'reopen' | 'lock' | 'unlock';
 
@@ -183,6 +184,7 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
         </button>
       </form>
       <ImportOpenings sheetId={sheetId} user={user} />
+      <Rollover sheetId={sheetId} user={user} />
       <table>
         <tbody>
           {(periods.data ?? []).map((p) => (

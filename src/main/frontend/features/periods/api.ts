@@ -67,6 +67,15 @@ export function generateFiscalYear(sheetId: string, by: string, year: string): P
     { year });
 }
 
+/** Roll fiscal year FY<year> over: make the next fiscal year's twelve periods exactly as `generateFiscalYear`
+ *  does, and add each person's open figure at the end of the old year's last period to their opening balance
+ *  for the new year's first period; refused (rejects) for anyone but a steward, a year that is not yyyy, or
+ *  a year with no periods. Resolves to how many periods were made. */
+export function rollover(sheetId: string, by: string, year: string): Promise<{ made: number }> {
+  return postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/rollover?by=${encodeURIComponent(by)}`,
+    { year });
+}
+
 /** Make the four calendar quarters of the year as periods named <year>-Q1 to <year>-Q4, each as adding a
  *  period would, leaving out a quarter whose name is taken or whose days overlap a period; refused
  *  (rejects) when the year is not yyyy. Resolves to how many were made. */
