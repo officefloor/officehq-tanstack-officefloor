@@ -1,5 +1,6 @@
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { Classic } from './Classic';
+import { CompareSheet } from './CompareSheet';
 import { Consolidated } from './Consolidated';
 import { Dashboard } from './Dashboard';
 import { Header } from './Header';
@@ -12,5 +13,6 @@ export const contributions = [
   SheetBody.fill({ order: -98, Component: TreeSearch }),
   SheetBody.fill({ order: -97, Component: Dashboard }),
   SheetBody.fill({ order: 27, Component: Summary }),
+  SheetBody.fill({ order: 27.5, Component: CompareSheet }),
   SheetBody.fill({ order: 28, Component: Classic }),
 ];
