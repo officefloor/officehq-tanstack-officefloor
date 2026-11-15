@@ -15,6 +15,24 @@ export function statusCount(claims: Claim[] | undefined, status: (typeof STATUSE
   return (claims ?? []).filter((c) => c.status === status).length;
 }
 
+/** Per grade, the due-totals of the people not retired on it added up (n/a ones skipped), as the
+ *  sheet's summary shows them. */
+export function useGradeDues(sheetId: string, user: string): Record<string, string> {
+  const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
+  const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
+  const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
+  const floor = useFloor(sheetId);
+  const today = useSheetToday(sheetId, user);
+  const cap = useCap(sheetId, today);
+  const charges = useLate(sheetId, today);
+  const byGrade = rateByGrade(rates.data, today);
+  const all = claims.data ?? [];
+  const active = (people.data ?? []).filter((p) => !p.retired);
+  const dueOf = (p: (typeof active)[number]) => personDue(liveClaims(all.filter((c) => c.personId === p.id), [p]),
+    rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap);
+  return Object.fromEntries(GRADES.map((g) => [g, sumDues(active.filter((p) => p.grade === g).map(dueOf))]));
+}
+
 /** A period's due-total minus the previous one's, two decimals, a minus sign when lower. */
 export function dueChange(previous: string, current: string): string {
   const cents = Math.round(Number(current) * 100) - Math.round(Number(previous) * 100);
@@ -32,15 +50,12 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
   const voidReasons = useQuery({ queryKey: voidReasonsKey(sheetId), queryFn: () => listVoidReasons(sheetId) });
   const floor = useFloor(sheetId);
   const today = useSheetToday(sheetId, user);
-  const cap = useCap(sheetId, today);
   const charges = useLate(sheetId, today);
   const reviewSla = useReviewSla(sheetId);
-  const byGrade = rateByGrade(rates.data, today);
   const all = claims.data ?? [];
   const active = (people.data ?? []).filter((p) => !p.retired);
   const liveOf = (p: (typeof active)[number]) => liveClaims(all.filter((c) => c.personId === p.id), [p]);
-  const dueOf = (p: (typeof active)[number]) => personDue(liveOf(p),
-    rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap);
+  const gradeDues = useGradeDues(sheetId, user);
   const byStart = [...(periods.data ?? [])].sort((a, b) => a.from.localeCompare(b.from));
   const periodDues = byStart.map((p) => periodDueTotal(p, all, people.data, rates.data, floor, charges));
 
@@ -55,7 +70,7 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
               <tr key={g}>
                 <td>Grade {g}</td>
                 <td>People <span data-testid={`summary-grade-${g}-count`}>{on.length}</span></td>
-                <td>Due <span data-testid={`summary-grade-${g}-due-total`}><Fig>{sumDues(on.map(dueOf))}</Fig></span></td>
+                <td>Due <span data-testid={`summary-grade-${g}-due-total`}><Fig>{gradeDues[g]}</Fig></span></td>
                 <td>Active <span data-testid={`summary-grade-${g}-active`}>{on.filter((p) => isActive(liveOf(p), today)).length}</span></td>
               </tr>
             );
