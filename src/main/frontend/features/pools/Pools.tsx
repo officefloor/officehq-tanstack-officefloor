@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeople, peopleKey } from '../people/api';
 import type { Person } from '../people/api';
+import { downloadCsv } from '../people/ExportPeople';
 import { addPool, addPoolMember, listPools, poolsKey } from './api';
 import type { MemberRef, Pool } from './api';
 
@@ -31,6 +32,15 @@ export function Pools({ sheetId, user }: { sheetId: string; user: string }) {
   return (
     <section>
       <h3>Pools</h3>
+      <button type="button" data-testid="export-pools"
+        onClick={() => {
+          void listPools(sheetId).then((fresh) => {
+            queryClient.setQueryData(poolsKey(sheetId), fresh);
+            downloadPools(fresh);
+          });
+        }}>
+        Export pools
+      </button>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -60,6 +70,13 @@ export function Pools({ sheetId, user }: { sheetId: string; user: string }) {
       </ul>
     </section>
   );
+}
+
+/** Downloads the pools as a CSV file: one line per member, pools and members in the order added, a pool
+ *  member as pool:<name> and its cut as shown (empty when none). */
+function downloadPools(pools: Pool[]) {
+  downloadCsv('pools.csv', [['pool', 'member', 'share', 'cut'],
+    ...pools.flatMap((p) => p.members.map((m) => [p.name, m.poolId !== null ? `pool:${m.name}` : m.name, m.share, m.cut]))]);
 }
 
 /** The select's value for a member: a person's id, or pool:<id> for a pool. */
