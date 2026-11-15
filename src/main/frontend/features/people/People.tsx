@@ -9,7 +9,7 @@ import { BulkReassign } from '../claims/BulkReassign';
 import { PersonClaims } from '../claims/PersonClaims';
 import { backing, claimsKey, patronShares, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
 import { listPeriods, periodsKey, personPeriodDue } from '../periods/api';
-import { poolsKey } from '../pools/api';
+import { listPools, personCutTotal, poolsKey } from '../pools/api';
 import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
 import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
@@ -36,7 +36,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
  *  with a checkbox that selects it for a button that opens the selected claims together.
  *  Each person has a checkbox that selects them for a grade given to the selected people together.
  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
- *  Whether each person is active (see `isActive`).
+ *  Whether each person is active (see `isActive`). Their cut total (see `personCutTotal`).
  *  A picker and a button merge the person into another (see `mergePerson`), and an entry and a
  *  button transfer them to another sheet by id (see `transferPerson`).
  *  Whether the signed-in user watches each person, with a button that starts or stops it.
@@ -49,6 +49,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const watches = useQuery({ queryKey: watchesKey(sheetId, user), queryFn: () => listWatches(sheetId, user) });
   const watched = new Set(watches.data ?? []);
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
+  const pools = useQuery({ queryKey: poolsKey(sheetId), queryFn: () => listPools(sheetId) });
   const floor = useFloor(sheetId);
   const today = useSheetToday(sheetId, user);
   const cap = useCap(sheetId, today);
@@ -444,6 +445,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                 <td>
                   Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap))}</span>{' '}
                   excess <span data-testid="person-excess">{excessOf(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap)}</span>
+                </td>
+                <td>
+                  Cut <span data-testid="person-cut-total">{personCutTotal(pools.data ?? [], p.id)}</span>
                 </td>
                 <td>
                   Settled <span data-testid="person-settled-total">{split.settled}</span>{' '}

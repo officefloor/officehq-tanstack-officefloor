@@ -36,3 +36,20 @@ export type MemberRef = { personId: number } | { memberPoolId: number };
 export function addPoolMember(sheetId: string, by: string, poolId: number, member: MemberRef, share: string): Promise<Pool[]> {
   return postJson<Pool[]>(`${base(sheetId)}/${poolId}/members?by=${encodeURIComponent(by)}`, { ...member, share });
 }
+
+/** Add up cuts (two decimals) in cents, a blank cut adding nothing. */
+function sumCuts(cuts: string[]): string {
+  const cents = cuts.filter((c) => c !== '').reduce((total, c) => total + Math.round(Number(c) * 100), 0);
+  return (cents / 100).toFixed(2);
+}
+
+/** A person's cut total: their cuts across every pool they are a member of, added up (a pool that shows
+ *  no cut adds nothing). */
+export function personCutTotal(pools: Pool[], personId: number): string {
+  return sumCuts(pools.flatMap((p) => p.members.filter((m) => m.personId === personId).map((m) => m.cut)));
+}
+
+/** The sheet's cut total: every person's cuts in every pool added up. */
+export function sheetCutTotal(pools: Pool[]): string {
+  return sumCuts(pools.flatMap((p) => p.members.filter((m) => m.personId !== null).map((m) => m.cut)));
+}
