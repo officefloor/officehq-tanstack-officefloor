@@ -20,6 +20,7 @@ import { ExportClaims, ExportPeople } from './ExportPeople';
 import { ImportPeople } from './ImportPeople';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
+import { SortBy, sortPeople, useSortBy } from './SortBy';
 import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, takeStatement, transferPerson, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '', tags: '' };
@@ -43,7 +44,8 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
  *  button transfer them to another sheet by id (see `transferPerson`).
  *  Whether the signed-in user watches each person, with a button that starts or stops it.
  *  A button exports everyone, retired people included, as a CSV file, and another exports their claims
- *  (people in list order, each one's claims oldest first, with the figures their rows show). */
+ *  (people in list order, each one's claims oldest first, with the figures their rows show).
+ *  The list can be sorted on this screen only (see `SortBy`). */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
@@ -62,6 +64,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   // The person being edited and the version of them the form loaded.
   const [editing, setEditing] = useState<{ id: number; version: number } | null>(null);
   const [showRetired] = useShowRetired();
+  const [sortBy] = useSortBy();
   // The retirement date typed on each person's row (blank: the sheet's today).
   const [retireDates, setRetireDates] = useState<Record<number, string>>({});
   // The statement date typed on each person's row (blank: the statement is taken now).
@@ -426,6 +429,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       <PasteClaims sheetId={sheetId} user={user} />
       <ImportPeople sheetId={sheetId} user={user} />
       <ShowRetired />{' '}
+      <SortBy />{' '}
       <ExportPeople rows={() => everyone.map((p) => [p.name, gradeOn(p, today), p.retiredFrom ?? '', showDue(dueOf.get(p.id) ?? null)])} />
       <ExportClaims rows={() => everyone.flatMap((p) => (claims.data ?? []).filter((c) => c.personId === p.id).reverse().map((c) => [
         p.name, c.number ?? '', c.date, Number(c.amount).toFixed(2),
@@ -440,7 +444,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
       <table>
         <tbody>
-          {(people.data ?? []).filter((p) => showRetired || !p.retired).map((p) => {
+          {sortPeople((people.data ?? []).filter((p) => showRetired || !p.retired), sortBy, (p) => dueOf.get(p.id) ?? null).map((p) => {
             const own = (claims.data ?? []).filter((c) => c.personId === p.id);
             const live = liveClaims(own, [p]);
             const claimed = sumAmounts(live);
