@@ -1,0 +1,146 @@
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index 930f30800..e3c270c84 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -129,12 +129,16 @@ export function reassignClaim(sheetId: string, by: string, id: number, toPersonI
+ /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED do. */
+ export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
+ 
+-/** The claims that count in live totals: all but the deferred claims and the open claims dated within one of their
+- *  person's holds (`to` null: open-ended) that no statement bound (SETTLED and bound claims still count). */
++/** The claims that count in live totals: all but the deferred claims and the open claims that no statement bound,
++ *  dated within one of their person's holds (`to` null: open-ended) or of a person whose retirement date the sheet's
++ *  today has reached (`retiredReached`) (SETTLED and bound claims still count). */
+ export function liveClaims(claims: Claim[],
+-  people: Array<{ id: number; holds: Array<{ from: string; to: string | null }> }> | undefined): Claim[] {
+-  const holds = new Map((people ?? []).map((p) => [p.id, p.holds]));
+-  const held = (c: Claim) => (holds.get(c.personId) ?? []).some((h) => h.from <= c.date && (h.to === null || c.date <= h.to));
++  people: Array<{ id: number; holds: Array<{ from: string; to: string | null }>; retiredReached?: boolean }> | undefined): Claim[] {
++  const byId = new Map((people ?? []).map((p) => [p.id, p]));
++  const held = (c: Claim) => {
++    const p = byId.get(c.personId);
++    return !!p && (!!p.retiredReached || p.holds.some((h) => h.from <= c.date && (h.to === null || c.date <= h.to)));
++  };
+   return claims.filter((c) => !c.deferred && !(isOpen(c) && !c.stated && held(c)));
+ }
+ 
+diff --git a/src/main/frontend/features/people/api.ts b/src/main/frontend/features/people/api.ts
+index 95d0bd15e..2d9ecbfef 100644
+--- a/src/main/frontend/features/people/api.ts
++++ b/src/main/frontend/features/people/api.ts
+@@ -15,14 +15,15 @@ export type Hold = { from: string; to: string | null };
+  *  `version` is raised by every saved edit; an edit sends the version its form loaded. Their
+  *  statements: how many were taken, and the last one's due-total and date (null until the first).
+  *  `retiredFrom` is the date they are retired from (null: not retired); with it set at all they
+- *  are `retired`, whatever the date. `holds` are their holds in the order added, and `held` whether
++ *  are `retired`, whatever the date; `retiredReached` once the sheet's today is on or after it (their
++ *  open claims not bound by a statement then count in no live total). `holds` are their holds in the order added, and `held` whether
+  *  they have any: their OPEN claims dated within a hold, and not bound by a statement, count in no
+  *  live total. `patronIds` are the people they name
+  *  as patrons, in the order named. */
+ export type Person = {
+   id: number; sheetId: string; name: string; grade: Grade; grades: GradeFrom[]; version: number;
+   statementCount: number; statedTotal: string | null; statementDate: string | null;
+-  retired: boolean; retiredFrom: string | null; held: boolean; holds: Hold[]; patronIds: number[];
++  retired: boolean; retiredFrom: string | null; retiredReached: boolean; held: boolean; holds: Hold[]; patronIds: number[];
+   /** Their own terms in whole days (null: none): a claim's due-by goes by them before their grade's or the sheet's. */
+   terms: number | null;
+ };
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 4568b812b..fa05c9297 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -9,7 +9,7 @@ import net.officefloor.hq.app.claim.ClaimStatus;
+  *  their statements: how many have been taken, and the last one's due-total and date (none until the
+  *  first), and the date they are retired from (null: not retired; set at all, they count as retired),
+  *  and their holds, by when they were added (their OPEN claims dated within one, and not bound by a
+- *  statement, count in no live total). */
++ *  statement, count in no live total; nor, from their retirement date on, do any of their open ones). */
+ public class Person {
+     private final long id;
+     private final String sheetId;
+@@ -30,6 +30,8 @@ public class Person {
+     private String retiredFrom;
+     /** Their holds, in the order they were added. */
+     private java.util.List<Hold> holds = new java.util.ArrayList<>();
++    /** The sheet's today (null: not known). */
++    private java.time.LocalDate today;
+     /** The ids of the people they name as patrons, in the order named. */
+     private java.util.List<Long> patronIds = new java.util.ArrayList<>();
+     /** How many claims the statement this request took bound, for its audit line. */
+@@ -64,6 +66,7 @@ public class Person {
+     public void setGrades(java.util.List<GradeFrom> grades, java.time.LocalDate today) {
+         this.grades = grades;
+         this.grade = gradeOn(today.toString());
++        this.today = today;
+     }
+ 
+     /** The grade in force on the date (yyyy-MM-dd): the one with the latest from-date on or before
+@@ -110,6 +113,11 @@ public class Person {
+     public String getRetiredFrom() { return retiredFrom; }
+     public void setRetiredFrom(String retiredFrom) { this.retiredFrom = retiredFrom; }
+     public boolean isRetired() { return retiredFrom != null; }
++    /** Whether the sheet's today is on or after their retirement date: their open claims no statement
++     *  bound then count in no live total. */
++    public boolean isRetiredReached() {
++        return retiredFrom != null && today != null && !today.isBefore(java.time.LocalDate.parse(retiredFrom));
++    }
+     /** Whether they have any hold. */
+     public boolean isHeld() { return !holds.isEmpty(); }
+     public java.util.List<Hold> getHolds() { return holds; }
+@@ -118,17 +126,19 @@ public class Person {
+     public void setPatronIds(java.util.List<Long> patronIds) { this.patronIds = patronIds; }
+ 
+     /** Whether the claim counts in live totals: it counts by status, and is not an open (OPEN or
+-     *  PENDING) claim dated within one of their holds that no statement bound, nor a deferred one. */
++     *  PENDING) claim dated within one of their holds, or of a person whose retirement date is reached,
++     *  that no statement bound, nor a deferred one. */
+     public boolean countsLive(Claim claim) {
+         return claim.isCounting() && !leftOutLive(claim);
+     }
+ 
+     /** Whether the live rules leave the claim out whatever its status counts: it is deferred, or an
+-     *  open (OPEN or PENDING) claim dated within one of their holds that no statement bound. */
++     *  open (OPEN or PENDING) claim that no statement bound, dated within one of their holds or of a
++     *  person whose retirement date the sheet's today has reached. */
+     public boolean leftOutLive(Claim claim) {
+         return claim.isDeferred()
+                 || (ClaimStatus.isOpen(claim.getStatus()) && !claim.isStated()
+-                        && holds.stream().anyMatch((h) -> h.covers(claim.getDate())));
++                        && (isRetiredReached() || holds.stream().anyMatch((h) -> h.covers(claim.getDate()))));
+     }
+ 
+     /** Whether a claim on this date is refused: the person is retired from a date before it. */
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+index d0eeb9ca2..5c2c618d3 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+@@ -1,11 +1,16 @@
+ # POST /api/sheets/{sheetId}/people/{personId}/retire — retire a person from a date (blank: the
+-# sheet's today); a date that is not a date is refused. Their claims keep counting in every total.
++# sheet's today); a date that is not a date is refused. From the day the sheet's today reaches the
++# date, their open claims no statement bound leave every live total (ROLLUP/TOTALS lines when they move).
+ # A viewer may change nothing: refused before anything is read or written.
+ guard:
+   class: net.officefloor.hq.app.setting.RefuseViewer
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidateRetire
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+@@ -18,6 +23,10 @@ retire:
+ audit:
+   class: net.officefloor.hq.app.person.RecordPersonRetired
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
