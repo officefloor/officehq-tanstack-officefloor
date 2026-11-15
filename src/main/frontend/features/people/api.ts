@@ -20,10 +20,16 @@ export type Hold = { from: string; to: string | null };
  *  they have any: their OPEN claims dated within a hold, and not bound by a statement, count in no
  *  live total. `patronIds` are the people they name
  *  as patrons, in the order named. */
+/** A past retirement: from its from-date to the day they were unretired (yyyy-MM-dd). */
+export type Retirement = { from: string; to: string };
+
 export type Person = {
   id: number; sheetId: string; name: string; grade: Grade; grades: GradeFrom[]; version: number;
   statementCount: number; statedTotal: string | null; statementDate: string | null;
-  retired: boolean; retiredFrom: string | null; retiredReached: boolean; held: boolean; holds: Hold[]; patronIds: number[];
+  retired: boolean; retiredFrom: string | null; retiredReached: boolean;
+  /** Their past retirements, oldest first: a claim dated after one's from and before its to is refused. */
+  retirements: Retirement[];
+  held: boolean; holds: Hold[]; patronIds: number[];
   /** Their own terms in whole days (null: none): a claim's due-by goes by them before their grade's or the sheet's. */
   terms: number | null;
   /** Their contact, trimmed and lower-cased (null: none); no two people on a sheet share one. */
@@ -101,6 +107,12 @@ export function cancelStatement(sheetId: string, by: string, id: number): Promis
 /** Retire the person from `from` (blank: the sheet's today); refused (rejects) when it is not a date. */
 export function retirePerson(sheetId: string, by: string, id: number, from: string): Promise<Person> {
   return postJson<Person>(`${base(sheetId)}/${id}/retire?by=${encodeURIComponent(by)}`, { from });
+}
+
+/** Unretire the person on the sheet's today, keeping the retirement as a past one; refused
+ *  (rejects) for anyone not retired. */
+export function unretirePerson(sheetId: string, by: string, id: number): Promise<Person> {
+  return postJson<Person>(`${base(sheetId)}/${id}/unretire?by=${encodeURIComponent(by)}`, {});
 }
 
 /** Swap the person with the one above (`up`) or below (`down`) them in the list; refused (rejects)

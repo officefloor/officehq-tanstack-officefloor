@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
@@ -19,7 +19,7 @@ import { ExportPeople } from './ExportPeople';
 import { ImportPeople } from './ImportPeople';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
-import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, takeStatement, transferPerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, takeStatement, transferPerson, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '' };
 
@@ -28,7 +28,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
  *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap, with the excess above it, and split into settled and open (see `splitDues`); n/a
  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
  *  their statements (a button that takes one, now or as of the date typed beside it, a button that cancels the last, the count, the last one's due-total and date), whether
- *  they are retired and from when (with a date and a button that retires them), whether they have
+ *  they are retired and from when (with a date and a button that retires them, a button that unretires them, and their past retirements, each `<from> to <to>`), whether they have
  *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
  *  patrons (each `<name> <share>`, sorted by name (see `patronShares`), with a picker that names one more), their aliases (sorted as names are
@@ -154,6 +154,17 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
   });
 
+  // The person whose last unretirement was refused; cleared by the next action on the row. Their
+  // open claims count again, so the claims and pools are read again.
+  const unretirement = useMutation({
+    mutationFn: (id: number) => unretirePerson(sheetId, user, id),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
+    ]),
+  });
+
   // The person whose last hold was refused; cleared by the next action on the row.
   const holding = useMutation({
     mutationFn: (v: { id: number; from: string; to: string }) => holdPerson(sheetId, user, v.id, v.from, v.to),
@@ -222,6 +233,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     unstatement.reset();
     watching.reset();
     retirement.reset();
+    unretirement.reset();
     holding.reset();
     patronage.reset();
     aliasing.reset();
@@ -263,6 +275,13 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     stateOnce(() => {
       resetRowActions();
       return retirement.mutateAsync({ id, from });
+    });
+  };
+
+  const unretire = (id: number) => {
+    stateOnce(() => {
+      resetRowActions();
+      return unretirement.mutateAsync(id);
     });
   };
 
@@ -508,6 +527,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   {retirement.isError && retirement.variables?.id === p.id && (
                     <span data-testid="person-error">The person could not be retired: the date must be a date.</span>
                   )}
+                  {unretirement.isError && unretirement.variables === p.id && (
+                    <span data-testid="person-error">The person could not be unretired: they are not retired.</span>
+                  )}
                   {holding.isError && holding.variables?.id === p.id && (
                     <span data-testid="person-error">The person could not be held: the dates must be dates, the to-date not before the from-date.</span>
                   )}
@@ -542,7 +564,14 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   <button type="button" data-testid="person-retire" disabled={retirement.isPending}
                     onClick={() => retire(p.id)}>
                     Retire
-                  </button>
+                  </button>{' '}
+                  <button type="button" data-testid="person-unretire" disabled={unretirement.isPending}
+                    onClick={() => unretire(p.id)}>
+                    Unretire
+                  </button>{' '}
+                  {p.retirements.map((r, i) => (
+                    <Fragment key={i}><span data-testid="person-retirement-line">{r.from} to {r.to}</span>; </Fragment>
+                  ))}
                 </td>
                 <td>
                   On hold <span data-testid="person-hold">{p.held ? 'yes' : 'no'}</span>{' '}

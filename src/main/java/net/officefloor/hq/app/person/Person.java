@@ -32,6 +32,8 @@ public class Person {
     private String statedTotal;
     private String statementDate;
     private String retiredFrom;
+    /** Their past retirements, oldest first. */
+    private java.util.List<Retirement> retirements = new java.util.ArrayList<>();
     /** Their holds, in the order they were added. */
     private java.util.List<Hold> holds = new java.util.ArrayList<>();
     /** The sheet's today (null: not known). */
@@ -133,6 +135,14 @@ public class Person {
     public String getRetiredFrom() { return retiredFrom; }
     public void setRetiredFrom(String retiredFrom) { this.retiredFrom = retiredFrom; }
     public boolean isRetired() { return retiredFrom != null; }
+    public java.util.List<Retirement> getRetirements() { return retirements; }
+    public void setRetirements(java.util.List<Retirement> retirements) { this.retirements = retirements; }
+
+    /** Unretire them on the date: no longer retired, the retirement kept as a past one up to it. */
+    public void unretire(String on) {
+        retirements.add(new Retirement(retiredFrom, on));
+        retiredFrom = null;
+    }
     /** Whether the sheet's today is on or after their retirement date: their open claims no statement
      *  bound then count in no live total. */
     public boolean isRetiredReached() {
@@ -171,9 +181,11 @@ public class Person {
                         && (isRetiredReached() || holds.stream().anyMatch((h) -> h.covers(claim.getDate()))));
     }
 
-    /** Whether a claim on this date is refused: the person is retired from a date before it. */
+    /** Whether a claim on this date is refused: the person is retired from a date before it, or it
+     *  is dated after the from and before the to of one of their past retirements. */
     public boolean retiredBefore(java.time.LocalDate date) {
-        return retiredFrom != null && date.isAfter(java.time.LocalDate.parse(retiredFrom));
+        return (retiredFrom != null && date.isAfter(java.time.LocalDate.parse(retiredFrom)))
+                || retirements.stream().anyMatch((r) -> r.refuses(date));
     }
 
     /** Record a statement just taken: its due-total (null: n/a), date and how many claims it bound. */
