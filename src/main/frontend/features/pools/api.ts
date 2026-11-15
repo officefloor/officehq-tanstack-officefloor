@@ -4,7 +4,7 @@ import { sheetKey } from '../sheet/api';
 /** A member of a pool, a person (`personId`) or another pool (`poolId`, `name` its name), with their share
  *  percent (two decimals); a `retired` member's share counts as given toward the pool's total. `cut` is
  *  their cut of the pool's pot (two decimals; a retired member's or one on a hold in force on the sheet's
- *  today 0.00, their share spread over the others in proportion; the remainder going to the largest share), "" when every current member is retired or the pool is unbalanced or has no pot. A pool that is a member of none cuts the sheet's
+ *  today 0.00, their share spread over the others in proportion; the remainder going to the smallest non-zero cut, the latest added on a tie, or to the last member with a share when no cut is non-zero), "" when every current member is retired or the pool is unbalanced or has no pot. A pool that is a member of none cuts the sheet's
  *  pot; a member pool cuts its own cut in the pool above. `from`/`to` are the dates the membership runs
  *  (null: no bound); a member that is not `current` (its dates leave out the sheet's today) is left out of
  *  the total share and has no cut (""). */
