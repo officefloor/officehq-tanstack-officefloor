@@ -200,6 +200,22 @@ public class PersonRepository {
         return tree;
     }
 
+    /** The sheet's descendants (its children, their children, ...) among the sheets that exist, by id. */
+    public List<String> descendantSheets(String sheetId) {
+        List<String> below = new ArrayList<>(List.of(sheetId));
+        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
+        for (int i = 0; i < below.size(); i++) {
+            for (String child : jdbc.queryForList("SELECT sheet_id FROM sheet_setting WHERE setting = 'parent' AND val = ?",
+                    String.class, below.get(i))) {
+                if (seen.add(child)) below.add(child);
+            }
+        }
+        below.remove(0);
+        below.removeIf((s) -> jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ?", Integer.class, s) == 0);
+        below.sort(null);
+        return below;
+    }
+
     private String parentOf(String sheetId) {
         return jdbc.queryForList("SELECT val FROM sheet_setting WHERE sheet_id = ? AND setting = 'parent'",
                 String.class, sheetId).stream().filter((v) -> v != null && !v.isBlank()).findFirst().orElse(null);
