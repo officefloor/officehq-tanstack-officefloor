@@ -10,6 +10,7 @@ public class RecordStatement {
             @Val Person person, Audit audit) {
         audit.record("STATEMENT sheet=" + person.getSheetId() + " by=" + (by == null ? "" : by)
                 + " name=" + person.getName() + " due-total=" + person.getStatedTotal()
-                + " claims=" + person.getStatedClaims());
+                + " claims=" + person.getStatedClaims()
+                + (person.getStatedAsOf() == null ? "" : " asof=" + person.getStatedAsOf()));
     }
 }

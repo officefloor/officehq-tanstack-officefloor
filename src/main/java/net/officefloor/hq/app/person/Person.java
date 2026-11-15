@@ -34,6 +34,8 @@ public class Person {
     private java.time.LocalDate today;
     /** The ids of the people they name as patrons, in the order named. */
     private java.util.List<Long> patronIds = new java.util.ArrayList<>();
+    /** The date the statement this request took was taken as of (null: now), for its audit line. */
+    private String statedAsOf;
     /** How many claims the statement this request took bound, for its audit line. */
     private int statedClaims;
     /** The due-total of the statement this request cancelled, for its audit line. */
@@ -168,4 +170,8 @@ public class Person {
 
     @JsonIgnore
     public int getStatedClaims() { return statedClaims; }
+
+    @JsonIgnore
+    public String getStatedAsOf() { return statedAsOf; }
+    public void setStatedAsOf(String statedAsOf) { this.statedAsOf = statedAsOf; }
 }

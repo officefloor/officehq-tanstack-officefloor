@@ -89,6 +89,30 @@ public class SettingRepository {
                 + "WHERE sheet_id = ? AND setting = ?", (rs, n) -> row(rs), sheetId, key), start);
     }
 
+    /** The values recorded for a key as they stood at the end of the date (each as the last value
+     *  recorded while the sheet's today was on or before the date left it), with its value before
+     *  every from-date ({@code start}). */
+    public DatedSetting datedAsOf(String sheetId, String key, String start, LocalDate asOf) {
+        return new DatedSetting(jdbc.query("SELECT sheet_id, setting, val, from_date FROM setting_history h "
+                + "WHERE h.sheet_id = ? AND h.setting = ? AND h.id = (SELECT MAX(h2.id) FROM setting_history h2 "
+                + "WHERE h2.sheet_id = h.sheet_id AND h2.setting = h.setting AND h2.from_key = h.from_key "
+                + "AND (h2.on_date IS NULL OR h2.on_date <= ?))", (rs, n) -> row(rs), sheetId, key, asOf), start);
+    }
+
+    /** The sheet's cap in force on the date as it stood then; null when there was none. */
+    public BigDecimal capAsOf(String sheetId, LocalDate asOf) {
+        String value = datedAsOf(sheetId, CAP, null, asOf).on(asOf.toString());
+        return value == null ? null : new BigDecimal(value);
+    }
+
+    /** What a claim's late charge and rounding went by at the end of the date, the date standing in
+     *  for the sheet's today. */
+    public Dues.Late lateAsOf(String sheetId, LocalDate asOf) {
+        String policy = datedAsOf(sheetId, POLICY_DATE, null, asOf).on("9999-12-31");
+        return new Dues.Late(datedAsOf(sheetId, LATE_PCT, DEFAULT_LATE_PCT, asOf), asOf,
+                policy == null ? asOf : LocalDate.parse(policy));
+    }
+
     /** An undated setting's value; null when blank or never set. */
     public String find(String sheetId, String key) {
         return dated(sheetId, key, null).on("9999-12-31");
@@ -162,6 +186,8 @@ public class SettingRepository {
                 sheetId, key, from == null ? LocalDate.of(1, 1, 1) : from);
         jdbc.update("INSERT INTO sheet_setting (sheet_id, setting, val, from_date, set_by, set_at) "
                 + "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)", sheetId, key, value, from, user);
+        jdbc.update("INSERT INTO setting_history (sheet_id, setting, val, from_date, on_date) "
+                + "VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", sheetId, key, value, from, sheetId);
         return new Setting(sheetId, key, value == null ? "" : value, from == null ? null : from.toString());
     }
 }

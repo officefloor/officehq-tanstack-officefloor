@@ -95,6 +95,7 @@ public class ClaimRepository {
         }, key);
         long id = key.getKey().longValue();
         jdbc.update("UPDATE claim SET list_seq = " + NEXT_SEQ + " WHERE sheet_id = ? AND id = ?", sheetId, sheetId, id);
+        snapshot(sheetId, id);
         return find(sheetId, id);
     }
 
@@ -105,6 +106,7 @@ public class ClaimRepository {
                 claim.getSettledDue() == null ? null : new BigDecimal(claim.getSettledDue()),
                 claim.getOpenedBy(), claim.getCorrects(),
                 claim.getSheetId(), claim.getId());
+        snapshot(claim.getSheetId(), claim.getId());
     }
 
     /** Save a claim moved to another person: its person, its binding (dropped), and its place in the
@@ -115,12 +117,14 @@ public class ClaimRepository {
                 claim.getPersonId(), claim.isStated(),
                 claim.getStatedDue() == null ? null : new BigDecimal(claim.getStatedDue()),
                 claim.getSheetId(), claim.getSheetId(), claim.getId());
+        snapshot(claim.getSheetId(), claim.getId());
     }
 
     /** Save a re-dated claim: its date and its number (a new one when its period changed). */
     public void redate(Claim claim) {
         jdbc.update("UPDATE claim SET claim_date = ?, number = ? WHERE sheet_id = ? AND id = ?",
                 LocalDate.parse(claim.getDate()), claim.getNumber(), claim.getSheetId(), claim.getId());
+        snapshot(claim.getSheetId(), claim.getId());
     }
 
     /** The person's claims, newest first. */
@@ -129,11 +133,49 @@ public class ClaimRepository {
                 ROW, sheetId, personId);
     }
 
+    /** Keep the claim as it stands now in its history, with the sheet's today. */
+    private void snapshot(String sheetId, long id) {
+        jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, on_date, person_id, amount, claim_date, status, "
+                + "settled_due, stated, stated_due, deferred_until, due_by) SELECT c.sheet_id, c.id, s.today, c.person_id, "
+                + "c.amount, c.claim_date, c.status, c.settled_due, c.stated, c.stated_due, c.deferred_until, c.due_by "
+                + "FROM claim c JOIN sheet s ON s.id = c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
+    }
+
+    /** The person's claims as they stood at the end of the date, newest first: each as its last change
+     *  made while the sheet's today was on or before the date left it (a claim of theirs then, and only
+     *  claims there were then), deferred when OPEN and deferred until after the date. */
+    public List<Claim> listOfAsOf(String sheetId, long personId, LocalDate asOf) {
+        return jdbc.query("SELECT h.claim_id, h.person_id, h.amount, h.claim_date, h.status, h.settled_due, h.stated, "
+                + "h.stated_due, h.deferred_until, h.due_by, c.note, c.number, c.opened_by, c.corrects, "
+                + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = c.sheet_id AND k.number = c.corrects), "
+                + "h.claim_date) AS round_date FROM claim_history h JOIN claim c ON c.id = h.claim_id "
+                + "WHERE h.sheet_id = ? AND h.person_id = ? AND h.id = (SELECT MAX(h2.id) FROM claim_history h2 "
+                + "WHERE h2.claim_id = h.claim_id AND (h2.on_date IS NULL OR h2.on_date <= ?)) "
+                + "ORDER BY c.list_seq DESC, c.id DESC", (rs, n) -> {
+                    BigDecimal settled = rs.getBigDecimal("settled_due");
+                    BigDecimal stated = rs.getBigDecimal("stated_due");
+                    LocalDate until = rs.getObject("deferred_until", LocalDate.class);
+                    String status = rs.getString("status");
+                    Claim claim = new Claim(rs.getLong("claim_id"), sheetId, rs.getLong("person_id"),
+                            rs.getBigDecimal("amount").setScale(2).toPlainString(),
+                            rs.getObject("claim_date", LocalDate.class).toString(), rs.getString("note"), status,
+                            rs.getString("number"), settled == null ? null : settled.setScale(2).toPlainString(),
+                            rs.getString("opened_by"), rs.getBoolean("stated"),
+                            stated == null ? null : stated.setScale(2).toPlainString());
+                    return withCorrects(claim, rs.getString("corrects"),
+                            rs.getObject("round_date", LocalDate.class).toString(),
+                            rs.getObject("due_by", LocalDate.class).toString(), until,
+                            ClaimStatus.OPEN.name().equals(status) && until != null && until.isAfter(asOf),
+                            0, null, null, false);
+                }, sheetId, personId, asOf);
+    }
+
     /** Save the date a claim is deferred until. */
     public void updateDeferral(Claim claim) {
         jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ?",
                 claim.getDeferredUntil() == null ? null : LocalDate.parse(claim.getDeferredUntil()),
                 claim.getSheetId(), claim.getId());
+        snapshot(claim.getSheetId(), claim.getId());
     }
 
     /** Save the number of the claim a claim was split from. */
@@ -153,6 +195,7 @@ public class ClaimRepository {
         jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet_id = ? AND id = ?",
                 claim.isStated(), claim.getStatedDue() == null ? null : new BigDecimal(claim.getStatedDue()),
                 claim.getSheetId(), claim.getId());
+        snapshot(claim.getSheetId(), claim.getId());
     }
 
     /** The sheet's next claim number, taken in one atomic statement so two claims opened at the same

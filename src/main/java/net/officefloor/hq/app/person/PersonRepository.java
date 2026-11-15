@@ -64,6 +64,40 @@ public class PersonRepository {
         return person;
     }
 
+    /** Whether the person was added while the sheet's today was after the date: they were not on
+     *  the sheet then (one added before this was kept always was). */
+    public boolean addedAfter(String sheetId, long id, LocalDate date) {
+        return jdbc.queryForList("SELECT added_on FROM person WHERE sheet_id = ? AND id = ?", LocalDate.class, sheetId, id)
+                .stream().anyMatch((on) -> on != null && on.isAfter(date));
+    }
+
+    /** The person as they stood at the end of the date, the date standing in for the sheet's today:
+     *  the grades, holds and retirement date given them while the sheet's today was on or before it. */
+    public Person findAsOf(String sheetId, long id, LocalDate asOf) {
+        Person person = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ?",
+                ROW, sheetId, id).stream().findFirst().orElse(null);
+        if (person == null) {
+            return null;
+        }
+        List<GradeFrom> grades = jdbc.query("SELECT grade, from_date FROM person_grade_history h WHERE h.sheet_id = ? "
+                + "AND h.person_id = ? AND h.id = (SELECT MAX(h2.id) FROM person_grade_history h2 WHERE h2.person_id = h.person_id "
+                + "AND h2.from_key = h.from_key AND (h2.on_date IS NULL OR h2.on_date <= ?)) ORDER BY from_key",
+                (rs, n) -> {
+                    LocalDate from = rs.getObject("from_date", LocalDate.class);
+                    return new GradeFrom(rs.getString("grade"), from == null ? null : from.toString());
+                }, sheetId, id, asOf);
+        person.setGrades(new ArrayList<>(grades), asOf);
+        person.setHolds(new ArrayList<>(jdbc.query("SELECT from_date, to_date FROM person_hold WHERE sheet_id = ? "
+                + "AND person_id = ? AND (added_on IS NULL OR added_on <= ?) ORDER BY id", (rs, n) -> {
+                    LocalDate to = rs.getObject("to_date", LocalDate.class);
+                    return new Hold(rs.getObject("from_date", LocalDate.class).toString(), to == null ? null : to.toString());
+                }, sheetId, id, asOf)));
+        person.setRetiredFrom(jdbc.queryForList("SELECT retired_from FROM person_retired_history WHERE sheet_id = ? "
+                + "AND person_id = ? AND (on_date IS NULL OR on_date <= ?) ORDER BY id DESC LIMIT 1", LocalDate.class,
+                sheetId, id, asOf).stream().findFirst().map(LocalDate::toString).orElse(null));
+        return person;
+    }
+
     /** Give each person their grades, by from-date (none first), and the one in force on the sheet's today. */
     private void withGrades(String sheetId, List<Person> people) {
         if (people.isEmpty()) {
@@ -128,18 +162,21 @@ public class PersonRepository {
         GeneratedKeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, created_by, terms) VALUES (?, ?, ?, ?)",
+                    "INSERT INTO person (sheet_id, name, created_by, terms, added_on) "
+                            + "VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setString(3, user);
             ps.setObject(4, terms);
+            ps.setString(5, sheetId);
             return ps;
         }, key);
         long id = key.getKey().longValue();
         // The first grade a person is given applies from the beginning of time.
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date, set_by) VALUES (?, ?, ?, NULL, ?)",
                 sheetId, id, grade, user);
+        gradeHistory(sheetId, id, grade, null);
         Person person = new Person(id, sheetId, name, grade, 0);
         person.getGrades().add(new GradeFrom(grade, null));
         person.setTerms(terms);
@@ -159,6 +196,13 @@ public class PersonRepository {
         }
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date, set_by) VALUES (?, ?, ?, ?, ?)",
                 person.getSheetId(), person.getId(), given.grade(), from, user);
+        gradeHistory(person.getSheetId(), person.getId(), given.grade(), from);
+    }
+
+    /** Keep a grade given in the person's history, with the sheet's today. */
+    private void gradeHistory(String sheetId, long personId, String grade, LocalDate from) {
+        jdbc.update("INSERT INTO person_grade_history (sheet_id, person_id, grade, from_date, on_date) "
+                + "VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", sheetId, personId, grade, from, sheetId);
     }
 
     /** Save the person over the version it was loaded at, raising the version; false (nothing
@@ -209,13 +253,17 @@ public class PersonRepository {
     public void updateRetired(Person person) {
         jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?",
                 LocalDate.parse(person.getRetiredFrom()), person.getSheetId(), person.getId());
+        jdbc.update("INSERT INTO person_retired_history (sheet_id, person_id, retired_from, on_date) "
+                + "VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", person.getSheetId(), person.getId(),
+                LocalDate.parse(person.getRetiredFrom()), person.getSheetId());
     }
 
     /** Add a hold on the person (not an edit: the version stays). */
     public void addHold(Person person, Hold hold, String user) {
-        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, held_by) VALUES (?, ?, ?, ?, ?)",
+        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, held_by, added_on) "
+                + "VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
                 person.getSheetId(), person.getId(), LocalDate.parse(hold.from()),
-                hold.to() == null ? null : LocalDate.parse(hold.to()), user);
+                hold.to() == null ? null : LocalDate.parse(hold.to()), user, person.getSheetId());
         person.getHolds().add(hold);
     }
 }

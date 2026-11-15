@@ -21,7 +21,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '' };
 /** The people on the sheet: a form that adds a person or edits one, and the list in added order,
  *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap, with the excess above it; n/a
  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
- *  their statements (a button that takes one, a button that cancels the last, the count, the last one's due-total and date), whether
+ *  their statements (a button that takes one, now or as of the date typed beside it, a button that cancels the last, the count, the last one's due-total and date), whether
  *  they are retired and from when (with a date and a button that retires them), whether they have
  *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
@@ -51,6 +51,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const [showRetired] = useShowRetired();
   // The retirement date typed on each person's row (blank: the sheet's today).
   const [retireDates, setRetireDates] = useState<Record<number, string>>({});
+  // The statement date typed on each person's row (blank: the statement is taken now).
+  const [asOfDates, setAsOfDates] = useState<Record<number, string>>({});
   // The hold dates typed on each person's row (blank from: the sheet's today; blank to: open-ended).
   const [holdDates, setHoldDates] = useState<Record<number, { from: string; to: string }>>({});
   // The patron picked on each person's row (blank: none picked).
@@ -97,13 +99,18 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const submitOnce = useSubmitOnce();
   const stateOnce = useSubmitOnce();
 
-  // The person whose last statement was refused; cleared by the next statement taken here.
+  // The person whose last statement was refused; cleared by the next statement taken here, or by
+  // the statement date typed.
   const statement = useMutation({
-    mutationFn: (id: number) => takeStatement(sheetId, user, id),
-    onSuccess: () => Promise.all([
-      queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
-      queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
-    ]),
+    mutationFn: (v: { id: number; asof: string }) => takeStatement(sheetId, user, v.id, v.asof),
+    // The date typed goes once the statement is taken, so the next one is taken now unless dated again.
+    onSuccess: (_, v) => {
+      setAsOfDates((d) => ({ ...d, [v.id]: '' }));
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      ]);
+    },
   });
 
   // The person whose last statement cancel was refused; cleared by the next action on the row.
@@ -154,7 +161,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const state = (id: number) => {
     stateOnce(() => {
       resetRowActions();
-      return statement.mutateAsync(id);
+      return statement.mutateAsync({ id, asof: asOfDates[id] ?? '' });
     });
   };
 
@@ -326,6 +333,11 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   </button>
                 </td>
                 <td>
+                  <input type="date" data-testid="person-statement-asof" value={asOfDates[p.id] ?? ''}
+                    onChange={(e) => {
+                      setAsOfDates((d) => ({ ...d, [p.id]: e.target.value }));
+                      statement.reset();
+                    }} />{' '}
                   <button type="button" data-testid="person-statement" disabled={statement.isPending}
                     onClick={() => state(p.id)}>
                     Statement
@@ -337,7 +349,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   Statements <span data-testid="person-statement-count">{p.statementCount}</span>{' '}
                   last <span data-testid="person-stated-total">{p.statedTotal ?? ''}</span>{' '}
                   on <span data-testid="person-statement-date">{p.statementDate ?? ''}</span>
-                  {statement.isError && statement.variables === p.id && (
+                  {statement.isError && statement.variables?.id === p.id && (
                     <span data-testid="person-error">The statement could not be taken.</span>
                   )}
                   {unstatement.isError && unstatement.variables === p.id && (

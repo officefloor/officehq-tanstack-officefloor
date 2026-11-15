@@ -39,6 +39,25 @@ public class RateRepository {
                 .filter((r) -> !r.endedBefore(on.toString())).orElse(null);
     }
 
+    /** The sheet's rates as they stood at the end of the date: each as the last rate set while the
+     *  sheet's today was on or before the date left it, by grade, then by from-date (none first). */
+    public List<Rate> listAsOf(String sheetId, LocalDate asOf) {
+        return jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date FROM rate_history h WHERE h.sheet_id = ? "
+                + "AND h.id = (SELECT MAX(h2.id) FROM rate_history h2 WHERE h2.sheet_id = h.sheet_id AND h2.grade = h.grade "
+                + "AND h2.from_key = h.from_key AND (h2.on_date IS NULL OR h2.on_date <= ?)) ORDER BY grade, from_key",
+                ROW, sheetId, asOf);
+    }
+
+    /** The grade's rate among {@code rates} in force on the date (yyyy-MM-dd), as {@link #find} finds it. */
+    public static Rate inForce(List<Rate> rates, String grade, String date) {
+        Rate found = null;
+        for (Rate r : rates) {
+            if (!r.grade().equals(grade) || (r.from() != null && r.from().compareTo(date) > 0)) continue;
+            if (found == null || (found.from() == null ? "" : found.from()).compareTo(r.from() == null ? "" : r.from()) < 0) found = r;
+        }
+        return found == null || found.endedBefore(date) ? null : found;
+    }
+
     /** Set (or replace) the grade's rate from the from-date (null: from the beginning of time) through
      *  the to-date (null: no end). */
     public Rate set(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to, String user) {
@@ -49,6 +68,8 @@ public class RateRepository {
         }
         jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, set_by, set_at) "
                 + "VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)", sheetId, grade, pct, from, to, user);
+        jdbc.update("INSERT INTO rate_history (sheet_id, grade, pct, from_date, to_date, on_date) "
+                + "VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", sheetId, grade, pct, from, to, sheetId);
         return new Rate(sheetId, grade, pct.toPlainString(), from == null ? null : from.toString(),
                 to == null ? null : to.toString());
     }

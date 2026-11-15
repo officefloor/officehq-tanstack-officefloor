@@ -62,9 +62,12 @@ export function updatePerson(sheetId: string, by: string, id: number, version: n
 }
 
 /** Take a statement of the person: records their due-total now and binds each of their counting
- *  claims to the figure it shows now (unbinding the others). */
-export function takeStatement(sheetId: string, by: string, id: number): Promise<Person> {
-  return postJson<Person>(`${base(sheetId)}/${id}/statement?by=${encodeURIComponent(by)}`, {});
+ *  claims to the figure it shows now (unbinding the others). Taken as of a date (`asof`; blank: now),
+ *  it goes by everything as it stood at the end of that date, which stands in for the sheet's today;
+ *  refused (rejects) for a date after the sheet's today. */
+export function takeStatement(sheetId: string, by: string, id: number, asof = ''): Promise<Person> {
+  const on = asof === '' ? '' : `&asof=${encodeURIComponent(asof)}`;
+  return postJson<Person>(`${base(sheetId)}/${id}/statement?by=${encodeURIComponent(by)}${on}`, {});
 }
 
 /** A steward cancels the person's last statement: the claims it bound become live again and the
