@@ -1,0 +1,223 @@
+diff --git a/src/main/frontend/features/settings/Settings.tsx b/src/main/frontend/features/settings/Settings.tsx
+index 1d64d37c9..78b8936b9 100644
+--- a/src/main/frontend/features/settings/Settings.tsx
++++ b/src/main/frontend/features/settings/Settings.tsx
+@@ -70,6 +70,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+                 : key === 'review-sla' ? 'Review SLA (days)'
+                 : key === 'score-mid' ? 'Score mid threshold'
+                 : key === 'score-high' ? 'Score high threshold'
++                : key === 'score-log' ? 'Score log (on)'
+                 : key === 'proof-threshold' ? 'Proof threshold'
+                 : key === 'proof-kinds' ? 'Proof kinds (receipt, photo)'
+                 : key === 'note-threshold' ? 'Note threshold'
+@@ -84,7 +85,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+                 : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (business days)` : 'Terms (business days)'}{' '}
+               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
+                 placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' || key === 'review-threshold' || key === 'review-sla' || key === 'score-mid' || key === 'score-high' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key.startsWith('clerk-limit-') ? "Sheet's limit" : key === 'cap' ? 'No cap' : key === 'pot' || key === 'parent' || key === 'proof-kinds' ? 'None' : key === 'alert-threshold' ? 'Off' : key === 'rounding' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
+-                  : key === 'period-numbering-from' || key === 'entry-date' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' || key === 'escalate-after' ? 'Off' : key.startsWith('grace-') ? 'None' : key.startsWith('terms-') ? "Sheet's terms"
++                  : key === 'period-numbering-from' || key === 'entry-date' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' || key === 'escalate-after' || key === 'score-log' ? 'Off' : key.startsWith('grace-') ? 'None' : key.startsWith('terms-') ? "Sheet's terms"
+                   : key === 'default-grade' ? 'A'
+                   : key.startsWith('perm-') ? PERMISSION_STANDING[key.slice('perm-'.length)] : undefined}
+                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
+@@ -107,7 +108,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+         {save.isError && (
+           <span data-testid="settings-error">
+             The clerk limit, a grade's clerk limit, the cap, the pot, the proof threshold, a grade's proof threshold, the note threshold and the review threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
+-            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the rounding mode blank, half-up or half-even; the policy date, period numbering date and entry date blank or a date; the grace days, a grade's grace days and the review SLA blank or a whole number of days; a score threshold blank or a whole number; a permission blank or a comma separated list of clerk and steward; the proof kinds blank or a comma separated list of receipt and photo; the parent sheet blank or a sheet that has been loaded, not this one nor one with this one above it; the fiscal year start month a whole number from 1 to 12; the default grade blank, A, B or C; a from-date blank or a date.
++            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the rounding mode blank, half-up or half-even; the policy date, period numbering date and entry date blank or a date; the grace days, a grade's grace days and the review SLA blank or a whole number of days; a score threshold blank or a whole number; the score log blank or on; a permission blank or a comma separated list of clerk and steward; the proof kinds blank or a comma separated list of receipt and photo; the parent sheet blank or a sheet that has been loaded, not this one nor one with this one above it; the fiscal year start month a whole number from 1 to 12; the default grade blank, A, B or C; a from-date blank or a date.
+           </span>
+         )}
+       </form>
+diff --git a/src/main/frontend/features/settings/api.ts b/src/main/frontend/features/settings/api.ts
+index 0f97f7385..e5b670e4f 100644
+--- a/src/main/frontend/features/settings/api.ts
++++ b/src/main/frontend/features/settings/api.ts
+@@ -55,12 +55,14 @@ export type Role = { sheetId: string; user: string; role: string };
+  *  sheet's today when it went to REVIEW) plus them is before the sheet's today is review-late (see `isReviewLate`).
+  *  The score thresholds (score-mid and score-high, whole numbers; blank means none; not dated): while both
+  *  are set, each person shows a score band (see `scoreBand`).
++ *  The score log (on or blank; not dated): while on, changing the sheet's today records a SCORE audit line per
++ *  person with their score on the day being left, before the SNAPSHOT lines.
+  *  The default grade (A, B or C; blank means A; not dated): the grade the quick-add bar gives a new person,
+  *  and an import line with a blank grade; changing it changes no one.
+  *  A grade's clerk limit (clerk-limit-<grade>, two decimals; blank means none; dated): a claim whose person's
+  *  grade on the sheet's today has one in force then goes by it instead of the sheet's clerk limit. */
+ export const SETTING_KEYS = ['clerk-limit', 'clerk-limit-A', 'clerk-limit-B', 'clerk-limit-C', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'rounding',
+-  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'score-mid', 'score-high', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'] as const;
++  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'score-mid', 'score-high', 'score-log', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'] as const;
+ 
+ /** The roles that may take each action of the permission matrix while its entry is blank. */
+ export const PERMISSION_STANDING: Record<string, string> = {
+@@ -72,7 +74,7 @@ export const PERMISSION_STANDING: Record<string, string> = {
+ export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00', 'fiscal-start-month': '1' };
+ 
+ /** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
+-export const UNDATED_KEYS: readonly string[] = ['pot', 'proof-kinds', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'score-mid', 'score-high', 'perm-open', 'perm-settle', 'perm-void',
++export const UNDATED_KEYS: readonly string[] = ['pot', 'proof-kinds', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'score-mid', 'score-high', 'score-log', 'perm-open', 'perm-settle', 'perm-void',
+   'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'];
+ 
+ /** The fiscal year a date (yyyy-MM-dd) falls in, FY<yyyy>, for a fiscal year start month (1 to 12). */
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 094a858bd..563fe8d7c 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -28,8 +28,10 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+         BigDecimal alertThreshold) {
+ 
+     /** A person's figures: their name, claimed, due-total (null: n/a) and overdue-total (the shown
+-     *  dues of their open claims past their due-by plus grace days on the sheet's today, n/a ones skipped). */
+-    public record Figures(String name, String claimed, String dueTotal, String overdueTotal) {
++     *  dues of their open claims past their due-by plus grace days on the sheet's today, n/a ones skipped) and
++     *  score (their settled claims' shown dues divided by 100, less 5 per overdue claim, rounded half to even;
++     *  not part of {@link #sameAs}). */
++    public record Figures(String name, String claimed, String dueTotal, String overdueTotal, String score) {
+         public boolean sameAs(Figures other) {
+             return other != null && claimed.equals(other.claimed)
+                     && (dueTotal == null ? other.dueTotal == null : dueTotal.equals(other.dueTotal))
+@@ -55,6 +57,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+             BigDecimal claimed = zero();
+             BigDecimal due = zero();
+             BigDecimal overdue = zero();
++            BigDecimal settled = zero();
++            int overdueCount = 0;
+             boolean kept = false;
+             for (Claim c : all) {
+                 if (c.getPersonId() != p.getId()) continue;
+@@ -67,14 +71,16 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+                 kept |= c.getSettledDue() != null || c.isBound()
+                         || (pct != null && (!grade.equals(p.getGrade()) || c.getDate().compareTo(today) <= 0));
+                 if (d != null) due = due.add(new BigDecimal(d));
+-                if (d != null && ClaimStatus.isOpen(c.getStatus()) && late.lateFrom(c).isBefore(todayDate)) {
+-                    overdue = overdue.add(new BigDecimal(d));
++                if (d != null && ClaimStatus.SETTLED.name().equals(c.getStatus())) settled = settled.add(new BigDecimal(d));
++                if (ClaimStatus.isOpen(c.getStatus()) && late.lateFrom(c).isBefore(todayDate)) {
++                    overdueCount++;
++                    if (d != null) overdue = overdue.add(new BigDecimal(d));
+                 }
+             }
+             boolean na = rateOn(sheetRates, p.getGrade(), today) == null && !kept;
+             if (cap != null && due.compareTo(cap) > 0) due = cap.setScale(2);
+             figures.put(p.getId(), new Figures(p.getName(), claimed.toPlainString(),
+-                    na ? null : due.toPlainString(), overdue.toPlainString()));
++                    na ? null : due.toPlainString(), overdue.toPlainString(), score(settled, overdueCount)));
+             claimedTotal = claimedTotal.add(claimed);
+             if (!na) dues.add(due);
+             overdues.add(overdue);
+@@ -139,6 +145,12 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+         return total;
+     }
+ 
++    /** A person's score: their settled figures divided by 100, less 5 per overdue claim, rounded half to even. */
++    private static String score(BigDecimal settled, int overdueCount) {
++        return settled.movePointLeft(2).subtract(BigDecimal.valueOf(5L * overdueCount))
++                .setScale(0, java.math.RoundingMode.HALF_EVEN).toPlainString();
++    }
++
+     private static BigDecimal zero() {
+         return BigDecimal.ZERO.setScale(2);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index a8955b1f7..7053fd54b 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -109,6 +109,10 @@ public class SettingRepository {
+      *  set, a person whose score is at or above it is in the HIGH band. */
+     public static final String SCORE_HIGH = "score-high";
+ 
++    /** The score log (on or blank; not dated): while on, changing the sheet's today records, before the
++     *  SNAPSHOT lines, a SCORE line per person with their score on the day being left. */
++    public static final String SCORE_LOG = "score-log";
++
+     /** A grade's grace days ({@code grace-<grade>}, dated; a whole number; blank: none): a claim whose
+      *  person's grade in force on its date has them in force on that date is overdue, and gains its late
+      *  charge, counting from its due-by plus them. */
+@@ -142,7 +146,7 @@ public class SettingRepository {
+     /** Whether a key is dated: every key that carries a figure (the policy date, the period
+      *  numbering date, the grace days, the pot, the proof kinds, the fiscal year start month and the permission matrix are not). */
+     public static boolean isDated(String key) {
+-        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
++        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !SCORE_LOG.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
+                 && !ENTRY_DATE.equals(key) && !PROOF_KINDS.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !FISCAL_START_MONTH.equals(key) && !PARENT.equals(key) && !DEFAULT_GRADE.equals(key) && !Permissions.isKey(key);
+     }
+ 
+@@ -206,6 +210,11 @@ public class SettingRepository {
+         return dated(sheetId, key, null).on("9999-12-31");
+     }
+ 
++    /** Whether the sheet's score log is on. */
++    public boolean scoreLog(String sheetId) {
++        return "on".equals(find(sheetId, SCORE_LOG));
++    }
++
+     /** The sheet's default grade: the one set, else A. */
+     public String defaultGrade(String sheetId) {
+         String value = find(sheetId, DEFAULT_GRADE);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 109272c7a..6b5b1b145 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -136,6 +136,12 @@ public class ValidateSetting {
+             }
+             body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null));
+             return;
++        } else if (SettingRepository.SCORE_LOG.equals(key)) {
++            if (!value.isEmpty() && !"on".equals(value)) {
++                throw new InvalidSettingException("The score log is on or blank");
++            }
++            body.set(new SettingRequest(key, value.isEmpty() ? null : value, null));
++            return;
+         } else if (SettingRepository.GRACE_DAYS.equals(key)) {
+             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+                 throw new InvalidSettingException("The grace days are blank or a whole number of days, 0 or more");
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RecordScores.java b/src/main/java/net/officefloor/hq/app/sheet/RecordScores.java
+new file mode 100644
+index 000000000..bff7e317e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RecordScores.java
+@@ -0,0 +1,23 @@
++package net.officefloor.hq.app.sheet;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Before a new today takes effect, while the score log is on: one SCORE line per person, in list
++ *  order, with the score as it stood on the day being left; nothing when the today does not change. */
++public class RecordScores {
++    public void record(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "by", required = false) String by, @Val LocalDate today,
++            @Val Rollup before, SheetRepository sheets, SettingRepository settings, Audit audit) {
++        String id = sheetId.trim();
++        if (today.equals(sheets.today(id)) || !settings.scoreLog(id)) return;
++        String head = "SCORE sheet=" + id + " by=" + (by == null ? "" : by);
++        before.people().values().forEach((figures) ->
++                audit.record(head + " name=" + figures.name() + " score=" + figures.score()));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+index 820de96f7..a489ac88f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+@@ -1,5 +1,6 @@
+ # POST /api/sheets/{sheetId}/today — change the sheet's today (the date everything on it goes by).
+-# Before the change takes effect, a SNAPSHOT line per person with the due-total on the day being left.
++# Before the change takes effect, while the score log is on, a SCORE line per person with their score
++# on the day being left; then a SNAPSHOT line per person with the due-total on the day being left.
+ # With grace days set, the open periods past them are closed (auto=yes) before the rollup lines.
+ # A viewer may change nothing: refused before anything is read or written.
+ guard:
+@@ -11,6 +12,10 @@ validate:
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+   govern: [ transaction ]
++  next: scores
++scores:
++  class: net.officefloor.hq.app.sheet.RecordScores
++  govern: [ transaction ]
+   next: snapshot
+ snapshot:
+   class: net.officefloor.hq.app.sheet.RecordSnapshots
