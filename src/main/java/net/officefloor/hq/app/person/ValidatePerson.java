@@ -27,6 +27,14 @@ public class ValidatePerson {
                 throw new InvalidPersonException("Not a date: " + from);
             }
         }
-        body.set(new PersonRequest(name, grade, from.isEmpty() ? null : from, request.version()));
+        String terms = request.terms() == null ? "" : request.terms().trim();
+        if (!terms.isEmpty()) {
+            if (!terms.matches("\\d{1,5}")) {
+                throw new InvalidPersonException("Terms must be a whole number of days: " + terms);
+            }
+            terms = String.valueOf(Integer.parseInt(terms));
+        }
+        body.set(new PersonRequest(name, grade, from.isEmpty() ? null : from, terms.isEmpty() ? null : terms,
+                request.version()));
     }
 }

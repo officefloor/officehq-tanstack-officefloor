@@ -19,6 +19,10 @@ public class Person {
     private java.util.List<GradeFrom> grades = new java.util.ArrayList<>();
     /** The grade this request's save records (null: none). */
     private GradeFrom recorded;
+    /** Their own terms in whole days (null: none). */
+    private Integer terms;
+    /** Whether this request's save changed their terms, for its audit line. */
+    private boolean termsChanged;
     private long version;
     private int statementCount;
     private String statedTotal;
@@ -81,6 +85,18 @@ public class Person {
         setGrades(now, today);
         recorded = new GradeFrom(grade, from);
     }
+
+    public Integer getTerms() { return terms; }
+    public void setTerms(Integer terms) { this.terms = terms; }
+
+    /** Give them these terms (null: none); the audit line records them when they changed. */
+    public void giveTerms(Integer terms) {
+        termsChanged = !java.util.Objects.equals(this.terms, terms);
+        this.terms = terms;
+    }
+
+    @JsonIgnore
+    public boolean isTermsChanged() { return termsChanged; }
 
     @JsonIgnore
     public GradeFrom getRecorded() { return recorded; }

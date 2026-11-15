@@ -124,6 +124,15 @@ public class SettingRepository {
         return Integer.parseInt(value != null ? value : dated(sheetId, TERMS, DEFAULT_TERMS).on(date));
     }
 
+    /** The terms (whole days) of a claim of the person on a date: their own, else those of their
+     *  grade in force on it, else the sheet's, each as in force on the date (a null person: the sheet's). */
+    public int terms(String sheetId, net.officefloor.hq.app.person.Person person, String date) {
+        if (person != null && person.getTerms() != null) {
+            return person.getTerms();
+        }
+        return terms(sheetId, person == null ? null : person.gradeOn(date), date);
+    }
+
     /** The sheet's late percent (two decimals) by date: a late charge goes by the one in force on each 30-day boundary. */
     public DatedSetting latePct(String sheetId) {
         return dated(sheetId, LATE_PCT, DEFAULT_LATE_PCT);

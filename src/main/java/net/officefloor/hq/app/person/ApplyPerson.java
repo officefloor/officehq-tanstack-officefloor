@@ -14,6 +14,7 @@ public class ApplyPerson {
             throw new InvalidPersonException("The name is already in use");
         }
         person.setName(request.name());
+        person.giveTerms(request.terms() == null ? null : Integer.valueOf(request.terms()));
         // The form's grade is given from its from-date (blank: the sheet's today); a save leaving
         // the grade as the row showed it, with no from-date, gives none.
         if (request.gradeFrom() != null || !request.grade().equals(person.getGrade())) {

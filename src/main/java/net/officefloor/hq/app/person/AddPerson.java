@@ -17,6 +17,7 @@ public class AddPerson {
             throw new InvalidPersonException("The name is already in use");
         }
         sheets.open(id, user);
-        person.set(people.add(id, request.name(), request.grade(), user));
+        person.set(people.add(id, request.name(), request.grade(),
+                request.terms() == null ? null : Integer.valueOf(request.terms()), user));
     }
 }

@@ -50,8 +50,7 @@ public class SplitClaim {
         String user = by == null ? "" : by;
         LocalDate date = LocalDate.parse(claim.getDate());
         Person person = people.find(sheetId, claim.getPersonId());
-        String grade = person == null ? null : person.gradeOn(claim.getDate());
-        LocalDate dueBy = date.plusDays(settings.terms(sheetId, grade, claim.getDate()));
+        LocalDate dueBy = date.plusDays(settings.terms(sheetId, person, claim.getDate()));
         Claim created = claims.add(sheetId, claim.getPersonId(), part.setScale(2), date, claim.getNote(),
                 null, dueBy, user);
         created.setStatus(ClaimStatus.OPEN.name());

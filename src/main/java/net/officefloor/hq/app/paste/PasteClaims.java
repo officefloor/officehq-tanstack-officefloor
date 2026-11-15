@@ -53,7 +53,7 @@ public class PasteClaims {
         }
         for (Pending p : pending) {
             // The due-by is fixed now, by the terms of the grade in force on its date, as they stood on its date.
-            LocalDate dueBy = p.date().plusDays(settings.terms(id, p.person().gradeOn(p.date().toString()), p.date().toString()));
+            LocalDate dueBy = p.date().plusDays(settings.terms(id, p.person(), p.date().toString()));
             Claim claim = claims.add(id, p.person().getId(), p.claim().amount(), p.date(),
                     p.claim().note(), p.corrects(), dueBy, user);
             log.record(claim, user);

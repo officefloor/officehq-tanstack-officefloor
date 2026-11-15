@@ -16,7 +16,7 @@ import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { GRADES, addPatron, addPerson, gradeOn, holdPerson, listPeople, listWatches, peopleKey, retirePerson, takeStatement, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 
-const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '' };
+const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '' };
 
 /** The people on the sheet: a form that adds a person or edits one, and the list in added order,
  *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap, with the excess above it; n/a
@@ -74,7 +74,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
         if (e instanceof HttpError && e.status === 409) {
           const now = await queryClient.fetchQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId), staleTime: 0 });
           const current = now.find((p) => p.id === v.editing?.id);
-          if (current) setForm({ name: current.name, grade: current.grade, gradeFrom: '' });
+          if (current) setForm({ name: current.name, grade: current.grade, gradeFrom: '', terms: current.terms === null ? '' : String(current.terms) });
         }
         throw e;
       }
@@ -83,6 +83,14 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       setForm(EMPTY);
       setEditing(null);
       return queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+    },
+    // A refused edit (not one someone else saved meanwhile) closes the editor, its error still
+    // showing, and leaves the form ready for an add; the person is as they were.
+    onError: (e, v) => {
+      if (v.editing !== null && !(e instanceof HttpError && e.status === 409)) {
+        setForm(EMPTY);
+        setEditing(null);
+      }
     },
   });
 
@@ -182,7 +190,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   };
 
   const open = (p: Person) => {
-    setForm({ name: p.name, grade: p.grade, gradeFrom: '' });
+    setForm({ name: p.name, grade: p.grade, gradeFrom: '', terms: p.terms === null ? '' : String(p.terms) });
     setEditing({ id: p.id, version: p.version });
     save.reset();
   };
@@ -232,6 +240,11 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
           <input type="date" data-testid="person-form-grade-from" value={form.gradeFrom}
             onChange={(e) => change({ gradeFrom: e.target.value })} />
         </label>{' '}
+        <label>
+          Terms{' '}
+          <input data-testid="person-form-terms" value={form.terms} placeholder="days"
+            onChange={(e) => change({ terms: e.target.value })} />
+        </label>{' '}
         <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
           {editing === null ? 'Add person' : 'Save person'}
         </button>
@@ -244,7 +257,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
           <span data-testid="person-form-error">
             {save.error instanceof HttpError && save.error.status === 409
               ? 'Someone else saved this person meanwhile: the form shows what is stored now. Open the editor again to edit it.'
-              : 'A person needs a name not already in use.'}
+              : 'A person needs a name not already in use, and terms (if any) a whole number of days.'}
           </span>
         )}
       </form>
@@ -267,6 +280,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
                 <td data-testid="person-name">{p.name}</td>
                 <td data-testid="person-grade">{p.grade}</td>
+                <td>
+                  Terms <span data-testid="person-terms">{p.terms ?? ''}</span>
+                </td>
                 <td>
                   Claimed <span data-testid="person-claimed">{claimed}</span>
                 </td>

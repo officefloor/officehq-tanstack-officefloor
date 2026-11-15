@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from";
+    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, terms";
 
     private static final RowMapper<Person> ROW = (rs, n) -> {
         LocalDate stated = rs.getObject("statement_date", LocalDate.class);
@@ -23,6 +23,7 @@ public class PersonRepository {
                 null, rs.getLong("version"), rs.getInt("statement_count"),
                 rs.getString("stated_total"), stated == null ? null : stated.toString());
         person.setRetiredFrom(retired == null ? null : retired.toString());
+        person.setTerms(rs.getObject("terms", Integer.class));
         return person;
     };
 
@@ -119,14 +120,20 @@ public class PersonRepository {
     }
 
     public Person add(String sheetId, String name, String grade, String user) {
+        return add(sheetId, name, grade, null, user);
+    }
+
+    /** Add a person with their grade (from the beginning of time) and own terms (null: none). */
+    public Person add(String sheetId, String name, String grade, Integer terms, String user) {
         GeneratedKeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, created_by) VALUES (?, ?, ?)",
+                    "INSERT INTO person (sheet_id, name, created_by, terms) VALUES (?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setString(3, user);
+            ps.setObject(4, terms);
             return ps;
         }, key);
         long id = key.getKey().longValue();
@@ -135,6 +142,7 @@ public class PersonRepository {
                 sheetId, id, grade, user);
         Person person = new Person(id, sheetId, name, grade, 0);
         person.getGrades().add(new GradeFrom(grade, null));
+        person.setTerms(terms);
         return person;
     }
 
@@ -157,8 +165,8 @@ public class PersonRepository {
      *  written) when someone else has saved the person since. */
     public boolean update(Person person) {
         int n = jdbc.update(
-                "UPDATE person SET name = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
-                person.getName(), person.getSheetId(), person.getId(), person.getVersion());
+                "UPDATE person SET name = ?, terms = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
+                person.getName(), person.getTerms(), person.getSheetId(), person.getId(), person.getVersion());
         if (n == 0) {
             return false;
         }

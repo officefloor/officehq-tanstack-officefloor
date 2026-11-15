@@ -22,8 +22,8 @@ public class AddClaim {
         }
         periods.requireOpen(person.getSheetId(), date.toString());
         String corrects = Corrections.check(request, person.getSheetId(), person.getId(), claims);
-        // The due-by is fixed now, by the terms of the grade in force on its date, as they stood on its date.
-        LocalDate dueBy = date.plusDays(settings.terms(person.getSheetId(), person.gradeOn(date.toString()), date.toString()));
+        // The due-by is fixed now: the person's own terms, else their grade's, else the sheet's, as they stood on its date.
+        LocalDate dueBy = date.plusDays(settings.terms(person.getSheetId(), person, date.toString()));
         claim.set(claims.add(person.getSheetId(), person.getId(), request.amount(), date,
                 request.note(), corrects, dueBy, user));
     }

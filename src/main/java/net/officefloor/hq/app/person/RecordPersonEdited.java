@@ -9,6 +9,7 @@ public class RecordPersonEdited {
     public void record(@RequestParam(name = "by", required = false) String by,
             @Val Person person, Audit audit) {
         audit.record("PERSON_EDITED sheet=" + person.getSheetId() + " by=" + (by == null ? "" : by)
-                + " name=" + person.getName() + " grade=" + person.getGrade());
+                + " name=" + person.getName() + " grade=" + person.getGrade()
+                + (person.isTermsChanged() ? " terms=" + (person.getTerms() == null ? "" : person.getTerms()) : ""));
     }
 }
