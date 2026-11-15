@@ -1,0 +1,86 @@
+diff --git a/src/main/frontend/features/claims/PersonClaims.tsx b/src/main/frontend/features/claims/PersonClaims.tsx
+index 3955e1e69..79a69197f 100644
+--- a/src/main/frontend/features/claims/PersonClaims.tsx
++++ b/src/main/frontend/features/claims/PersonClaims.tsx
+@@ -17,7 +17,7 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
+ /** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
+  *  with its status, its due (fixed when settled, else at the rate in force on the claim's date of the
+  *  person's grade in force then (`gradeOn`), or bound by the person's last statement; none when
+- *  there is no such rate; an overdue one gains its late charge on top, see `charges`; then at least the sheet's `floor`), its due-by (fixed when it was added) and whether it is
++ *  there is no such rate; at least the sheet's `floor`; then an overdue one gains its late charge on that floored figure on top, see `charges`), its due-by (fixed when it was added) and whether it is
+  *  overdue (OPEN and due-by before the sheet's `today`), whether
+  *  it is stated,
+  *  the period its due-by falls in (none when no period contains it), its status log (oldest first), who opened it, and buttons that
+diff --git a/src/main/frontend/features/rates/api.ts b/src/main/frontend/features/rates/api.ts
+index 8a5931314..c351c24e7 100644
+--- a/src/main/frontend/features/rates/api.ts
++++ b/src/main/frontend/features/rates/api.ts
+@@ -90,7 +90,7 @@ export function hundredths(text: string): bigint {
+ }
+ 
+ /** A claim's rate figure: an amount times a percent, divided by 100, rounded to two decimals (half up
+- *  when `halfUp`, else half to even; no floor: that is applied last, by `claimDue`);
++ *  when `halfUp`, else half to even; no floor: that is applied by `claimDue`, before the late charge);
+  *  null (n/a) when there is no rate. Exact: worked in whole hundredths. */
+ export function dueOf(amount: string, pct: string | undefined, halfUp: boolean): string | null {
+   if (pct === undefined) return null;
+@@ -135,16 +135,17 @@ export type GradeOn = (date: string) => string;
+ 
+ /** A claim's due: the one fixed when it was settled (its late charge then frozen in), else the one bound by its
+  *  person's last statement (its due as shown then, late charge and floor included; n/a when it bound none), else
+- *  live at the rate in force on the claim's date of the grade in force then (`gradeOn`) with its late charge on the sheet's today on top, and
+- *  at least the `floor` in force on its date, applied last (a correction, a negative amount, has no floor). */
++ *  live at the rate in force on the claim's date of the grade in force then (`gradeOn`), raised to at least the `floor`
++ *  in force on its date (a correction, a negative amount, has no floor), with the late charge on that floored figure
++ *  on the sheet's today on top. */
+ export function claimDue(c: Claim, rates: Rate[] | undefined, gradeOn: GradeOn, floor: DatedOn, late: Late): string | null {
+   if (c.settledDue !== null) return c.settledDue;
+   if (c.stated) return c.statedDue;
+   const figure = dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date, c.id), roundsHalfUp(c, late));
+   if (figure === null) return null;
+-  const due = hundredths(figure) + lateCharge(c, figure, late);
+   const least = hundredths(floor(c.date));
+-  return formatCents(!isCorrection(c) && due < least ? least : due);
++  const floored = !isCorrection(c) && hundredths(figure) < least ? least : hundredths(figure);
++  return formatCents(floored + lateCharge(c, formatCents(floored), late));
+ }
+ 
+ /** A product of hundredths and a percent's hundredths (in 1/1_000_000) to cents, half up (away
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Dues.java b/src/main/java/net/officefloor/hq/app/claim/Dues.java
+index 52d373ec2..16d31e18c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Dues.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Dues.java
+@@ -35,7 +35,7 @@ public final class Dues {
+     }
+ 
+     /** A claim's rate figure: an amount times a percent, divided by 100, rounded ({@code rounding}) to
+-     *  two decimals (no floor: that is applied last, by {@link #shown}). */
++     *  two decimals (no floor: that is applied by {@link #shown}, before the late charge). */
+     public static String of(String amount, String pct, RoundingMode rounding) {
+         return new BigDecimal(amount).multiply(new BigDecimal(pct))
+                 .divide(BigDecimal.valueOf(100), 2, rounding).toPlainString();
+@@ -67,16 +67,16 @@ public final class Dues {
+     }
+ 
+     /** The due a claim shows: the one fixed when settled, else the one a statement bound it to (its due as
+-     *  shown then, late charge and floor included; null: none), else {@code live} (null: none) with its late
+-     *  charge on the sheet's today added on top, and at least {@code floor}, the sheet's floor in force on the
+-     *  claim's date (null: none), applied last (a correction has no floor). */
++     *  shown then, floor and late charge included; null: none), else {@code live} (null: none) raised to at
++     *  least {@code floor}, the sheet's floor in force on the claim's date (null: none; a correction has no
++     *  floor), with the late charge on that floored figure on the sheet's today added on top. */
+     public static String shown(Claim claim, String live, String floor, Late late) {
+         if (claim.getSettledDue() != null) return claim.getSettledDue();
+         if (claim.isStated()) return claim.getStatedDue();
+-        String figure = live;
+-        if (figure == null) return null;
+-        BigDecimal due = new BigDecimal(figure).add(charge(claim, figure, late));
+-        if (floor != null && !isCorrection(claim.getAmount())) due = due.max(new BigDecimal(floor).setScale(2));
+-        return due.toPlainString();
++        if (live == null) return null;
++        BigDecimal floored = new BigDecimal(live);
++        if (floor != null && !isCorrection(claim.getAmount())) floored = floored.max(new BigDecimal(floor).setScale(2));
++        String figure = floored.toPlainString();
++        return floored.add(charge(claim, figure, late)).toPlainString();
+     }
+ }
