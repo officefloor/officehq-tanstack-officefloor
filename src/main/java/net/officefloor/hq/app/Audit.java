@@ -6,6 +6,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import net.officefloor.hq.app.setting.RoleRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -65,6 +69,44 @@ public class Audit {
         if (sheet == null || by == null || by.isEmpty()) return "";
         String steward = roles.delegatorOf(sheet, by);
         return steward == null ? "" : " for=" + steward;
+    }
+
+    /** The sheet's lines exactly as the file holds them, newest first. With a name (case and
+     *  surrounding spaces ignored; blank: every line) only those carrying {@code name=<it>} or
+     *  {@code person=<it>}. Reads the file; keeps nothing of its own. */
+    public synchronized List<String> lines(String sheetId, String name) {
+        if (!Files.exists(file)) return List.of();
+        List<String> all;
+        try {
+            all = Files.readAllLines(file, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        String sheetField = "sheet=" + sheetId;
+        String who = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
+        List<String> found = new ArrayList<>();
+        for (String line : all) {
+            if (!List.of(line.split(" ")).contains(sheetField)) continue;
+            if (!who.isEmpty() && !about(line, who)) continue;
+            found.add(line);
+        }
+        Collections.reverse(found);
+        return found;
+    }
+
+    /** Whether the line carries name=<who> or person=<who> (who: trimmed, lower case). */
+    private static boolean about(String line, String who) {
+        String lower = " " + line.toLowerCase(Locale.ROOT) + " ";
+        for (String key : List.of(" name=", " person=")) {
+            int at = lower.indexOf(key);
+            while (at >= 0) {
+                int start = at + key.length();
+                int end = start + who.length();
+                if (lower.startsWith(who, start) && end < lower.length() && lower.charAt(end) == ' ') return true;
+                at = lower.indexOf(key, at + 1);
+            }
+        }
+        return false;
     }
 
     /** Remove the audit file. */
