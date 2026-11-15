@@ -42,7 +42,9 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  An OPEN claim can be split by an amount typed beside it (more than 0.00, less than its own): it keeps the
  *  rest and is unbound, and a new OPEN claim of that amount, opened by the user, shows its number as split-from
  *  (a PENDING, deferred or settled claim, one in a closed period, or a role that may not open a claim refused
- *  with an error on the claim). */
+ *  with an error on the claim).
+ *  A DRAFT's amount can be changed in its row, by an amount typed beside its edit button: saved as the
+ *  claim form saves it (its date, note and corrected claim kept), refused likewise with an error on the claim. */
 export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, today, charges, selected, onSelect, people }: {
   sheetId: string; user: string; personId: number; claims: Claim[]; gradeOn: GradeOn; rates: Rate[] | undefined;
   floor: DatedOn; today: string; charges: Late;
@@ -134,6 +136,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       redating.reset();
       proof.reset();
       division.reset();
+      inline.reset();
       setEditRefused(null);
       locking.reset();
       return deferral.mutateAsync({ id, until });
@@ -154,6 +157,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       redating.reset();
       proof.reset();
       division.reset();
+      inline.reset();
       setEditRefused(null);
       locking.reset();
       return reminder.mutateAsync(id);
@@ -178,6 +182,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       redating.reset();
       proof.reset();
       division.reset();
+      inline.reset();
       setEditRefused(null);
       locking.reset();
       return redating.mutateAsync({ id, date });
@@ -205,9 +210,38 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       redating.reset();
       proof.reset();
       division.reset();
+      inline.reset();
       setEditRefused(null);
       locking.reset();
       return division.mutateAsync({ id, amount });
+    });
+  };
+
+  // The amount typed for each claim to change it to in its row.
+  const [inlineAmounts, setInlineAmounts] = useState<Record<number, string>>({});
+
+  const inline = useMutation({
+    mutationFn: (v: { id: number; input: ClaimInput }) => updateClaim(sheetId, user, v.id, v.input),
+    onSuccess: (_, v) => {
+      setInlineAmounts((a) => ({ ...a, [v.id]: '' }));
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+
+  const saveInline = (c: Claim) => {
+    const input = { amount: (inlineAmounts[c.id] ?? '').trim(), date: c.date, note: c.note, corrects: c.corrects ?? '' };
+    actOnce(() => {
+      move.reset();
+      reassign.reset();
+      deferral.reset();
+      reminder.reset();
+      redating.reset();
+      proof.reset();
+      division.reset();
+      inline.reset();
+      setEditRefused(null);
+      locking.reset();
+      return inline.mutateAsync({ id: c.id, input });
     });
   };
 
@@ -225,6 +259,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       redating.reset();
       proof.reset();
       division.reset();
+      inline.reset();
       setEditRefused(null);
       locking.reset();
       return proof.mutateAsync(id);
@@ -262,6 +297,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       redating.reset();
       proof.reset();
       division.reset();
+      inline.reset();
       setEditRefused(null);
       locking.reset();
       return reassign.mutateAsync({ id, to });
@@ -277,6 +313,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       redating.reset();
       proof.reset();
       division.reset();
+      inline.reset();
       setEditRefused(null);
       locking.reset();
       return move.mutateAsync({ id, action });
@@ -296,6 +333,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     redating.reset();
     proof.reset();
     division.reset();
+    inline.reset();
     locking.reset();
     if (c.status !== 'DRAFT') {
       setEditRefused({ id: c.id, message: `A ${c.status} claim cannot be edited. To change it, void it and add a new one.` });
@@ -466,6 +504,15 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 </button>{' '}
                 <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                   Edit
+                </button>{' '}
+                <input data-testid="claim-inline-amount" placeholder="Amount" value={inlineAmounts[c.id] ?? ''}
+                  onChange={(e) => {
+                    setInlineAmounts((a) => ({ ...a, [c.id]: e.target.value }));
+                    if (inline.variables?.id === c.id) inline.reset();
+                  }} />{' '}
+                <button type="button" data-testid="claim-inline-save" disabled={inline.isPending}
+                  onClick={() => saveInline(c)}>
+                  Save amount
                 </button>
                 {editing === c.id && (
                   <button type="button" data-testid="claim-cancel" onClick={cancel}>
@@ -541,6 +588,17 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                   <span data-testid="claim-error">{proof.error instanceof HttpError && proof.error.status === 423
                     ? 'A claim due by a day inside a closed period cannot gain a proof.'
                     : `A ${c.status} claim cannot gain a proof.`}</span>
+                )}
+                {inline.isError && inline.variables?.id === c.id && (
+                  <span data-testid="claim-error">{inline.error instanceof HttpError && inline.error.status === 423
+                    ? 'A claim due by a day inside a closed period cannot be edited.'
+                    : inline.error instanceof HttpError && inline.error.status === 409
+                    ? `A ${c.status} claim cannot be edited. To change it, void it and add a new one.`
+                    : inline.error instanceof HttpError && inline.error.status === 412
+                    ? 'Another user is editing this claim; it cannot be saved until they save or cancel.'
+                    : inline.error instanceof HttpError && inline.error.status === 403
+                    ? 'Your role may not change anything on this sheet.'
+                    : 'A claim needs an amount with up to two decimals; a negative one (a correction) must name, by number, a SETTLED claim of this person.'}</span>
                 )}
                 {reassign.isError && reassign.variables?.id === c.id && (
                   <span data-testid="claim-error">{reassign.error instanceof HttpError && reassign.error.status === 423
