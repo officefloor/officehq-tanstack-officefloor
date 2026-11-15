@@ -39,6 +39,8 @@ export type Claim = {
   log: string[]; deferredUntil: string | null; deferred: boolean; proofs: number;
   /** Its comments, oldest first: `<user> on <date>: <text>` (the sheet's today when written). */
   comments: string[];
+  /** Its lines, in the order they were added: `<label> <qty> x <unit>`; with lines, its amount is their total. */
+  lines: string[];
   /** The number of the claim it was split from (null: not split off a claim). */
   splitFrom: string | null;
   /** The user whose open editor locks it for everyone else (null: unlocked). */
@@ -159,6 +161,18 @@ export function addProof(sheetId: string, by: string, id: number): Promise<Claim
 export function commentClaim(sheetId: string, by: string, id: number, text: string): Promise<Claim> {
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/comments?by=${encodeURIComponent(by)}&text=${encodeURIComponent(text)}`, {});
 }
+
+/** Add a line to a DRAFT claim (counts as editing it): its amount becomes its lines' quantities times
+ *  unit amounts, added up. Refused (rejects) for a claim not a DRAFT, one due by a day in a closed period,
+ *  one another user is editing, an empty label, a quantity not a whole number of at least 1, or a unit
+ *  amount with more than two decimals. */
+export function addClaimLine(sheetId: string, by: string, id: number, line: ClaimLineInput): Promise<Claim> {
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/lines?by=${encodeURIComponent(by)}&label=${encodeURIComponent(line.label)}`
+    + `&qty=${encodeURIComponent(line.qty)}&unit=${encodeURIComponent(line.unit)}`, {});
+}
+
+/** A line typed for a claim: its label, quantity and unit amount. */
+export type ClaimLineInput = { label: string; qty: string; unit: string };
 
 /** A steward moves a DRAFT, OPEN or PENDING claim to another person (`toPersonId`): it keeps its
  *  number and date, loses any figure a statement bound it to, and is listed as that person's newest

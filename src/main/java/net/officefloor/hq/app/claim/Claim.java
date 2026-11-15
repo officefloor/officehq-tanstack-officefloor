@@ -27,6 +27,7 @@ public class Claim {
     private String dueBy;
     private List<String> log = List.of();
     private List<String> comments = List.of();
+    private List<String> lines = List.of();
     private String deferredUntil;
     private boolean deferred;
     private int proofs;
@@ -116,6 +117,10 @@ public class Claim {
     /** Its comments, oldest first: {@code <user> on <date>: <text>} (see {@link ClaimCommentRepository}). */
     public List<String> getComments() { return comments; }
     public void setComments(List<String> comments) { this.comments = comments; }
+
+    /** Its lines, in the order they were added: {@code <label> <qty> x <unit>} (see {@link ClaimLineRepository}). */
+    public List<String> getLines() { return lines; }
+    public void setLines(List<String> lines) { this.lines = lines; }
 
     /** The date it was last deferred until (yyyy-MM-dd; none: never deferred). */
     public String getDeferredUntil() { return deferredUntil; }

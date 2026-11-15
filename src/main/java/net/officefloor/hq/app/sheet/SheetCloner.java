@@ -85,6 +85,7 @@ public class SheetCloner {
         Map<String, Map<Long, Long>> byClaim = Map.of("claim_id", copied);
         copy("claim_log", from, to, byClaim, none);
         copy("claim_comment", from, to, byClaim, none);
+        copy("claim_line", from, to, byClaim, none);
         Map<String, Object> unbound = new HashMap<>();
         unbound.put("stated", false);
         unbound.put("stated_due", null);

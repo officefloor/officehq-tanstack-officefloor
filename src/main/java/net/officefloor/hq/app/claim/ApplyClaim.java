@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -12,11 +13,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** Edits a claim: only a DRAFT can be edited (to change an open claim, void it and add a new one),
  *  and not to a date after its person's retirement date; a correction as when added. Its due-by (and so
  *  its period) stays as fixed when it was added; refused when that falls in a closed period. Refused while
- *  another user's open editor locks it. */
+ *  another user's open editor locks it. A claim with lines keeps their total as its amount: an edit typing
+ *  another amount is refused. */
 public class ApplyClaim {
     public void apply(@RequestParam(name = "by", required = false) String by, @Val ValidClaim request,
             @Val Claim claim, SheetRepository sheets,
-            PeriodRepository periods, PersonRepository people, ClaimRepository claims)
+            PeriodRepository periods, PersonRepository people, ClaimRepository claims, ClaimLineRepository lines)
             throws ClaimStatusException, PeriodClosedException, InvalidClaimException, ClaimLockedException {
         if (!ClaimStatus.DRAFT.name().equals(claim.getStatus())) {
             throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be edited");
@@ -24,6 +26,10 @@ public class ApplyClaim {
         periods.requireOpen(claim.getSheetId(), claim.getDueBy());
         if (claim.getLockedBy() != null && !claim.getLockedBy().equals(by == null ? "" : by)) {
             throw new ClaimLockedException("The claim is being edited by " + claim.getLockedBy());
+        }
+        BigDecimal lined = lines.total(claim);
+        if (lined != null && lined.compareTo(request.amount()) != 0) {
+            throw new InvalidClaimException("A claim with lines has their total as its amount: " + lined.toPlainString());
         }
         LocalDate date = request.date() != null ? request.date() : sheets.today(claim.getSheetId());
         Person person = people.find(claim.getSheetId(), claim.getPersonId());

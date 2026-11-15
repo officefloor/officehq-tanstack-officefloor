@@ -6,7 +6,7 @@ import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import { useNoteThreshold, useProofThreshold, type DatedOn } from '../settings/api';
 import { claimFromTemplate, listTemplates, templatesKey } from '../templates/api';
-import { addClaim, addProof, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
+import { addClaim, addClaimLine, addProof, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
 
@@ -42,6 +42,10 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  threshold in force on its date cannot be settled or approved.
  *  A claim can be commented with text typed beside it (an empty comment refused with an error on the claim);
  *  its comments are shown oldest first as `<user> on <date>: <text>`.
+ *  A DRAFT can gain a line (a label, a whole quantity of at least 1 and a unit amount of two decimals) typed
+ *  beside it, which counts as editing it (refused like an edit, and for a bad line, with an error on the
+ *  claim); its lines are shown as `<label> <qty> x <unit>`, and their total is its amount: an edit typing
+ *  another amount is refused.
  *  A steward can re-date an OPEN or PENDING claim to a date typed beside it: its due-by and any bound figure
  *  stay, and so do its period and number (anyone else, any other status, a date after its person's retirement,
  *  or a claim in a closed period refused with an error on the claim).
@@ -145,6 +149,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       redating.reset();
       proof.reset();
       commenting.reset();
+      lining.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
@@ -167,6 +172,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       redating.reset();
       proof.reset();
       commenting.reset();
+      lining.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
@@ -193,6 +199,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       redating.reset();
       proof.reset();
       commenting.reset();
+      lining.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
@@ -222,6 +229,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       redating.reset();
       proof.reset();
       commenting.reset();
+      lining.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
@@ -251,6 +259,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       redating.reset();
       proof.reset();
       commenting.reset();
+      lining.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
@@ -273,6 +282,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       redating.reset();
       proof.reset();
       commenting.reset();
+      lining.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
@@ -302,11 +312,43 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       redating.reset();
       proof.reset();
       commenting.reset();
+      lining.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
       locking.reset();
       return commenting.mutateAsync({ id, text });
+    });
+  };
+
+  // The line typed for each claim.
+  const [lineInputs, setLineInputs] = useState<Record<number, ClaimLineInput>>({});
+  const lineOf = (id: number): ClaimLineInput => lineInputs[id] ?? { label: '', qty: '', unit: '' };
+
+  const lining = useMutation({
+    mutationFn: (v: { id: number; line: ClaimLineInput }) => addClaimLine(sheetId, user, v.id, v.line),
+    onSuccess: (_, v) => {
+      setLineInputs((t) => ({ ...t, [v.id]: { label: '', qty: '', unit: '' } }));
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+
+  const addLine = (id: number) => {
+    const line = lineOf(id);
+    actOnce(() => {
+      move.reset();
+      reassign.reset();
+      deferral.reset();
+      reminder.reset();
+      redating.reset();
+      proof.reset();
+      commenting.reset();
+      lining.reset();
+      division.reset();
+      inline.reset();
+      setEditRefused(null);
+      locking.reset();
+      return lining.mutateAsync({ id, line: { label: line.label.trim(), qty: line.qty.trim(), unit: line.unit.trim() } });
     });
   };
 
@@ -341,6 +383,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       redating.reset();
       proof.reset();
       commenting.reset();
+      lining.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
@@ -358,6 +401,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       redating.reset();
       proof.reset();
       commenting.reset();
+      lining.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
@@ -393,6 +437,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       redating.reset();
       proof.reset();
       commenting.reset();
+      lining.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
@@ -408,6 +453,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     redating.reset();
     proof.reset();
     commenting.reset();
+    lining.reset();
     division.reset();
     inline.reset();
     locking.reset();
@@ -477,7 +523,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
             ? 'Another user is editing this claim; it cannot be saved until they save or cancel.'
             : save.error instanceof HttpError && save.error.status === 403
             ? 'Your role may not change anything on this sheet.'
-            : 'A claim needs an amount with up to two decimals; a negative one (a correction) must name, by number, a SETTLED claim of this person; a reference cannot be one already used on the sheet.'}</span>
+            : 'A claim needs an amount with up to two decimals; a negative one (a correction) must name, by number, a SETTLED claim of this person; a reference cannot be one already used on the sheet; a claim with lines keeps their total as its amount.'}</span>
         )}
       </form>
       <div>
@@ -574,6 +620,23 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 <button type="button" data-testid="claim-comment-add" disabled={commenting.isPending}
                   onClick={() => comment(c.id)}>
                   Comment
+                </button>
+              </td>
+              <td>
+                {(c.lines ?? []).map((line, i) => <div key={i} data-testid="claim-lines-line">{line}</div>)}
+                {(['label', 'qty', 'unit'] as const).map((k) => (
+                  <input key={k} data-testid={`claim-line-${k}`} size={k === 'label' ? 10 : 5}
+                    placeholder={k === 'label' ? 'Line label' : k === 'qty' ? 'Qty' : 'Unit amount'}
+                    value={lineOf(c.id)[k]}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setLineInputs((t) => ({ ...t, [c.id]: { ...lineOf(c.id), ...t[c.id], [k]: value } }));
+                      if (lining.variables?.id === c.id) lining.reset();
+                    }} />
+                ))}{' '}
+                <button type="button" data-testid="claim-line-add" disabled={lining.isPending}
+                  onClick={() => addLine(c.id)}>
+                  Add line
                 </button>
               </td>
               <td>
@@ -725,6 +788,17 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     ? 'A comment cannot be empty.'
                     : 'Your role may not change anything on this sheet.'}</span>
                 )}
+                {lining.isError && lining.variables?.id === c.id && (
+                  <span data-testid="claim-error">{lining.error instanceof HttpError && lining.error.status === 423
+                    ? 'A claim due by a day inside a closed period cannot be edited.'
+                    : lining.error instanceof HttpError && lining.error.status === 409
+                    ? `A ${c.status} claim cannot be edited, so it cannot gain a line.`
+                    : lining.error instanceof HttpError && lining.error.status === 412
+                    ? 'Another user is editing this claim; it cannot gain a line until they save or cancel.'
+                    : lining.error instanceof HttpError && lining.error.status === 403
+                    ? 'Your role may not change anything on this sheet.'
+                    : 'A line needs a label, a whole quantity of at least 1 and a unit amount with up to two decimals.'}</span>
+                )}
                 {inline.isError && inline.variables?.id === c.id && (
                   <span data-testid="claim-error">{inline.error instanceof HttpError && inline.error.status === 423
                     ? 'A claim due by a day inside a closed period cannot be edited.'
@@ -734,7 +808,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     ? 'Another user is editing this claim; it cannot be saved until they save or cancel.'
                     : inline.error instanceof HttpError && inline.error.status === 403
                     ? 'Your role may not change anything on this sheet.'
-                    : 'A claim needs an amount with up to two decimals; a negative one (a correction) must name, by number, a SETTLED claim of this person.'}</span>
+                    : 'A claim needs an amount with up to two decimals; a negative one (a correction) must name, by number, a SETTLED claim of this person; a claim with lines keeps their total as its amount.'}</span>
                 )}
                 {reassign.isError && reassign.variables?.id === c.id && (
                   <span data-testid="claim-error">{reassign.error instanceof HttpError && reassign.error.status === 423

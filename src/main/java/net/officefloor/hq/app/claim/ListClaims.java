@@ -6,9 +6,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 public class ListClaims {
     public void list(@PathVariable("sheetId") String sheetId, ClaimRepository claims, ClaimLogRepository log,
-            ClaimCommentRepository comments,
+            ClaimCommentRepository comments, ClaimLineRepository lines,
             ObjectResponse<List<Claim>> response) {
         String id = sheetId.trim();
-        response.send(comments.withComments(id, log.withLogs(id, claims.list(id))));
+        response.send(lines.withLines(id, comments.withComments(id, log.withLogs(id, claims.list(id)))));
     }
 }

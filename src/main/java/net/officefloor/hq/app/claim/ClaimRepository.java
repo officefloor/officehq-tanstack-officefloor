@@ -234,7 +234,7 @@ public class ClaimRepository {
             jdbc.update("UPDATE claim SET sheet_id = ?, list_seq = ?, number = NULL, "
                     + "ref = NULL, ref_key = NULL, locked_by = NULL, settle_batch = NULL WHERE sheet_id = ? AND id = ?",
                     to, ++seq, sheetId, id);
-            for (String table : List.of("claim_log", "claim_comment", "claim_history")) {
+            for (String table : List.of("claim_log", "claim_comment", "claim_line", "claim_history")) {
                 jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND claim_id = ?", to, sheetId, id);
             }
             snapshot(to, id);
