@@ -29,6 +29,11 @@ public class SettingRepository {
      *  or approved without a proof (two decimals; blank: none). */
     public static final String PROOF_THRESHOLD = "proof-threshold";
 
+    /** A grade's proof threshold ({@code proof-threshold-<grade>}, dated; two decimals; blank: none):
+     *  a claim whose person's grade in force on its date has one in force on that date goes by it
+     *  instead of the sheet's. */
+    public static final String PROOF_THRESHOLD_OF_GRADE = "proof-threshold-";
+
     /** The note threshold: a claim whose due is above the one in force on its date cannot be opened
      *  with an empty note (two decimals; blank: none). */
     public static final String NOTE_THRESHOLD = "note-threshold";
@@ -151,9 +156,13 @@ public class SettingRepository {
         return value == null ? null : new BigDecimal(value);
     }
 
-    /** The sheet's proof threshold in force on a date (yyyy-MM-dd); null when there is none. */
-    public BigDecimal proofThreshold(String sheetId, String date) {
-        String value = dated(sheetId, PROOF_THRESHOLD, null).on(date);
+    /** The proof threshold of a grade in force on a date (yyyy-MM-dd): its own when set, else the
+     *  sheet's (a null grade: the sheet's); null when there is none. */
+    public BigDecimal proofThreshold(String sheetId, String grade, String date) {
+        String value = grade == null ? null : dated(sheetId, PROOF_THRESHOLD_OF_GRADE + grade, null).on(date);
+        if (value == null) {
+            value = dated(sheetId, PROOF_THRESHOLD, null).on(date);
+        }
         return value == null ? null : new BigDecimal(value);
     }
 

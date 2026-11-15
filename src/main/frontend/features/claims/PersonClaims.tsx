@@ -309,7 +309,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
   const proofThreshold = useProofThreshold(sheetId);
   // Whether a claim needs a proof before it is settled or approved: none yet, and its due above the threshold.
   const needsProof = (c: Claim) => {
-    const threshold = proofThreshold(c.date);
+    const threshold = proofThreshold(gradeOn(c.date), c.date);
     const due = claimDue(c, rates, gradeOn, floor, charges);
     return c.proofs === 0 && threshold !== null && due !== null && Number(due) > Number(threshold);
   };

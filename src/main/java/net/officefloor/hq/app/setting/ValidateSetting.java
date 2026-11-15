@@ -44,6 +44,11 @@ public class ValidateSetting {
             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("The proof threshold is blank or 0.00 or more with up to two decimals");
             }
+        } else if (key.startsWith(SettingRepository.PROOF_THRESHOLD_OF_GRADE)
+                && GRADES.contains(key.substring(SettingRepository.PROOF_THRESHOLD_OF_GRADE.length()))) {
+            if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
+                throw new InvalidSettingException("A grade's proof threshold is blank or 0.00 or more with up to two decimals");
+            }
         } else if (SettingRepository.NOTE_THRESHOLD.equals(key)) {
             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("The note threshold is blank or 0.00 or more with up to two decimals");

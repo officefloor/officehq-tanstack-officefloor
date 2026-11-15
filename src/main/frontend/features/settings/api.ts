@@ -23,7 +23,9 @@ export type Role = { sheetId: string; user: string; role: string };
  *  (terms-<grade>; blank means the sheet's terms) fix the due-by of a claim added for a person of that
  *  grade on its date: its date plus those terms, kept when the terms or its date change later. The proof
  *  threshold (two decimals; blank means none): a claim whose due is above the one in force on its date
- *  cannot be settled or approved while it has no proofs. The note threshold (two decimals; blank means none):
+ *  cannot be settled or approved while it has no proofs. A grade's proof threshold (proof-threshold-<grade>,
+ *  two decimals; blank means none): a claim whose person's grade in force on its date has one in force on
+ *  that date goes by it instead of the sheet's. The note threshold (two decimals; blank means none):
  *  a claim whose due is above the one in force on its date cannot be opened with an empty note. The permission matrix (perm-<action>, a comma
  *  separated list of roles; blank means the standing rule, PERMISSION_STANDING): who may take each action.
  *  The entry date (yyyy-MM-dd; blank means off): while set, a new claim with a blank date (the claim form,
@@ -34,7 +36,7 @@ export type Role = { sheetId: string; user: string; role: string };
  *  overdue only once its due-by plus them is before the sheet's today, and its late charge's 30-day
  *  boundaries count from there; the due-by it shows is unchanged. */
 export const SETTING_KEYS = ['clerk-limit', 'cap', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
-  'period-numbering-from', 'entry-date', 'grace-days', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen'] as const;
+  'period-numbering-from', 'entry-date', 'grace-days', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen'] as const;
 
 /** The roles that may take each action of the permission matrix while its entry is blank. */
 export const PERMISSION_STANDING: Record<string, string> = {
@@ -92,10 +94,12 @@ export function useFloor(sheetId: string): DatedOn {
   return (date) => settingOn(settings.data, 'floor', date) || SETTING_DEFAULTS.floor;
 }
 
-/** The sheet's proof threshold by date (null: none in force on that date). */
-export function useProofThreshold(sheetId: string): (date: string) => string | null {
+/** The proof threshold of a grade by date: the grade's own in force on that date when set, else the
+ *  sheet's (null: none in force on that date). */
+export function useProofThreshold(sheetId: string): (grade: string, date: string) => string | null {
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
-  return (date) => settingOn(settings.data, 'proof-threshold', date) || null;
+  return (grade, date) => (grade ? settingOn(settings.data, `proof-threshold-${grade}`, date) : '')
+    || settingOn(settings.data, 'proof-threshold', date) || null;
 }
 
 /** The sheet's note threshold by date (null: none in force on that date). */

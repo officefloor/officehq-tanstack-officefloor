@@ -58,7 +58,7 @@ public class SettleClaim {
         Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
         String due = Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
                 late.rounding(claim.getRoundDate())), settings.floor(claim.getSheetId()).on(claim.getDate()), late);
-        requireProof(claim, due, settings);
+        requireProof(claim, person, due, settings);
         if (due != null && Role.CLERK.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
             BigDecimal limit = settings.clerkLimit(claim.getSheetId());
             if (limit != null && new BigDecimal(due).compareTo(limit) > 0) {
@@ -71,10 +71,12 @@ public class SettleClaim {
     }
 
     /** Refuses settling or approving a claim with no proofs whose due (null: n/a, never above) is above
-     *  the sheet's proof threshold in force on the claim's date. */
-    static void requireProof(Claim claim, String due, SettingRepository settings) throws ClaimStatusException {
+     *  the proof threshold in force on the claim's date: its person's grade's (the grade in force on that
+     *  date) when one is set, else the sheet's. */
+    static void requireProof(Claim claim, Person person, String due, SettingRepository settings) throws ClaimStatusException {
         if (due == null || claim.getProofs() > 0) return;
-        BigDecimal threshold = settings.proofThreshold(claim.getSheetId(), claim.getDate());
+        BigDecimal threshold = settings.proofThreshold(claim.getSheetId(),
+                person == null ? null : person.gradeOn(claim.getDate()), claim.getDate());
         if (threshold != null && new BigDecimal(due).compareTo(threshold) > 0) {
             throw new ClaimStatusException("A claim whose due is above the proof threshold needs a proof");
         }

@@ -43,7 +43,7 @@ public class ApproveClaim {
         Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
         String due = Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
                 late.rounding(claim.getRoundDate())), settings.floor(claim.getSheetId()).on(claim.getDate()), late);
-        SettleClaim.requireProof(claim, due, settings);
+        SettleClaim.requireProof(claim, person, due, settings);
         claim.setStatus(ClaimStatus.PENDING.moveTo(ClaimStatus.SETTLED).name());
         claim.setSettledDue(due);
     }
