@@ -1,0 +1,170 @@
+diff --git a/src/main/frontend/features/claims/PersonClaims.tsx b/src/main/frontend/features/claims/PersonClaims.tsx
+index 0499e1feb..27476b809 100644
+--- a/src/main/frontend/features/claims/PersonClaims.tsx
++++ b/src/main/frontend/features/claims/PersonClaims.tsx
+@@ -309,7 +309,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+   const proofThreshold = useProofThreshold(sheetId);
+   // Whether a claim needs a proof before it is settled or approved: none yet, and its due above the threshold.
+   const needsProof = (c: Claim) => {
+-    const threshold = proofThreshold(c.date);
++    const threshold = proofThreshold(gradeOn(c.date), c.date);
+     const due = claimDue(c, rates, gradeOn, floor, charges);
+     return c.proofs === 0 && threshold !== null && due !== null && Number(due) > Number(threshold);
+   };
+diff --git a/src/main/frontend/features/settings/Settings.tsx b/src/main/frontend/features/settings/Settings.tsx
+index e2b0ded77..7ee6161b7 100644
+--- a/src/main/frontend/features/settings/Settings.tsx
++++ b/src/main/frontend/features/settings/Settings.tsx
+@@ -62,10 +62,11 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+                 : key === 'proof-threshold' ? 'Proof threshold'
+                 : key === 'note-threshold' ? 'Note threshold'
+                 : key.startsWith('perm-') ? `Who may ${key.slice('perm-'.length)} (roles)`
++                : key.startsWith('proof-threshold-') ? `Proof threshold for grade ${key.slice('proof-threshold-'.length)}`
+                 : key.startsWith('grace-') ? `Grace days for grade ${key.slice('grace-'.length)}`
+                 : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (business days)` : 'Terms (business days)'}{' '}
+               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
+-                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' ? 'None' : key === 'cap' ? 'No cap' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
++                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key === 'cap' ? 'No cap' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
+                   : key === 'period-numbering-from' || key === 'entry-date' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' ? 'Off' : key.startsWith('grace-') ? 'None' : key.startsWith('terms-') ? "Sheet's terms"
+                   : key.startsWith('perm-') ? PERMISSION_STANDING[key.slice('perm-'.length)] : undefined}
+                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
+@@ -87,7 +88,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+         </button>
+         {save.isError && (
+           <span data-testid="settings-error">
+-            The clerk limit, the cap, the proof threshold and the note threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
++            The clerk limit, the cap, the proof threshold, a grade's proof threshold and the note threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
+             the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the policy date, period numbering date and entry date blank or a date; the grace days and a grade's grace days blank or a whole number of days; a permission blank or a comma separated list of clerk and steward; a from-date blank or a date.
+           </span>
+         )}
+diff --git a/src/main/frontend/features/settings/api.ts b/src/main/frontend/features/settings/api.ts
+index 3622d24a1..07bd6f60f 100644
+--- a/src/main/frontend/features/settings/api.ts
++++ b/src/main/frontend/features/settings/api.ts
+@@ -23,7 +23,9 @@ export type Role = { sheetId: string; user: string; role: string };
+  *  (terms-<grade>; blank means the sheet's terms) fix the due-by of a claim added for a person of that
+  *  grade on its date: its date plus those terms, kept when the terms or its date change later. The proof
+  *  threshold (two decimals; blank means none): a claim whose due is above the one in force on its date
+- *  cannot be settled or approved while it has no proofs. The note threshold (two decimals; blank means none):
++ *  cannot be settled or approved while it has no proofs. A grade's proof threshold (proof-threshold-<grade>,
++ *  two decimals; blank means none): a claim whose person's grade in force on its date has one in force on
++ *  that date goes by it instead of the sheet's. The note threshold (two decimals; blank means none):
+  *  a claim whose due is above the one in force on its date cannot be opened with an empty note. The permission matrix (perm-<action>, a comma
+  *  separated list of roles; blank means the standing rule, PERMISSION_STANDING): who may take each action.
+  *  The entry date (yyyy-MM-dd; blank means off): while set, a new claim with a blank date (the claim form,
+@@ -34,7 +36,7 @@ export type Role = { sheetId: string; user: string; role: string };
+  *  overdue only once its due-by plus them is before the sheet's today, and its late charge's 30-day
+  *  boundaries count from there; the due-by it shows is unchanged. */
+ export const SETTING_KEYS = ['clerk-limit', 'cap', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
+-  'period-numbering-from', 'entry-date', 'grace-days', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen'] as const;
++  'period-numbering-from', 'entry-date', 'grace-days', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen'] as const;
+ 
+ /** The roles that may take each action of the permission matrix while its entry is blank. */
+ export const PERMISSION_STANDING: Record<string, string> = {
+@@ -92,10 +94,12 @@ export function useFloor(sheetId: string): DatedOn {
+   return (date) => settingOn(settings.data, 'floor', date) || SETTING_DEFAULTS.floor;
+ }
+ 
+-/** The sheet's proof threshold by date (null: none in force on that date). */
+-export function useProofThreshold(sheetId: string): (date: string) => string | null {
++/** The proof threshold of a grade by date: the grade's own in force on that date when set, else the
++ *  sheet's (null: none in force on that date). */
++export function useProofThreshold(sheetId: string): (grade: string, date: string) => string | null {
+   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+-  return (date) => settingOn(settings.data, 'proof-threshold', date) || null;
++  return (grade, date) => (grade ? settingOn(settings.data, `proof-threshold-${grade}`, date) : '')
++    || settingOn(settings.data, 'proof-threshold', date) || null;
+ }
+ 
+ /** The sheet's note threshold by date (null: none in force on that date). */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
+index fd9f2dc30..74eb76362 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
+@@ -43,7 +43,7 @@ public class ApproveClaim {
+         Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
+         String due = Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
+                 late.rounding(claim.getRoundDate())), settings.floor(claim.getSheetId()).on(claim.getDate()), late);
+-        SettleClaim.requireProof(claim, due, settings);
++        SettleClaim.requireProof(claim, person, due, settings);
+         claim.setStatus(ClaimStatus.PENDING.moveTo(ClaimStatus.SETTLED).name());
+         claim.setSettledDue(due);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+index e797e05f7..6d2bcc91c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+@@ -58,7 +58,7 @@ public class SettleClaim {
+         Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
+         String due = Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
+                 late.rounding(claim.getRoundDate())), settings.floor(claim.getSheetId()).on(claim.getDate()), late);
+-        requireProof(claim, due, settings);
++        requireProof(claim, person, due, settings);
+         if (due != null && Role.CLERK.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
+             BigDecimal limit = settings.clerkLimit(claim.getSheetId());
+             if (limit != null && new BigDecimal(due).compareTo(limit) > 0) {
+@@ -71,10 +71,12 @@ public class SettleClaim {
+     }
+ 
+     /** Refuses settling or approving a claim with no proofs whose due (null: n/a, never above) is above
+-     *  the sheet's proof threshold in force on the claim's date. */
+-    static void requireProof(Claim claim, String due, SettingRepository settings) throws ClaimStatusException {
++     *  the proof threshold in force on the claim's date: its person's grade's (the grade in force on that
++     *  date) when one is set, else the sheet's. */
++    static void requireProof(Claim claim, Person person, String due, SettingRepository settings) throws ClaimStatusException {
+         if (due == null || claim.getProofs() > 0) return;
+-        BigDecimal threshold = settings.proofThreshold(claim.getSheetId(), claim.getDate());
++        BigDecimal threshold = settings.proofThreshold(claim.getSheetId(),
++                person == null ? null : person.gradeOn(claim.getDate()), claim.getDate());
+         if (threshold != null && new BigDecimal(due).compareTo(threshold) > 0) {
+             throw new ClaimStatusException("A claim whose due is above the proof threshold needs a proof");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 643b2619c..57784c362 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -29,6 +29,11 @@ public class SettingRepository {
+      *  or approved without a proof (two decimals; blank: none). */
+     public static final String PROOF_THRESHOLD = "proof-threshold";
+ 
++    /** A grade's proof threshold ({@code proof-threshold-<grade>}, dated; two decimals; blank: none):
++     *  a claim whose person's grade in force on its date has one in force on that date goes by it
++     *  instead of the sheet's. */
++    public static final String PROOF_THRESHOLD_OF_GRADE = "proof-threshold-";
++
+     /** The note threshold: a claim whose due is above the one in force on its date cannot be opened
+      *  with an empty note (two decimals; blank: none). */
+     public static final String NOTE_THRESHOLD = "note-threshold";
+@@ -151,9 +156,13 @@ public class SettingRepository {
+         return value == null ? null : new BigDecimal(value);
+     }
+ 
+-    /** The sheet's proof threshold in force on a date (yyyy-MM-dd); null when there is none. */
+-    public BigDecimal proofThreshold(String sheetId, String date) {
+-        String value = dated(sheetId, PROOF_THRESHOLD, null).on(date);
++    /** The proof threshold of a grade in force on a date (yyyy-MM-dd): its own when set, else the
++     *  sheet's (a null grade: the sheet's); null when there is none. */
++    public BigDecimal proofThreshold(String sheetId, String grade, String date) {
++        String value = grade == null ? null : dated(sheetId, PROOF_THRESHOLD_OF_GRADE + grade, null).on(date);
++        if (value == null) {
++            value = dated(sheetId, PROOF_THRESHOLD, null).on(date);
++        }
+         return value == null ? null : new BigDecimal(value);
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index b9b7250e2..9de004d2c 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -44,6 +44,11 @@ public class ValidateSetting {
+             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
+                 throw new InvalidSettingException("The proof threshold is blank or 0.00 or more with up to two decimals");
+             }
++        } else if (key.startsWith(SettingRepository.PROOF_THRESHOLD_OF_GRADE)
++                && GRADES.contains(key.substring(SettingRepository.PROOF_THRESHOLD_OF_GRADE.length()))) {
++            if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
++                throw new InvalidSettingException("A grade's proof threshold is blank or 0.00 or more with up to two decimals");
++            }
+         } else if (SettingRepository.NOTE_THRESHOLD.equals(key)) {
+             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
+                 throw new InvalidSettingException("The note threshold is blank or 0.00 or more with up to two decimals");
