@@ -5,7 +5,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 
-/** The claim form's rules for a claim's own fields: its amount, date, note and the claim it corrects. */
+/** The claim form's rules for a claim's own fields: its amount, date, note, the claim it corrects and its reference. */
 public final class ClaimForm {
     /** An amount (negative for a correction), with up to two decimals. */
     private static final Pattern AMOUNT = Pattern.compile("-?(\\d+(\\.\\d{0,2})?|\\.\\d{1,2})");
@@ -21,6 +21,7 @@ public final class ClaimForm {
         String date = request == null || request.date() == null ? "" : request.date().trim();
         String note = request == null || request.note() == null ? "" : request.note().trim();
         String corrects = request == null || request.corrects() == null ? "" : request.corrects().trim();
+        String ref = request == null || request.ref() == null ? "" : request.ref().trim();
         if (!AMOUNT.matcher(amount).matches()) {
             throw new InvalidClaimException("An amount with up to two decimals is required");
         }
@@ -40,6 +41,6 @@ public final class ClaimForm {
                 throw new InvalidClaimException("Not a date: " + date);
             }
         }
-        return new ValidClaim(value, day, note, corrected);
+        return new ValidClaim(value, day, note, corrected, ref.isEmpty() ? null : ref);
     }
 }

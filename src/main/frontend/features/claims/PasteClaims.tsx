@@ -27,7 +27,7 @@ export function PasteClaims({ sheetId, user }: { sheetId: string; user: string }
       }}
     >
       <label>
-        Paste claims (name,amount,date,note per line){' '}
+        Paste claims (name,amount,date,note per line; end the note with " #ref" to give a reference){' '}
         <textarea data-testid="paste-claims" rows={3} value={text}
           onChange={(e) => {
             setText(e.target.value);

@@ -34,6 +34,7 @@ public class Claim {
     private String lockedBy;
     private boolean lateEntry;
     private String reminded;
+    private String ref;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, String number, String settledDue, String openedBy) {
@@ -134,6 +135,16 @@ public class Claim {
     /** The last sheet's today it was reminded on (yyyy-MM-dd; none: never reminded). */
     public String getReminded() { return reminded; }
     public void setReminded(String reminded) { this.reminded = reminded; }
+
+    /** Its external reference (none: no reference); used once per sheet, compared without regard to case. */
+    public String getRef() { return ref; }
+    public void setRef(String ref) { this.ref = ref; }
+
+    /** The audit suffix: {@code " ref=<reference>"} for a claim that has a reference. */
+    @JsonIgnore
+    public String getAuditRef() {
+        return ref == null ? "" : " ref=" + ref;
+    }
 
     public boolean isStated() { return stated; }
     public String getStatedDue() { return statedDue; }

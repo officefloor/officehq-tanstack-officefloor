@@ -31,10 +31,12 @@ public class ApplyClaim {
             throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
         }
         String corrects = Corrections.check(request, claim.getSheetId(), claim.getPersonId(), claims);
+        claims.requireRefFree(claim.getSheetId(), request.ref(), claim.getId());
         claim.setAmount(request.amount().toPlainString());
         claim.setCorrects(corrects);
         claim.setRoundDate(corrects == null ? null : claims.findByNumber(claim.getSheetId(), corrects).getDate());
         claim.setDate(date.toString());
         claim.setNote(request.note());
+        claim.setRef(request.ref());
     }
 }

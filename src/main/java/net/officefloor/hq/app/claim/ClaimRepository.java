@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.sql.PreparedStatement;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -13,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, "
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, ref, "
             // Deferred now: OPEN and deferred until a date after the sheet's today.
             + "(status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > "
             + "(SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred, "
@@ -21,7 +22,7 @@ public class ClaimRepository {
             + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = claim.sheet_id AND k.number = claim.corrects), "
             + "claim_date) AS round_date";
 
-    private static final RowMapper<Claim> ROW = (rs, n) -> withReminded(withCorrects(new Claim(rs.getLong("id"),
+    private static final RowMapper<Claim> ROW = (rs, n) -> withRef(withReminded(withCorrects(new Claim(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getLong("person_id"),
             rs.getBigDecimal("amount").setScale(2).toPlainString(),
             rs.getObject("claim_date", LocalDate.class).toString(), rs.getString("note"),
@@ -34,7 +35,12 @@ public class ClaimRepository {
             rs.getObject("round_date", LocalDate.class).toString(),
             rs.getObject("due_by", LocalDate.class).toString(),
             rs.getObject("deferred_until", LocalDate.class), rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"), rs.getString("locked_by"), rs.getBoolean("late_entry")),
-            rs.getObject("reminded_on", LocalDate.class));
+            rs.getObject("reminded_on", LocalDate.class)), rs.getString("ref"));
+
+    private static Claim withRef(Claim claim, String ref) {
+        claim.setRef(ref);
+        return claim;
+    }
 
     private static Claim withReminded(Claim claim, LocalDate reminded) {
         claim.setReminded(reminded == null ? null : reminded.toString());
@@ -83,11 +89,17 @@ public class ClaimRepository {
     /** Add a claim with its due-by, fixed now. */
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             String corrects, LocalDate dueBy, String user) {
+        return add(sheetId, personId, amount, date, note, corrects, dueBy, user, null);
+    }
+
+    /** Add a claim with its due-by, fixed now, and its reference (null: none; see {@link #requireRefFree}). */
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+            String corrects, LocalDate dueBy, String user, String ref) {
         GeneratedKeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, created_by, corrects, due_by) "
-                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, created_by, corrects, due_by, ref, ref_key) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -97,6 +109,8 @@ public class ClaimRepository {
             ps.setString(6, user);
             ps.setObject(7, corrects);
             ps.setObject(8, dueBy);
+            ps.setString(9, ref);
+            ps.setString(10, refKey(ref));
             return ps;
         }, key);
         long id = key.getKey().longValue();
@@ -105,12 +119,28 @@ public class ClaimRepository {
         return find(sheetId, id);
     }
 
+    /** A reference compared without regard to case (null: none). */
+    private static String refKey(String ref) {
+        return ref == null ? null : ref.toLowerCase(Locale.ROOT);
+    }
+
+    /** Refuse a reference (null: none, always free) that a claim on the sheet other than {@code exceptId}
+     *  (0: none) already has, compared without regard to case. */
+    public void requireRefFree(String sheetId, String ref, long exceptId) throws InvalidClaimException {
+        if (ref == null) return;
+        Integer used = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND ref_key = ? AND id <> ?",
+                Integer.class, sheetId, refKey(ref), exceptId);
+        if (used != null && used > 0) {
+            throw new InvalidClaimException("The reference is already used on the sheet: " + ref);
+        }
+    }
+
     public void update(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, settled_due = ?, opened_by = ?, corrects = ? WHERE sheet_id = ? AND id = ?",
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, settled_due = ?, opened_by = ?, corrects = ?, ref = ?, ref_key = ? WHERE sheet_id = ? AND id = ?",
                 new BigDecimal(claim.getAmount()), LocalDate.parse(claim.getDate()), claim.getNote(),
                 claim.getStatus(), claim.getNumber(),
                 claim.getSettledDue() == null ? null : new BigDecimal(claim.getSettledDue()),
-                claim.getOpenedBy(), claim.getCorrects(),
+                claim.getOpenedBy(), claim.getCorrects(), claim.getRef(), refKey(claim.getRef()),
                 claim.getSheetId(), claim.getId());
         snapshot(claim.getSheetId(), claim.getId());
     }
@@ -152,7 +182,7 @@ public class ClaimRepository {
      *  claims there were then), deferred when OPEN and deferred until after the date. */
     public List<Claim> listOfAsOf(String sheetId, long personId, LocalDate asOf) {
         return jdbc.query("SELECT h.claim_id, h.person_id, h.amount, h.claim_date, h.status, h.settled_due, h.stated, "
-                + "h.stated_due, h.deferred_until, h.due_by, c.note, c.number, c.opened_by, c.corrects, "
+                + "h.stated_due, h.deferred_until, h.due_by, c.note, c.ref, c.number, c.opened_by, c.corrects, "
                 + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = c.sheet_id AND k.number = c.corrects), "
                 + "h.claim_date) AS round_date FROM claim_history h JOIN claim c ON c.id = h.claim_id "
                 + "WHERE h.sheet_id = ? AND h.person_id = ? AND h.id = (SELECT MAX(h2.id) FROM claim_history h2 "
@@ -168,6 +198,7 @@ public class ClaimRepository {
                             rs.getString("number"), settled == null ? null : settled.setScale(2).toPlainString(),
                             rs.getString("opened_by"), rs.getBoolean("stated"),
                             stated == null ? null : stated.setScale(2).toPlainString());
+                    claim.setRef(rs.getString("ref"));
                     return withCorrects(claim, rs.getString("corrects"),
                             rs.getObject("round_date", LocalDate.class).toString(),
                             rs.getObject("due_by", LocalDate.class).toString(), until,

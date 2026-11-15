@@ -2,7 +2,10 @@ package net.officefloor.hq.app.paste;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
@@ -24,8 +27,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /** Adds a DRAFT claim per pasted line, in order, to the person it names (compared as names are).
  *  Every line is first checked as {@link net.officefloor.hq.app.claim.AddClaim} checks a claim (its
- *  person on the sheet, not retired before its date, its due-by outside a closed period), so a refused
- *  line adds nothing; then each is added, logged and recorded as CLAIM_ADDED. */
+ *  person on the sheet, not retired before its date, its due-by outside a closed period, its reference
+ *  used by no claim on the sheet nor an earlier line), so a refused line adds nothing; then each is
+ *  added, logged and recorded as CLAIM_ADDED. */
 public class PasteClaims {
     private record Pending(Person person, ValidClaim claim, LocalDate date, LocalDate dueBy, String corrects) {
     }
@@ -39,6 +43,7 @@ public class PasteClaims {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
         List<Pending> pending = new ArrayList<>();
+        Set<String> refs = new HashSet<>();
         for (PasteLine line : lines.lines()) {
             Person person = people.findByName(id, line.name());
             if (person == null) {
@@ -54,15 +59,20 @@ public class PasteClaims {
             LocalDate dueBy = holidays.dueBy(id, date, settings.terms(id, person, date.toString()));
             periods.requireOpen(id, dueBy.toString());
             String corrects = Corrections.check(request, id, person.getId(), claims);
+            // A reference is used once on the sheet: also once within the paste.
+            claims.requireRefFree(id, request.ref(), 0);
+            if (request.ref() != null && !refs.add(request.ref().toLowerCase(Locale.ROOT))) {
+                throw new InvalidClaimException("The reference is repeated in the paste: " + request.ref());
+            }
             pending.add(new Pending(person, request, date, dueBy, corrects));
         }
         for (Pending p : pending) {
             Claim claim = claims.add(id, p.person().getId(), p.claim().amount(), p.date(),
-                    p.claim().note(), p.corrects(), p.dueBy(), user);
+                    p.claim().note(), p.corrects(), p.dueBy(), user, p.claim().ref());
             if (periods.softClosedOn(id, claim.getDueBy())) claims.markLateEntry(claim);
             log.record(claim, user);
             audit.record("CLAIM_ADDED sheet=" + id + " by=" + user + " person=" + p.person().getName()
-                    + " amount=" + claim.getAmount() + " date=" + claim.getDate());
+                    + " amount=" + claim.getAmount() + " date=" + claim.getDate() + claim.getAuditRef());
             if (claim.isLateEntry()) {
                 audit.record("LATE_ENTRY sheet=" + id + " by=" + user + " person=" + p.person().getName()
                         + " amount=" + claim.getAmount() + " date=" + claim.getDate());

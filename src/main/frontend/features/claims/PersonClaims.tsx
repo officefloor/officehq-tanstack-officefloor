@@ -7,7 +7,7 @@ import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/
 import { useNoteThreshold, useProofThreshold, type DatedOn } from '../settings/api';
 import { addClaim, addProof, claimsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
-const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
+const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '' };
 
 const LABELS: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void', approve: 'Approve', reject: 'Reject', resettle: 'Re-settle' };
 const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided', approve: 'approved', reject: 'rejected', resettle: 're-settled' };
@@ -92,7 +92,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     const was = heldWas.current;
     heldWas.current = held?.id ?? null;
     if (held && editing === null) {
-      setForm({ amount: held.amount, date: held.date, note: held.note, corrects: held.corrects ?? '' });
+      setForm({ amount: held.amount, date: held.date, note: held.note, corrects: held.corrects ?? '', ref: held.ref ?? '' });
       setEditing(held.id);
     } else if (!held && was !== null && editing === was && !locking.isPending) {
       setForm(EMPTY);
@@ -229,7 +229,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
   });
 
   const saveInline = (c: Claim) => {
-    const input = { amount: (inlineAmounts[c.id] ?? '').trim(), date: c.date, note: c.note, corrects: c.corrects ?? '' };
+    const input = { amount: (inlineAmounts[c.id] ?? '').trim(), date: c.date, note: c.note, corrects: c.corrects ?? '', ref: c.ref ?? '' };
     actOnce(() => {
       move.reset();
       reassign.reset();
@@ -348,7 +348,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       return;
     }
     setEditRefused(null);
-    setForm({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
+    setForm({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '', ref: c.ref ?? '' });
     setEditing(c.id);
     save.reset();
     locking.mutate(c.id);
@@ -384,6 +384,8 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
           onChange={(e) => change({ note: e.target.value })} />{' '}
         <input data-testid="claim-form-corrects" placeholder="Corrects no." value={form.corrects}
           onChange={(e) => change({ corrects: e.target.value })} />{' '}
+        <input data-testid="claim-form-ref" placeholder="Reference" value={form.ref}
+          onChange={(e) => change({ ref: e.target.value })} />{' '}
         <button type="submit" data-testid="claim-form-submit" disabled={save.isPending || locking.isPending}>
           {editing === null ? 'Add claim' : 'Save claim'}
         </button>
@@ -396,7 +398,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
             ? 'Another user is editing this claim; it cannot be saved until they save or cancel.'
             : save.error instanceof HttpError && save.error.status === 403
             ? 'Your role may not change anything on this sheet.'
-            : 'A claim needs an amount with up to two decimals; a negative one (a correction) must name, by number, a SETTLED claim of this person.'}</span>
+            : 'A claim needs an amount with up to two decimals; a negative one (a correction) must name, by number, a SETTLED claim of this person; a reference cannot be one already used on the sheet.'}</span>
         )}
       </form>
       <table>
@@ -412,6 +414,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
               <td data-testid="claim-date">{c.date}</td>
               <td data-testid="claim-note">{c.note}</td>
               <td data-testid="claim-corrects">{c.corrects ?? ''}</td>
+              <td data-testid="claim-ref">{c.ref ?? ''}</td>
               <td data-testid="claim-due">{showDue(claimDue(c, rates, gradeOn, floor, charges))}</td>
               <td>
                 Due by <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}

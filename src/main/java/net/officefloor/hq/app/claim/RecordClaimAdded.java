@@ -13,7 +13,7 @@ public class RecordClaimAdded {
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         audit.record("CLAIM_ADDED sheet=" + claim.getSheetId() + " by=" + (by == null ? "" : by)
                 + " person=" + (person == null ? "" : person.getName())
-                + " amount=" + claim.getAmount() + " date=" + claim.getDate());
+                + " amount=" + claim.getAmount() + " date=" + claim.getDate() + claim.getAuditRef());
         if (claim.isLateEntry()) {
             audit.record("LATE_ENTRY sheet=" + claim.getSheetId() + " by=" + (by == null ? "" : by)
                     + " person=" + (person == null ? "" : person.getName())

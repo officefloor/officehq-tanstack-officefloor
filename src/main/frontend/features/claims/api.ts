@@ -44,9 +44,12 @@ export type Claim = {
   lateEntry: boolean;
   /** The last sheet's today it was reminded on (null: never reminded). */
   reminded: string | null;
+  /** Its external reference (null: none); used once per sheet, compared without regard to case. */
+  ref: string | null;
 };
-/** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects. */
-export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
+/** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects.
+ *  `ref`: its external reference (trimmed; blank: none), refused when already used on the sheet. */
+export type ClaimInput = { amount: string; date: string; note: string; corrects: string; ref: string };
 
 /** Whether a claim is a correction: its amount is negative. */
 export const isCorrection = (c: Pick<Claim, 'amount'>) => c.amount.trim().startsWith('-') && Number(c.amount) !== 0;
@@ -62,7 +65,7 @@ export function listClaims(sheetId: string): Promise<Claim[]> {
 
 /** Add a claim to a person; refused (rejects) when the amount is missing or has more than two
  *  decimals, the date is not a date, or it is a correction (negative) that does not name by number a
- *  SETTLED claim of the person. A blank date takes the sheet's entry date when set, else its today. */
+ *  SETTLED claim of the person, or its reference is already used on the sheet (in any case). A blank date takes the sheet's entry date when set, else its today. */
 export function addClaim(sheetId: string, by: string, personId: number, input: ClaimInput): Promise<Claim> {
   return postJson<Claim>(`${sheetBase(sheetId)}/people/${personId}/claims?by=${encodeURIComponent(by)}`, input);
 }
@@ -210,7 +213,8 @@ export function bulkSettleClaims(sheetId: string, by: string, claimIds: number[]
 /** How many claims a paste added. */
 export type PasteResult = { added: number };
 
-/** Add a DRAFT claim per line of name,amount,date,note (the note may hold commas; a blank date takes
+/** Add a DRAFT claim per line of name,amount,date,note (the note may hold commas, and may end in
+ *  ` #<reference>`, the claim's reference, refused when used on the sheet or by another line; a blank date takes
  *  the sheet's entry date when set, else its today; the note may be absent), in order, to the named person; refused (rejects),
  *  adding nothing, when any line would be refused by the claim form or names no one on the sheet. */
 export function pasteClaims(sheetId: string, by: string, text: string): Promise<PasteResult> {

@@ -28,8 +28,9 @@ public class AddClaim {
                 settings.terms(person.getSheetId(), person, date.toString()));
         periods.requireOpen(person.getSheetId(), dueBy.toString());
         String corrects = Corrections.check(request, person.getSheetId(), person.getId(), claims);
+        claims.requireRefFree(person.getSheetId(), request.ref(), 0);
         Claim added = claims.add(person.getSheetId(), person.getId(), request.amount(), date,
-                request.note(), corrects, dueBy, user);
+                request.note(), corrects, dueBy, user, request.ref());
         if (periods.softClosedOn(person.getSheetId(), dueBy.toString())) claims.markLateEntry(added);
         claim.set(added);
     }
