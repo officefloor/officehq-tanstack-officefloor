@@ -1,0 +1,482 @@
+diff --git a/src/main/frontend/features/claims/PersonClaims.tsx b/src/main/frontend/features/claims/PersonClaims.tsx
+index cfe99a94c..85d5a0b57 100644
+--- a/src/main/frontend/features/claims/PersonClaims.tsx
++++ b/src/main/frontend/features/claims/PersonClaims.tsx
+@@ -6,7 +6,7 @@ import { listPeriods, periodOf, periodsKey } from '../periods/api';
+ import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
+ import { isReviewLate, useNoteThreshold, useProofKinds, useProofThreshold, useReviewSla, type DatedOn } from '../settings/api';
+ import { claimFromTemplate, listTemplates, templatesKey } from '../templates/api';
+-import { addClaim, addClaimLine, claimTimeline, addProof, PROOF_KINDS, proofsOf, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, waiveClaim, holdClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ProofKind, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
++import { addClaim, addClaimLine, claimTimeline, addProof, PROOF_KINDS, proofsOf, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, waiveClaim, holdClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, settlePartClaim, unlockClaim, updateClaim, type Claim, type ProofKind, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
+ import { Fig } from '../session/Fig';
+ 
+ const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
+@@ -61,6 +61,10 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
+  *  rest and is unbound, and a new OPEN claim of that amount, opened by the user, shows its number as split-from
+  *  (a PENDING, deferred or settled claim, one in a closed period, or a role that may not open a claim refused
+  *  with an error on the claim).
++ *  An OPEN claim can be part-settled by an amount typed beside it: the amount is split off as the split does
++ *  and the new claim settled at once by the user as the settle does (PENDING above a clerk's limit), the
++ *  four-eyes and proof rules judged on the original claim; a refused split or settle refuses it all, with an
++ *  error on the claim.
+  *  A DRAFT's amount can be changed in its row, by an amount typed beside its edit button: saved as the
+  *  claim form saves it (its date, note and corrected claim kept), refused likewise with an error on the claim. */
+ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, today, charges, selected, onSelect, people }: {
+@@ -161,6 +165,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+       commenting.reset();
+       lining.reset();
+       division.reset();
++      partSettling.reset();
+       inline.reset();
+       setEditRefused(null);
+       locking.reset();
+@@ -186,6 +191,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+       commenting.reset();
+       lining.reset();
+       division.reset();
++      partSettling.reset();
+       inline.reset();
+       setEditRefused(null);
+       locking.reset();
+@@ -216,6 +222,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+       commenting.reset();
+       lining.reset();
+       division.reset();
++      partSettling.reset();
+       inline.reset();
+       setEditRefused(null);
+       locking.reset();
+@@ -236,6 +243,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+       commenting.reset();
+       lining.reset();
+       division.reset();
++      partSettling.reset();
+       inline.reset();
+       setEditRefused(null);
+       locking.reset();
+@@ -273,6 +281,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+       commenting.reset();
+       lining.reset();
+       division.reset();
++      partSettling.reset();
+       inline.reset();
+       setEditRefused(null);
+       locking.reset();
+@@ -291,6 +300,17 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+     },
+   });
+ 
++  // The amount typed for each claim to part-settle.
++  const [partAmounts, setPartAmounts] = useState<Record<number, string>>({});
++
++  const partSettling = useMutation({
++    mutationFn: (v: { id: number; amount: string }) => settlePartClaim(sheetId, user, v.id, v.amount),
++    onSuccess: (_, v) => {
++      setPartAmounts((a) => ({ ...a, [v.id]: '' }));
++      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
++    },
++  });
++
+   const split = (id: number) => {
+     const amount = (splitAmounts[id] ?? '').trim();
+     actOnce(() => {
+@@ -305,6 +325,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+       commenting.reset();
+       lining.reset();
+       division.reset();
++      partSettling.reset();
+       inline.reset();
+       setEditRefused(null);
+       locking.reset();
+@@ -312,6 +333,28 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+     });
+   };
+ 
++  const settlePart = (id: number) => {
++    const amount = (partAmounts[id] ?? '').trim();
++    actOnce(() => {
++      move.reset();
++      reassign.reset();
++      deferral.reset();
++      reminder.reset();
++      waiver.reset();
++      holding.reset();
++      redating.reset();
++      proof.reset();
++      commenting.reset();
++      lining.reset();
++      division.reset();
++      partSettling.reset();
++      inline.reset();
++      setEditRefused(null);
++      locking.reset();
++      return partSettling.mutateAsync({ id, amount });
++    });
++  };
++
+   // The amount typed for each claim to change it to in its row.
+   const [inlineAmounts, setInlineAmounts] = useState<Record<number, string>>({});
+ 
+@@ -337,6 +380,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+       commenting.reset();
+       lining.reset();
+       division.reset();
++      partSettling.reset();
+       inline.reset();
+       setEditRefused(null);
+       locking.reset();
+@@ -368,6 +412,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+       commenting.reset();
+       lining.reset();
+       division.reset();
++      partSettling.reset();
+       inline.reset();
+       setEditRefused(null);
+       locking.reset();
+@@ -400,6 +445,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+       commenting.reset();
+       lining.reset();
+       division.reset();
++      partSettling.reset();
+       inline.reset();
+       setEditRefused(null);
+       locking.reset();
+@@ -433,6 +479,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+       commenting.reset();
+       lining.reset();
+       division.reset();
++      partSettling.reset();
+       inline.reset();
+       setEditRefused(null);
+       locking.reset();
+@@ -479,6 +526,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+       commenting.reset();
+       lining.reset();
+       division.reset();
++      partSettling.reset();
+       inline.reset();
+       setEditRefused(null);
+       locking.reset();
+@@ -499,6 +547,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+       commenting.reset();
+       lining.reset();
+       division.reset();
++      partSettling.reset();
+       inline.reset();
+       setEditRefused(null);
+       locking.reset();
+@@ -537,6 +586,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+       commenting.reset();
+       lining.reset();
+       division.reset();
++      partSettling.reset();
+       inline.reset();
+       setEditRefused(null);
+       return fromTemplate.mutateAsync(name);
+@@ -555,6 +605,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+     commenting.reset();
+     lining.reset();
+     division.reset();
++    partSettling.reset();
+     inline.reset();
+     locking.reset();
+     if (c.status !== 'DRAFT') {
+@@ -731,6 +782,15 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+                   onClick={() => split(c.id)}>
+                   Split
+                 </button>
++                <input data-testid="claim-settle-part-amount" placeholder="Part amount" value={partAmounts[c.id] ?? ''}
++                  onChange={(e) => {
++                    setPartAmounts((a) => ({ ...a, [c.id]: e.target.value }));
++                    if (partSettling.variables?.id === c.id) partSettling.reset();
++                  }} />{' '}
++                <button type="button" data-testid="claim-settle-part" disabled={partSettling.isPending}
++                  onClick={() => settlePart(c.id)}>
++                  Settle part
++                </button>
+               </td>
+               <td data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</td>
+               <td>
+@@ -926,6 +986,15 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+                     ? 'Your role may not open a claim, so it cannot split one.'
+                     : `A ${c.deferred ? 'deferred' : c.status} claim cannot be split.`}</span>
+                 )}
++                {partSettling.isError && partSettling.variables?.id === c.id && (
++                  <span data-testid="claim-error">{partSettling.error instanceof HttpError && partSettling.error.status === 423
++                    ? 'A claim due by a day inside a closed period cannot be part-settled.'
++                    : partSettling.error instanceof HttpError && partSettling.error.status === 400
++                    ? `A part-settle needs an amount more than 0.00 and less than ${Number(c.amount).toFixed(2)}.`
++                    : c.status === 'OPEN' && !c.deferred
++                    ? 'The part cannot be split off or settled: your role, four eyes or a missing proof refuses it.'
++                    : `A ${c.deferred ? 'deferred' : c.status} claim cannot be part-settled.`}</span>
++                )}
+                 {proof.isError && proof.variables === c.id && (
+                   <span data-testid="claim-error">{proof.error instanceof HttpError && proof.error.status === 423
+                     ? 'A claim due by a day inside a closed period cannot gain a proof.'
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index 99f2e306d..34d1bda2c 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -177,6 +177,13 @@ export function splitClaim(sheetId: string, by: string, id: number, amount: stri
+   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/split?by=${encodeURIComponent(by)}&amount=${encodeURIComponent(amount)}`, {});
+ }
+ 
++/** Part-settle an OPEN claim: `amount` is split off as {@link splitClaim} does, and the new claim is settled
++ *  at once by the user as the settle does (to PENDING by a clerk above the clerk limit); the four-eyes and
++ *  proof rules are judged on the original claim. A refused split or settle refuses it all. Resolves to the new claim. */
++export function settlePartClaim(sheetId: string, by: string, id: number, amount: string): Promise<Claim> {
++  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/settle-part?by=${encodeURIComponent(by)}&amount=${encodeURIComponent(amount)}`, {});
++}
++
+ /** The kinds a proof may be (none chosen: a receipt). */
+ export const PROOF_KINDS = ['receipt', 'photo'] as const;
+ export type ProofKind = typeof PROOF_KINDS[number];
+diff --git a/src/main/java/net/officefloor/hq/app/claim/JudgePartSettle.java b/src/main/java/net/officefloor/hq/app/claim/JudgePartSettle.java
+new file mode 100644
+index 000000000..ca02870f5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/JudgePartSettle.java
+@@ -0,0 +1,23 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.setting.Permissions;
++import net.officefloor.hq.app.setting.RoleRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** First step of a part-settle, before the split: the settle's role, four-eyes and proof rules judged
++ *  on the original claim as it stands (its own amount, opener, editor and proofs). */
++public class JudgePartSettle {
++    public void judge(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
++            PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,
++            SheetRepository sheets) throws ClaimStatusException {
++        if (!Permissions.allows(claim.getSheetId(), by, Permissions.SETTLE, roles, settings)) {
++            throw new ClaimStatusException("Your role may not settle a claim");
++        }
++        SettleClaim.judge(by, claim, people, rates, settings, sheets);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/PartSettle.java b/src/main/java/net/officefloor/hq/app/claim/PartSettle.java
+new file mode 100644
+index 000000000..977dc1b00
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/PartSettle.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** The status (SETTLED or PENDING) and fixed due a part-settle moves the split-off claim to. */
++public record PartSettle(String status, String settledDue) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveSettledPart.java b/src/main/java/net/officefloor/hq/app/claim/SaveSettledPart.java
+new file mode 100644
+index 000000000..0971ab7e8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveSettledPart.java
+@@ -0,0 +1,35 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.person.WatchRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** After the split is saved and recorded: settles the split-off claim as the settle button does — saved
++ *  in no batch, its status logged, its line recorded, its person's watchers notified, then the rollup. */
++public class SaveSettledPart {
++    public void save(@RequestParam(name = "by", required = false) String by, @Val Split split,
++            @Val PartSettle part, ClaimRepository claims, ClaimLogRepository log, PersonRepository people,
++            WatchRepository watches, RateRepository rates, SheetRepository sheets, SettingRepository settings,
++            Audit audit) {
++        Claim created = split.created();
++        String sheetId = created.getSheetId();
++        Rollup before = Rollup.of(sheetId, people, claims, rates, sheets, settings);
++        created.setStatus(part.status());
++        created.setSettledDue(part.settledDue());
++        created.setSettleBatch(null);
++        claims.update(created);
++        log.record(created, by);
++        new RecordClaimStatus().record(by, created, people, audit);
++        new RecordClaimNotify().record(by, created, people, watches, audit);
++        Rollup after = Rollup.of(sheetId, people, claims, rates, sheets, settings);
++        for (String line : after.changesSince(before, sheetId, by == null ? "" : by)) {
++            audit.record(line);
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+index f8333677b..2dbc1f0e3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+@@ -35,6 +35,14 @@ public class SettleClaim {
+     static void settle(String by, Claim claim, PersonRepository people, RateRepository rates,
+             PeriodRepository periods, RoleRepository roles, SettingRepository settings, SheetRepository sheets)
+             throws ClaimStatusException, PeriodClosedException {
++        settle(by, claim, true, people, rates, periods, roles, settings, sheets);
++    }
++
++    /** As {@link #settle}, the four-eyes and proof rules judged on the claim itself only when {@code judged}
++     *  (a part-settle judges them on the original claim, by {@link #judge}, before the split). */
++    static void settle(String by, Claim claim, boolean judged, PersonRepository people, RateRepository rates,
++            PeriodRepository periods, RoleRepository roles, SettingRepository settings, SheetRepository sheets)
++            throws ClaimStatusException, PeriodClosedException {
+         if (!Permissions.allows(claim.getSheetId(), by, Permissions.SETTLE, roles, settings)) {
+             throw new ClaimStatusException("Your role may not settle a claim");
+         }
+@@ -46,30 +54,49 @@ public class SettleClaim {
+             throw new ClaimStatusException("A deferred claim cannot be settled until " + claim.getDeferredUntil());
+         }
+         ClaimStatus settled = ClaimStatus.OPEN.moveTo(ClaimStatus.SETTLED);
++        if (judged) requireFourEyes(by, claim);
++        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++        String due = dueOf(claim, person, rates, settings, sheets);
++        if (judged) requireProof(claim, person, due, settings);
++        if (due != null && Role.CLERK.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
++            BigDecimal limit = settings.clerkLimit(claim.getSheetId());
++            if (limit != null && new BigDecimal(due).compareTo(limit) > 0) {
++                claim.setStatus(ClaimStatus.OPEN.moveTo(ClaimStatus.PENDING).name());
++                return;
++            }
++        }
++        claim.setStatus(settled.name());
++        claim.setSettledDue(due);
++    }
++
++    /** The four-eyes and proof rules of settling, judged on the claim (unchanged) alone. */
++    static void judge(String by, Claim claim, PersonRepository people, RateRepository rates,
++            SettingRepository settings, SheetRepository sheets) throws ClaimStatusException {
++        requireFourEyes(by, claim);
++        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++        requireProof(claim, person, dueOf(claim, person, rates, settings, sheets), settings);
++    }
++
++    /** Refuses the user who opened the claim or last edited it. */
++    static void requireFourEyes(String by, Claim claim) throws ClaimStatusException {
+         if (claim.getOpenedBy() != null && claim.getOpenedBy().equals(by == null ? "" : by)) {
+             throw new ClaimStatusException("The user who opened a claim cannot settle it");
+         }
+         if (claim.getEditedBy() != null && claim.getEditedBy().equals(by == null ? "" : by)) {
+             throw new ClaimStatusException("The user who last edited a claim cannot settle it");
+         }
+-        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++    }
++
++    /** The due the claim settles at now (null: n/a). */
++    static String dueOf(Claim claim, Person person, RateRepository rates, SettingRepository settings,
++            SheetRepository sheets) {
+         Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),
+                 LocalDate.parse(claim.getDate()), claim.getId());
+         // A claim bound by a statement settles at the figure it was bound to.
+         // Its late charge on the sheet's today is frozen in.
+         Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
+-        String due = Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
++        return Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
+                 late.rounding(claim.getRoundDate())), settings.floor(claim.getSheetId()).on(claim.getDate()), late);
+-        requireProof(claim, person, due, settings);
+-        if (due != null && Role.CLERK.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
+-            BigDecimal limit = settings.clerkLimit(claim.getSheetId());
+-            if (limit != null && new BigDecimal(due).compareTo(limit) > 0) {
+-                claim.setStatus(ClaimStatus.OPEN.moveTo(ClaimStatus.PENDING).name());
+-                return;
+-            }
+-        }
+-        claim.setStatus(settled.name());
+-        claim.setSettledDue(due);
+     }
+ 
+     /** Refuses settling or approving a claim with no proofs (while the sheet's proof kinds are set: with
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettlePart.java b/src/main/java/net/officefloor/hq/app/claim/SettlePart.java
+new file mode 100644
+index 000000000..aaea7456c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/SettlePart.java
+@@ -0,0 +1,28 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.period.PeriodClosedException;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.setting.RoleRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** After the split, before anything is saved: judges settling the split-off claim exactly as the settle
++ *  button does (its four-eyes and proof rules already judged on the original), so a refusal writes
++ *  nothing. The claim stays OPEN for the split's own save; the settle it would make is published. */
++public class SettlePart {
++    public void settle(@RequestParam(name = "by", required = false) String by, @Val Split split,
++            PersonRepository people, RateRepository rates, PeriodRepository periods, RoleRepository roles,
++            SettingRepository settings, SheetRepository sheets, Out<PartSettle> part)
++            throws ClaimStatusException, PeriodClosedException {
++        Claim created = split.created();
++        SettleClaim.settle(by, created, false, people, rates, periods, roles, settings, sheets);
++        part.set(new PartSettle(created.getStatus(), created.getSettledDue()));
++        created.setStatus(ClaimStatus.OPEN.name());
++        created.setSettledDue(null);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml
+new file mode 100644
+index 000000000..41668d42a
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml
+@@ -0,0 +1,47 @@
++# POST /api/sheets/{sheetId}/claims/{claimId}/settle-part?amount=<n.nn> — part-settle an OPEN claim: the
++# amount is split off exactly as the split does, and the new claim is settled at once by the user exactly
++# as the settle does (to PENDING by a clerk above the clerk limit). The settle's role, four-eyes and proof
++# rules are judged on the original claim (the new claim's opener is the user). A split or a settle that
++# would be refused refuses the whole action, writing nothing.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: judge
++judge:
++  class: net.officefloor.hq.app.claim.JudgePartSettle
++  govern: [ transaction ]
++  next: split
++split:
++  class: net.officefloor.hq.app.claim.SplitClaim
++  govern: [ transaction ]
++  next: settle
++settle:
++  class: net.officefloor.hq.app.claim.SettlePart
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveSplit
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.RecordClaimSplit
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
++  next: settled
++settled:
++  class: net.officefloor.hq.app.claim.SaveSettledPart
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithSplit
