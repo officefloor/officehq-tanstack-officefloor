@@ -20,6 +20,7 @@ import { BulkRetire } from './BulkRetire';
 import { ExportClaims, ExportPeople } from './ExportPeople';
 import { ImportPeople } from './ImportPeople';
 import { QuickAdd } from './QuickAdd';
+import { ColumnChooser, useColumns } from './Columns';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { SortBy, sortPeople, useSortBy } from './SortBy';
 import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, takeStatement, transferPerson, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
@@ -47,7 +48,8 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
  *  Whether the signed-in user watches each person, with a button that starts or stops it.
  *  A button exports everyone, retired people included, as a CSV file, and another exports their claims
  *  (people in list order, each one's claims oldest first, with the figures their rows show).
- *  The list can be sorted on this screen only (see `SortBy`). */
+ *  The list can be sorted on this screen only (see `SortBy`), and each user chooses which of its
+ *  columns their screen shows (see `ColumnChooser`): a column switched off has no cell at all. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
@@ -67,6 +69,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const [editing, setEditing] = useState<{ id: number; version: number } | null>(null);
   const [showRetired] = useShowRetired();
   const [sortBy] = useSortBy();
+  const shows = useColumns(sheetId, user);
   // The retirement date typed on each person's row (blank: the sheet's today).
   const [retireDates, setRetireDates] = useState<Record<number, string>>({});
   // The statement date typed on each person's row (blank: the statement is taken now).
@@ -459,6 +462,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       <ImportPeople sheetId={sheetId} user={user} />
       <ShowRetired />{' '}
       <SortBy />{' '}
+      <ColumnChooser sheetId={sheetId} user={user} />
       <ExportPeople rows={() => everyone.map((p) => [p.name, gradeOn(p, today), p.retiredFrom ?? '', showDue(dueOf.get(p.id) ?? null)])} />
       <ExportClaims rows={() => everyone.flatMap((p) => (claims.data ?? []).filter((c) => c.personId === p.id).reverse().map((c) => [
         p.name, c.number ?? '', c.date, Number(c.amount).toFixed(2),
@@ -516,25 +520,37 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                 <td>
                   Active <span data-testid="person-active">{isActive(live, today) ? 'yes' : 'no'}</span>
                 </td>
-                <td>
-                  Terms <span data-testid="person-terms">{p.terms ?? ''}</span>
-                </td>
-                <td>
-                  Contact <span data-testid="person-contact">{p.contact ?? ''}</span>
-                </td>
+                {shows('terms') && (
+                  <td>
+                    Terms <span data-testid="person-terms">{p.terms ?? ''}</span>
+                  </td>
+                )}
+                {shows('contact') && (
+                  <td>
+                    Contact <span data-testid="person-contact">{p.contact ?? ''}</span>
+                  </td>
+                )}
                 <td>
                   Tags <span data-testid="person-tags">{showTags(p.tags)}</span>
                 </td>
                 <td>
                   From <span data-testid="person-origin">{p.origin ?? ''}</span>
                 </td>
-                <td>
-                  Claimed <span data-testid="person-claimed"><Fig>{claimed}</Fig></span>
-                </td>
-                <td>
-                  Due <span data-testid="person-due-total"><Fig>{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap))}</Fig></span>{' '}
-                  excess <span data-testid="person-excess"><Fig>{excessOf(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap)}</Fig></span>
-                </td>
+                {shows('claimed') && (
+                  <td>
+                    Claimed <span data-testid="person-claimed"><Fig>{claimed}</Fig></span>
+                  </td>
+                )}
+                {(shows('due-total') || shows('excess')) && (
+                  <td>
+                    {shows('due-total') && (
+                      <>Due <span data-testid="person-due-total"><Fig>{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap))}</Fig></span>{' '}</>
+                    )}
+                    {shows('excess') && (
+                      <>excess <span data-testid="person-excess"><Fig>{excessOf(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap)}</Fig></span></>
+                    )}
+                  </td>
+                )}
                 <td>
                   Cut <span data-testid="person-cut-total"><Fig>{personCutTotal(pools.data ?? [], p.id)}</Fig></span>
                 </td>
@@ -554,8 +570,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   61+ <span data-testid="person-aged-61"><Fig>{aged.over60}</Fig></span>
                 </td>
                 <td>
-                  Overdue <span data-testid="person-overdue-count">{late.count}</span>{' '}
-                  totalling <span data-testid="person-overdue-total"><Fig>{late.total}</Fig></span>
+                  {shows('overdue-count') && <>Overdue <span data-testid="person-overdue-count">{late.count}</span>{' '}</>}
+                  {shows('overdue-total') && <>totalling <span data-testid="person-overdue-total"><Fig>{late.total}</Fig></span></>}
                 </td>
                 <td>
                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
@@ -576,9 +592,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                     onClick={() => unstate(p.id)}>
                     Cancel statement
                   </button>{' '}
-                  Statements <span data-testid="person-statement-count">{p.statementCount}</span>{' '}
-                  last <span data-testid="person-stated-total"><Fig>{p.statedTotal ?? ''}</Fig></span>{' '}
-                  on <span data-testid="person-statement-date">{p.statementDate ?? ''}</span>
+                  {shows('statement-count') && <>Statements <span data-testid="person-statement-count">{p.statementCount}</span>{' '}</>}
+                  {shows('stated-total') && <>last <span data-testid="person-stated-total"><Fig>{p.statedTotal ?? ''}</Fig></span>{' '}</>}
+                  {shows('statement-date') && <>on <span data-testid="person-statement-date">{p.statementDate ?? ''}</span></>}
                   {statement.isError && statement.variables?.id === p.id && (
                     <span data-testid="person-error">The statement could not be taken.</span>
                   )}
@@ -621,7 +637,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   </button>
                 </td>
                 <td>
-                  Retired <span data-testid="person-retired">{p.retired ? 'yes' : 'no'}</span>{' '}
+                  {shows('retired') && <>Retired <span data-testid="person-retired">{p.retired ? 'yes' : 'no'}</span>{' '}</>}
                   from <span data-testid="person-retired-from">{p.retiredFrom ?? ''}</span>{' '}
                   <input type="date" data-testid="person-retire-date" value={retireDates[p.id] ?? ''}
                     onChange={(e) => {
@@ -645,7 +661,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   ))}
                 </td>
                 <td>
-                  On hold <span data-testid="person-hold">{p.held ? 'yes' : 'no'}</span>{' '}
+                  {shows('hold') && <>On hold <span data-testid="person-hold">{p.held ? 'yes' : 'no'}</span>{' '}</>}
                   {p.holds.map((h, i) => (
                     <span key={i} data-testid="person-hold-line">{h.from} to {h.to ?? '…'}; </span>
                   ))}
@@ -662,7 +678,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   Clashing <span data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</span>
                 </td>
                 <td>
-                  Aliases <span data-testid="person-aliases">{p.aliases.join(', ')}</span>{' '}
+                  {shows('aliases') && <>Aliases <span data-testid="person-aliases">{p.aliases.join(', ')}</span>{' '}</>}
                   <input data-testid="person-alias-input" value={aliasInputs[p.id] ?? ''}
                     onChange={(e) => {
                       setAliasInputs((d) => ({ ...d, [p.id]: e.target.value }));
@@ -674,10 +690,12 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   </button>
                 </td>
                 <td>
-                  Patrons <span data-testid="person-patrons">
-                    {patronShares(p.patronIds).map((s) => ({ name: nameOf.get(s.id) ?? '', share: s.share })).sort((x, y) => x.name.localeCompare(y.name)).map((s) => `${s.name} ${(s.share / 100).toFixed(2)}`).join(', ')}
-                  </span>{' '}
-                  backing <span data-testid="person-backing"><Fig>{backing(claims.data ?? [], p.patronIds, today)}</Fig></span>{' '}
+                  {shows('patrons') && (
+                    <>Patrons <span data-testid="person-patrons">
+                      {patronShares(p.patronIds).map((s) => ({ name: nameOf.get(s.id) ?? '', share: s.share })).sort((x, y) => x.name.localeCompare(y.name)).map((s) => `${s.name} ${(s.share / 100).toFixed(2)}`).join(', ')}
+                    </span>{' '}</>
+                  )}
+                  {shows('backing') && <>backing <span data-testid="person-backing"><Fig>{backing(claims.data ?? [], p.patronIds, today)}</Fig></span>{' '}</>}
                   <select data-testid="person-patron-select" value={patronPicks[p.id] ?? ''}
                     onChange={(e) => {
                       setPatronPicks((d) => ({ ...d, [p.id]: e.target.value }));
