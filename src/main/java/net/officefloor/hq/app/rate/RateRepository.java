@@ -3,7 +3,10 @@ package net.officefloor.hq.app.rate;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.function.UnaryOperator;
 import net.officefloor.hq.app.asof.AsOfView;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -32,7 +35,8 @@ public class RateRepository {
     }
 
     /** The sheet's own rates (level 0), by grade, then by from-date (none first), then those of its
-     *  parent, its parent's parent, up to {@link #LEVELS} up, each at its level. A grade without a rate
+     *  parent, its parent's parent, up to {@link #LEVELS} up, then its clone source's chain (see
+     *  {@link #ancestors}), each at its level. A grade without a rate
      *  is not listed. While the sheet is shown as of a date, its ancestors' rates are as they stood then. */
     public List<Rate> list(String sheetId) {
         List<Rate> all = new ArrayList<>(own(sheetId));
@@ -73,16 +77,35 @@ public class RateRepository {
         return rate.withPrior(chain(older.get(next), older, next + 1));
     }
 
-    /** The sheet's parent, its parent's parent, ... up to {@link #LEVELS} up (stopping at a sheet named twice). */
+    /** The sheets whose rates a grade without one of its own goes by, nearest first: the sheet's parent,
+     *  its parent's parent, ... up to {@link #LEVELS} up, then, when the sheet was cloned, the sheet it was
+     *  cloned from and that one's own chain (its parents, then its source, and so on); each sheet once. */
     public List<String> ancestors(String sheetId) {
+        return chain(sheetId, this::parent, this::source);
+    }
+
+    /** The chain {@link #ancestors} walks, with the parent and source of a sheet looked up by the given. */
+    public static List<String> chain(String sheetId, UnaryOperator<String> parent, UnaryOperator<String> source) {
         List<String> chain = new ArrayList<>();
-        String at = sheetId;
-        while (chain.size() < LEVELS) {
-            at = parent(at);
-            if (at == null || at.equals(sheetId) || chain.contains(at)) break;
-            chain.add(at);
+        Set<String> seen = new HashSet<>(Set.of(sheetId));
+        for (String at = sheetId; at != null; ) {
+            String up = at;
+            for (int i = 0; i < LEVELS; i++) {
+                up = parent.apply(up);
+                if (up == null || !seen.add(up)) break;
+                chain.add(up);
+            }
+            at = source.apply(at);
+            if (at != null && seen.add(at)) chain.add(at);
+            else at = null;
         }
         return chain;
+    }
+
+    /** The sheet the sheet was cloned from; null when it was not cloned. */
+    public String source(String sheetId) {
+        return jdbc.queryForList("SELECT source_id FROM sheet_source WHERE sheet_id = ?", String.class, sheetId)
+                .stream().findFirst().orElse(null);
     }
 
     /** The sheet's parent sheet id; null when it has none. */
@@ -94,7 +117,8 @@ public class RateRepository {
     /** The grade's rate for the sheet that applies to the claim (by its id) on the date: the sheet's own
      *  with the latest from-date on or before it that applies to the claim, unless there is none or it
      *  ended (its to-date) before the date, when its parent's is looked up the same way, and so on up to
-     *  {@link #LEVELS} up; null when none has one. */
+     *  {@link #LEVELS} up, then those of the sheet it was cloned from (see {@link #ancestors}); null when
+     *  none has one. */
     public Rate find(String sheetId, String grade, LocalDate on, long claimId) {
         return inForce(list(sheetId), grade, on.toString(), claimId);
     }
@@ -132,7 +156,8 @@ public class RateRepository {
     }
 
     private static Rate inForce(List<Rate> rates, String grade, String date, Long claimId) {
-        for (int level = 0; level <= LEVELS; level++) {
+        int top = rates.stream().mapToInt(Rate::level).max().orElse(0);
+        for (int level = 0; level <= top; level++) {
             Rate found = null;
             for (Rate listed : rates) {
                 Rate r = claimId == null ? listed : listed.forClaim(claimId);

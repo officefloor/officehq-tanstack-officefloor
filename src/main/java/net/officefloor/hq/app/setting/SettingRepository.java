@@ -103,7 +103,8 @@ public class SettingRepository {
     public static final String GRACE_OF_GRADE = "grace-";
 
     /** The parent sheet (a sheet id; blank: none; not dated): a grade with no rate in force on a date on
-     *  this sheet takes its parent's, then its parent's parent's, up to three levels up. */
+     *  this sheet takes its parent's, then its parent's parent's, up to three levels up; then, on a clone,
+     *  the sheet it was cloned from's (and so on up that sheet's parents and source). */
     public static final String PARENT = "parent";
 
     /** The fiscal year start month (1 to 12; not dated): a fiscal year runs from the first of it for

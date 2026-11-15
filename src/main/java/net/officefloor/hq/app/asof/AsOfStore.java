@@ -123,10 +123,29 @@ public class AsOfStore {
                 ps.executeUpdate();
             }
             // A grade without a rate of its own goes by its ancestors' (as they stood on the date, see RateRepository):
-            // their rates and parent links come along, up as far as rates are looked.
-            Set<String> chain = new HashSet<>(Set.of(sheetId));
-            for (String at = liveParent(c, sheetId); at != null && chain.size() <= RateRepository.LEVELS
-                    && chain.add(at); at = liveParent(c, at)) {
+            // their rates, parent links and clone sources come along, as far as rates are looked.
+            List<String> chain;
+            try {
+                chain = RateRepository.chain(sheetId, (at) -> live(() -> liveParent(c, at)),
+                        (at) -> live(() -> liveSource(c, at)));
+            } catch (UncheckedSql e) {
+                throw e.getCause();
+            }
+            try (PreparedStatement ps = c.prepareStatement(
+                    "DELETE FROM " + q(schema) + ".SHEET_SOURCE WHERE SHEET_ID = ?")) {
+                ps.setString(1, sheetId);
+                ps.executeUpdate();
+            }
+            List<String> linked = new ArrayList<>(List.of(sheetId));
+            linked.addAll(chain);
+            for (String at : linked) {
+                try (PreparedStatement ps = c.prepareStatement("INSERT INTO " + q(schema) + ".SHEET_SOURCE SELECT * FROM "
+                        + "PUBLIC.SHEET_SOURCE WHERE SHEET_ID = ?")) {
+                    ps.setString(1, at);
+                    ps.executeUpdate();
+                }
+            }
+            for (String at : chain) {
                 for (String table : List.of("RATE", "RATE_VERSION", "RATE_HISTORY")) {
                     try (PreparedStatement ps = c.prepareStatement("INSERT INTO " + q(schema) + "." + q(table)
                             + " SELECT * FROM PUBLIC." + q(table) + " WHERE SHEET_ID = ?")) {
@@ -192,6 +211,39 @@ public class AsOfStore {
                 }
                 return null;
             }
+        }
+    }
+
+    /** The sheet the sheet was cloned from, as the live store names it; null when it was not cloned. */
+    private static String liveSource(Connection c, String sheetId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("SELECT source_id FROM PUBLIC.SHEET_SOURCE WHERE SHEET_ID = ?")) {
+            ps.setString(1, sheetId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString(1) : null;
+            }
+        }
+    }
+
+    private interface SqlLookup {
+        String get() throws SQLException;
+    }
+
+    private static final class UncheckedSql extends RuntimeException {
+        UncheckedSql(SQLException cause) {
+            super(cause);
+        }
+
+        @Override
+        public synchronized SQLException getCause() {
+            return (SQLException) super.getCause();
+        }
+    }
+
+    private static String live(SqlLookup lookup) {
+        try {
+            return lookup.get();
+        } catch (SQLException e) {
+            throw new UncheckedSql(e);
         }
     }
 

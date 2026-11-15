@@ -42,6 +42,7 @@ public class SheetCloner {
             PeriodRepository periods, SettingRepository settings, SheetRepository sheets) {
         jdbc.update("INSERT INTO sheet (id, created_by, today) SELECT ?, ?, today FROM sheet WHERE id = ?",
                 to, user, from);
+        jdbc.update("INSERT INTO sheet_source (sheet_id, source_id) VALUES (?, ?)", to, from);
         Map<String, Object> none = Map.of();
         for (String table : List.of("sheet_setting", "setting_history", "sheet_role", "rate", "rate_history", "rate_version",
                 "holiday", "void_reason", "claim_template", "sheet_tag")) {
