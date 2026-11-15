@@ -125,7 +125,7 @@ export function roleOf(sheetId: string, user: string): Promise<Role> {
 
 export const roleOfKey = (sheetId: string, user: string) => [...rolesKey(sheetId), 'of', user] as const;
 
-/** Assign a user name a role; refused (rejects) when the role is not clerk or steward. */
+/** Assign a user name a role; refused (rejects) when the role is not clerk, steward, viewer or restricted. */
 export function setRole(sheetId: string, by: string, user: string, role: string): Promise<Role> {
   return postJson<Role>(`${base(sheetId)}/roles?by=${encodeURIComponent(by)}`, { user, role });
 }

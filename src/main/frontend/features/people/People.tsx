@@ -14,7 +14,8 @@ import { backing, claimedClaims, claimsKey, patronShares, isActive, correctsAnot
 import { listPeriods, periodOf, periodsKey, personPeriodCarried, personPeriodDue } from '../periods/api';
 import { listPools, personCutTotal, poolsKey } from '../pools/api';
 import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
-import { useCap, useFloor, useLate } from '../settings/api';
+import { roleOf, roleOfKey, useCap, useFloor, useLate } from '../settings/api';
+import { crewsKey, listCrews, type Crew } from '../crews/api';
 import { useSheetToday } from '../sheet/api';
 import { BulkGrade } from './BulkGrade';
 import { BulkRetire } from './BulkRetire';
@@ -72,6 +73,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const watched = new Set(watches.data ?? []);
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
   const pools = useQuery({ queryKey: poolsKey(sheetId), queryFn: () => listPools(sheetId) });
+  const role = useQuery({ queryKey: roleOfKey(sheetId, user), queryFn: () => roleOf(sheetId, user) });
+  const crews = useQuery({ queryKey: crewsKey(sheetId), queryFn: () => listCrews(sheetId) });
   const floor = useFloor(sheetId);
   const today = useSheetToday(sheetId, user);
   const cap = useCap(sheetId, today);
@@ -464,6 +467,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     save.reset();
   };
 
+  // Whether a person has a row on the list (undefined while the user's role is loading): for a restricted
+  // user only the people of the crews they lead or belong to and themselves; for anyone else everyone.
+  const listed = visibleTo(user, role.data?.role, people.data, crews.data);
+
   // Everyone's due-total as their row shows it (null: n/a), and their names, by id.
   const everyone = people.data ?? [];
   const dueOf = new Map(everyone.map((q) => [q.id, personDue(
@@ -583,7 +590,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
       <table>
         <tbody>
-          {sortPeople((people.data ?? []).filter((p) => showRetired || !p.retired), sortBy, (p) => dueOf.get(p.id) ?? null).map((p) => {
+          {sortPeople((people.data ?? []).filter((p) => showRetired || !p.retired).filter((p) => listed?.(p) ?? false), sortBy, (p) => dueOf.get(p.id) ?? null).map((p) => {
             const own = (claims.data ?? []).filter((c) => c.personId === p.id);
             const live = liveClaims(own, [p]);
             const claimed = sumAmounts(claimedClaims(own, [p]).filter((c) => !correctsAnother(c)));
@@ -908,4 +915,26 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       </table>
     </section>
   );
+}
+
+/** Who has a row on the people list for the user: everyone, unless their role is restricted; then only
+ *  the person whose name or an alias is the user's name (as names are compared) and the people (lead
+ *  and members) of the crews that person leads or belongs to. Undefined while anything it needs is loading. */
+function visibleTo(user: string, role: string | undefined, people: Person[] | undefined,
+    crews: Crew[] | undefined): ((p: Person) => boolean) | undefined {
+  if (role === undefined) return undefined;
+  if (role !== 'restricted') return () => true;
+  if (people === undefined || crews === undefined) return undefined;
+  const me = user.trim().toLowerCase();
+  const self = people.find((q) => [q.name, ...q.aliases].some((n) => n.trim().toLowerCase() === me));
+  if (!self) return () => false;
+  const ids = new Set<number>([self.id]);
+  for (const c of crews) {
+    const members = c.members.map((m) => m.personId);
+    if (c.leadId === self.id || members.includes(self.id)) {
+      if (c.leadId !== null) ids.add(c.leadId);
+      members.forEach((id) => ids.add(id));
+    }
+  }
+  return (p) => ids.has(p.id);
 }
