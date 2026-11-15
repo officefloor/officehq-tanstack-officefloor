@@ -206,12 +206,12 @@ public class ClaimRepository {
     }
 
     /** Move every claim of the person {@code fromId} to {@code intoId}, in the order they were added,
-     *  each the newest in the list as it moves: their numbers and dates kept, any figure a statement
-     *  bound dropped. */
+     *  each the newest in the list as it moves: their numbers and dates kept, and any figure a statement
+     *  bound them to kept. */
     public void moveAll(String sheetId, long fromId, long intoId) {
         for (Long id : jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id",
                 Long.class, sheetId, fromId)) {
-            jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, list_seq = "
+            jdbc.update("UPDATE claim SET person_id = ?, list_seq = "
                     + NEXT_SEQ + " WHERE sheet_id = ? AND id = ?", intoId, sheetId, sheetId, id);
             snapshot(sheetId, id);
         }
@@ -219,8 +219,8 @@ public class ClaimRepository {
 
     /** Move every claim of the person to the sheet {@code to}, with their logs, comments and history,
      *  keeping their order in the list (each newer than the other sheet's): their status, dates, notes,
-     *  tags and frozen figures kept, any figure a statement bound, their reference, lock and settle
-     *  batch dropped, and their numbers taken away. The ids of those that had a number come back in
+     *  tags, frozen figures and any figure a statement bound them to kept, their reference, lock and
+     *  settle batch dropped, and their numbers taken away. The ids of those that had a number come back in
      *  the order they were opened (by the sheet's today then, then the order they were added), for
      *  {@link #renumber}. */
     public List<Long> transferAll(String sheetId, long personId, String to) {
@@ -231,7 +231,7 @@ public class ClaimRepository {
         long seq = jdbc.queryForObject("SELECT COALESCE(MAX(list_seq), 0) FROM claim WHERE sheet_id = ?", Long.class, to);
         for (Long id : jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY list_seq, id",
                 Long.class, sheetId, personId)) {
-            jdbc.update("UPDATE claim SET sheet_id = ?, list_seq = ?, number = NULL, stated = FALSE, stated_due = NULL, "
+            jdbc.update("UPDATE claim SET sheet_id = ?, list_seq = ?, number = NULL, "
                     + "ref = NULL, ref_key = NULL, locked_by = NULL, settle_batch = NULL WHERE sheet_id = ? AND id = ?",
                     to, ++seq, sheetId, id);
             for (String table : List.of("claim_log", "claim_comment", "claim_history")) {

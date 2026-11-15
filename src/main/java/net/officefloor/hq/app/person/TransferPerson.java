@@ -21,14 +21,14 @@ import java.util.Set;
 
 /** A steward transfers the person to another sheet: they arrive with every grade given them (and its
  *  from-date), their terms, contact and aliases, and their claims with their status, dates, notes,
- *  tags, frozen figures, logs and comments; each claim that had a number gets the other sheet's next,
+ *  tags, frozen figures, the figures a statement bound them to, logs and comments; each claim that had a number gets the other sheet's next,
  *  in the order the claims were opened (by the sheet's today then, then the order they were added).
- *  Figures a statement bound are lost, their statement count starts at 0, and references, holds and
+ *  Their statement count starts at 0, and references, holds and
  *  settle batches are not carried. They leave this sheet entirely: patron links (either way), pool
  *  memberships, watches and closed periods' fixed totals are dropped. When someone on the other sheet
  *  already has their name or an alias (as names are compared), they are merged into that person
- *  there, as a merge does (see MergePerson): their claims after theirs, their name and aliases joined
- *  to theirs, the rest of them (contact included) dropped. Refused (nothing written) for anyone but a
+ *  there, as a merge does (see MergePerson): their claims after theirs, their statement count added
+ *  to theirs (theirs keeping their last statement), their name and aliases joined to theirs, the rest of them (contact included) dropped. Refused (nothing written) for anyone but a
  *  steward, a retired person, this sheet's own id or an archived sheet, when their names match more
  *  than one person there or a retired one, and (when not merged) when their contact is already there. */
 public class TransferPerson {
@@ -75,9 +75,10 @@ public class TransferPerson {
             Claim claim = claims.find(to, id);
             claims.renumber(claim, ClaimNumbers.next(claim, claims, periods, settings, sheets));
         }
-        people.transfer(person, to);
+        people.transfer(person, to, into != null);
         if (into != null) {
             Person arrived = people.find(to, person.getId());
+            arrived.setName(person.getName()); // arrived under a stand-in, as the name is taken there
             claims.moveAll(to, arrived.getId(), into.getId());
             people.merge(arrived, into, user);
         }

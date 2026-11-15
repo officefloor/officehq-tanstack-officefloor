@@ -425,8 +425,9 @@ public class PersonRepository {
 
     /** Merge the person {@code from} into {@code into}: from's name and aliases become into's aliases;
      *  from's patrons are added to into's (not into themselves, no repeats); anyone naming from as
-     *  patron names into instead (no repeats); from's statements, holds, watchers, grades and the
-     *  person themselves are dropped; from's plans become into's. Their claims, pool memberships and period totals must have
+     *  patron names into instead (no repeats); into's statement count becomes theirs plus from's, their
+     *  last statement staying theirs (having none, becoming from's), from's statements kept before
+     *  into's; from's holds, watchers, grades and the person themselves are dropped; from's plans become into's. Their claims, pool memberships and period totals must have
      *  moved first. */
     public void merge(Person from, Person into, String user) {
         String sheetId = into.getSheetId();
@@ -449,7 +450,19 @@ public class PersonRepository {
         jdbc.update("UPDATE person_patron SET patron_id = ? WHERE sheet_id = ? AND patron_id = ?",
                 into.getId(), sheetId, from.getId());
         into.getPatronIds().remove(Long.valueOf(from.getId()));
-        for (String table : List.of("person_statement", "person_hold", "person_watch", "person_grade",
+        // from's statements go before into's, so into's last stays their last.
+        List<Long> own = jdbc.queryForList("SELECT id FROM person_statement WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                Long.class, sheetId, into.getId());
+        jdbc.update("UPDATE person_statement SET person_id = ? WHERE sheet_id = ? AND person_id = ?",
+                into.getId(), sheetId, from.getId());
+        for (Long id : own) {
+            jdbc.update("INSERT INTO person_statement (sheet_id, person_id, stated_total, statement_date, taken_at) "
+                    + "SELECT sheet_id, person_id, stated_total, statement_date, taken_at FROM person_statement WHERE id = ?", id);
+            jdbc.update("DELETE FROM person_statement WHERE id = ?", id);
+        }
+        into.absorbStatements(from);
+        saveStatements(into);
+        for (String table : List.of("person_hold", "person_watch", "person_grade",
                 "person_grade_history", "person_retired_history", "person_retirement")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
         }
@@ -462,20 +475,30 @@ public class PersonRepository {
     /** Move the person to the sheet {@code to} with their grades (and grade history) and aliases, their
      *  statements dropped (the count back to 0) and their plans going with them; their holds, watchers, patron links (either way), pool
      *  memberships and closed periods' fixed totals are dropped; they keep the sheet they came from as their
-     *  origin. Their claims must have moved first. */
-    public void transfer(Person person, String to) {
+     *  origin. When {@code merging} (they are to be merged into someone there straight after) they keep
+     *  their statements and arrive under a stand-in name, as theirs is taken there. Their claims must
+     *  have moved first. */
+    public void transfer(Person person, String to, boolean merging) {
         String sheetId = person.getSheetId();
         long id = person.getId();
         jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, id, id);
-        for (String table : List.of("person_statement", "person_hold", "person_watch", "pool_member")) {
+        for (String table : List.of("person_hold", "person_watch", "pool_member")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        }
+        if (merging) {
+            jdbc.update("UPDATE person_statement SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, sheetId, id);
+        } else {
+            jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+            jdbc.update("UPDATE person SET statement_count = 0, stated_total = NULL, statement_date = NULL "
+                    + "WHERE sheet_id = ? AND id = ?", sheetId, id);
         }
         jdbc.update("DELETE FROM period_person_total WHERE person_id = ?", id);
         for (String table : List.of("person_grade", "person_grade_history", "person_retired_history", "person_retirement", "person_alias", "plan")) {
             jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, sheetId, id);
         }
-        jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL, "
-                + "origin = ?, list_pos = " + NEXT_POS + " WHERE sheet_id = ? AND id = ?", to, sheetId, to, sheetId, id);
+        String name = merging ? "#merging-" + id : person.getName();
+        jdbc.update("UPDATE person SET sheet_id = ?, name = ?, "
+                + "origin = ?, list_pos = " + NEXT_POS + " WHERE sheet_id = ? AND id = ?", to, name, sheetId, to, sheetId, id);
     }
 
     /** Swap the two people's places in their sheet's list. */

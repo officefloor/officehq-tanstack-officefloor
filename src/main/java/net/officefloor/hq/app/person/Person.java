@@ -202,6 +202,16 @@ public class Person {
         this.statedClaims = claims;
     }
 
+    /** Take on the statements of a person merged into them: the count becomes theirs plus the other's;
+     *  their last statement stays theirs (having none, it becomes the other's). */
+    public void absorbStatements(Person from) {
+        if (this.statementCount <= 0 || this.statementDate == null) {
+            this.statedTotal = from.statedTotal;
+            this.statementDate = from.statementDate;
+        }
+        this.statementCount += from.statementCount;
+    }
+
     /** Cancel their last statement: the count goes down by one and they show the one before it
      *  (null total and date: none), keeping the cancelled one's due-total for its audit line. */
     public void unstated(String total, String date) {
