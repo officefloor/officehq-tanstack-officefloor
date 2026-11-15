@@ -25,7 +25,9 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  and the sheet's today that the plan has made none for yet. Each is checked as
  *  {@link net.officefloor.hq.app.claim.AddClaim} checks a claim (its person not retired before its date,
  *  its due-by outside a closed period): a date that is refused is skipped, to be tried again next time.
- *  Each claim made is logged and recorded as CLAIM_ADDED. Refused on an archived sheet; a viewer may
+ *  Each claim made is logged and recorded as CLAIM_ADDED. A plan naming a descendant sheet makes its claims
+ *  on that sheet, for the person of the same name there (none when there is none), by that sheet's rules and
+ *  recorded in its audit. Refused on an archived sheet; a viewer may
  *  make none: for a viewer nothing is written and none are counted. */
 public class GeneratePlanClaims {
     public void generate(@PathVariable("sheetId") String sheetId,
@@ -47,25 +49,32 @@ public class GeneratePlanClaims {
         for (Plan plan : plans.list(id)) {
             Person person = people.find(id, plan.personId());
             if (person == null) continue;
+            // A plan naming a descendant sheet makes its claims there, for the person of the same name.
+            String on = plan.targetSheet() == null ? id : plan.targetSheet();
+            if (!on.equals(id)) {
+                if (sheets.isArchived(on)) continue;
+                person = people.findByName(on, person.getName());
+                if (person == null) continue;
+            }
             Set<LocalDate> done = plans.made(plan.id());
             LocalDate last = plan.end().isBefore(today) ? plan.end() : today;
             for (LocalDate date : plan.dates(last)) {
                 if (done.contains(date) || person.retiredBefore(date)) continue;
                 // The due-by is fixed now, as for a claim added on the form.
-                LocalDate dueBy = holidays.dueBy(id, date, settings.termsToday(id, person));
+                LocalDate dueBy = holidays.dueBy(on, date, settings.termsToday(on, person));
                 try {
-                    periods.requireOpen(id, dueBy.toString());
+                    periods.requireOpen(on, dueBy.toString());
                 } catch (PeriodClosedException e) {
                     continue;
                 }
-                Claim claim = claims.add(id, person.getId(), plan.amount(), date, "", null, dueBy, user);
-                if (periods.softClosedOn(id, dueBy.toString())) claims.markLateEntry(claim);
+                Claim claim = claims.add(on, person.getId(), plan.amount(), date, "", null, dueBy, user);
+                if (periods.softClosedOn(on, dueBy.toString())) claims.markLateEntry(claim);
                 plans.recordMade(plan.id(), date, claim.getId());
                 log.record(claim, user);
-                audit.record("CLAIM_ADDED sheet=" + id + " by=" + user + " person=" + person.getName()
+                audit.record("CLAIM_ADDED sheet=" + on + " by=" + user + " person=" + person.getName()
                         + " amount=" + claim.getAmount() + " date=" + claim.getDate() + claim.getAuditRef());
                 if (claim.isLateEntry()) {
-                    audit.record("LATE_ENTRY sheet=" + id + " by=" + user + " person=" + person.getName()
+                    audit.record("LATE_ENTRY sheet=" + on + " by=" + user + " person=" + person.getName()
                             + " amount=" + claim.getAmount() + " date=" + claim.getDate());
                 }
                 made++;

@@ -10,6 +10,6 @@ public class RecordPlanAdded {
         audit.record("PLAN_ADDED sheet=" + plan.sheetId() + " by=" + plan.by() + " name=" + person.getName()
                 + " amount=" + plan.amount().toPlainString() + " start=" + plan.start()
                 + (plan.day() != null ? " day=" + plan.day() : " every=" + plan.every())
-                + " end=" + plan.end());
+                + " end=" + plan.end() + (plan.targetSheet() != null ? " sheet=" + plan.targetSheet() : ""));
     }
 }

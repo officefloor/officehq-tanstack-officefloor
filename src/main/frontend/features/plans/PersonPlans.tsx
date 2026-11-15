@@ -4,7 +4,7 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { addPlan, changePlanAmount, listPlans, pausePlan, plansKey, type Plan, type PlanInput } from './api';
 import { Fig } from '../session/Fig';
 
-const EMPTY: PlanInput = { amount: '', start: '', every: '', day: '', end: '' };
+const EMPTY: PlanInput = { amount: '', start: '', every: '', day: '', end: '', sheet: '' };
 
 /** A person's plans (each its amount, start, every N days or day of the month, end, how many claims it has made so far, its next dates and whether it is paused, with pause and resume buttons, and its amount's changes with an entry that changes it)
  *  and a form that adds one; a refused add shows an error on the row and adds nothing. */
@@ -40,6 +40,7 @@ export function PersonPlans({ sheetId, user, personId }: { sheetId: string; user
                 ? <td>monthly on day <span data-testid="plan-day">{pl.day}</span></td>
                 : <td>every <span data-testid="plan-every">{pl.every}</span> days</td>}
               <td>to <span data-testid="plan-end">{pl.end}</span></td>
+              <td>{pl.targetSheet ? <>on sheet <span data-testid="plan-sheet">{pl.targetSheet}</span></> : null}</td>
               <td>made <span data-testid="plan-generated">{pl.generated}</span></td>
               <td>next <span data-testid="plan-next-dates">{(pl.nextDates ?? []).join(', ')}</span></td>
               <PlanPause sheetId={sheetId} user={user} plan={pl} />
@@ -68,11 +69,13 @@ export function PersonPlans({ sheetId, user, personId }: { sheetId: string; user
           onChange={(e) => change({ day: e.target.value })} />{' '}
         <input type="date" data-testid="plan-form-end" value={form.end}
           onChange={(e) => change({ end: e.target.value })} />{' '}
+        <input data-testid="plan-form-sheet" placeholder="On sheet (a descendant)" value={form.sheet}
+          onChange={(e) => change({ sheet: e.target.value })} />{' '}
         <button type="submit" data-testid="plan-form-submit" disabled={add.isPending}>
           Add plan
         </button>
         {add.isError && (
-          <span data-testid="plan-error">A plan needs an amount of 0.00 or more with up to two decimals, a start, either every a whole number of days (at least 1) or a day of the month (1 to 31), and an end not before the start.</span>
+          <span data-testid="plan-error">A plan needs an amount of 0.00 or more with up to two decimals, a start, either every a whole number of days (at least 1) or a day of the month (1 to 31), an end not before the start, and a sheet (if any) that is a descendant of this one.</span>
         )}
       </form>
     </div>

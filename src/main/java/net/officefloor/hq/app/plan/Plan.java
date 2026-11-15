@@ -7,10 +7,10 @@ import java.util.List;
 
 /** A person's plan: its amount (two decimals), start, every N days or else a day of the month (1 to 31),
  *  end, who added it, how many claims it has made so far, its pauses in the order they were made, and the
- *  changes of its amount, oldest first. */
+ *  changes of its amount, oldest first, and the descendant sheet its claims are made on (null for its own). */
 public record Plan(long id, String sheetId, long personId, BigDecimal amount, LocalDate start, Integer every,
         Integer day, LocalDate end, String by, int generated, List<PlanPause> pauses,
-        List<PlanChange> changes) {
+        List<PlanChange> changes, String targetSheet) {
 
     /** Whether the plan is paused now: its last pause has not been resumed. */
     public boolean paused() {
@@ -18,11 +18,11 @@ public record Plan(long id, String sheetId, long personId, BigDecimal amount, Lo
     }
 
     Plan withPauses(List<PlanPause> list) {
-        return new Plan(id, sheetId, personId, amount, start, every, day, end, by, generated, list, changes);
+        return new Plan(id, sheetId, personId, amount, start, every, day, end, by, generated, list, changes, targetSheet);
     }
 
     Plan withChanges(List<PlanChange> list) {
-        return new Plan(id, sheetId, personId, amount, start, every, day, end, by, generated, pauses, list);
+        return new Plan(id, sheetId, personId, amount, start, every, day, end, by, generated, pauses, list, targetSheet);
     }
 
     /** The plan dates up to (and including) the last date: the start then every N days, or the day of the

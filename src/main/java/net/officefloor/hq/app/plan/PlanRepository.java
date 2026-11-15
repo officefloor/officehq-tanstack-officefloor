@@ -17,12 +17,13 @@ import org.springframework.stereotype.Repository;
 public class PlanRepository {
 
     private static final String SELECT = "SELECT p.id, p.sheet_id, p.person_id, p.amount, p.start_date, p.every_days, p.month_day, "
-            + "p.end_date, p.added_by, (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS made FROM plan p ";
+            + "p.end_date, p.added_by, p.target_sheet, (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS made FROM plan p ";
 
     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount").setScale(2), rs.getDate("start_date").toLocalDate(),
             rs.getObject("every_days", Integer.class), rs.getObject("month_day", Integer.class),
-            rs.getDate("end_date").toLocalDate(), rs.getString("added_by"), rs.getInt("made"), List.of(), List.of());
+            rs.getDate("end_date").toLocalDate(), rs.getString("added_by"), rs.getInt("made"), List.of(), List.of(),
+            rs.getString("target_sheet"));
 
     private final JdbcTemplate jdbc;
 
@@ -78,8 +79,8 @@ public class PlanRepository {
         GeneratedKeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, month_day, end_date, added_by) "
-                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, month_day, end_date, added_by, target_sheet) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -89,6 +90,7 @@ public class PlanRepository {
             ps.setObject(6, plan.day(), Types.INTEGER);
             ps.setDate(7, Date.valueOf(plan.end()));
             ps.setString(8, by);
+            ps.setString(9, plan.sheet());
             return ps;
         }, key);
         return find(key.getKey().longValue());

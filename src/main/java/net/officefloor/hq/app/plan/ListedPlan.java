@@ -9,12 +9,12 @@ import java.util.List;
  *  of its amount, oldest first. */
 public record ListedPlan(long id, String sheetId, long personId, BigDecimal amount, LocalDate start, Integer every,
         Integer day, LocalDate end, String by, int generated, List<LocalDate> nextDates,
-        boolean paused, List<PlanChange> changes) {
+        boolean paused, List<PlanChange> changes, String targetSheet) {
 
     static ListedPlan of(Plan plan, LocalDate today) {
         List<LocalDate> next = plan.dates(plan.end()).stream().filter((d) -> d.isAfter(today)).limit(5).toList();
         return new ListedPlan(plan.id(), plan.sheetId(), plan.personId(), plan.amount(), plan.start(), plan.every(),
                 plan.day(), plan.end(), plan.by(), plan.generated(), next, plan.paused(),
-                plan.changes());
+                plan.changes(), plan.targetSheet());
     }
 }

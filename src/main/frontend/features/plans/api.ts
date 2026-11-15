@@ -7,9 +7,9 @@ import { sheetKey } from '../sheet/api';
  *  and the changes of its amount, oldest first. */
 export type PlanChange = { changedOn: string; amount: string };
 
-export type Plan = { id: number; sheetId: string; personId: number; amount: string; start: string; every: number | null; day: number | null; end: string; by: string; generated: number; nextDates?: string[]; paused?: boolean; changes?: PlanChange[] };
+export type Plan = { id: number; sheetId: string; personId: number; amount: string; start: string; every: number | null; day: number | null; end: string; by: string; generated: number; nextDates?: string[]; paused?: boolean; changes?: PlanChange[]; targetSheet?: string | null };
 
-export type PlanInput = { amount: string; start: string; every: string; day: string; end: string };
+export type PlanInput = { amount: string; start: string; every: string; day: string; end: string; sheet: string };
 
 export type GenerateResult = { made: number };
 
@@ -23,7 +23,8 @@ export function listPlans(sheetId: string): Promise<Plan[]> {
 }
 
 /** Give the person a plan; refused (rejects) for an amount the claim form would refuse, an interval that is
- *  not a whole number of at least 1, a day of the month not 1 to 31 (or both or neither given), or an end before the start. */
+ *  not a whole number of at least 1, a day of the month not 1 to 31 (or both or neither given), an end before the start, or a sheet that is
+ *  not a descendant of this one. A plan naming a sheet makes its claims there, for the person of the same name. */
 export function addPlan(sheetId: string, by: string, personId: number, input: PlanInput): Promise<Plan> {
   return postJson<Plan>(`${sheetBase(sheetId)}/people/${personId}/plans?by=${encodeURIComponent(by)}`, input);
 }
