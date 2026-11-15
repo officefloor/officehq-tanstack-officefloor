@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import { useProofThreshold, type DatedOn } from '../settings/api';
-import { addClaim, addProof, claimsKey, deferClaim, redateClaim, dueBy, isOverdue, moveClaim, reassignClaim, splitClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
+import { addClaim, addProof, claimsKey, deferClaim, redateClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
 
@@ -23,7 +23,10 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  above the sheet's clerk limit makes it PENDING, which a steward other than its opener approves,
  *  or any steward rejects with a reason typed beside it), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
  *  charge) the number of the SETTLED claim it corrects. Only a DRAFT can be edited:
- *  editing any other claim is refused with an error on the claim. A role the permission matrix allows (by default a steward) can move a DRAFT, OPEN or
+ *  editing any other claim, or one in a closed period, is refused with an error on the claim. Opening a
+ *  claim's editor locks it for other users until it is saved or cancelled or the sheet's today changes:
+ *  another user's edit button on it is refused likewise, and the editor of a claim the user holds is
+ *  open again when the sheet is re-loaded. A role the permission matrix allows (by default a steward) can move a DRAFT, OPEN or
  *  PENDING claim to another person picked beside it (any other refused with an error on the claim), and
  *  re-settle a SETTLED one (anyone else, any other status or a claim in a closed period refused likewise).
  *  An OPEN claim can be deferred until a date typed beside it, after the sheet's today (any other claim, date,
@@ -50,8 +53,9 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
   const [form, setForm] = useState<ClaimInput>(EMPTY);
   const [editing, setEditing] = useState<number | null>(null);
-  // The claim whose edit was refused (it is not a DRAFT); cleared by the next action on any claim here.
-  const [editRefused, setEditRefused] = useState<number | null>(null);
+  // The claim whose edit was refused (not a DRAFT, in a closed period, or locked by another user), and
+  // why; cleared by the next action on any claim here.
+  const [editRefused, setEditRefused] = useState<{ id: number; message: string } | null>(null);
   // The rejection reason typed for each claim.
   const [reasons, setReasons] = useState<Record<number, string>>({});
 
@@ -64,6 +68,34 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
   });
+
+  // Opening a claim's editor takes its lock; a refusal leaves the editor open (a save is refused too)
+  // with the error on the claim, until it is cancelled.
+  const locking = useMutation({
+    mutationFn: (id: number) => lockClaim(sheetId, user, id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
+  const unlocking = useMutation({
+    mutationFn: (id: number) => unlockClaim(sheetId, user, id),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
+
+  // The claim of this person whose lock the user holds: its editor is open, also after a re-load,
+  // and closes when the lock goes (the sheet's today changed).
+  const held = claims.find((c) => c.lockedBy === user && c.status === 'DRAFT');
+  const heldWas = useRef<number | null>(null);
+  useEffect(() => {
+    const was = heldWas.current;
+    heldWas.current = held?.id ?? null;
+    if (held && editing === null) {
+      setForm({ amount: held.amount, date: held.date, note: held.note, corrects: held.corrects ?? '' });
+      setEditing(held.id);
+    } else if (!held && was !== null && editing === was && !locking.isPending) {
+      setForm(EMPTY);
+      setEditing(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [held?.id]);
 
   const submitOnce = useSubmitOnce();
   const actOnce = useSubmitOnce();
@@ -100,6 +132,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       proof.reset();
       division.reset();
       setEditRefused(null);
+      locking.reset();
       return deferral.mutateAsync({ id, until });
     });
   };
@@ -122,6 +155,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       proof.reset();
       division.reset();
       setEditRefused(null);
+      locking.reset();
       return redating.mutateAsync({ id, date });
     });
   };
@@ -147,6 +181,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       proof.reset();
       division.reset();
       setEditRefused(null);
+      locking.reset();
       return division.mutateAsync({ id, amount });
     });
   };
@@ -165,6 +200,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       proof.reset();
       division.reset();
       setEditRefused(null);
+      locking.reset();
       return proof.mutateAsync(id);
     });
   };
@@ -192,6 +228,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       proof.reset();
       division.reset();
       setEditRefused(null);
+      locking.reset();
       return reassign.mutateAsync({ id, to });
     });
   };
@@ -205,6 +242,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       proof.reset();
       division.reset();
       setEditRefused(null);
+      locking.reset();
       return move.mutateAsync({ id, action });
     });
   };
@@ -221,20 +259,34 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     redating.reset();
     proof.reset();
     division.reset();
+    locking.reset();
     if (c.status !== 'DRAFT') {
-      setEditRefused(c.id);
+      setEditRefused({ id: c.id, message: `A ${c.status} claim cannot be edited. To change it, void it and add a new one.` });
+      return;
+    }
+    if (periodOf(periods.data, c.date)?.closed) {
+      setEditRefused({ id: c.id, message: 'A claim dated inside a closed period cannot be edited.' });
+      return;
+    }
+    if (c.lockedBy !== null && c.lockedBy !== undefined && c.lockedBy !== user) {
+      setEditRefused({ id: c.id, message: `${c.lockedBy} is editing this claim; it cannot be edited until they save or cancel.` });
       return;
     }
     setEditRefused(null);
     setForm({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
     setEditing(c.id);
     save.reset();
+    locking.mutate(c.id);
   };
 
   const cancel = () => {
+    const id = editing;
     setForm(EMPTY);
     setEditing(null);
     save.reset();
+    locking.reset();
+    setEditRefused(null);
+    if (id !== null) unlocking.mutate(id);
   };
 
   return (
@@ -257,7 +309,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
           onChange={(e) => change({ note: e.target.value })} />{' '}
         <input data-testid="claim-form-corrects" placeholder="Corrects no." value={form.corrects}
           onChange={(e) => change({ corrects: e.target.value })} />{' '}
-        <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
+        <button type="submit" data-testid="claim-form-submit" disabled={save.isPending || locking.isPending}>
           {editing === null ? 'Add claim' : 'Save claim'}
         </button>
         {save.isError && (
@@ -265,6 +317,10 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
             ? 'A claim dated inside a closed period cannot be added or edited.'
             : save.error instanceof HttpError && save.error.status === 409
             ? 'Only a DRAFT claim can be edited.'
+            : save.error instanceof HttpError && save.error.status === 412
+            ? 'Another user is editing this claim; it cannot be saved until they save or cancel.'
+            : save.error instanceof HttpError && save.error.status === 403
+            ? 'Your role may not change anything on this sheet.'
             : 'A claim needs an amount with up to two decimals; a negative one (a correction) must name, by number, a SETTLED claim of this person.'}</span>
         )}
       </form>
@@ -371,10 +427,17 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     Cancel
                   </button>
                 )}
-                {editRefused === c.id && (
-                  <span data-testid="claim-error">
-                    {`A ${c.status} claim cannot be edited. To change it, void it and add a new one.`}
-                  </span>
+                {editRefused?.id === c.id && (
+                  <span data-testid="claim-error">{editRefused.message}</span>
+                )}
+                {locking.isError && locking.variables === c.id && (
+                  <span data-testid="claim-error">{locking.error instanceof HttpError && locking.error.status === 412
+                    ? 'Another user is editing this claim; it cannot be edited until they save or cancel.'
+                    : locking.error instanceof HttpError && locking.error.status === 423
+                    ? 'A claim dated inside a closed period cannot be edited.'
+                    : locking.error instanceof HttpError && locking.error.status === 409
+                    ? `A ${c.status} claim cannot be edited. To change it, void it and add a new one.`
+                    : 'Your role may not edit a claim.'}</span>
                 )}
                 {move.isError && move.variables?.id === c.id && (
                   <span data-testid="claim-error">{move.error instanceof HttpError && move.error.status === 423

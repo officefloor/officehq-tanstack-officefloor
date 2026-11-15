@@ -31,6 +31,7 @@ public class Claim {
     private int proofs;
     private String splitFrom;
     private boolean reversal;
+    private String lockedBy;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, String number, String settledDue, String openedBy) {
@@ -119,6 +120,10 @@ public class Claim {
     /** The number of the claim it was split from (none: not split off a claim). */
     public String getSplitFrom() { return splitFrom; }
     public void setSplitFrom(String splitFrom) { this.splitFrom = splitFrom; }
+
+    /** The user whose open editor locks it for everyone else (none: unlocked). */
+    public String getLockedBy() { return lockedBy; }
+    public void setLockedBy(String lockedBy) { this.lockedBy = lockedBy; }
 
     public boolean isStated() { return stated; }
     public String getStatedDue() { return statedDue; }

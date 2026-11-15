@@ -38,6 +38,8 @@ export type Claim = {
   log: string[]; deferredUntil: string | null; deferred: boolean; proofs: number;
   /** The number of the claim it was split from (null: not split off a claim). */
   splitFrom: string | null;
+  /** The user whose open editor locks it for everyone else (null: unlocked). */
+  lockedBy: string | null;
 };
 /** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects. */
 export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
@@ -64,6 +66,18 @@ export function addClaim(sheetId: string, by: string, personId: number, input: C
 /** Edit a claim; refused (rejects) like an add. */
 export function updateClaim(sheetId: string, by: string, id: number, input: ClaimInput): Promise<Claim> {
   return putJson<Claim>(`${sheetBase(sheetId)}/claims/${id}?by=${encodeURIComponent(by)}`, input);
+}
+
+/** Open a claim's editor, locking it for other users until it is saved or cancelled or the sheet's
+ *  today changes (and releasing any other claim of its person the user held); refused (rejects) with
+ *  409 when it is not a DRAFT, 423 when dated in a closed period, 412 while another user holds it. */
+export function lockClaim(sheetId: string, by: string, id: number): Promise<Claim> {
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/lock?by=${encodeURIComponent(by)}`, {});
+}
+
+/** Cancel a claim's editor, releasing its lock when the user holds it. */
+export function unlockClaim(sheetId: string, by: string, id: number): Promise<Claim> {
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/unlock?by=${encodeURIComponent(by)}`, {});
 }
 
 /** Change a claim's status; refused (rejects) when its status does not allow the change, when the

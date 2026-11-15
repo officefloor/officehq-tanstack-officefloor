@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, "
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, "
             // Deferred now: OPEN and deferred until a date after the sheet's today.
             + "(status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > "
             + "(SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred, "
@@ -33,10 +33,11 @@ public class ClaimRepository {
                     : rs.getBigDecimal("stated_due").setScale(2).toPlainString()), rs.getString("corrects"),
             rs.getObject("round_date", LocalDate.class).toString(),
             rs.getObject("due_by", LocalDate.class).toString(),
-            rs.getObject("deferred_until", LocalDate.class), rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"));
+            rs.getObject("deferred_until", LocalDate.class), rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"), rs.getString("locked_by"));
 
     private static Claim withCorrects(Claim claim, String corrects, String roundDate, String dueBy,
-            LocalDate deferredUntil, boolean deferred, int proofs, String splitFrom) {
+            LocalDate deferredUntil, boolean deferred, int proofs, String splitFrom, String lockedBy) {
+        claim.setLockedBy(lockedBy);
         claim.setSplitFrom(splitFrom);
         claim.setProofs(proofs);
         claim.setCorrects(corrects);
@@ -177,5 +178,27 @@ public class ClaimRepository {
                 + "SET last_number = last_number + 1 WHERE sheet_id = ? AND period_key = ?)",
                 Long.class, sheetId, key);
         return (period == null ? "X" : period) + "-" + n;
+    }
+
+    /** Lock a claim for the user opening its editor, releasing any other claim of the same person that
+     *  user held. */
+    public void lock(Claim claim, String user) {
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND person_id = ? AND locked_by = ? AND id <> ?",
+                claim.getSheetId(), claim.getPersonId(), user, claim.getId());
+        jdbc.update("UPDATE claim SET locked_by = ? WHERE sheet_id = ? AND id = ?", user, claim.getSheetId(), claim.getId());
+        claim.setLockedBy(user);
+    }
+
+    /** Release a claim's lock when {@code user} holds it (null: whoever holds it). */
+    public void unlock(Claim claim, String user) {
+        if (user == null || user.equals(claim.getLockedBy())) {
+            jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND id = ?", claim.getSheetId(), claim.getId());
+            claim.setLockedBy(null);
+        }
+    }
+
+    /** Release every claim lock on the sheet. */
+    public void unlockAll(String sheetId) {
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND locked_by IS NOT NULL", sheetId);
     }
 }
