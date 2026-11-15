@@ -19,7 +19,7 @@ import org.springframework.stereotype.Repository;
 /**
  * Copies a sheet into a new, never used one. The clone gets the sheet's today, settings, roles, rates,
  * holidays, void reasons, templates and tags, its people (with their grades, terms, contacts, aliases,
- * holds, retirements and patrons), pools with their members, periods (all open, their fixed totals
+ * holds, retirements and patrons), pools with their members, crews with their members, periods (all open, their fixed totals
  * dropped) and claims (with their status, frozen figures, dates, notes, tags, logs and comments) and
  * the history the sheet keeps of them. Statements are not copied: every statement count starts at 0
  * and no figure a statement bound is kept. Watches, delegations, claim locks and settle batches are not
@@ -66,6 +66,9 @@ public class SheetCloner {
         members.put("person_id", people);
         members.put("member_pool_id", pools);
         copy("pool_member", from, to, members, none);
+
+        Map<Long, Long> crews = copy("crew", from, to, Map.of("lead_id", people), none);
+        copy("crew_member", from, to, Map.of("crew_id", crews, "person_id", people), none);
 
         Map<String, Object> open = new HashMap<>();
         open.put("closed", false);

@@ -485,7 +485,7 @@ public class PersonRepository {
      *  from's patrons are added to into's (not into themselves, no repeats); anyone naming from as
      *  patron names into instead (no repeats); into's statement count becomes theirs plus from's, their
      *  last statement staying theirs (having none, becoming from's), from's statements kept before
-     *  into's; from's holds, watchers, grades and the person themselves are dropped; from's plans become into's. Their claims, pool memberships and period totals must have
+     *  into's; from's holds, watchers, grades and the person themselves are dropped; from's plans and crews become into's. Their claims, pool memberships and period totals must have
      *  moved first. */
     public void merge(Person from, Person into, String user) {
         String sheetId = into.getSheetId();
@@ -526,13 +526,21 @@ public class PersonRepository {
         }
         // from's plans go on making claims, now for into.
         jdbc.update("UPDATE plan SET person_id = ? WHERE sheet_id = ? AND person_id = ?", into.getId(), sheetId, from.getId());
+        // from's crews become into's: crews from leads into leads; from's memberships move to into, unless
+        // into is in that crew already or leads it.
+        jdbc.update("UPDATE crew SET lead_id = ? WHERE sheet_id = ? AND lead_id = ?", into.getId(), sheetId, from.getId());
+        jdbc.update("DELETE FROM crew_member WHERE sheet_id = ? AND person_id = ? AND crew_id IN "
+                + "(SELECT m.crew_id FROM crew_member m WHERE m.person_id = ?)", sheetId, from.getId(), into.getId());
+        jdbc.update("UPDATE crew_member SET person_id = ? WHERE sheet_id = ? AND person_id = ?", into.getId(), sheetId, from.getId());
+        jdbc.update("DELETE FROM crew_member WHERE sheet_id = ? AND person_id = ? AND crew_id IN "
+                + "(SELECT c.id FROM crew c WHERE c.lead_id = ?)", sheetId, into.getId(), into.getId());
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, from.getId());
         withAliases(sheetId, List.of(into));
     }
 
     /** Move the person to the sheet {@code to} with their grades (and grade history) and aliases, their
      *  statements dropped (the count back to 0) and their plans going with them; their holds, watchers, patron links (either way), pool
-     *  memberships and closed periods' fixed totals are dropped; they keep the sheet they came from as their
+     *  and crew memberships (and crews they lead) and closed periods' fixed totals are dropped; they keep the sheet they came from as their
      *  origin. When {@code merging} (they are to be merged into someone there straight after) they keep
      *  their statements and arrive under a stand-in name, as theirs is taken there. Their claims must
      *  have moved first. */
@@ -540,9 +548,13 @@ public class PersonRepository {
         String sheetId = person.getSheetId();
         long id = person.getId();
         jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, id, id);
-        for (String table : List.of("person_hold", "person_watch", "pool_member")) {
+        for (String table : List.of("person_hold", "person_watch", "pool_member", "crew_member")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         }
+        // A crew they lead goes with its memberships.
+        jdbc.update("DELETE FROM crew_member WHERE sheet_id = ? AND crew_id IN (SELECT c.id FROM crew c WHERE c.lead_id = ?)",
+                sheetId, id);
+        jdbc.update("DELETE FROM crew WHERE sheet_id = ? AND lead_id = ?", sheetId, id);
         if (merging) {
             jdbc.update("UPDATE person_statement SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, sheetId, id);
         } else {
