@@ -9,7 +9,8 @@ import { sheetKey } from '../sheet/api';
  *  (null: no bound); a member that is not `current` (its dates leave out the sheet's today) is left out of
  *  the total share and has no cut (""). `periodCuts`: by period name (by from-date), for every period whose
  *  to-date is on or before the sheet's today, the member's cut as it stood at the end of it — the pool, its
- *  members, the pot and the holds as they were then, with that day as the sheet's today ("" when none). */
+ *  members, the pot and the holds as they were then, with that day as the sheet's today ("" when none);
+ *  and for every closed or soft-closed period (whatever its to-date), the cut fixed when it was closed. */
 export type PoolMember = { personId: number | null; poolId: number | null; name: string; share: string; retired: boolean;
   from: string | null; to: string | null; current: boolean; cut: string; periodCuts: Record<string, string> };
 

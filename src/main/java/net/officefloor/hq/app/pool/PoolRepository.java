@@ -36,15 +36,26 @@ public class PoolRepository {
      *  A pool that is a member of none cuts the sheet's pot; one that is a member of another cuts its cut
      *  there (none when that pool has no cuts). After them come the sheet's crews, each a pool of its own
      *  (see {@link #crewPools}). Each member carries their cut at the end of every period whose to-date is
-     *  on or before the sheet's today (see {@link #asOf}). */
+     *  on or before the sheet's today (see {@link #asOf}), and of every closed or soft-closed period: for one
+     *  of those, the cut fixed when it was closed (see {@link #freeze}; "" for a member added since). */
     public List<Pool> list(String sheetId) {
         List<Pool> pools = asOf(sheetId, null);
         Map<String, Map<String, String>> history = new HashMap<>();
         Map<String, LocalDate> periods = new LinkedHashMap<>();
-        jdbc.query("SELECT p.name, p.to_date FROM period p JOIN sheet s ON s.id = p.sheet_id "
-                + "WHERE p.sheet_id = ? AND p.to_date <= s.today ORDER BY p.from_date, p.id",
-                rs -> { periods.put(rs.getString("name"), rs.getDate("to_date").toLocalDate()); }, sheetId);
+        Set<String> fixed = new HashSet<>();
+        jdbc.query("SELECT p.name, p.to_date, p.closed OR p.soft_closed AS fixed FROM period p "
+                + "JOIN sheet s ON s.id = p.sheet_id WHERE p.sheet_id = ? "
+                + "AND (p.to_date <= s.today OR p.closed OR p.soft_closed) ORDER BY p.from_date, p.id", rs -> {
+                    periods.put(rs.getString("name"), rs.getDate("to_date").toLocalDate());
+                    if (rs.getBoolean("fixed")) fixed.add(rs.getString("name"));
+                }, sheetId);
+        jdbc.query("SELECT p.name, c.member_key, c.cut FROM period_pool_cut c JOIN period p ON p.id = c.period_id "
+                + "WHERE p.sheet_id = ?", rs -> {
+                    history.computeIfAbsent(rs.getString("member_key"), k -> new HashMap<>())
+                            .put(rs.getString("name"), rs.getString("cut"));
+                }, sheetId);
         for (Map.Entry<String, LocalDate> period : periods.entrySet()) {
+            if (fixed.contains(period.getKey())) continue;
             for (Pool pool : asOf(sheetId, period.getValue())) {
                 for (PoolMember m : pool.members()) {
                     history.computeIfAbsent(key(pool, m), k -> new HashMap<>()).put(period.getKey(), m.cut());
@@ -64,6 +75,23 @@ public class PoolRepository {
                     pool.parentId(), pool.crew()));
         }
         return result;
+    }
+
+    /** Fix every pool member's cut for the period as it now stands, replacing any fixed before. */
+    public void freeze(String sheetId, String period) {
+        thaw(sheetId, period);
+        for (Pool pool : asOf(sheetId, null)) {
+            for (PoolMember m : pool.members()) {
+                jdbc.update("INSERT INTO period_pool_cut (period_id, member_key, cut) SELECT id, ?, ? FROM period "
+                        + "WHERE sheet_id = ? AND name = ?", key(pool, m), m.cut(), sheetId, period);
+            }
+        }
+    }
+
+    /** Drop the period's fixed cuts: they are live again. */
+    public void thaw(String sheetId, String period) {
+        jdbc.update("DELETE FROM period_pool_cut WHERE period_id IN "
+                + "(SELECT id FROM period WHERE sheet_id = ? AND name = ?)", sheetId, period);
     }
 
     /** The member's place: the pool and the person or pool that is the member. */

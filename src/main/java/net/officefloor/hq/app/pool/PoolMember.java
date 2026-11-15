@@ -9,7 +9,8 @@ import java.util.Map;
  *  membership runs (null: no bound); {@code current} when they include the sheet's today — a member that
  *  is not is left out of the total share and gets no cut (""). {@code periodCuts}: for every period whose
  *  to-date is on or before the sheet's today (by from-date), the member's cut as it stood at the end of it
- *  ("" when there was none). */
+ *  ("" when there was none); for a closed or soft-closed period (shown whatever its to-date), the cut fixed
+ *  when it was closed. */
 public record PoolMember(Long personId, Long poolId, String name, String share, boolean retired, String from,
         String to, boolean current, String cut, Map<String, String> periodCuts) {
 

@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.pool.PoolRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -23,9 +24,11 @@ public class PeriodRepository {
     private static final String COLUMNS = "SELECT sheet_id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap, locked FROM period ";
 
     private final JdbcTemplate jdbc;
+    private final PoolRepository pools;
 
-    public PeriodRepository(JdbcTemplate jdbc) {
+    public PeriodRepository(JdbcTemplate jdbc, PoolRepository pools) {
         this.jdbc = jdbc;
+        this.pools = pools;
     }
 
     /** The sheet's periods, by from-date. */
@@ -110,7 +113,8 @@ public class PeriodRepository {
     }
 
     /** Close the period, fixing its due-total and each person's due-total and carried figure for it (afresh
-     *  when it was soft-closed); soft: soft-close it instead, claims in it can still be added and changed. */
+     *  when it was soft-closed), and every pool member's cut for it as it now stands; soft: soft-close it
+     *  instead, claims in it can still be added and changed. */
     public Period close(Period period, BigDecimal total, Map<Long, BigDecimal> personTotals,
             Map<Long, BigDecimal> personCarried, String user, boolean soft) {
         jdbc.update("DELETE FROM period_person_total WHERE period_id IN "
@@ -120,6 +124,7 @@ public class PeriodRepository {
                     + "FROM period WHERE sheet_id = ? AND name = ?", e.getKey(), e.getValue(),
                     personCarried.getOrDefault(e.getKey(), BigDecimal.ZERO.setScale(2)), period.sheetId(), period.name());
         }
+        pools.freeze(period.sheetId(), period.name());
         jdbc.update("UPDATE period SET closed = ?, soft_closed = ?, closed_total = ?, closed_by = ?, "
                 + "closed_at = CURRENT_TIMESTAMP WHERE sheet_id = ? AND name = ?",
                 !soft, soft, total, user, period.sheetId(), period.name());
@@ -133,8 +138,9 @@ public class PeriodRepository {
                 period.locked());
     }
 
-    /** Reopen the closed or soft-closed period: its due-total is live again. */
+    /** Reopen the closed or soft-closed period: its due-total and pool cuts are live again. */
     public Period reopen(Period period) {
+        pools.thaw(period.sheetId(), period.name());
         jdbc.update("DELETE FROM period_person_total WHERE period_id IN "
                 + "(SELECT id FROM period WHERE sheet_id = ? AND name = ?)", period.sheetId(), period.name());
         jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL, closed_by = NULL, "
