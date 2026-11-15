@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, terms, contact, tags, origin, arrived_on, flag_reason, flag_until";
+    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, terms, contact, tags, origin, arrived_on, flag_reason, flag_until, approver";
 
     private static final RowMapper<Person> ROW = (rs, n) -> {
         LocalDate stated = rs.getObject("statement_date", LocalDate.class);
@@ -31,6 +31,7 @@ public class PersonRepository {
         person.setArrivedOn(arrived == null ? null : arrived.toString());
         LocalDate flagUntil = rs.getObject("flag_until", LocalDate.class);
         person.setFlag(rs.getString("flag_reason"), flagUntil == null ? null : flagUntil.toString());
+        person.setApprover(rs.getString("approver"));
         return person;
     };
 
@@ -502,6 +503,12 @@ public class PersonRepository {
         jdbc.update("INSERT INTO person_retired_history (sheet_id, person_id, retired_from, on_date) "
                 + "VALUES (?, ?, NULL, (SELECT today FROM sheet WHERE id = ?))", person.getSheetId(), person.getId(),
                 person.getSheetId());
+    }
+
+    /** Save the person's approver (not an edit: the version stays). */
+    public void updateApprover(Person person) {
+        jdbc.update("UPDATE person SET approver = ? WHERE sheet_id = ? AND id = ?",
+                person.getApprover(), person.getSheetId(), person.getId());
     }
 
     /** Save the person's flag (not an edit: the version stays). */

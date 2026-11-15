@@ -22,8 +22,8 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  it is stated,
  *  the period its due-by falls in (none when no period contains it), its status log (oldest first), who opened it, and buttons that
  *  change its status (the user who opened a claim cannot settle it; a clerk settling one whose due is
- *  above the sheet's clerk limit makes it PENDING, which a steward other than its opener approves,
- *  or any steward rejects with a reason typed beside it; opening one whose due is above the review threshold in
+ *  above the sheet's clerk limit makes it PENDING, which a steward (or the person's approver) other than its opener approves,
+ *  or any steward (or the person's approver) rejects with a reason typed beside it; opening one whose due is above the review threshold in
  *  force on its date makes it REVIEW, unnumbered and counted nowhere, which only a steward's review button
  *  opens), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
  *  charge) the number of the SETTLED claim it corrects. A DRAFT can be deleted with a button beside it (any other
@@ -938,13 +938,13 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     : c.status === 'OPEN' && move.variables.action === 'settle'
                     ? 'The user who opened a claim cannot settle it, nor can a role the permissions do not allow to settle.'
                     : c.status === 'PENDING' && move.variables.action === 'approve'
-                    ? 'Only a steward who did not open a claim can approve it.'
+                    ? 'Only a steward or the person\'s approver who did not open or last edit a claim can approve it.'
                     : c.status === 'REVIEW' && move.variables.action === 'review'
                     ? 'Only a steward can review a claim.'
                     : c.status === 'REVIEW' && move.variables.action === 'open'
                     ? 'A claim in REVIEW is opened by a steward reviewing it.'
                     : c.status === 'PENDING' && move.variables.action === 'reject'
-                    ? 'Only a steward can reject a claim.'
+                    ? 'Only a steward or the person\'s approver can reject a claim.'
                     : c.status === 'SETTLED' && move.variables.action === 'resettle'
                     ? 'Only a steward can re-settle a claim.'
                     : c.status === 'DELETED' && move.variables.action === 'restore'

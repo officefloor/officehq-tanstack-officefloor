@@ -24,7 +24,7 @@ import { QuickAdd } from './QuickAdd';
 import { ColumnChooser, useColumns } from './Columns';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { SortBy, sortPeople, useSortBy } from './SortBy';
-import { GRADES, addAlias, addPatron, addPerson, cancelStatement, flagPerson, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, shownName, takeStatement, transferPerson, undoTransfer, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+import { GRADES, addAlias, addPatron, addPerson, cancelStatement, flagPerson, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, setApprover, shownName, takeStatement, transferPerson, undoTransfer, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 import { Fig } from '../session/Fig';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFrom: '', contact: '', tags: '' };
@@ -36,7 +36,8 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', ter
  *  their statements (a button that takes one, now or as of the date typed beside it, a button that cancels the last, the count, the last one's due-total and date), whether
  *  they are retired and from when (with a date and a button that retires them, a button that unretires them, and their past retirements, each `<from> to <to>`), their snapshot lines (one per SNAPSHOT written for them, oldest first, each `<the day being left> <due-total>`), their statement lines (one per statement still standing, oldest first, each `<statement date> <due-total>`), whether they have
  *  any hold, their flag's reason while it is in force (with a reason, an until-date and a button that
- *  flags them; only a steward may), their holds (each from a date to an optional date, with dates and a button that adds one;
+ *  flags them; only a steward may), their approver (a user who may approve or reject their PENDING claims as
+ *  a steward may, with an entry and a button that sets it), their holds (each from a date to an optional date, with dates and a button that adds one;
  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
  *  patrons (each `<name> <share>`, sorted by name (see `patronShares`), with a picker that names one more), their plans (see `PersonPlans`), their aliases (sorted as names are
  *  compared, with an entry and a button that adds one) and backing (see `backing`), and
@@ -79,6 +80,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   // The hold dates typed on each person's row (blank from: the sheet's today; blank to: open-ended).
   const [holdDates, setHoldDates] = useState<Record<number, { from: string; to: string }>>({});
   // The flag reason and until-date typed on each person's row (blank until: the sheet's today).
+  // The approver typed on each person's row (blank: none).
+  const [approverInputs, setApproverInputs] = useState<Record<number, string>>({});
   const [flagInputs, setFlagInputs] = useState<Record<number, { reason: string; until: string }>>({});
   // The patron picked on each person's row (blank: none picked).
   const [patronPicks, setPatronPicks] = useState<Record<number, string>>({});
@@ -200,6 +203,12 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
   });
 
+  // The person whose last approver set was refused; cleared by the next action on the row.
+  const approving = useMutation({
+    mutationFn: (v: { id: number; user: string }) => setApprover(sheetId, user, v.id, v.user),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+  });
+
   // The person whose last patron added was refused; cleared by the next action on the row.
   const patronage = useMutation({
     mutationFn: (v: { id: number; patronId: number }) => addPatron(sheetId, user, v.id, v.patronId),
@@ -290,6 +299,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     unretirement.reset();
     holding.reset();
     flagging.reset();
+    approving.reset();
     patronage.reset();
     aliasing.reset();
     merging.reset();
@@ -374,6 +384,14 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const changeFlag = (id: number, patch: Partial<{ reason: string; until: string }>) => {
     setFlagInputs((d) => ({ ...d, [id]: { reason: '', until: '', ...d[id], ...patch } }));
     flagging.reset();
+  };
+
+  const approve = (id: number) => {
+    const approver = approverInputs[id] ?? '';
+    stateOnce(() => {
+      resetRowActions();
+      return approving.mutateAsync({ id, user: approver });
+    });
   };
 
   const patronize = (id: number) => {
@@ -675,6 +693,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   {flagging.isError && flagging.variables?.id === p.id && (
                     <span data-testid="person-error">The person could not be flagged: only a steward can, with a reason, until a date.</span>
                   )}
+                  {approving.isError && approving.variables?.id === p.id && (
+                    <span data-testid="person-error">The approver could not be set: it must be a user name.</span>
+                  )}
                   {aliasing.isError && aliasing.variables?.id === p.id && (
                     <span data-testid="person-error">The alias could not be added: it needs to be given, and not be a name or alias already in use.</span>
                   )}
@@ -752,6 +773,18 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   <button type="button" data-testid="person-flag" disabled={flagging.isPending}
                     onClick={() => flag(p.id)}>
                     Flag
+                  </button>
+                </td>
+                <td>
+                  Approver <span data-testid="person-approver">{p.approver ?? ''}</span>{' '}
+                  <input data-testid="person-approver-input" value={approverInputs[p.id] ?? ''} placeholder="user"
+                    onChange={(e) => {
+                      setApproverInputs((d) => ({ ...d, [p.id]: e.target.value }));
+                      approving.reset();
+                    }} />{' '}
+                  <button type="button" data-testid="person-approver-save" disabled={approving.isPending}
+                    onClick={() => approve(p.id)}>
+                    Set approver
                   </button>
                 </td>
                 <td>

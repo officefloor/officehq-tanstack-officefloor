@@ -42,6 +42,8 @@ export type Person = {
   /** Their flag's reason while it is in force (the sheet's today on or before its until-date; null:
    *  none): only a steward may open their claims then. */
   flagShown: string | null;
+  /** The user who may approve or reject their PENDING claims as a steward may (null: none). */
+  approver: string | null;
   /** Their own terms in whole days in force on the sheet's today (null: none): a claim's due-by goes by
    *  those in force on its date before their grade's or the sheet's. */
   terms: number | null;
@@ -161,6 +163,12 @@ export function holdPerson(sheetId: string, by: string, id: number, from: string
  *  flag before; refused (rejects) for anyone else, a blank reason, or an until that is not a date. */
 export function flagPerson(sheetId: string, by: string, id: number, reason: string, until: string): Promise<Person> {
   return postJson<Person>(`${base(sheetId)}/${id}/flag?by=${encodeURIComponent(by)}`, { reason, until });
+}
+
+/** Name the user (blank: none) who may approve or reject the person's PENDING claims as a steward
+ *  may, replacing any before. */
+export function setApprover(sheetId: string, by: string, id: number, user: string): Promise<Person> {
+  return postJson<Person>(`${base(sheetId)}/${id}/approver?by=${encodeURIComponent(by)}`, { user });
 }
 
 /** Name another person on the sheet as one of the person's patrons; refused (rejects) for the

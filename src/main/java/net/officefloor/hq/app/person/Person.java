@@ -304,4 +304,9 @@ public class Person {
     }
     /** The reason their flag shows while it is in force (null: none). */
     public String getFlagShown() { return isFlagged() ? flagReason : null; }
+
+    /** The user who may approve or reject their PENDING claims as a steward may (null: none). */
+    private String approver;
+    public String getApprover() { return approver; }
+    public void setApprover(String approver) { this.approver = approver; }
 }
