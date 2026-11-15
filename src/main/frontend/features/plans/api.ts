@@ -2,8 +2,9 @@ import { getJson, postJson } from '../../api/http';
 import { sheetKey } from '../sheet/api';
 
 /** A person's plan: an amount, a start date, every N days or else a day of the month (1 to 31), an end
- *  date, and how many claims it has made so far. */
-export type Plan = { id: number; sheetId: string; personId: number; amount: string; start: string; every: number | null; day: number | null; end: string; by: string; generated: number };
+ *  date, how many claims it has made so far and (when listed) its next dates: the first five plan dates after
+ *  the sheet's today and on or before the end. */
+export type Plan = { id: number; sheetId: string; personId: number; amount: string; start: string; every: number | null; day: number | null; end: string; by: string; generated: number; nextDates?: string[] };
 
 export type PlanInput = { amount: string; start: string; every: string; day: string; end: string };
 

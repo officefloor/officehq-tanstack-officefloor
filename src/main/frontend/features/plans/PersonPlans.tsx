@@ -5,7 +5,7 @@ import { addPlan, listPlans, plansKey, type PlanInput } from './api';
 
 const EMPTY: PlanInput = { amount: '', start: '', every: '', day: '', end: '' };
 
-/** A person's plans (each its amount, start, every N days or day of the month, end and how many claims it has made so far)
+/** A person's plans (each its amount, start, every N days or day of the month, end, how many claims it has made so far and its next dates)
  *  and a form that adds one; a refused add shows an error on the row and adds nothing. */
 export function PersonPlans({ sheetId, user, personId }: { sheetId: string; user: string; personId: number }) {
   const queryClient = useQueryClient();
@@ -40,6 +40,7 @@ export function PersonPlans({ sheetId, user, personId }: { sheetId: string; user
                 : <td>every <span data-testid="plan-every">{pl.every}</span> days</td>}
               <td>to <span data-testid="plan-end">{pl.end}</span></td>
               <td>made <span data-testid="plan-generated">{pl.generated}</span></td>
+              <td>next <span data-testid="plan-next-dates">{(pl.nextDates ?? []).join(', ')}</span></td>
             </tr>
           ))}
         </tbody>
