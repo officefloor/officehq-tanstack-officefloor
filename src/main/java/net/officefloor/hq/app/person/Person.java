@@ -146,6 +146,10 @@ public class Person {
     public void setPatronIds(java.util.List<Long> patronIds) { this.patronIds = patronIds; }
     public java.util.List<String> getAliases() { return aliases; }
     public void setAliases(java.util.List<String> aliases) { this.aliases = aliases; }
+    /** The sheet they were last transferred from (null: none). */
+    private String origin;
+    public String getOrigin() { return origin; }
+    public void setOrigin(String origin) { this.origin = origin; }
     /** Whether their name or an alias is used, as a name or alias, on another sheet of the sheet's tree. */
     private boolean clashing;
     public boolean isClashing() { return clashing; }

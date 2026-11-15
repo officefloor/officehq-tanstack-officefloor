@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, terms, contact";
+    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, terms, contact, origin";
 
     private static final RowMapper<Person> ROW = (rs, n) -> {
         LocalDate stated = rs.getObject("statement_date", LocalDate.class);
@@ -25,6 +25,7 @@ public class PersonRepository {
         person.setRetiredFrom(retired == null ? null : retired.toString());
         person.setTerms(rs.getObject("terms", Integer.class));
         person.setContact(rs.getString("contact"));
+        person.setOrigin(rs.getString("origin"));
         return person;
     };
 
@@ -406,7 +407,8 @@ public class PersonRepository {
 
     /** Move the person to the sheet {@code to} with their grades (and grade history) and aliases, their
      *  statements dropped (the count back to 0); their holds, watchers, patron links (either way), pool
-     *  memberships and closed periods' fixed totals are dropped. Their claims must have moved first. */
+     *  memberships and closed periods' fixed totals are dropped; they keep the sheet they came from as their
+     *  origin. Their claims must have moved first. */
     public void transfer(Person person, String to) {
         String sheetId = person.getSheetId();
         long id = person.getId();
@@ -419,7 +421,7 @@ public class PersonRepository {
             jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, sheetId, id);
         }
         jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL, "
-                + "list_pos = " + NEXT_POS + " WHERE sheet_id = ? AND id = ?", to, to, sheetId, id);
+                + "origin = ?, list_pos = " + NEXT_POS + " WHERE sheet_id = ? AND id = ?", to, sheetId, to, sheetId, id);
     }
 
     /** Swap the two people's places in their sheet's list. */

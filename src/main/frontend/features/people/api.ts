@@ -28,6 +28,8 @@ export type Person = {
   terms: number | null;
   /** Their contact, trimmed and lower-cased (null: none); no two people on a sheet share one. */
   contact: string | null;
+  /** The sheet they were last transferred from (null: none). */
+  origin: string | null;
   /** Their aliases, sorted as names are compared; the quick-add bar and the paste box find them by one. */
   aliases: string[];
   /** Whether their name or an alias is used on another sheet of the sheet's tree (its ancestors and

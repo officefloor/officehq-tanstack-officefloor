@@ -441,6 +441,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   Contact <span data-testid="person-contact">{p.contact ?? ''}</span>
                 </td>
                 <td>
+                  From <span data-testid="person-origin">{p.origin ?? ''}</span>
+                </td>
+                <td>
                   Claimed <span data-testid="person-claimed">{claimed}</span>
                 </td>
                 <td>
