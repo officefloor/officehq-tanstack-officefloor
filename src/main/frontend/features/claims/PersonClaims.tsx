@@ -467,6 +467,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 overdue <span data-testid="claim-overdue">{isOverdue(c, today, charges.lateFrom(c)) ? 'yes' : 'no'}</span>
               </td>
               <td data-testid="claim-status">{c.status}</td>
+              <td>Batch <span data-testid="claim-batch">{c.settleBatch ?? ''}</span></td>
               <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>
               <td>
                 Stated <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>

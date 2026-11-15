@@ -52,6 +52,8 @@ export type Claim = {
   tags: string | null;
   /** The reason it was voided with, from the sheet's void reasons (null: none). */
   voidReason: string | null;
+  /** The number of the bulk settle batch that settled it (null: not settled by a bulk settle). */
+  settleBatch: number | null;
 };
 /** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects.
  *  `ref`: its external reference (trimmed; blank: none), refused when already used on the sheet.
@@ -234,6 +236,14 @@ export type BulkSettleResult = { settled: number; refused: number };
  *  and counted as refused. */
 export function bulkSettleClaims(sheetId: string, by: string, claimIds: number[]): Promise<BulkSettleResult> {
   return postJson<BulkSettleResult>(`${sheetBase(sheetId)}/bulk-settle?by=${encodeURIComponent(by)}`, { claimIds });
+}
+
+/** Under the claims' key, so whatever refreshes the claims refreshes it too. */
+export const settleBatchKey = (sheetId: string) => [...claimsKey(sheetId), 'settle-batch'] as const;
+
+/** The number of the sheet's last bulk settle batch (null: there has been none). */
+export function lastSettleBatch(sheetId: string): Promise<{ last: number | null }> {
+  return getJson<{ last: number | null }>(`${sheetBase(sheetId)}/settle-batch`);
 }
 
 /** How many claims a paste added. */

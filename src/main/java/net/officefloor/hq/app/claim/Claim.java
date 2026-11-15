@@ -39,6 +39,7 @@ public class Claim {
     private String tags;
     private String voidReason;
     private String editedBy;
+    private Integer settleBatch;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, String number, String settledDue, String openedBy) {
@@ -89,6 +90,10 @@ public class Claim {
     /** The user who last edited it (none: never edited); like its opener, they may not settle or approve it. */
     public String getEditedBy() { return editedBy; }
     public void setEditedBy(String editedBy) { this.editedBy = editedBy; }
+
+    /** The number of the bulk settle batch that settled it (none: not settled by a bulk settle). */
+    public Integer getSettleBatch() { return settleBatch; }
+    public void setSettleBatch(Integer settleBatch) { this.settleBatch = settleBatch; }
 
     public String getCorrects() { return corrects; }
     public void setCorrects(String corrects) { this.corrects = corrects; }

@@ -46,6 +46,18 @@ public class SheetRepository {
         jdbc.update("UPDATE sheet SET archived = TRUE WHERE id = ?", id);
     }
 
+    /** The sheet's next bulk settle batch number (1, 2, ...), taken atomically; rolled back with the request. */
+    public int nextSettleBatch(String id) {
+        return jdbc.queryForObject("SELECT last_settle_batch FROM FINAL TABLE (UPDATE sheet SET last_settle_batch = "
+                + "COALESCE(last_settle_batch, 0) + 1 WHERE id = ?)", Integer.class, id);
+    }
+
+    /** The number of the sheet's last bulk settle batch (null: there has been none). */
+    public Integer lastSettleBatch(String id) {
+        return jdbc.queryForList("SELECT last_settle_batch FROM sheet WHERE id = ?", Integer.class, id)
+                .stream().findFirst().orElse(null);
+    }
+
     public Sheet find(String id) {
         return jdbc.query("SELECT id, created_by, today, archived FROM sheet WHERE id = ?",
                 (rs, n) -> new Sheet(rs.getString("id"), rs.getString("created_by"),

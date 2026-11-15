@@ -27,6 +27,8 @@ public class SettleClaim {
             RoleRepository roles, SettingRepository settings, SheetRepository sheets)
             throws ClaimStatusException, PeriodClosedException {
         settle(by, claim, people, rates, periods, roles, settings, sheets);
+        // Settled one at a time: in no batch.
+        claim.setSettleBatch(null);
     }
 
     /** The rules of settling one claim, shared with {@link BulkSettleClaims}: moves the claim (unsaved) or throws. */
