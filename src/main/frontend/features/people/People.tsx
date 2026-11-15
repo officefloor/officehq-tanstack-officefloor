@@ -159,6 +159,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     onSuccess: () => Promise.all([
       queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
       queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
     ]),
   });
 

@@ -3,8 +3,8 @@ import { sheetKey } from '../sheet/api';
 
 /** A member of a pool, a person (`personId`) or another pool (`poolId`, `name` its name), with their share
  *  percent (two decimals); a `retired` member's share counts as 0.00 toward the pool's total. `cut` is
- *  their cut of the pool's pot (two decimals; a retired member's 0.00, the remainder going to the largest
- *  share), "" when the pool is unbalanced or has no pot. A pool that is a member of none cuts the sheet's
+ *  their cut of the pool's pot (two decimals; a retired member's or one on a hold in force on the sheet's
+ *  today 0.00, their share spread over the others in proportion; the remainder going to the largest share), "" when the pool is unbalanced or has no pot. A pool that is a member of none cuts the sheet's
  *  pot; a member pool cuts its own cut in the pool above. */
 export type PoolMember = { personId: number | null; poolId: number | null; name: string; share: string; retired: boolean; cut: string };
 
