@@ -1,0 +1,205 @@
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java b/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java
+index 1a8b77b58..d6b2f0f4b 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java
+@@ -123,10 +123,29 @@ public class AsOfStore {
+                 ps.executeUpdate();
+             }
+             // A grade without a rate of its own goes by its ancestors' (as they stood on the date, see RateRepository):
+-            // their rates and parent links come along, up as far as rates are looked.
+-            Set<String> chain = new HashSet<>(Set.of(sheetId));
+-            for (String at = liveParent(c, sheetId); at != null && chain.size() <= RateRepository.LEVELS
+-                    && chain.add(at); at = liveParent(c, at)) {
++            // their rates, parent links and clone sources come along, as far as rates are looked.
++            List<String> chain;
++            try {
++                chain = RateRepository.chain(sheetId, (at) -> live(() -> liveParent(c, at)),
++                        (at) -> live(() -> liveSource(c, at)));
++            } catch (UncheckedSql e) {
++                throw e.getCause();
++            }
++            try (PreparedStatement ps = c.prepareStatement(
++                    "DELETE FROM " + q(schema) + ".SHEET_SOURCE WHERE SHEET_ID = ?")) {
++                ps.setString(1, sheetId);
++                ps.executeUpdate();
++            }
++            List<String> linked = new ArrayList<>(List.of(sheetId));
++            linked.addAll(chain);
++            for (String at : linked) {
++                try (PreparedStatement ps = c.prepareStatement("INSERT INTO " + q(schema) + ".SHEET_SOURCE SELECT * FROM "
++                        + "PUBLIC.SHEET_SOURCE WHERE SHEET_ID = ?")) {
++                    ps.setString(1, at);
++                    ps.executeUpdate();
++                }
++            }
++            for (String at : chain) {
+                 for (String table : List.of("RATE", "RATE_VERSION", "RATE_HISTORY")) {
+                     try (PreparedStatement ps = c.prepareStatement("INSERT INTO " + q(schema) + "." + q(table)
+                             + " SELECT * FROM PUBLIC." + q(table) + " WHERE SHEET_ID = ?")) {
+@@ -195,6 +214,39 @@ public class AsOfStore {
+         }
+     }
+ 
++    /** The sheet the sheet was cloned from, as the live store names it; null when it was not cloned. */
++    private static String liveSource(Connection c, String sheetId) throws SQLException {
++        try (PreparedStatement ps = c.prepareStatement("SELECT source_id FROM PUBLIC.SHEET_SOURCE WHERE SHEET_ID = ?")) {
++            ps.setString(1, sheetId);
++            try (ResultSet rs = ps.executeQuery()) {
++                return rs.next() ? rs.getString(1) : null;
++            }
++        }
++    }
++
++    private interface SqlLookup {
++        String get() throws SQLException;
++    }
++
++    private static final class UncheckedSql extends RuntimeException {
++        UncheckedSql(SQLException cause) {
++            super(cause);
++        }
++
++        @Override
++        public synchronized SQLException getCause() {
++            return (SQLException) super.getCause();
++        }
++    }
++
++    private static String live(SqlLookup lookup) {
++        try {
++            return lookup.get();
++        } catch (SQLException e) {
++            throw new UncheckedSql(e);
++        }
++    }
++
+     /** Copy the sheet's rows of every table from {@code source} (null: none) into a new schema. */
+     private void copy(Connection c, String source, String target, String sheetId) throws SQLException {
+         if (liveTables == null) liveTables = tables(c, LIVE);
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index c779618f7..a61491c3e 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -3,7 +3,10 @@ package net.officefloor.hq.app.rate;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.util.ArrayList;
++import java.util.HashSet;
+ import java.util.List;
++import java.util.Set;
++import java.util.function.UnaryOperator;
+ import net.officefloor.hq.app.asof.AsOfView;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+@@ -32,7 +35,8 @@ public class RateRepository {
+     }
+ 
+     /** The sheet's own rates (level 0), by grade, then by from-date (none first), then those of its
+-     *  parent, its parent's parent, up to {@link #LEVELS} up, each at its level. A grade without a rate
++     *  parent, its parent's parent, up to {@link #LEVELS} up, then its clone source's chain (see
++     *  {@link #ancestors}), each at its level. A grade without a rate
+      *  is not listed. While the sheet is shown as of a date, its ancestors' rates are as they stood then. */
+     public List<Rate> list(String sheetId) {
+         List<Rate> all = new ArrayList<>(own(sheetId));
+@@ -73,18 +77,37 @@ public class RateRepository {
+         return rate.withPrior(chain(older.get(next), older, next + 1));
+     }
+ 
+-    /** The sheet's parent, its parent's parent, ... up to {@link #LEVELS} up (stopping at a sheet named twice). */
++    /** The sheets whose rates a grade without one of its own goes by, nearest first: the sheet's parent,
++     *  its parent's parent, ... up to {@link #LEVELS} up, then, when the sheet was cloned, the sheet it was
++     *  cloned from and that one's own chain (its parents, then its source, and so on); each sheet once. */
+     public List<String> ancestors(String sheetId) {
++        return chain(sheetId, this::parent, this::source);
++    }
++
++    /** The chain {@link #ancestors} walks, with the parent and source of a sheet looked up by the given. */
++    public static List<String> chain(String sheetId, UnaryOperator<String> parent, UnaryOperator<String> source) {
+         List<String> chain = new ArrayList<>();
+-        String at = sheetId;
+-        while (chain.size() < LEVELS) {
+-            at = parent(at);
+-            if (at == null || at.equals(sheetId) || chain.contains(at)) break;
+-            chain.add(at);
++        Set<String> seen = new HashSet<>(Set.of(sheetId));
++        for (String at = sheetId; at != null; ) {
++            String up = at;
++            for (int i = 0; i < LEVELS; i++) {
++                up = parent.apply(up);
++                if (up == null || !seen.add(up)) break;
++                chain.add(up);
++            }
++            at = source.apply(at);
++            if (at != null && seen.add(at)) chain.add(at);
++            else at = null;
+         }
+         return chain;
+     }
+ 
++    /** The sheet the sheet was cloned from; null when it was not cloned. */
++    public String source(String sheetId) {
++        return jdbc.queryForList("SELECT source_id FROM sheet_source WHERE sheet_id = ?", String.class, sheetId)
++                .stream().findFirst().orElse(null);
++    }
++
+     /** The sheet's parent sheet id; null when it has none. */
+     public String parent(String sheetId) {
+         return jdbc.queryForList("SELECT val FROM sheet_setting WHERE sheet_id = ? AND setting = 'parent'",
+@@ -94,7 +117,8 @@ public class RateRepository {
+     /** The grade's rate for the sheet that applies to the claim (by its id) on the date: the sheet's own
+      *  with the latest from-date on or before it that applies to the claim, unless there is none or it
+      *  ended (its to-date) before the date, when its parent's is looked up the same way, and so on up to
+-     *  {@link #LEVELS} up; null when none has one. */
++     *  {@link #LEVELS} up, then those of the sheet it was cloned from (see {@link #ancestors}); null when
++     *  none has one. */
+     public Rate find(String sheetId, String grade, LocalDate on, long claimId) {
+         return inForce(list(sheetId), grade, on.toString(), claimId);
+     }
+@@ -132,7 +156,8 @@ public class RateRepository {
+     }
+ 
+     private static Rate inForce(List<Rate> rates, String grade, String date, Long claimId) {
+-        for (int level = 0; level <= LEVELS; level++) {
++        int top = rates.stream().mapToInt(Rate::level).max().orElse(0);
++        for (int level = 0; level <= top; level++) {
+             Rate found = null;
+             for (Rate listed : rates) {
+                 Rate r = claimId == null ? listed : listed.forClaim(claimId);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 495e6d776..d361c6269 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -103,7 +103,8 @@ public class SettingRepository {
+     public static final String GRACE_OF_GRADE = "grace-";
+ 
+     /** The parent sheet (a sheet id; blank: none; not dated): a grade with no rate in force on a date on
+-     *  this sheet takes its parent's, then its parent's parent's, up to three levels up. */
++     *  this sheet takes its parent's, then its parent's parent's, up to three levels up; then, on a clone,
++     *  the sheet it was cloned from's (and so on up that sheet's parents and source). */
+     public static final String PARENT = "parent";
+ 
+     /** The fiscal year start month (1 to 12; not dated): a fiscal year runs from the first of it for
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index 4b2cdd45a..7c63a9196 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -42,6 +42,7 @@ public class SheetCloner {
+             PeriodRepository periods, SettingRepository settings, SheetRepository sheets) {
+         jdbc.update("INSERT INTO sheet (id, created_by, today) SELECT ?, ?, today FROM sheet WHERE id = ?",
+                 to, user, from);
++        jdbc.update("INSERT INTO sheet_source (sheet_id, source_id) VALUES (?, ?)", to, from);
+         Map<String, Object> none = Map.of();
+         for (String table : List.of("sheet_setting", "setting_history", "sheet_role", "rate", "rate_history", "rate_version",
+                 "holiday", "void_reason", "claim_template", "sheet_tag")) {
+diff --git a/src/main/resources/db/migration/V89__sheet_source.sql b/src/main/resources/db/migration/V89__sheet_source.sql
+new file mode 100644
+index 000000000..9b75fe5b2
+--- /dev/null
++++ b/src/main/resources/db/migration/V89__sheet_source.sql
+@@ -0,0 +1,6 @@
++-- The sheet a clone was copied from (none: the sheet was not cloned). A grade with no rate in force on
++-- a date on a clone nor on its parents takes the source's (and so on up the source's parents and source).
++CREATE TABLE sheet_source (
++    sheet_id  VARCHAR(200) PRIMARY KEY,
++    source_id VARCHAR(200) NOT NULL
++);
