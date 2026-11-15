@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { useSheetToday } from '../sheet/api';
+import { poolsKey } from '../pools/api';
 import { changeSetting, listSettings, PERMISSION_STANDING, settingOn, settingsKey, SETTING_KEYS, UNDATED_KEYS } from './api';
 
 /** The sheet's settings: each one's value in force on the sheet's today and a form that changes them.
@@ -19,7 +20,10 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
     mutationFn: async ({ values, from }: { values: Record<string, string>; from: Record<string, string> }) => {
       for (const [key, value] of Object.entries(values)) await changeSetting(sheetId, user, key, value, from[key] ?? '');
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) }),
+    onSettled: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
+    ]),
   });
 
   const submitOnce = useSubmitOnce();
@@ -55,7 +59,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {SETTING_KEYS.map((key) => (
           <div key={key}>
             <label>
-              {key === 'clerk-limit' ? 'Clerk limit' : key === 'cap' ? 'Cap' : key === 'floor' ? 'Floor' : key === 'late-pct' ? 'Late percent'
+              {key === 'clerk-limit' ? 'Clerk limit' : key === 'cap' ? 'Cap' : key === 'pot' ? 'Pot' : key === 'floor' ? 'Floor' : key === 'late-pct' ? 'Late percent'
                 : key === 'policy-date' ? 'Policy date' : key === 'period-numbering-from' ? 'Period numbering from'
                 : key === 'entry-date' ? 'Entry date'
                 : key === 'grace-days' ? 'Grace days'
@@ -66,7 +70,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
                 : key.startsWith('grace-') ? `Grace days for grade ${key.slice('grace-'.length)}`
                 : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (business days)` : 'Terms (business days)'}{' '}
               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
-                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key === 'cap' ? 'No cap' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
+                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key === 'cap' ? 'No cap' : key === 'pot' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
                   : key === 'period-numbering-from' || key === 'entry-date' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' ? 'Off' : key.startsWith('grace-') ? 'None' : key.startsWith('terms-') ? "Sheet's terms"
                   : key.startsWith('perm-') ? PERMISSION_STANDING[key.slice('perm-'.length)] : undefined}
                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
@@ -88,7 +92,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="settings-error">
-            The clerk limit, the cap, the proof threshold, a grade's proof threshold and the note threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
+            The clerk limit, the cap, the pot, the proof threshold, a grade's proof threshold and the note threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
             the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the policy date, period numbering date and entry date blank or a date; the grace days and a grade's grace days blank or a whole number of days; a permission blank or a comma separated list of clerk and steward; a from-date blank or a date.
           </span>
         )}

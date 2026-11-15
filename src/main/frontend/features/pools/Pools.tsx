@@ -8,7 +8,8 @@ import type { Pool } from './api';
 
 /** The sheet's pools and a form to add one (name trimmed; a blank or repeated one refused). Each pool
  *  lists its members with their shares, its total share (a retired member's counting as 0.00) and
- *  whether it is balanced (exactly 100.00), and adds a member from its row. */
+ *  whether it is balanced (exactly 100.00), each member's cut of
+ *  the sheet's pot (blank when unbalanced or no pot), and adds a member from its row. */
 export function Pools({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const pools = useQuery({ queryKey: poolsKey(sheetId), queryFn: () => listPools(sheetId) });
@@ -84,7 +85,8 @@ function PoolRow({ sheetId, user, pool, people }: { sheetId: string; user: strin
       <ul>
         {pool.members.map((m) => (
           <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
-            {m.name}{m.retired ? ' (retired)' : ''} share <span data-testid="pool-share">{m.share}</span>
+            {m.name}{m.retired ? ' (retired)' : ''} share <span data-testid="pool-share">{m.share}</span>{' '}
+            cut <span data-testid="pool-cut">{m.cut}</span>
           </li>
         ))}
       </ul>

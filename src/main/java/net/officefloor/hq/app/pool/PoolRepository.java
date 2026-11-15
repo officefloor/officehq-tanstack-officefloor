@@ -1,10 +1,12 @@
 package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.setting.SettingRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -13,10 +15,14 @@ public class PoolRepository {
 
     private static final BigDecimal FULL = new BigDecimal("100.00");
 
-    private final JdbcTemplate jdbc;
+    private static final BigDecimal HUNDRED = new BigDecimal("100");
 
-    public PoolRepository(JdbcTemplate jdbc) {
+    private final JdbcTemplate jdbc;
+    private final SettingRepository settings;
+
+    public PoolRepository(JdbcTemplate jdbc, SettingRepository settings) {
         this.jdbc = jdbc;
+        this.settings = settings;
     }
 
     /** The sheet's pools in the order they were added, each with its members in the order they were added. */
@@ -33,9 +39,10 @@ public class PoolRepository {
                     if (of != null) {
                         of.add(new PoolMember(rs.getLong("person_id"), rs.getString("name"),
                                 rs.getBigDecimal("share").setScale(2).toPlainString(),
-                                rs.getObject("retired_from") != null));
+                                rs.getObject("retired_from") != null, ""));
                     }
                 }, sheetId);
+        BigDecimal pot = settings.pot(sheetId);
         List<Pool> pools = new ArrayList<>();
         for (Map.Entry<Long, String> pool : names.entrySet()) {
             List<PoolMember> of = members.get(pool.getKey());
@@ -43,10 +50,34 @@ public class PoolRepository {
             for (PoolMember m : of) {
                 if (!m.retired()) total = total.add(new BigDecimal(m.share()));
             }
-            pools.add(new Pool(pool.getKey(), sheetId, pool.getValue(), of, total.toPlainString(),
-                    total.compareTo(FULL) == 0));
+            boolean balanced = total.compareTo(FULL) == 0;
+            pools.add(new Pool(pool.getKey(), sheetId, pool.getValue(),
+                    balanced && pot != null ? cut(of, pot) : of, total.toPlainString(), balanced));
         }
         return pools;
+    }
+
+    /** The members with their cuts of the pot: the pot times their share over 100, rounded half to even
+     *  to two decimals (a retired member's 0.00); the remainder goes to the member with the largest share
+     *  (the earliest added on a tie), so the cuts total exactly the pot. */
+    private static List<PoolMember> cut(List<PoolMember> members, BigDecimal pot) {
+        BigDecimal[] cuts = new BigDecimal[members.size()];
+        BigDecimal sum = BigDecimal.ZERO.setScale(2);
+        int largest = -1;
+        for (int i = 0; i < members.size(); i++) {
+            PoolMember m = members.get(i);
+            BigDecimal share = new BigDecimal(m.share());
+            cuts[i] = m.retired() ? BigDecimal.ZERO.setScale(2)
+                    : pot.multiply(share).divide(HUNDRED).setScale(2, RoundingMode.HALF_EVEN);
+            sum = sum.add(cuts[i]);
+            if (!m.retired() && (largest < 0 || share.compareTo(new BigDecimal(members.get(largest).share())) > 0)) {
+                largest = i;
+            }
+        }
+        if (largest >= 0) cuts[largest] = cuts[largest].add(pot.subtract(sum));
+        List<PoolMember> cut = new ArrayList<>();
+        for (int i = 0; i < members.size(); i++) cut.add(members.get(i).withCut(cuts[i].toPlainString()));
+        return cut;
     }
 
     public boolean contains(String sheetId, String name) {

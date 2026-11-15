@@ -13,7 +13,8 @@ export type Setting = { sheetId: string; key: string; value: string; from: strin
 export type Role = { sheetId: string; user: string; role: string };
 
 /** The settings the screen offers: the clerk limit (two decimals; blank means no limit), the cap
- *  (two decimals; blank means none: the most a person's due-total can be), the
+ *  (two decimals; blank means none: the most a person's due-total can be), the pot (two decimals;
+ *  blank means none; not dated: the sum a balanced pool's members cut between them), the
  *  floor (two decimals; the least a claim's live due can be) and the terms (whole days after its
  *  date by which a claim is due) and the late percent (two decimals; the share of an overdue claim's
  *  figure it gains for every full 30 days it is overdue) and the policy date (yyyy-MM-dd; blank means
@@ -35,7 +36,7 @@ export type Role = { sheetId: string; user: string; role: string };
  *  blank means none): a claim whose person's grade in force on its date has them in force on that date is
  *  overdue only once its due-by plus them is before the sheet's today, and its late charge's 30-day
  *  boundaries count from there; the due-by it shows is unchanged. */
-export const SETTING_KEYS = ['clerk-limit', 'cap', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
+export const SETTING_KEYS = ['clerk-limit', 'cap', 'pot', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
   'period-numbering-from', 'entry-date', 'grace-days', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen'] as const;
 
 /** The roles that may take each action of the permission matrix while its entry is blank. */
@@ -48,7 +49,7 @@ export const PERMISSION_STANDING: Record<string, string> = {
 export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00' };
 
 /** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
-export const UNDATED_KEYS: readonly string[] = ['policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'perm-open', 'perm-settle', 'perm-void',
+export const UNDATED_KEYS: readonly string[] = ['pot', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'perm-open', 'perm-settle', 'perm-void',
   'perm-reassign', 'perm-close', 'perm-reopen'];
 
 /** A dated setting's value in force on a date (yyyy-MM-dd). */

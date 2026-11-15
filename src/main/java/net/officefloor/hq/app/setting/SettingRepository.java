@@ -41,6 +41,9 @@ public class SettingRepository {
     /** The cap: the most a person's due-total can be (two decimals; blank: no cap). */
     public static final String CAP = "cap";
 
+    /** The pot: the sum a balanced pool's members cut between them (two decimals; blank: none; not dated). */
+    public static final String POT = "pot";
+
     /** The floor: the least a claim's live due can be (two decimals). */
     public static final String FLOOR = "floor";
 
@@ -85,10 +88,10 @@ public class SettingRepository {
     public static final String DEFAULT_FLOOR = "1.00";
 
     /** Whether a key is dated: every key that carries a figure (the policy date, the period
-     *  numbering date, the grace days and the permission matrix are not). */
+     *  numbering date, the grace days, the pot and the permission matrix are not). */
     public static boolean isDated(String key) {
         return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
-                && !ENTRY_DATE.equals(key) && !Permissions.isKey(key);
+                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !Permissions.isKey(key);
     }
 
     private final JdbcTemplate jdbc;
@@ -148,6 +151,12 @@ public class SettingRepository {
     /** An undated setting's value; null when blank or never set. */
     public String find(String sheetId, String key) {
         return dated(sheetId, key, null).on("9999-12-31");
+    }
+
+    /** The sheet's pot; null when there is none. */
+    public BigDecimal pot(String sheetId) {
+        String value = find(sheetId, POT);
+        return value == null ? null : new BigDecimal(value);
     }
 
     /** The sheet's clerk limit in force on its today; null when there is none. */

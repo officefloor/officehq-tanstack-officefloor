@@ -2,8 +2,9 @@ import { getJson, postJson } from '../../api/http';
 import { sheetKey } from '../sheet/api';
 
 /** A person in a pool, with their share percent (two decimals); a `retired` member's share counts as
- *  0.00 toward the pool's total. */
-export type PoolMember = { personId: number; name: string; share: string; retired: boolean };
+ *  0.00 toward the pool's total. `cut` is their cut of the sheet's pot (two decimals; a retired member's
+ *  0.00, the remainder going to the largest share), "" when the pool is unbalanced or there is no pot. */
+export type PoolMember = { personId: number; name: string; share: string; retired: boolean; cut: string };
 
 /** A pool on the sheet: its members in the order added, the total of their shares and whether that
  *  total is exactly 100.00 (`balanced`). */
