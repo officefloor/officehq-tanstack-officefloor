@@ -1,0 +1,105 @@
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 5d7f59f27..ef1477f92 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -8,7 +8,7 @@ import { BulkSettle } from '../claims/BulkSettle';
+ import { PersonClaims } from '../claims/PersonClaims';
+ import { backing, claimsKey, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
+ import { listPeriods, periodsKey, personPeriodDue } from '../periods/api';
+-import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
++import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
+ import { useCap, useFloor, useLate } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+ import { BulkGrade } from './BulkGrade';
+@@ -20,7 +20,7 @@ import { GRADES, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, lis
+ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '' };
+ 
+ /** The people on the sheet: a form that adds a person or edits one, and the list in added order,
+- *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap, with the excess above it; n/a
++ *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap, with the excess above it, and split into settled and open (see `splitDues`); n/a
+  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
+  *  their statements (a button that takes one, now or as of the date typed beside it, a button that cancels the last, the count, the last one's due-total and date), whether
+  *  they are retired and from when (with a date and a button that retires them), whether they have
+@@ -313,6 +313,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+             const pct = byGrade.get(p.grade);
+             const late = overdue(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
+             const aged = agedDues(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
++            const split = splitDues(live, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
+             return (
+               <tr key={p.id} data-testid={`person-row-${p.id}`}>
+                 <td>
+@@ -334,6 +335,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap))}</span>{' '}
+                   excess <span data-testid="person-excess">{excessOf(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap)}</span>
+                 </td>
++                <td>
++                  Settled <span data-testid="person-settled-total">{split.settled}</span>{' '}
++                  open <span data-testid="person-open-total">{split.open}</span>
++                </td>
+                 {(periods.data ?? []).map((q) => (
+                   <td key={q.name}>
+                     {q.name} <span data-testid={`person-period-${q.name}-due-total`}>
+diff --git a/src/main/frontend/features/rates/DueTotal.tsx b/src/main/frontend/features/rates/DueTotal.tsx
+index 73c6e4a0c..dc996d372 100644
+--- a/src/main/frontend/features/rates/DueTotal.tsx
++++ b/src/main/frontend/features/rates/DueTotal.tsx
+@@ -3,7 +3,7 @@ import { claimsKey, listClaims, liveClaims } from '../claims/api';
+ import { gradeOn, listPeople, peopleKey } from '../people/api';
+ import { useCap, useFloor, useLate } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+-import { listRates, personDue, rateByGrade, ratesKey, trimmedSum } from './api';
++import { claimDue, listRates, personDue, rateByGrade, ratesKey, splitDues, sumDues, trimmedSum } from './api';
+ 
+ /** The sheet's due-total: everyone's due-total added up, skipping those shown n/a, less the single
+  *  highest and lowest when three or more have one. */
+@@ -23,10 +23,28 @@ export function useDueTotal(sheetId: string, user: string): string {
+   return trimmedSum(dues);
+ }
+ 
++/** The sheet's settled-total and open-total: everyone's (see `splitDues`) simply added up, not trimmed. */
++function useSplitTotals(sheetId: string, user: string) {
++  const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
++  const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
++  const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
++  const floor = useFloor(sheetId);
++  const today = useSheetToday(sheetId, user);
++  const charges = useLate(sheetId, today);
++  const live = liveClaims(claims.data ?? [], people.data);
++  const splits = (people.data ?? []).map((p) =>
++    splitDues(live.filter((c) => c.personId === p.id), (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges)),
++  );
++  return { settled: sumDues(splits.map((s) => s.settled)), open: sumDues(splits.map((s) => s.open)) };
++}
++
+ export function DueTotal({ sheetId, user }: { sheetId: string; user: string }) {
++  const split = useSplitTotals(sheetId, user);
+   return (
+     <p>
+-      Due total <span data-testid="rollup-due-total">{useDueTotal(sheetId, user)}</span>
++      Due total <span data-testid="rollup-due-total">{useDueTotal(sheetId, user)}</span>{' '}
++      settled <span data-testid="rollup-settled-total">{split.settled}</span>{' '}
++      open <span data-testid="rollup-open-total">{split.open}</span>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/rates/api.ts b/src/main/frontend/features/rates/api.ts
+index fd2be9ec9..7b5950695 100644
+--- a/src/main/frontend/features/rates/api.ts
++++ b/src/main/frontend/features/rates/api.ts
+@@ -139,6 +139,16 @@ export function excessOf(claims: Claim[], rates: Rate[] | undefined, gradeOn: Gr
+     : formatCents(hundredths(full) - hundredths(cap));
+ }
+ 
++/** A person's due split by status among their claims that count (`claims`, the live ones): settled (their SETTLED
++ *  claims, at their frozen figures, corrections included) and open (their OPEN and PENDING ones); n/a ones skipped.
++ *  The two add up to their due-total before the cap. */
++export function splitDues(claims: Claim[], dueOfClaim: (c: Claim) => string | null) {
++  return {
++    settled: sumDues(claims.filter((c) => c.status === 'SETTLED').map(dueOfClaim)),
++    open: sumDues(claims.filter(isOpen).map(dueOfClaim)),
++  };
++}
++
+ /** The overdue claims among those that count (`claims`, the live ones): their count and the sum
+  *  of their due figures (n/a ones skipped). */
+ export function overdue(claims: Claim[], today: string, dueOfClaim: (c: Claim) => string | null) {
