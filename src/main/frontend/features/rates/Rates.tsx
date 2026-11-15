@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { GRADES } from '../people/api';
 import { useSheetToday } from '../sheet/api';
+import { ImportRates } from './ImportRates';
 import { listRates, previewRate, rateByGrade, ratesKey, setRate, type RateInput } from './api';
 
 const EMPTY: RateInput = { grade: 'A', pct: '', from: '', to: '' };
@@ -117,6 +118,7 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
           <span data-testid="rate-preview-error">A preview needs a percent of 0.00 or more with up to two decimals.</span>
         )}
       </form>
+      <ImportRates sheetId={sheetId} user={user} />
       <table>
         <tbody>
           {GRADES.map((g) => (

@@ -28,6 +28,16 @@ export function setRate(sheetId: string, by: string, input: RateInput): Promise<
   return postJson<Rate>(`${base(sheetId)}?by=${encodeURIComponent(by)}`, input);
 }
 
+/** How many rates an import set. */
+export type ImportRatesResult = { set: number };
+
+/** Set a rate per line of grade,rate,from,to (the from-date and to-date may be absent or blank), in
+ *  order, each as `setRate` sets it; refused (rejects) with nothing set when there is no line or any
+ *  line would be refused by `setRate`. */
+export function importRates(sheetId: string, by: string, text: string): Promise<ImportRatesResult> {
+  return postJson<ImportRatesResult>(`/api/sheets/${encodeURIComponent(sheetId)}/import-rates?by=${encodeURIComponent(by)}`, { text });
+}
+
 /** The grade's rate in force on a date (yyyy-MM-dd): the one with the latest from-date on or
  *  before it; at a level where the date is before every rate the grade has, or it has none, or
  *  that one ended (its to-date) before the date, the next level up is looked at; undefined (n/a)
