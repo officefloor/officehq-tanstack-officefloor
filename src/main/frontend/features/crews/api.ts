@@ -5,8 +5,9 @@ import { sumDues } from '../rates/api';
 /** A member of a crew: a person of the sheet. */
 export type CrewMember = { personId: number; name: string };
 
-/** A crew on the sheet: its lead (a person of the sheet) and its members in the order added. */
-export type Crew = { id: number; sheetId: string; name: string; leadId: number; lead: string; members: CrewMember[] };
+/** A crew on the sheet: its lead (a person of the sheet; null, named '', once they left the sheet) and its
+ *  members in the order added. */
+export type Crew = { id: number; sheetId: string; name: string; leadId: number | null; lead: string; members: CrewMember[] };
 
 const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/crews`;
 
@@ -31,5 +32,5 @@ export function addCrewMember(sheetId: string, by: string, crewId: number, perso
 /** A crew's due-total: its lead's and its members' due-totals (as their rows show them; null: n/a)
  *  added up, n/a ones skipped. */
 export function crewDueTotal(crew: Crew, dueOf: ReadonlyMap<number, string | null>): string {
-  return sumDues([crew.leadId, ...crew.members.map((m) => m.personId)].map((id) => dueOf.get(id) ?? null));
+  return sumDues([crew.leadId, ...crew.members.map((m) => m.personId)].map((id) => (id === null ? null : dueOf.get(id) ?? null)));
 }

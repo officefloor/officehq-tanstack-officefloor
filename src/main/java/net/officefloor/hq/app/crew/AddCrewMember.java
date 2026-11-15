@@ -26,7 +26,7 @@ public class AddCrewMember {
         if (person == null) {
             throw new InvalidCrewException("No such person on the sheet: " + request.personId());
         }
-        if (person.getId() == crew.leadId()) {
+        if (crew.leadId() != null && person.getId() == crew.leadId()) {
             throw new InvalidCrewException(person.getName() + " leads " + crew.name());
         }
         if (crew.members().stream().anyMatch(m -> m.personId() == person.getId())) {

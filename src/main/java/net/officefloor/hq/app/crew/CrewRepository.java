@@ -20,9 +20,9 @@ public class CrewRepository {
     public List<Crew> list(String sheetId) {
         Map<Long, Object[]> crews = new LinkedHashMap<>();
         Map<Long, List<CrewMember>> members = new LinkedHashMap<>();
-        jdbc.query("SELECT c.id, c.name, c.lead_id, p.name AS lead FROM crew c JOIN person p ON p.id = c.lead_id "
+        jdbc.query("SELECT c.id, c.name, c.lead_id, p.name AS lead FROM crew c LEFT JOIN person p ON p.id = c.lead_id "
                 + "WHERE c.sheet_id = ? ORDER BY c.id", rs -> {
-                    crews.put(rs.getLong("id"), new Object[] { rs.getString("name"), rs.getLong("lead_id"), rs.getString("lead") });
+                    crews.put(rs.getLong("id"), new Object[] { rs.getString("name"), rs.getObject("lead_id", Long.class), rs.getString("lead") == null ? "" : rs.getString("lead") });
                     members.put(rs.getLong("id"), new ArrayList<>());
                 }, sheetId);
         jdbc.query("SELECT m.crew_id, m.person_id, p.name FROM crew_member m JOIN person p ON p.id = m.person_id "

@@ -4,18 +4,23 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { GRADES } from '../people/api';
 import { useSheetToday } from '../sheet/api';
 import { ImportRates } from './ImportRates';
-import { listRates, previewRate, rateByGrade, ratesKey, setRate, type RateInput } from './api';
+import { listRates, previewRate, rateByGrade, rateOn, ratesKey, setRate, type RateInput } from './api';
 import { Fig } from '../session/Fig';
+
+const MONTHS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
 
 const EMPTY: RateInput = { grade: 'A', pct: '', from: '', to: '' };
 
 /** The sheet's rates: a form that sets one (from a from-date, or from the beginning of time,
  *  through a to-date or without end),
- *  each grade's rate in force on the sheet's today, and every rate by grade and from-date. */
+ *  each grade's rate in force on the sheet's today, a calendar of each grade's rate in force on the
+ *  first day of each month of the sheet's today's year, and every rate by grade and from-date. */
 export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
-  const byGrade = rateByGrade(rates.data, useSheetToday(sheetId, user));
+  const today = useSheetToday(sheetId, user);
+  const byGrade = rateByGrade(rates.data, today);
+  const months = today === '' ? [] : MONTHS.map((m) => `${today.slice(0, 4)}-${m}`);
   const [form, setForm] = useState<RateInput>(EMPTY);
 
   const save = useMutation({
@@ -128,6 +133,29 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid={`rate-current-${g}`}>
                 {byGrade.has(g) ? <span data-testid="rate-pct"><Fig>{byGrade.get(g)}</Fig></span> : 'n/a'}
               </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table>
+        <thead>
+          <tr>
+            <th>Grade</th>
+            {months.map((m) => <th key={m}>{m}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {GRADES.map((g) => (
+            <tr key={g}>
+              <td>{g}</td>
+              {months.map((m) => {
+                const pct = rateOn(rates.data, g, `${m}-01`);
+                return (
+                  <td key={m} data-testid={`rate-month-${g}-${m}`}>
+                    {pct === undefined ? 'n/a' : <Fig>{pct}</Fig>}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>

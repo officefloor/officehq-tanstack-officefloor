@@ -88,7 +88,8 @@ public class PoolRepository {
     /** The sheet's crews in the order they were added, each as a pool under its name (id: the crew's id
      *  negated; a member of no pool, and taking none): the lead then the members in the order added, at
      *  equal shares of 100.00 as a person's patrons' shares are (the remainder on the lead), cutting the
-     *  sheet's pot like any pool. */
+     *  sheet's pot like any pool. A crew without a lead (they left the sheet) is its members alone; with
+     *  none either, it has no members and a total of 0.00. */
     private List<Pool> crewPools(String sheetId, BigDecimal pot, Set<Long> held) {
         Set<Long> retired = new HashSet<>(jdbc.queryForList(
                 "SELECT id FROM person WHERE sheet_id = ? AND retired_from IS NOT NULL", Long.class, sheetId));
@@ -96,13 +97,19 @@ public class PoolRepository {
         for (Crew crew : crews.list(sheetId)) {
             List<Long> ids = new ArrayList<>();
             List<String> names = new ArrayList<>();
-            ids.add(crew.leadId());
-            names.add(crew.lead());
+            if (crew.leadId() != null) {
+                ids.add(crew.leadId());
+                names.add(crew.lead());
+            }
             for (CrewMember m : crew.members()) {
                 ids.add(m.personId());
                 names.add(m.name());
             }
             long hundredths = FULL.movePointRight(2).longValueExact();
+            if (ids.isEmpty()) {
+                pools.add(new Pool(-crew.id(), sheetId, crew.name(), List.of(), "0.00", false, null, true));
+                continue;
+            }
             long each = hundredths / ids.size();
             List<PoolMember> members = new ArrayList<>();
             for (int i = 0; i < ids.size(); i++) {

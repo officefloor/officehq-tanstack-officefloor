@@ -568,7 +568,7 @@ public class PersonRepository {
 
     /** Move the person to the sheet {@code to} with their grades (and grade history) and aliases, their
      *  statements dropped (the count back to 0) and their plans going with them; their holds, watchers, patron links (either way), pool
-     *  and crew memberships (and crews they lead) and closed periods' fixed totals are dropped; they keep the sheet they came from as their
+     *  and crew memberships and closed periods' fixed totals are dropped (crews they lead stay, without a lead); they keep the sheet they came from as their
      *  origin. When {@code merging} (they are to be merged into someone there straight after) they keep
      *  their statements and arrive under a stand-in name, as theirs is taken there. Their claims must
      *  have moved first. */
@@ -579,10 +579,8 @@ public class PersonRepository {
         for (String table : List.of("person_hold", "person_watch", "pool_member", "crew_member")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         }
-        // A crew they lead goes with its memberships.
-        jdbc.update("DELETE FROM crew_member WHERE sheet_id = ? AND crew_id IN (SELECT c.id FROM crew c WHERE c.lead_id = ?)",
-                sheetId, id);
-        jdbc.update("DELETE FROM crew WHERE sheet_id = ? AND lead_id = ?", sheetId, id);
+        // A crew they lead stays, without a lead.
+        jdbc.update("UPDATE crew SET lead_id = NULL WHERE sheet_id = ? AND lead_id = ?", sheetId, id);
         if (merging) {
             jdbc.update("UPDATE person_statement SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, sheetId, id);
         } else {
