@@ -14,8 +14,14 @@ export function statusCount(claims: Claim[] | undefined, status: (typeof STATUSE
   return (claims ?? []).filter((c) => c.status === status).length;
 }
 
+/** A period's due-total minus the previous one's, two decimals, a minus sign when lower. */
+export function dueChange(previous: string, current: string): string {
+  const cents = Math.round(Number(current) * 100) - Math.round(Number(previous) * 100);
+  return (cents < 0 ? '-' : '') + (Math.abs(cents) / 100).toFixed(2);
+}
+
 /** The sheet's summary, agreeing with the lists: per grade, how many people not retired are on it
- *  today, their due-totals added up (n/a ones skipped) and how many of them are active (see `isActive`); per period, its due-total; per status,
+ *  today, their due-totals added up (n/a ones skipped) and how many of them are active (see `isActive`); per period by from-date, its due-total and its change from the period before (none for the earliest); per status,
  *  how many claims have it; per void reason on the list, how many VOID claims were voided with it. */
 export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
@@ -33,6 +39,8 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
   const liveOf = (p: (typeof active)[number]) => liveClaims(all.filter((c) => c.personId === p.id), [p]);
   const dueOf = (p: (typeof active)[number]) => personDue(liveOf(p),
     rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap);
+  const byStart = [...(periods.data ?? [])].sort((a, b) => a.from.localeCompare(b.from));
+  const periodDues = byStart.map((p) => periodDueTotal(p, all, people.data, rates.data, floor, charges));
 
   return (
     <section>
@@ -50,12 +58,13 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
               </tr>
             );
           })}
-          {(periods.data ?? []).map((p) => (
+          {byStart.map((p, i) => (
             <tr key={p.name}>
               <td>Period {p.name}</td>
               <td />
-              <td>Due <span data-testid={`summary-period-${p.name}-due-total`}>
-                {periodDueTotal(p, all, people.data, rates.data, floor, charges)}</span></td>
+              <td>Due <span data-testid={`summary-period-${p.name}-due-total`}>{periodDues[i]}</span></td>
+              <td>Change <span data-testid={`summary-period-${p.name}-change`}>
+                {i === 0 ? '' : dueChange(periodDues[i - 1], periodDues[i])}</span></td>
             </tr>
           ))}
           {STATUSES.map((s) => (
