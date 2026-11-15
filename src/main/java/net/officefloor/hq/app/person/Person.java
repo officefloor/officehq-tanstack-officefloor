@@ -227,12 +227,12 @@ public class Person {
     }
 
     /** Whether the live rules leave the claim out whatever its status counts: it is deferred, or an
-     *  open (OPEN or PENDING) claim that no statement bound, dated within one of their holds or of a
-     *  person whose retirement date the sheet's today has reached. */
+     *  open (OPEN or PENDING) claim that no statement bound, held itself, dated within one of their holds
+     *  or of a person whose retirement date the sheet's today has reached. */
     public boolean leftOutLive(Claim claim) {
         return claim.isDeferred()
                 || (ClaimStatus.isOpen(claim.getStatus()) && !claim.isStated()
-                        && (isRetiredReached() || holds.stream().anyMatch((h) -> h.covers(claim.getDate()))));
+                        && (claim.isHeld() || isRetiredReached() || holds.stream().anyMatch((h) -> h.covers(claim.getDate()))));
     }
 
     /** Whether a claim on this date is refused: the person is retired from a date before it, or it

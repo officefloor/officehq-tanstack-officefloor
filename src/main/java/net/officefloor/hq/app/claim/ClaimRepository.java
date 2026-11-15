@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, photo_proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, void_reason, edited_by, settle_batch, waived_on, "
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, photo_proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, void_reason, edited_by, settle_batch, waived_on, held, "
             // Deferred now: OPEN (or VOID, voided while deferred: it keeps showing the deferral) and
             // deferred until a date after the sheet's today.
             + "(status IN ('OPEN', 'VOID') AND deferred_until IS NOT NULL AND deferred_until > "
@@ -26,7 +26,7 @@ public class ClaimRepository {
             + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = claim.sheet_id AND k.number = claim.corrects), "
             + "claim_date) AS round_date";
 
-    private static final RowMapper<Claim> ROW = (rs, n) -> withWaived(withSettleBatch(withEditedBy(withVoidReason(withTags(withRef(withReminded(withCorrects(new Claim(rs.getLong("id"),
+    private static final RowMapper<Claim> ROW = (rs, n) -> withHeld(withWaived(withSettleBatch(withEditedBy(withVoidReason(withTags(withRef(withReminded(withCorrects(new Claim(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getLong("person_id"),
             rs.getBigDecimal("amount").setScale(2).toPlainString(),
             rs.getObject("claim_date", LocalDate.class).toString(), rs.getString("note"),
@@ -39,7 +39,12 @@ public class ClaimRepository {
             rs.getObject("round_date", LocalDate.class).toString(),
             rs.getObject("due_by", LocalDate.class).toString(),
             rs.getObject("deferred_until", LocalDate.class), rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getInt("photo_proofs"), rs.getString("split_from"), rs.getString("locked_by"), rs.getBoolean("late_entry")),
-            rs.getObject("reminded_on", LocalDate.class)), rs.getString("ref")), rs.getString("tags")), rs.getString("void_reason")), rs.getString("edited_by")), rs.getObject("settle_batch", Integer.class)), rs.getObject("waived_on", LocalDate.class));
+            rs.getObject("reminded_on", LocalDate.class)), rs.getString("ref")), rs.getString("tags")), rs.getString("void_reason")), rs.getString("edited_by")), rs.getObject("settle_batch", Integer.class)), rs.getObject("waived_on", LocalDate.class)), rs.getBoolean("held"));
+
+    private static Claim withHeld(Claim claim, boolean held) {
+        claim.setHeld(held);
+        return claim;
+    }
 
     private static Claim withWaived(Claim claim, LocalDate waivedOn) {
         claim.setWaivedOn(waivedOn == null ? null : waivedOn.toString());
@@ -292,8 +297,8 @@ public class ClaimRepository {
     /** Keep the claim as it stands now in its history, with the sheet's today. */
     private void snapshot(String sheetId, long id) {
         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, on_date, person_id, amount, claim_date, status, "
-                + "settled_due, stated, stated_due, deferred_until, due_by) SELECT c.sheet_id, c.id, s.today, c.person_id, "
-                + "c.amount, c.claim_date, c.status, c.settled_due, c.stated, c.stated_due, c.deferred_until, c.due_by "
+                + "settled_due, stated, stated_due, deferred_until, due_by, held) SELECT c.sheet_id, c.id, s.today, c.person_id, "
+                + "c.amount, c.claim_date, c.status, c.settled_due, c.stated, c.stated_due, c.deferred_until, c.due_by, c.held "
                 + "FROM claim c JOIN sheet s ON s.id = c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
     }
 
@@ -302,7 +307,7 @@ public class ClaimRepository {
      *  claims there were then), deferred when OPEN and deferred until after the date. */
     public List<Claim> listOfAsOf(String sheetId, long personId, LocalDate asOf) {
         return jdbc.query("SELECT h.claim_id, h.person_id, h.amount, h.claim_date, h.status, h.settled_due, h.stated, "
-                + "h.stated_due, h.deferred_until, h.due_by, c.note, c.ref, c.tags, c.number, c.opened_by, c.corrects, c.waived_on, "
+                + "h.stated_due, h.deferred_until, h.due_by, h.held, c.note, c.ref, c.tags, c.number, c.opened_by, c.corrects, c.waived_on, "
                 + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = c.sheet_id AND k.number = c.corrects), "
                 + "h.claim_date) AS round_date FROM claim_history h JOIN claim c ON c.id = h.claim_id "
                 + "WHERE h.sheet_id = ? AND h.person_id = ? AND h.id = (SELECT MAX(h2.id) FROM claim_history h2 "
@@ -322,6 +327,7 @@ public class ClaimRepository {
                     claim.setTags(rs.getString("tags"));
                     LocalDate waivedOn = rs.getObject("waived_on", LocalDate.class);
                     claim.setWaivedOn(waivedOn == null || waivedOn.isAfter(asOf) ? null : waivedOn.toString());
+                    claim.setHeld(rs.getBoolean("held"));
                     return withCorrects(claim, rs.getString("corrects"),
                             rs.getObject("round_date", LocalDate.class).toString(),
                             rs.getObject("due_by", LocalDate.class).toString(), until,
@@ -350,6 +356,13 @@ public class ClaimRepository {
         jdbc.update("UPDATE claim SET waived_on = ? WHERE sheet_id = ? AND id = ?",
                 claim.getWaivedOn() == null ? null : LocalDate.parse(claim.getWaivedOn()),
                 claim.getSheetId(), claim.getId());
+    }
+
+    /** Save whether a claim is held, keeping it in its history. */
+    public void updateHeld(Claim claim) {
+        jdbc.update("UPDATE claim SET held = ? WHERE sheet_id = ? AND id = ?",
+                claim.isHeld(), claim.getSheetId(), claim.getId());
+        snapshot(claim.getSheetId(), claim.getId());
     }
 
     /** Whether a claim was ever escalated. */

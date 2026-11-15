@@ -53,6 +53,8 @@ export type Claim = {
   reminded: string | null;
   /** Whether a steward waived its late charge: it bears none from then on, whatever its overdue state. */
   waived: boolean;
+  /** Whether it is held: while open (OPEN or PENDING) and bound by no statement, it counts in no live total. */
+  held: boolean;
   /** Its external reference (null: none); used once per sheet, compared without regard to case. */
   ref: string | null;
   /** Its tags: trimmed, lower-cased, without repeats, sorted and comma separated (null: none). */
@@ -149,6 +151,11 @@ export function waiveClaim(sheetId: string, by: string, id: number): Promise<Cla
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/waive?by=${encodeURIComponent(by)}`, {});
 }
 
+/** Hold an OPEN or PENDING claim, or release it when held; refused (rejects) with 409 for any other status. */
+export function holdClaim(sheetId: string, by: string, id: number): Promise<Claim> {
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/hold?by=${encodeURIComponent(by)}`, {});
+}
+
 /** Remind an OPEN or PENDING claim on the sheet's today; refused (rejects) with 409 for any other
  *  status, or when it was already reminded on the sheet's today. */
 export function remindClaim(sheetId: string, by: string, id: number): Promise<Claim> {
@@ -215,14 +222,14 @@ export function reassignClaim(sheetId: string, by: string, id: number, toPersonI
 export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
 
 /** The claims that count in live totals: all but the deferred claims and the open claims that no statement bound,
- *  dated within one of their person's holds (`to` null: open-ended) or of a person whose retirement date the sheet's
+ *  held themselves or dated within one of their person's holds (`to` null: open-ended) or of a person whose retirement date the sheet's
  *  today has reached (`retiredReached`) (SETTLED and bound claims still count). */
 export function liveClaims(claims: Claim[],
   people: Array<{ id: number; holds: Array<{ from: string; to: string | null }>; retiredReached?: boolean }> | undefined): Claim[] {
   const byId = new Map((people ?? []).map((p) => [p.id, p]));
   const held = (c: Claim) => {
     const p = byId.get(c.personId);
-    return !!p && (!!p.retiredReached || p.holds.some((h) => h.from <= c.date && (h.to === null || c.date <= h.to)));
+    return c.held || (!!p && (!!p.retiredReached || p.holds.some((h) => h.from <= c.date && (h.to === null || c.date <= h.to))));
   };
   return claims.filter((c) => !c.deferred && !(isOpen(c) && !c.stated && held(c)));
 }

@@ -184,6 +184,12 @@ public class Claim {
     /** Whether its late charge is waived: it bears none from then on, whatever its overdue state. */
     public boolean isWaived() { return waivedOn != null; }
 
+    private boolean held;
+
+    /** Whether it is held: while open (OPEN or PENDING) and bound by no statement, it counts in no live total. */
+    public boolean isHeld() { return held; }
+    public void setHeld(boolean held) { this.held = held; }
+
     private boolean escalating;
 
     /** Whether the reminder being taken escalates it (not stored: a claim's escalation is saved on its own). */

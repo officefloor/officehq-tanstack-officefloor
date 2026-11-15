@@ -6,7 +6,7 @@ import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import { isReviewLate, useNoteThreshold, useProofKinds, useProofThreshold, useReviewSla, type DatedOn } from '../settings/api';
 import { claimFromTemplate, listTemplates, templatesKey } from '../templates/api';
-import { addClaim, addClaimLine, claimTimeline, addProof, PROOF_KINDS, proofsOf, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, waiveClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ProofKind, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
+import { addClaim, addClaimLine, claimTimeline, addProof, PROOF_KINDS, proofsOf, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, waiveClaim, holdClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ProofKind, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
 import { Fig } from '../session/Fig';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
@@ -40,6 +40,8 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  that day, or any other claim, refused with an error on the claim); the last day it was reminded is shown.
  *  A steward can waive an OPEN or PENDING claim's late charge with a button beside it (anyone else, any other
  *  status, or a claim already waived refused with an error on the claim); whether it is waived is shown.
+ *  An OPEN or PENDING claim can be held and released with a toggle beside it (any other status refused with
+ *  an error on the claim); held, it leaves the live totals as a held person's claims do; whether it is held is shown.
  *  An OPEN claim can be deferred until a date typed beside it, after the sheet's today (any other claim, date,
  *  or a claim in a closed period refused with an error on the claim); whether it is deferred, and until when, is shown.
  *  Its proofs count is shown, with how many are of each kind, and raised by one with a button beside it, of the
@@ -153,6 +155,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      holding.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -177,6 +180,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      holding.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -194,6 +198,31 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
 
+  const holding = useMutation({
+    mutationFn: (id: number) => holdClaim(sheetId, user, id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
+
+  const toggleHold = (id: number) => {
+    actOnce(() => {
+      move.reset();
+      reassign.reset();
+      deferral.reset();
+      reminder.reset();
+      waiver.reset();
+      holding.reset();
+      redating.reset();
+      proof.reset();
+      commenting.reset();
+      lining.reset();
+      division.reset();
+      inline.reset();
+      setEditRefused(null);
+      locking.reset();
+      return holding.mutateAsync(id);
+    });
+  };
+
   const waive = (id: number) => {
     actOnce(() => {
       move.reset();
@@ -201,6 +230,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      holding.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -237,6 +267,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      holding.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -268,6 +299,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      holding.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -299,6 +331,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      holding.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -329,6 +362,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      holding.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -360,6 +394,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      holding.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -392,6 +427,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      holding.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -437,6 +473,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      holding.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -456,6 +493,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      holding.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -493,6 +531,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      holding.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -510,6 +549,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     deferral.reset();
     reminder.reset();
     waiver.reset();
+    holding.reset();
     redating.reset();
     proof.reset();
     commenting.reset();
@@ -652,6 +692,13 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 <button type="button" data-testid="claim-waive" disabled={waiver.isPending}
                   onClick={() => waive(c.id)}>
                   Waive late charge
+                </button>
+              </td>
+              <td>
+                Held <span data-testid="claim-held">{c.held ? 'yes' : 'no'}</span>{' '}
+                <button type="button" data-testid="claim-hold" disabled={holding.isPending}
+                  onClick={() => toggleHold(c.id)}>
+                  {c.held ? 'Release' : 'Hold'}
                 </button>
               </td>
               <td>
@@ -855,6 +902,11 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                       ? 'Only a steward can waive a claim\'s late charge.'
                       : `A ${c.status} claim's late charge cannot be waived.`)
                     : 'Your role may not waive a claim\'s late charge.'}</span>
+                )}
+                {holding.isError && holding.variables === c.id && (
+                  <span data-testid="claim-error">{holding.error instanceof HttpError && holding.error.status === 409
+                    ? `A ${c.status} claim cannot be ${c.held ? 'released' : 'held'}.`
+                    : 'Your role may not hold a claim.'}</span>
                 )}
                 {redating.isError && redating.variables?.id === c.id && (
                   <span data-testid="claim-error">{redating.error instanceof HttpError && redating.error.status === 423
