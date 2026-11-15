@@ -174,10 +174,34 @@ public class PersonRepository {
         return true;
     }
 
-    /** Save the person's statements (not an edit: the version stays). */
+    /** Save the statement just taken of the person (not an edit: the version stays). */
     public void updateStatements(Person person) {
+        saveStatements(person);
+        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, stated_total, statement_date) VALUES (?, ?, ?, ?)",
+                person.getSheetId(), person.getId(), person.getStatedTotal(), LocalDate.parse(person.getStatementDate()));
+    }
+
+    /** Drop the person's last statement kept, and load the one before it into the person (none: they
+     *  show no statement); their count goes down by one (not an edit: the version stays). */
+    public void cancelStatement(Person person) {
+        List<Long> kept = jdbc.queryForList(
+                "SELECT id FROM person_statement WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC LIMIT 2",
+                Long.class, person.getSheetId(), person.getId());
+        if (!kept.isEmpty()) {
+            jdbc.update("DELETE FROM person_statement WHERE id = ?", kept.get(0));
+        }
+        String[] before = kept.size() < 2 ? null : jdbc.queryForObject(
+                "SELECT stated_total, statement_date FROM person_statement WHERE id = ?",
+                (rs, n) -> new String[] { rs.getString("stated_total"),
+                        rs.getObject("statement_date", LocalDate.class).toString() }, kept.get(1));
+        person.unstated(before == null ? null : before[0], before == null ? null : before[1]);
+        saveStatements(person);
+    }
+
+    private void saveStatements(Person person) {
         jdbc.update("UPDATE person SET statement_count = ?, stated_total = ?, statement_date = ? WHERE sheet_id = ? AND id = ?",
-                person.getStatementCount(), person.getStatedTotal(), LocalDate.parse(person.getStatementDate()),
+                person.getStatementCount(), person.getStatedTotal(),
+                person.getStatementDate() == null ? null : LocalDate.parse(person.getStatementDate()),
                 person.getSheetId(), person.getId());
     }
 

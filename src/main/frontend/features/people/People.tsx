@@ -14,14 +14,14 @@ import { useSheetToday } from '../sheet/api';
 import { ExportPeople } from './ExportPeople';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
-import { GRADES, addPatron, addPerson, gradeOn, holdPerson, listPeople, listWatches, peopleKey, retirePerson, takeStatement, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+import { GRADES, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, peopleKey, retirePerson, takeStatement, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '' };
 
 /** The people on the sheet: a form that adds a person or edits one, and the list in added order,
  *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap, with the excess above it; n/a
  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
- *  their statements (a button that takes one, the count, the last one's due-total and date), whether
+ *  their statements (a button that takes one, a button that cancels the last, the count, the last one's due-total and date), whether
  *  they are retired and from when (with a date and a button that retires them), whether they have
  *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
@@ -106,6 +106,15 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     ]),
   });
 
+  // The person whose last statement cancel was refused; cleared by the next action on the row.
+  const unstatement = useMutation({
+    mutationFn: (id: number) => cancelStatement(sheetId, user, id),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    ]),
+  });
+
   // The person whose last retirement was refused; cleared by the next action on the row.
   const retirement = useMutation({
     mutationFn: (v: { id: number; from: string }) => retirePerson(sheetId, user, v.id, v.from),
@@ -135,6 +144,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
 
   const resetRowActions = () => {
     statement.reset();
+    unstatement.reset();
     watching.reset();
     retirement.reset();
     holding.reset();
@@ -145,6 +155,13 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     stateOnce(() => {
       resetRowActions();
       return statement.mutateAsync(id);
+    });
+  };
+
+  const unstate = (id: number) => {
+    stateOnce(() => {
+      resetRowActions();
+      return unstatement.mutateAsync(id);
     });
   };
 
@@ -313,11 +330,18 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                     onClick={() => state(p.id)}>
                     Statement
                   </button>{' '}
+                  <button type="button" data-testid="person-unstate" disabled={unstatement.isPending}
+                    onClick={() => unstate(p.id)}>
+                    Cancel statement
+                  </button>{' '}
                   Statements <span data-testid="person-statement-count">{p.statementCount}</span>{' '}
                   last <span data-testid="person-stated-total">{p.statedTotal ?? ''}</span>{' '}
                   on <span data-testid="person-statement-date">{p.statementDate ?? ''}</span>
                   {statement.isError && statement.variables === p.id && (
                     <span data-testid="person-error">The statement could not be taken.</span>
+                  )}
+                  {unstatement.isError && unstatement.variables === p.id && (
+                    <span data-testid="person-error">The statement could not be cancelled: only a steward can, and only a statement there is.</span>
                   )}
                   {watching.isError && watching.variables?.id === p.id && (
                     <span data-testid="person-error">The person could not be watched.</span>

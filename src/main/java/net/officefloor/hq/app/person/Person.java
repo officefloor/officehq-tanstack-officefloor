@@ -34,6 +34,8 @@ public class Person {
     private java.util.List<Long> patronIds = new java.util.ArrayList<>();
     /** How many claims the statement this request took bound, for its audit line. */
     private int statedClaims;
+    /** The due-total of the statement this request cancelled, for its audit line. */
+    private String cancelledTotal;
 
     public Person(long id, String sheetId, String name, String grade, long version) {
         this(id, sheetId, name, grade, version, 0, null, null);
@@ -141,6 +143,18 @@ public class Person {
         this.statementDate = date;
         this.statedClaims = claims;
     }
+
+    /** Cancel their last statement: the count goes down by one and they show the one before it
+     *  (null total and date: none), keeping the cancelled one's due-total for its audit line. */
+    public void unstated(String total, String date) {
+        this.cancelledTotal = this.statedTotal;
+        this.statementCount--;
+        this.statedTotal = date == null ? null : total == null ? "n/a" : total;
+        this.statementDate = date;
+    }
+
+    @JsonIgnore
+    public String getCancelledTotal() { return cancelledTotal; }
 
     @JsonIgnore
     public int getStatedClaims() { return statedClaims; }

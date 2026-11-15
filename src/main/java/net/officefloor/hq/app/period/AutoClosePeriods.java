@@ -12,7 +12,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** After the sheet's today is set: with grace days set, closes every open period whose to-date plus
+/** After the sheet's today is set: with grace days set, closes every open period (not closed or soft-closed: a soft-closed one is closed only by hand) whose to-date plus
  *  the grace days is before the new today, in order of their to-dates, as a close by hand does, each
  *  recorded as PERIOD_CLOSED with auto=yes. */
 public class AutoClosePeriods {
@@ -27,7 +27,7 @@ public class AutoClosePeriods {
         LocalDate today = sheets.today(id);
         int days = Integer.parseInt(grace);
         for (Period found : periods.list(id).stream().sorted(Comparator.comparing(Period::to)).toList()) {
-            if (found.closed() || !LocalDate.parse(found.to()).plusDays(days).isBefore(today)) continue;
+            if (found.fixed() || !LocalDate.parse(found.to()).plusDays(days).isBefore(today)) continue;
             Period closed = PeriodClosing.closeNow(found, user, periods, claims, log, people, rates, settings, sheets);
             audit.record("PERIOD_CLOSED sheet=" + id + " by=" + user + " period=" + closed.name()
                     + " total=" + closed.closedTotal() + " auto=yes");

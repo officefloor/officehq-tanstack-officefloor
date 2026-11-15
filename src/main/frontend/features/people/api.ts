@@ -66,6 +66,13 @@ export function takeStatement(sheetId: string, by: string, id: number): Promise<
   return postJson<Person>(`${base(sheetId)}/${id}/statement?by=${encodeURIComponent(by)}`, {});
 }
 
+/** A steward cancels the person's last statement: the claims it bound become live again and the
+ *  person shows the statement before it (or none); refused (rejects) for anyone else, and for a
+ *  person with no statement. */
+export function cancelStatement(sheetId: string, by: string, id: number): Promise<Person> {
+  return postJson<Person>(`${base(sheetId)}/${id}/statement-cancel?by=${encodeURIComponent(by)}`, {});
+}
+
 /** Retire the person from `from` (blank: the sheet's today); refused (rejects) when it is not a date. */
 export function retirePerson(sheetId: string, by: string, id: number, from: string): Promise<Person> {
   return postJson<Person>(`${base(sheetId)}/${id}/retire?by=${encodeURIComponent(by)}`, { from });
