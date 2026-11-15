@@ -1,0 +1,106 @@
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java b/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java
+index fbf33b3d4..1a8b77b58 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java
+@@ -122,7 +122,7 @@ public class AsOfStore {
+                 ps.setString(1, sheetId);
+                 ps.executeUpdate();
+             }
+-            // A grade without a rate of its own goes by its ancestors' (as they are now, like the link):
++            // A grade without a rate of its own goes by its ancestors' (as they stood on the date, see RateRepository):
+             // their rates and parent links come along, up as far as rates are looked.
+             Set<String> chain = new HashSet<>(Set.of(sheetId));
+             for (String at = liveParent(c, sheetId); at != null && chain.size() <= RateRepository.LEVELS
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index b1b35770e..704564fab 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -36,7 +36,7 @@ public class ApplyClaim {
+         if (person != null && person.retiredBefore(date)) {
+             throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
+         }
+-        String corrects = Corrections.check(request, claim.getSheetId(), claim.getPersonId(), claims);
++        String corrects = Corrections.check(request, claim.getSheetId(), claim.getPersonId(), claims, claim.getId());
+         claims.requireRefFree(claim.getSheetId(), request.ref(), claim.getId());
+         claim.setAmount(request.amount().toPlainString());
+         claim.setCorrects(corrects);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Corrections.java b/src/main/java/net/officefloor/hq/app/claim/Corrections.java
+index 392ba230d..258bed9fd 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Corrections.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Corrections.java
+@@ -1,21 +1,42 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
++
+ /** A claim with a negative amount is a correction: allowed only when it names, by number, a SETTLED
+- *  claim of the same person that it corrects. */
++ *  claim of the same person that it corrects, and when it does not exceed what remains of that claim
++ *  (its amount less the corrections already made against it, VOID or DELETED ones left out). */
+ public final class Corrections {
+     private Corrections() {
+     }
+ 
+     /** The number a claim corrects: none for a claim that is not a correction; refused when a
+-     *  correction names no SETTLED claim of the person. */
++     *  correction names no SETTLED claim of the person, or exceeds what remains of it. */
+     public static String check(ValidClaim request, String sheetId, long personId, ClaimRepository claims)
+             throws InvalidClaimException {
++        return check(request, sheetId, personId, claims, 0);
++    }
++
++    /** As {@link #check(ValidClaim, String, long, ClaimRepository)}, leaving the claim {@code exceptId}
++     *  (the one being edited) out of the corrections already made. */
++    public static String check(ValidClaim request, String sheetId, long personId, ClaimRepository claims,
++            long exceptId) throws InvalidClaimException {
+         if (!request.isCorrection()) return null;
+         Claim corrected = claims.findByNumber(sheetId, request.corrects());
+         if (corrected == null || corrected.getPersonId() != personId
+                 || !ClaimStatus.SETTLED.name().equals(corrected.getStatus())) {
+             throw new InvalidClaimException("A correction must name a SETTLED claim of the same person");
+         }
++        BigDecimal remains = new BigDecimal(corrected.getAmount());
++        for (Claim c : claims.listOf(sheetId, personId)) {
++            if (c.getId() == exceptId || !request.corrects().equals(c.getCorrects())
++                    || ClaimStatus.VOID.name().equals(c.getStatus())
++                    || ClaimStatus.DELETED.name().equals(c.getStatus())) continue;
++            remains = remains.add(new BigDecimal(c.getAmount()));
++        }
++        if (request.amount().negate().compareTo(remains) > 0) {
++            throw new InvalidClaimException("A correction may not exceed what remains of the claim: "
++                    + remains.setScale(2).toPlainString());
++        }
+         return request.corrects();
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index aa897610d..c779618f7 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -4,6 +4,7 @@ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.util.ArrayList;
+ import java.util.List;
++import net.officefloor.hq.app.asof.AsOfView;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+ import org.springframework.stereotype.Repository;
+@@ -32,13 +33,16 @@ public class RateRepository {
+ 
+     /** The sheet's own rates (level 0), by grade, then by from-date (none first), then those of its
+      *  parent, its parent's parent, up to {@link #LEVELS} up, each at its level. A grade without a rate
+-     *  is not listed. */
++     *  is not listed. While the sheet is shown as of a date, its ancestors' rates are as they stood then. */
+     public List<Rate> list(String sheetId) {
+         List<Rate> all = new ArrayList<>(own(sheetId));
+         List<String> chain = ancestors(sheetId);
++        LocalDate asOf = AsOfView.schema() == null ? null
++                : jdbc.queryForList("SELECT today FROM sheet WHERE id = ?", LocalDate.class, sheetId)
++                        .stream().filter((d) -> d != null).findFirst().orElse(null);
+         for (int i = 0; i < chain.size(); i++) {
+             int level = i + 1;
+-            own(chain.get(i)).forEach((r) -> all.add(r.at(level)));
++            (asOf == null ? own(chain.get(i)) : ownAsOf(chain.get(i), asOf)).forEach((r) -> all.add(r.at(level)));
+         }
+         return all;
+     }
