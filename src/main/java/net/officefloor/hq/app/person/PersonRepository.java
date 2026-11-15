@@ -408,7 +408,7 @@ public class PersonRepository {
     /** Merge the person {@code from} into {@code into}: from's name and aliases become into's aliases;
      *  from's patrons are added to into's (not into themselves, no repeats); anyone naming from as
      *  patron names into instead (no repeats); from's statements, holds, watchers, grades and the
-     *  person themselves are dropped. Their claims, pool memberships and period totals must have
+     *  person themselves are dropped; from's plans become into's. Their claims, pool memberships and period totals must have
      *  moved first. */
     public void merge(Person from, Person into, String user) {
         String sheetId = into.getSheetId();
@@ -435,12 +435,14 @@ public class PersonRepository {
                 "person_grade_history", "person_retired_history", "person_retirement")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
         }
+        // from's plans go on making claims, now for into.
+        jdbc.update("UPDATE plan SET person_id = ? WHERE sheet_id = ? AND person_id = ?", into.getId(), sheetId, from.getId());
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, from.getId());
         withAliases(sheetId, List.of(into));
     }
 
     /** Move the person to the sheet {@code to} with their grades (and grade history) and aliases, their
-     *  statements dropped (the count back to 0); their holds, watchers, patron links (either way), pool
+     *  statements dropped (the count back to 0) and their plans going with them; their holds, watchers, patron links (either way), pool
      *  memberships and closed periods' fixed totals are dropped; they keep the sheet they came from as their
      *  origin. Their claims must have moved first. */
     public void transfer(Person person, String to) {
@@ -451,7 +453,7 @@ public class PersonRepository {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         }
         jdbc.update("DELETE FROM period_person_total WHERE person_id = ?", id);
-        for (String table : List.of("person_grade", "person_grade_history", "person_retired_history", "person_retirement", "person_alias")) {
+        for (String table : List.of("person_grade", "person_grade_history", "person_retired_history", "person_retirement", "person_alias", "plan")) {
             jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, sheetId, id);
         }
         jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL, "

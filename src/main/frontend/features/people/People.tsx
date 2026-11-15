@@ -7,6 +7,7 @@ import { PasteClaims } from '../claims/PasteClaims';
 import { BulkSettle } from '../claims/BulkSettle';
 import { BulkReassign } from '../claims/BulkReassign';
 import { PersonClaims } from '../claims/PersonClaims';
+import { PersonPlans } from '../plans/PersonPlans';
 import { backing, claimsKey, patronShares, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
 import { listPeriods, periodOf, periodsKey, personPeriodDue } from '../periods/api';
 import { listPools, personCutTotal, poolsKey } from '../pools/api';
@@ -31,7 +32,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
  *  they are retired and from when (with a date and a button that retires them, a button that unretires them, and their past retirements, each `<from> to <to>`), whether they have
  *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
- *  patrons (each `<name> <share>`, sorted by name (see `patronShares`), with a picker that names one more), their aliases (sorted as names are
+ *  patrons (each `<name> <share>`, sorted by name (see `patronShares`), with a picker that names one more), their plans (see `PersonPlans`), their aliases (sorted as names are
  *  compared, with an entry and a button that adds one) and backing (see `backing`), and
  *  their due-total for each period (see `personPeriodDue`), the due of their open claims by age (see `agedDues`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
  *  with a checkbox that selects it for a button that opens the selected claims together.
@@ -658,6 +659,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                     onClick={() => transfer(p.id)}>
                     Transfer
                   </button>
+                </td>
+                <td>
+                  <PersonPlans sheetId={sheetId} user={user} personId={p.id} />
                 </td>
                 <td>
                   <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} gradeOn={(d) => gradeOn(p, d)} rates={rates.data} floor={floor}
