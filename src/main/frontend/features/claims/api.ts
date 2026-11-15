@@ -190,18 +190,44 @@ export function isActive(live: Claim[], today: string): boolean {
   return live.some((c) => isOpen(c) && from <= c.date && c.date <= today);
 }
 
-/** A person's backing: the frozen settled figures of their patrons' SETTLED claims dated within the 90 days up to
- *  and including the sheet's `today`, added up (0.00 with none). */
+/** A person's patrons' shares (in hundredths, of 100.00), in the order named: 100.00 split equally, each share
+ *  rounded half to even to two decimals, the remainder (100.00 less the shares added up) to the first-named. */
+export function patronShares(patronIds: number[]): Array<{ id: number; share: number }> {
+  const n = patronIds.length;
+  if (n === 0) return [];
+  const whole = Math.floor(10_000 / n);
+  const rest = 10_000 % n;
+  const each = 2 * rest > n || (2 * rest === n && whole % 2 === 1) ? whole + 1 : whole;
+  return patronIds.map((id, i) => ({ id, share: i === 0 ? 10_000 - each * (n - 1) : each }));
+}
+
+/** A person's backing: the sum over their patrons of the patron's figure (the frozen settled figures of their
+ *  SETTLED claims dated within the 90 days up to and including the sheet's `today`, added up) times their share
+ *  (see `patronShares`) divided by 100, rounded half to even (0.00 with none). */
 export function backing(claims: Claim[], patronIds: number[], today: string): string {
   if (today === '') return '0.00';
   const since = new Date(`${today}T00:00:00Z`);
   since.setUTCDate(since.getUTCDate() - 89);
   const from = since.toISOString().slice(0, 10);
-  const patrons = new Set(patronIds);
-  const cents = claims
-    .filter((c) => patrons.has(c.personId) && c.status === 'SETTLED' && c.settledDue !== null && from <= c.date && c.date <= today)
-    .reduce((t, c) => t + Math.round(Number(c.settledDue) * 100), 0);
-  return (cents / 100).toFixed(2);
+  const figures = new Map<number, bigint>(patronIds.map((id) => [id, 0n]));
+  for (const c of claims) {
+    const f = figures.get(c.personId);
+    if (f !== undefined && c.status === 'SETTLED' && c.settledDue !== null && from <= c.date && c.date <= today) {
+      figures.set(c.personId, f + BigInt(Math.round(Number(c.settledDue) * 100)));
+    }
+  }
+  // Cents times hundredths of a percent share: 1/10_000 of a cent.
+  const product = patronShares(patronIds).reduce((t, p) => t + (figures.get(p.id) ?? 0n) * BigInt(p.share), 0n);
+  const cents = halfEven(product < 0n ? -product : product);
+  const signed = product < 0n ? -cents : cents;
+  return (Number(signed) / 100).toFixed(2);
+}
+
+/** A non-negative amount in 1/10_000 of a cent to cents, half to even. */
+function halfEven(product: bigint): bigint {
+  const whole = product / 10_000n;
+  const rest = product % 10_000n;
+  return rest > 5_000n || (rest === 5_000n && whole % 2n === 1n) ? whole + 1n : whole;
 }
 
 /** Sum the amounts of the claims that count (see `counts`) exactly (in cents), shown with two decimals. */

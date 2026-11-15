@@ -7,7 +7,7 @@ import { PasteClaims } from '../claims/PasteClaims';
 import { BulkSettle } from '../claims/BulkSettle';
 import { BulkReassign } from '../claims/BulkReassign';
 import { PersonClaims } from '../claims/PersonClaims';
-import { backing, claimsKey, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
+import { backing, claimsKey, patronShares, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
 import { listPeriods, periodsKey, personPeriodDue } from '../periods/api';
 import { poolsKey } from '../pools/api';
 import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
@@ -28,7 +28,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
  *  they are retired and from when (with a date and a button that retires them), whether they have
  *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
- *  patrons (names sorted, with a picker that names one more), their aliases (sorted as names are
+ *  patrons (each `<name> <share>`, sorted by name (see `patronShares`), with a picker that names one more), their aliases (sorted as names are
  *  compared, with an entry and a button that adds one) and backing (see `backing`), and
  *  their due-total for each period (see `personPeriodDue`), the due of their open claims by age (see `agedDues`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
  *  with a checkbox that selects it for a button that opens the selected claims together.
@@ -504,7 +504,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                 </td>
                 <td>
                   Patrons <span data-testid="person-patrons">
-                    {p.patronIds.map((id) => nameOf.get(id) ?? '').sort((x, y) => x.localeCompare(y)).join(', ')}
+                    {patronShares(p.patronIds).map((s) => ({ name: nameOf.get(s.id) ?? '', share: s.share })).sort((x, y) => x.name.localeCompare(y.name)).map((s) => `${s.name} ${(s.share / 100).toFixed(2)}`).join(', ')}
                   </span>{' '}
                   backing <span data-testid="person-backing">{backing(claims.data ?? [], p.patronIds, today)}</span>{' '}
                   <select data-testid="person-patron-select" value={patronPicks[p.id] ?? ''}
