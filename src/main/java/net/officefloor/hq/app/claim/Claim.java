@@ -205,18 +205,17 @@ public class Claim {
         return ClaimStatus.isOpen(status) || ClaimStatus.SETTLED.name().equals(status);
     }
 
-    /** Whether a statement's figure binds it now: it was bound to one and is not PENDING (a PENDING
-     *  claim keeps its binding, but shows and totals its live figure until it is rejected). */
+    /** Whether a statement's figure binds it now: it was bound to one (a PENDING claim too). */
     @JsonIgnore
     public boolean isBound() {
-        return stated && statedDue != null && !ClaimStatus.PENDING.name().equals(status);
+        return stated && statedDue != null;
     }
 
-    /** The due it shows: the one fixed when settled, else the one bound by a statement (not while
-     *  PENDING), else {@code live} (the amount at the rate in force on its date; null: none). */
+    /** The due it shows: the one fixed when settled, else the one bound by a statement, else
+     *  {@code live} (the amount at the rate in force on its date; null: none). */
     public String due(String live) {
         if (settledDue != null) return settledDue;
-        return stated && !ClaimStatus.PENDING.name().equals(status) ? statedDue : live;
+        return stated ? statedDue : live;
     }
 
     /** The audit suffix: {@code " number=<n>"} for a claim that has a number. */

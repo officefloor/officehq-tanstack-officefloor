@@ -15,7 +15,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** Approves a PENDING claim: it becomes SETTLED, its due fixed at the figure it shows at that moment
- *  (its live figure, a statement does not bind a PENDING claim, with its late charge on the sheet's
+ *  (the figure a statement bound it to, else its live figure, with its late charge on the sheet's
  *  today). Refused unless the user is a steward, and for the user who opened it or last edited it, and for one
  *  with no proofs whose due is above the proof threshold in force on its date. */
 public class ApproveClaim {

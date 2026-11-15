@@ -14,9 +14,8 @@ export type ClaimAction = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'r
 /** Whether a claim is open: OPEN, or PENDING a steward's approval. */
 export const isOpen = (c: Pick<Claim, 'status'>) => c.status === 'OPEN' || c.status === 'PENDING';
 
-/** Whether a statement's figure binds a claim now: it was bound to one and is not PENDING (a PENDING
- *  claim shows and totals its live figure until it is rejected). */
-export const isBound = (c: Claim) => c.stated && c.statedDue !== null && c.status !== 'PENDING';
+/** Whether a statement's figure binds a claim now: it was bound to one (a PENDING claim too). */
+export const isBound = (c: Claim) => c.stated && c.statedDue !== null;
 
 /** A claim: its amount as two-decimal text, its date (yyyy-MM-dd), its note, its status and its
  *  number on the sheet (given when opened: the sheet-wide 1, 2, ... or, under period numbering,
