@@ -10,8 +10,8 @@ import { addClaim, addClaimLine, addProof, claimsKey, commentClaim, listVoidReas
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
 
-const LABELS: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void', approve: 'Approve', reject: 'Reject', resettle: 'Re-settle', delete: 'Delete', restore: 'Restore' };
-const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided', approve: 'approved', reject: 'rejected', resettle: 're-settled', delete: 'deleted', restore: 'restored' };
+const LABELS: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void', approve: 'Approve', reject: 'Reject', resettle: 'Re-settle', delete: 'Delete', restore: 'Restore', review: 'Review' };
+const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided', approve: 'approved', reject: 'rejected', resettle: 're-settled', delete: 'deleted', restore: 'restored', review: 'reviewed' };
 
 /** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
  *  with its status, its due (fixed when settled, else at the rate in force on the claim's date of the
@@ -22,7 +22,9 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  the period its due-by falls in (none when no period contains it), its status log (oldest first), who opened it, and buttons that
  *  change its status (the user who opened a claim cannot settle it; a clerk settling one whose due is
  *  above the sheet's clerk limit makes it PENDING, which a steward other than its opener approves,
- *  or any steward rejects with a reason typed beside it), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
+ *  or any steward rejects with a reason typed beside it; opening one whose due is above the review threshold in
+ *  force on its date makes it REVIEW, unnumbered and counted nowhere, which only a steward's review button
+ *  opens), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
  *  charge) the number of the SETTLED claim it corrects. A DRAFT can be deleted with a button beside it (any other
  *  status, or one in a closed period, refused with an error on the claim): DELETED, it counts nowhere and cannot be
  *  edited, opened or voided, and a restore button makes it a DRAFT again on the sheet's today it was deleted
@@ -640,7 +642,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 </button>
               </td>
               <td>
-                {(['open', 'settle', 'void', 'approve', 'resettle', 'delete', 'restore'] as const).map((a) => (
+                {(['open', 'settle', 'void', 'approve', 'review', 'resettle', 'delete', 'restore'] as const).map((a) => (
                   <button key={a} type="button" data-testid={`claim-${a}`} disabled={move.isPending}
                     onClick={() => act(c.id, a)}>
                     {LABELS[a]}
@@ -738,6 +740,10 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     ? 'The user who opened a claim cannot settle it, nor can a role the permissions do not allow to settle.'
                     : c.status === 'PENDING' && move.variables.action === 'approve'
                     ? 'Only a steward who did not open a claim can approve it.'
+                    : c.status === 'REVIEW' && move.variables.action === 'review'
+                    ? 'Only a steward can review a claim.'
+                    : c.status === 'REVIEW' && move.variables.action === 'open'
+                    ? 'A claim in REVIEW is opened by a steward reviewing it.'
                     : c.status === 'PENDING' && move.variables.action === 'reject'
                     ? 'Only a steward can reject a claim.'
                     : c.status === 'SETTLED' && move.variables.action === 'resettle'

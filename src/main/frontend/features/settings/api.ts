@@ -27,7 +27,9 @@ export type Role = { sheetId: string; user: string; role: string };
  *  cannot be settled or approved while it has no proofs. A grade's proof threshold (proof-threshold-<grade>,
  *  two decimals; blank means none): a claim whose person's grade in force on its date has one in force on
  *  that date goes by it instead of the sheet's. The note threshold (two decimals; blank means none):
- *  a claim whose due is above the one in force on its date cannot be opened with an empty note. The permission matrix (perm-<action>, a comma
+ *  a claim whose due is above the one in force on its date cannot be opened with an empty note. The review
+ *  threshold (two decimals; blank means none): a claim whose due is above the one in force on its date goes
+ *  to REVIEW when opened instead of OPEN, until a steward reviews it. The permission matrix (perm-<action>, a comma
  *  separated list of roles; blank means the standing rule, PERMISSION_STANDING): who may take each action.
  *  The entry date (yyyy-MM-dd; blank means off): while set, a new claim with a blank date (the claim form,
  *  the quick-add bar, a pasted line, a correction) takes it instead of the sheet's today.
@@ -45,7 +47,7 @@ export type Role = { sheetId: string; user: string; role: string };
  *  The rounding mode (half-up or half-even; blank means none; dated): a claim whose round date has one in
  *  force rounds its live figures by it instead of by the policy date. */
 export const SETTING_KEYS = ['clerk-limit', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'rounding',
-  'period-numbering-from', 'entry-date', 'grace-days', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'] as const;
+  'period-numbering-from', 'entry-date', 'grace-days', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'] as const;
 
 /** The roles that may take each action of the permission matrix while its entry is blank. */
 export const PERMISSION_STANDING: Record<string, string> = {

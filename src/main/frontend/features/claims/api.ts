@@ -4,10 +4,12 @@ import { sheetKey } from '../sheet/api';
 /** A claim's status: DRAFT, opened to OPEN, settled to SETTLED (or, by a clerk above the clerk limit,
  *  to PENDING, which a steward approves to SETTLED or rejects back to OPEN); a DRAFT, OPEN or PENDING
  *  claim can be voided, and a SETTLED one by a steward within 7 days of its settlement. A DRAFT can be
- *  deleted to DELETED (counted nowhere), and restored to DRAFT on the sheet's today it was deleted. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+ *  deleted to DELETED (counted nowhere), and restored to DRAFT on the sheet's today it was deleted. A DRAFT
+ *  whose due is above the review threshold in force on its date opens to REVIEW instead (counted nowhere,
+ *  unnumbered), which a steward reviews to OPEN; a REVIEW claim can be voided. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED' | 'REVIEW';
 /** A change of a claim's status. */
-export type ClaimAction = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle' | 'delete' | 'restore';
+export type ClaimAction = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle' | 'delete' | 'restore' | 'review';
 
 /** Whether a claim is open: OPEN, or PENDING a steward's approval. */
 export const isOpen = (c: Pick<Claim, 'status'>) => c.status === 'OPEN' || c.status === 'PENDING';

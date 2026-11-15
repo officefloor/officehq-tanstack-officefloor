@@ -12,6 +12,12 @@ public final class OpenChecks {
     private OpenChecks() {
     }
 
+    /** See {@link OpenClaim#opensTo}. */
+    public static ClaimStatus opensTo(Claim claim, PersonRepository people, RateRepository rates,
+            SettingRepository settings, SheetRepository sheets) throws ClaimStatusException {
+        return OpenClaim.opensTo(claim, people, rates, settings, sheets);
+    }
+
     /** See {@link OpenClaim#requireNote}. */
     public static void requireNote(Claim claim, PersonRepository people, RateRepository rates,
             SettingRepository settings, SheetRepository sheets) throws ClaimStatusException {

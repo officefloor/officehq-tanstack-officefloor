@@ -135,11 +135,13 @@ public class PasteClaims {
 
             // Opened as the open button opens it.
             periods.requireOpen(id, claim.getDueBy());
-            ClaimStatus opened = ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.OPEN);
+            ClaimStatus opened = OpenChecks.opensTo(claim, people, rates, settings, sheets);
             OpenChecks.requireNote(claim, people, rates, settings, sheets);
             OpenChecks.requireUnderCap(claim, claims, periods);
             claim.setStatus(opened.name());
-            claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
+            if (opened == ClaimStatus.OPEN) {
+                claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
+            }
             claim.setOpenedBy(user);
             claims.update(claim);
             log.record(claim, user);

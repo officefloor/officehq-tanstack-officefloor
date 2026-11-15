@@ -22,7 +22,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /** Opens the selected claims in list order (people in the order they were added, newest claim first
  *  within a person), each numbered in turn as {@link OpenClaim} numbers one and recorded as it would
- *  record it (its CLAIM_OPENED line, then the rollup lines it moved). A claim that cannot be opened
+ *  record it (its CLAIM_OPENED line, or CLAIM_REVIEW for one gone to REVIEW, which counts as opened,
+ *  then the rollup lines it moved). A claim that cannot be opened
  *  (its status does not allow it, its date is in a closed period, it has an empty note and a due
  *  above the note threshold, its period caps its person's open claims and they
  *  already have that many, or it is not on the sheet) is left
@@ -58,21 +59,23 @@ public class BulkOpenClaims {
             if (!allowed) continue;
             try {
                 periods.requireOpen(id, claim.getDueBy());
-                ClaimStatus status = ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.OPEN);
+                ClaimStatus status = OpenClaim.opensTo(claim, people, rates, settings, sheets);
                 OpenClaim.requireNote(claim, people, rates, settings, sheets);
                 OpenClaim.requireUnderCap(claim, claims, periods);
                 claim.setStatus(status.name());
             } catch (ClaimStatusException | PeriodClosedException refused) {
                 continue;
             }
-            claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
+            if (ClaimStatus.OPEN.name().equals(claim.getStatus())) {
+                claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
+            }
             claim.setOpenedBy(user);
             claims.update(claim);
             log.record(claim, user);
             opened++;
             Person person = everyone.stream().filter((p) -> p.getId() == claim.getPersonId())
                     .findFirst().orElse(null);
-            audit.record(ClaimStatus.OPEN.event() + " sheet=" + id + " by=" + user
+            audit.record(ClaimStatus.valueOf(claim.getStatus()).event() + " sheet=" + id + " by=" + user
                     + " person=" + (person == null ? "" : person.getName())
                     + " amount=" + claim.getAmount() + " date=" + claim.getDate()
                     + claim.getAuditNumber());

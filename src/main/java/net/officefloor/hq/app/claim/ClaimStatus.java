@@ -6,15 +6,16 @@ package net.officefloor.hq.app.claim;
  *  soon after its settlement (see {@link VoidClaim}). A DRAFT can be deleted to DELETED, which counts
  *  nowhere, and restored to DRAFT on the sheet's today it was deleted (see {@link RestoreClaim}). */
 public enum ClaimStatus {
-    DRAFT, OPEN, PENDING, SETTLED, VOID, DELETED;
+    DRAFT, OPEN, PENDING, SETTLED, VOID, DELETED, REVIEW;
 
     /** The status after moving to {@code to}; refused when this status does not allow it. */
     public ClaimStatus moveTo(ClaimStatus to) throws ClaimStatusException {
         boolean allowed = switch (to) {
-            case OPEN -> this == DRAFT || this == PENDING;
+            case OPEN -> this == DRAFT || this == PENDING || this == REVIEW;
+            case REVIEW -> this == DRAFT;
             case PENDING -> this == OPEN;
             case SETTLED -> this == OPEN || this == PENDING;
-            case VOID -> this == DRAFT || this == OPEN || this == PENDING;
+            case VOID -> this == DRAFT || this == OPEN || this == PENDING || this == REVIEW;
             case DELETED -> this == DRAFT;
             case DRAFT -> this == DELETED;
         };
@@ -38,6 +39,7 @@ public enum ClaimStatus {
             case VOID -> "CLAIM_VOIDED";
             case DELETED -> "CLAIM_DELETED";
             case DRAFT -> "CLAIM_RESTORED";
+            case REVIEW -> "CLAIM_REVIEW";
         };
     }
 }

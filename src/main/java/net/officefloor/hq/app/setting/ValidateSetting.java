@@ -53,6 +53,10 @@ public class ValidateSetting {
             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("The note threshold is blank or 0.00 or more with up to two decimals");
             }
+        } else if (SettingRepository.REVIEW_THRESHOLD.equals(key)) {
+            if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
+                throw new InvalidSettingException("The review threshold is blank or 0.00 or more with up to two decimals");
+            }
         } else if (SettingRepository.CAP.equals(key)) {
             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("The cap is blank or 0.00 or more with up to two decimals");

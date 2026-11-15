@@ -7,7 +7,7 @@ import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 
 /** Every status a claim's count is shown for. */
-export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'] as const;
 
 /** How many of the sheet's claims have the status. */
 export function statusCount(claims: Claim[] | undefined, status: (typeof STATUSES)[number]): number {
