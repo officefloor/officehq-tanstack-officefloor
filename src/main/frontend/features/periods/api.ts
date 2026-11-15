@@ -40,6 +40,14 @@ export function generatePeriods(sheetId: string, by: string, from: string, to: s
     { from, to });
 }
 
+/** Make fiscal year FY<year>'s twelve monthly periods, from the sheet's fiscal year start month of that
+ *  year, exactly as `generatePeriods` does; refused (rejects) when the year is not yyyy. Resolves to how
+ *  many were made. */
+export function generateFiscalYear(sheetId: string, by: string, year: string): Promise<{ made: number }> {
+  return postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/generate-fiscal-year?by=${encodeURIComponent(by)}`,
+    { year });
+}
+
 /** The period whose dates contain the date (yyyy-MM-dd), or undefined for none. A claim belongs to the
  *  period its due-by falls in. */
 export function periodOf(periods: Period[] | undefined, date: string): Period | undefined {

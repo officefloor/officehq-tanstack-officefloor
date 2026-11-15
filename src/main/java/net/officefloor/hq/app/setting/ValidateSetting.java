@@ -109,6 +109,13 @@ public class ValidateSetting {
             }
             body.set(new SettingRequest(key, value.isEmpty() ? null : value, null));
             return;
+        } else if (SettingRepository.FISCAL_START_MONTH.equals(key)) {
+            int month = value.matches("\\d{1,2}") ? Integer.parseInt(value) : 0;
+            if (month < 1 || month > 12) {
+                throw new InvalidSettingException("The fiscal year start month is a whole number from 1 to 12");
+            }
+            body.set(new SettingRequest(key, String.valueOf(month), null));
+            return;
         } else if (SettingRepository.PARENT.equals(key)) {
             // Whether the sheet named exists and is not this one or below it is checked against the store.
             body.set(new SettingRequest(key, value.isEmpty() ? null : value, null));

@@ -28,8 +28,14 @@ public class GeneratePeriods {
             throw new InvalidPeriodException("The to-date must be on or after the from-date");
         }
         sheets.open(id, user);
+        result.set(new GeneratePeriodsResult(months(id, user, YearMonth.from(from), YearMonth.from(to), periods, audit)));
+    }
+
+    /** Makes the monthly periods from one month to another, both inclusive, leaving out a month whose name
+     *  is taken or whose days overlap a period; answers how many were made. */
+    static int months(String id, String user, YearMonth start, YearMonth end, PeriodRepository periods, Audit audit) {
         int made = 0;
-        for (YearMonth m = YearMonth.from(from); !m.isAfter(YearMonth.from(to)); m = m.plusMonths(1)) {
+        for (YearMonth m = start; !m.isAfter(end); m = m.plusMonths(1)) {
             String name = m.toString();
             LocalDate first = m.atDay(1);
             LocalDate last = m.atEndOfMonth();
@@ -39,7 +45,7 @@ public class GeneratePeriods {
                     + " from=" + period.from() + " to=" + period.to());
             made++;
         }
-        result.set(new GeneratePeriodsResult(made));
+        return made;
     }
 
     private static LocalDate date(String text, LocalDate blank) throws InvalidPeriodException {

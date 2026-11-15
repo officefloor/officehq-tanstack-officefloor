@@ -82,6 +82,13 @@ public class SettingRepository {
      *  this sheet takes its parent's, then its parent's parent's, up to three levels up. */
     public static final String PARENT = "parent";
 
+    /** The fiscal year start month (1 to 12; not dated): a fiscal year runs from the first of it for
+     *  twelve months and is named FY<yyyy> by the calendar year its first day falls in. */
+    public static final String FISCAL_START_MONTH = "fiscal-start-month";
+
+    /** The fiscal year start month until it is first set. */
+    public static final String DEFAULT_FISCAL_START_MONTH = "1";
+
     /** The late percent until it is first set. */
     public static final String DEFAULT_LATE_PCT = "0.00";
 
@@ -92,10 +99,10 @@ public class SettingRepository {
     public static final String DEFAULT_FLOOR = "1.00";
 
     /** Whether a key is dated: every key that carries a figure (the policy date, the period
-     *  numbering date, the grace days, the pot and the permission matrix are not). */
+     *  numbering date, the grace days, the pot, the fiscal year start month and the permission matrix are not). */
     public static boolean isDated(String key) {
         return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
-                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !PARENT.equals(key) && !Permissions.isKey(key);
+                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !FISCAL_START_MONTH.equals(key) && !PARENT.equals(key) && !Permissions.isKey(key);
     }
 
     private final JdbcTemplate jdbc;
@@ -155,6 +162,12 @@ public class SettingRepository {
     /** An undated setting's value; null when blank or never set. */
     public String find(String sheetId, String key) {
         return dated(sheetId, key, null).on("9999-12-31");
+    }
+
+    /** The sheet's fiscal year start month (1 to 12). */
+    public int fiscalStartMonth(String sheetId) {
+        String value = find(sheetId, FISCAL_START_MONTH);
+        return Integer.parseInt(value == null || value.isEmpty() ? DEFAULT_FISCAL_START_MONTH : value);
     }
 
     /** The sheet's pot; null when there is none. */
