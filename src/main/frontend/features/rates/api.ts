@@ -1,5 +1,5 @@
 import { getJson, postJson } from '../../api/http';
-import { counts, dueBy, isBound, isCorrection, isOverdue, type Claim } from '../claims/api';
+import { counts, dueBy, isBound, isCorrection, isOpen, isOverdue, type Claim } from '../claims/api';
 import { sheetKey } from '../sheet/api';
 import type { DatedOn } from '../settings/api';
 
@@ -144,6 +144,19 @@ export function excessOf(claims: Claim[], rates: Rate[] | undefined, gradeOn: Gr
 export function overdue(claims: Claim[], today: string, dueOfClaim: (c: Claim) => string | null) {
   const late = claims.filter((c) => isOverdue(c, today));
   return { count: late.length, total: sumDues(late.map(dueOfClaim)) };
+}
+
+/** The due of the open (OPEN or PENDING) claims among those that count (`claims`, the live ones), split by
+ *  their age on the sheet's `today` (the days from the claim's date): 0 to 30, 31 to 60, and 61 or more
+ *  (one dated after today is 0 to 30); n/a ones skipped. */
+export function agedDues(claims: Claim[], today: string, dueOfClaim: (c: Claim) => string | null) {
+  const buckets: Array<Array<string | null>> = [[], [], []];
+  const now = Date.parse(`${today}T00:00:00Z`);
+  for (const c of claims.filter(isOpen)) {
+    const age = today === '' ? 0 : Math.round((now - Date.parse(`${c.date}T00:00:00Z`)) / 86_400_000);
+    buckets[age <= 30 ? 0 : age <= 60 ? 1 : 2].push(dueOfClaim(c));
+  }
+  return { upTo30: sumDues(buckets[0]), upTo60: sumDues(buckets[1]), over60: sumDues(buckets[2]) };
 }
 
 /** Add up two-decimal dues, skipping n/a. */

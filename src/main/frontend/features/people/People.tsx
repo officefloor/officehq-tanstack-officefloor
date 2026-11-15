@@ -8,7 +8,7 @@ import { BulkSettle } from '../claims/BulkSettle';
 import { PersonClaims } from '../claims/PersonClaims';
 import { backing, claimsKey, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
 import { listPeriods, periodsKey, personPeriodDue } from '../periods/api';
-import { claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
+import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
 import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { BulkGrade } from './BulkGrade';
@@ -27,7 +27,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '' };
  *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
  *  patrons (names sorted, with a picker that names one more) and backing (see `backing`), and
- *  their due-total for each period (see `personPeriodDue`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
+ *  their due-total for each period (see `personPeriodDue`), the due of their open claims by age (see `agedDues`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
  *  with a checkbox that selects it for a button that opens the selected claims together.
  *  Each person has a checkbox that selects them for a grade given to the selected people together.
  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
@@ -312,6 +312,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
             const claimed = sumAmounts(live);
             const pct = byGrade.get(p.grade);
             const late = overdue(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
+            const aged = agedDues(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
             return (
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
                 <td>
@@ -339,6 +340,11 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                       {personPeriodDue(q, p, claims.data ?? [], people.data, rates.data, floor, charges)}</span>
                   </td>
                 ))}
+                <td>
+                  Aged 0-30 <span data-testid="person-aged-0-30">{aged.upTo30}</span>{' '}
+                  31-60 <span data-testid="person-aged-31-60">{aged.upTo60}</span>{' '}
+                  61+ <span data-testid="person-aged-61">{aged.over60}</span>
+                </td>
                 <td>
                   Overdue <span data-testid="person-overdue-count">{late.count}</span>{' '}
                   totalling <span data-testid="person-overdue-total">{late.total}</span>
