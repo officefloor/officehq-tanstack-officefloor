@@ -7,8 +7,10 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import javax.sql.DataSource;
@@ -36,6 +38,11 @@ public class AsOfStore {
     private final DataSource dataSource;
 
     private final AtomicLong views = new AtomicLong();
+
+    /** The live tables and their columns: the schema is migrated before the app serves, so they are read once. */
+    private List<String> liveTables;
+
+    private final Map<String, Set<String>> liveColumns = new HashMap<>();
 
     public AsOfStore(DataSource dataSource) {
         this.dataSource = dataSource;
@@ -155,9 +162,11 @@ public class AsOfStore {
     }
 
     /** Copy the sheet's rows of every table from {@code source} (null: none) into a new schema. */
-    private static void copy(Connection c, String source, String target, String sheetId) throws SQLException {
-        List<String> tables = tables(c, LIVE);
-        Set<String> inSource = source == null ? Set.of() : new HashSet<>(tables(c, source));
+    private void copy(Connection c, String source, String target, String sheetId) throws SQLException {
+        if (liveTables == null) liveTables = tables(c, LIVE);
+        List<String> tables = liveTables;
+        // A snapshot is a copy of every live table, all taken since the app started.
+        Set<String> inSource = source == null ? Set.of() : new HashSet<>(source.equals(LIVE) || source.startsWith("SNAP_") ? tables : tables(c, source));
         String sheet = "'" + sheetId.replace("'", "''") + "'";
         try (Statement s = c.createStatement()) {
             s.execute("CREATE SCHEMA " + q(target));
@@ -172,9 +181,13 @@ public class AsOfStore {
     }
 
     /** The condition picking the sheet's rows of a table. */
-    private static String filter(Connection c, String table, String from, String sheet) throws SQLException {
+    private String filter(Connection c, String table, String from, String sheet) throws SQLException {
         if (table.equals("SHEET")) return "ID = " + sheet;
-        Set<String> columns = columns(c, table);
+        Set<String> columns = liveColumns.get(table);
+        if (columns == null) {
+            columns = columns(c, table);
+            liveColumns.put(table, columns);
+        }
         if (columns.contains("SHEET_ID")) return "SHEET_ID = " + sheet;
         for (String owner : List.of("PERIOD", "PERSON", "CLAIM")) {
             if (columns.contains(owner + "_ID")) {

@@ -15,6 +15,8 @@ export type Period = {
   soft: boolean;
   /** The most OPEN or PENDING claims a person may have in it (claims due by a day in it); null for none. */
   cap: number | null;
+  /** Once closed or soft-closed, each person's carried figure for it fixed when it was closed, by person id. */
+  personCarried: Record<string, string>;
 };
 /** cap: a whole number above zero, blank for none. */
 export type PeriodInput = { name: string; from: string; to: string; cap: string };
@@ -107,11 +109,13 @@ export function personPeriodDue(p: Period, person: Person, claims: Claim[], peop
     .map((c) => claimDue(c, rates, (d) => gradeOn(person, d), floor, late)));
 }
 
-/** A person's carried figure for a period: the due as shown now of their claims that count (see `liveClaims`)
+/** A person's carried figure for a period: once closed or soft-closed, the one fixed for them when it was closed
+ *  (0.00 for a person added later); else the due as shown now of their claims that count (see `liveClaims`)
  *  due by a day in a period ending before this one starts, whose status at the end of this period's last day
  *  (see `statusOn`) was OPEN or PENDING; n/a ones skipped. */
 export function personPeriodCarried(p: Period, periods: Period[], person: Person, claims: Claim[],
   people: Person[] | undefined, rates: Rate[] | undefined, floor: DatedOn, late: Late): string {
+  if (p.closed || p.soft) return p.personCarried[String(person.id)] ?? '0.00';
   const earlier = periods.filter((e) => e.to < p.from);
   return sumDues(liveClaims(claims.filter((c) => c.personId === person.id), people)
     .filter((c) => { const s = statusOn(c, p.to); return s === 'OPEN' || s === 'PENDING'; })
