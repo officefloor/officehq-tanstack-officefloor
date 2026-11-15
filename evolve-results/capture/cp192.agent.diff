@@ -1,0 +1,136 @@
+diff --git a/src/main/frontend/features/crews/Crews.tsx b/src/main/frontend/features/crews/Crews.tsx
+index 70bfda61e..0f2baa260 100644
+--- a/src/main/frontend/features/crews/Crews.tsx
++++ b/src/main/frontend/features/crews/Crews.tsx
+@@ -2,7 +2,7 @@ import { useState } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { useSubmitOnce } from '../../forms/useSubmitOnce';
+ import { claimsKey, listClaims, liveClaims } from '../claims/api';
+-import { gradeOn, listPeople, peopleKey } from '../people/api';
++import { gradeOn, listPeople, peopleKey, shownName } from '../people/api';
+ import type { Person } from '../people/api';
+ import { listRates, personDue, rateByGrade, ratesKey } from '../rates/api';
+ import { useCap, useFloor, useLate } from '../settings/api';
+@@ -96,6 +96,12 @@ export function Crews({ sheetId, user }: { sheetId: string; user: string }) {
+   );
+ }
+ 
++/** A crew's lead as the screen shows a name (see `shownName`); '' once they left the sheet. */
++function leadShown(crew: Crew, people: Person[]): string {
++  const lead = people.find((p) => p.id === crew.leadId);
++  return lead === undefined ? crew.lead : shownName(lead);
++}
++
+ function CrewRow({ sheetId, user, crew, people, dueTotal }: { sheetId: string; user: string; crew: Crew; people: Person[]; dueTotal: string }) {
+   const queryClient = useQueryClient();
+   const [member, setMember] = useState('');
+@@ -114,7 +120,7 @@ function CrewRow({ sheetId, user, crew, people, dueTotal }: { sheetId: string; u
+   return (
+     <li data-testid={`crew-row-${crew.name}`}>
+       <strong>{crew.name}</strong>{' '}
+-      lead <span data-testid="crew-lead">{crew.lead}</span>{' '}
++      lead <span data-testid="crew-lead">{leadShown(crew, people)}</span>{' '}
+       due-total <span data-testid="crew-due-total"><Fig>{dueTotal}</Fig></span>
+       <ul>
+         {crew.members.map((m) => (
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 95d604f3e..c6d3aeb67 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -24,7 +24,7 @@ import { QuickAdd } from './QuickAdd';
+ import { ColumnChooser, useColumns } from './Columns';
+ import { ShowRetired, useShowRetired } from './ShowRetired';
+ import { SortBy, sortPeople, useSortBy } from './SortBy';
+-import { GRADES, addAlias, addPatron, addPerson, cancelStatement, flagPerson, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, takeStatement, transferPerson, undoTransfer, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
++import { GRADES, addAlias, addPatron, addPerson, cancelStatement, flagPerson, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, shownName, takeStatement, transferPerson, undoTransfer, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+ import { Fig } from '../session/Fig';
+ 
+ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFrom: '', contact: '', tags: '' };
+@@ -438,6 +438,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+     liveClaims((claims.data ?? []).filter((c) => c.personId === q.id), [q]),
+     rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges, cap)]));
+   const nameOf = new Map(everyone.map((q) => [q.id, q.name]));
++  const shownOf = new Map(everyone.map((q) => [q.id, shownName(q)]));
+   // The exports wait for every read in flight: after the as-of date changes the screen re-reads all.
+   const reading = useIsFetching() > 0;
+ 
+@@ -555,7 +556,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                     Down
+                   </button>
+                 </td>
+-                <td data-testid="person-name">{p.name}</td>
++                <td data-testid="person-name">{shownName(p)}</td>
+                 <td data-testid="person-grade">{p.grade}</td>
+                 <td>
+                   <select data-testid="person-inline-grade" value={gradePicks[p.id] ?? p.grade}
+@@ -768,7 +769,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                 <td>
+                   {shows('patrons') && (
+                     <>Patrons <span data-testid="person-patrons">
+-                      {patronShares(p.patronIds).map((s) => ({ name: nameOf.get(s.id) ?? '', share: s.share })).sort((x, y) => x.name.localeCompare(y.name)).map((s) => `${s.name} ${(s.share / 100).toFixed(2)}`).join(', ')}
++                      {patronShares(p.patronIds).map((s) => ({ name: nameOf.get(s.id) ?? '', shown: shownOf.get(s.id) ?? '', share: s.share })).sort((x, y) => x.name.localeCompare(y.name)).map((s) => `${s.shown} ${(s.share / 100).toFixed(2)}`).join(', ')}
+                     </span>{' '}</>
+                   )}
+                   {shows('backing') && <>backing <span data-testid="person-backing"><Fig>{backing(claims.data ?? [], p.patronIds, today)}</Fig></span>{' '}</>}
+diff --git a/src/main/frontend/features/people/api.ts b/src/main/frontend/features/people/api.ts
+index c12c38b7d..ecbd4823e 100644
+--- a/src/main/frontend/features/people/api.ts
++++ b/src/main/frontend/features/people/api.ts
+@@ -81,6 +81,11 @@ export function gradeOn(p: Person, date: string): string {
+   return found?.grade ?? '';
+ }
+ 
++/** A person's name as the screen shows it: `<name> (<grade in force on the sheet's today>)`. */
++export function shownName(p: Person): string {
++  return `${p.name} (${p.grade})`;
++}
++
+ const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/people`;
+ 
+ export const peopleKey = (sheetId: string) => [...sheetKey(sheetId), 'people'] as const;
+diff --git a/src/main/frontend/features/summary/TreeSearch.tsx b/src/main/frontend/features/summary/TreeSearch.tsx
+index 3b3afa2a8..700b3a1f9 100644
+--- a/src/main/frontend/features/summary/TreeSearch.tsx
++++ b/src/main/frontend/features/summary/TreeSearch.tsx
+@@ -1,13 +1,13 @@
+ import { useEffect, useRef, useState } from 'react';
+ import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { claimsKey, listClaims, liveClaims } from '../claims/api';
+-import { gradeOn, listPeople, peopleKey } from '../people/api';
++import { gradeOn, listPeople, peopleKey, shownName } from '../people/api';
+ import { listRates, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
+ import { useCap, useFloor, useLate } from '../settings/api';
+ import { listTree, sheetKey, treeKey, useSheetToday } from '../sheet/api';
+ 
+ /** A person as the search finds them: their name, aliases and due-total as their row shows it. */
+-type Found = { name: string; aliases: string[]; due: string };
++type Found = { name: string; shown: string; aliases: string[]; due: string };
+ 
+ /** Everyone on a sheet in list order, with their due-total as that sheet's list shows it; undefined until read. */
+ function useSheetPeople(sheetId: string, user: string): Found[] | undefined {
+@@ -22,6 +22,7 @@ function useSheetPeople(sheetId: string, user: string): Found[] | undefined {
+   const byGrade = rateByGrade(rates.data, today);
+   return people.data.map((p) => ({
+     name: p.name,
++    shown: shownName(p),
+     aliases: p.aliases,
+     due: showDue(personDue(liveClaims(claims.data.filter((c) => c.personId === p.id), [p]),
+       rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap)),
+@@ -39,7 +40,7 @@ function TreeSheet({ sheetId, user, report }: { sheetId: string; user: string; r
+ }
+ 
+ /** A search box and a button that list, over the sheet and every other sheet of its tree, everyone
+- *  whose name or an alias contains the typed text (case ignored), one line each `<sheet id> <name>
++ *  whose name or an alias contains the typed text (case ignored), one line each `<sheet id> <name (grade)>
+  *  <due-total>`: the sheet's own people first in list order, then the other sheets' by sheet id. The
+  *  count is cleared while a search runs; every sheet is read afresh for it. */
+ export function TreeSearch({ sheetId, user }: { sheetId: string; user: string }) {
+@@ -86,7 +87,7 @@ export function TreeSearch({ sheetId, user }: { sheetId: string; user: string })
+   const lines = ready
+     ? ids.flatMap((id) => reported[id]
+       .filter((f) => [f.name, ...f.aliases].some((s) => s.toLowerCase().includes(needle)))
+-      .map((f) => `${id} ${f.name} ${f.due}`))
++      .map((f) => `${id} ${f.shown} ${f.due}`))
+     : [];
+ 
+   return (
