@@ -51,6 +51,14 @@ export function listDescendants(id: string, live = false): Promise<string[]> {
   return getJson<string[]>(`/api/sheets/${encodeURIComponent(id)}/descendants`, live);
 }
 
+export const treeKey = (id: string) => [...sheetKey(id), 'tree'] as const;
+
+/** The ids of the sheets of the sheet's tree: its root (the top of its parent chain) first, then the
+ *  root's descendants, nearest first; the sheet itself among them. */
+export function listTree(id: string): Promise<string[]> {
+  return getJson<string[]>(`/api/sheets/${encodeURIComponent(id)}/tree`);
+}
+
 /** A clone just made: the sheet cloned and the id it was cloned to. */
 export type Clone = { from: string; to: string };
 
