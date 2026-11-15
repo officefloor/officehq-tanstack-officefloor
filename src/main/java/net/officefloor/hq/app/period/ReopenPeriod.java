@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /** Reopens a closed or soft-closed period: its due-total is live again. Refused for a role the permission matrix does not let reopen (by default
  *  anyone but a steward), and when
- *  the period is not closed. */
+ *  the period is not closed or is locked. */
 public class ReopenPeriod {
     public void reopen(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name,
             @RequestParam(name = "by", required = false) String by, PeriodRepository periods,
@@ -21,6 +21,9 @@ public class ReopenPeriod {
         }
         if (!Permissions.allows(id, by, Permissions.REOPEN, roles, settings)) {
             throw new PeriodReopenException("Your role may not reopen a period");
+        }
+        if (found.locked()) {
+            throw new PeriodReopenException("The period is locked");
         }
         if (!found.fixed()) {
             throw new PeriodReopenException("The period is not closed");

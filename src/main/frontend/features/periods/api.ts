@@ -19,6 +19,8 @@ export type Period = {
   personCarried: Record<string, string>;
   /** Each person's opening balance for it (pasted amounts added up), by person id; part of their carried figure. */
   personOpenings: Record<string, string>;
+  /** Locked by a steward: it cannot be reopened until unlocked. */
+  locked: boolean;
 };
 /** cap: a whole number above zero, blank for none. */
 export type PeriodInput = { name: string; from: string; to: string; cap: string };
@@ -84,9 +86,15 @@ export function softClosePeriod(sheetId: string, by: string, name: string): Prom
 }
 
 /** Reopen a closed or soft-closed period, making its due-total live again; refused (rejects) for anyone but a
- *  steward, and when it is not closed. */
+ *  steward, and when it is not closed or is locked. */
 export function reopenPeriod(sheetId: string, by: string, name: string): Promise<Period> {
   return postJson<Period>(`${base(sheetId)}/${encodeURIComponent(name)}/reopen?by=${encodeURIComponent(by)}`, {});
+}
+
+/** Lock or unlock a period; refused (rejects) for anyone but a steward, and when it is already locked (or, to
+ *  unlock, not locked). A locked period cannot be reopened. */
+export function lockPeriod(sheetId: string, by: string, name: string, lock: boolean): Promise<Period> {
+  return postJson<Period>(`${base(sheetId)}/${encodeURIComponent(name)}/${lock ? 'lock' : 'unlock'}?by=${encodeURIComponent(by)}`, {});
 }
 
 /** A claim's status at the end of a day (yyyy-MM-dd), as its status log records it: the last status

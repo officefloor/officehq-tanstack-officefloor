@@ -6,17 +6,17 @@ import { listPeople, peopleKey } from '../people/api';
 import { listRates, ratesKey } from '../rates/api';
 import { fiscalYearOf, useFiscalStartMonth, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
-import { addPeriod, closePeriod, generateFiscalYear, generatePeriods, listPeriods, periodDueTotal, periodsKey, reopenPeriod, softClosePeriod, type PeriodInput } from './api';
+import { addPeriod, closePeriod, generateFiscalYear, generatePeriods, listPeriods, lockPeriod, periodDueTotal, periodsKey, reopenPeriod, softClosePeriod, type PeriodInput } from './api';
 import { Fig } from '../session/Fig';
 import { ImportOpenings } from './ImportOpenings';
 
-type PeriodAction = 'close' | 'soft-close' | 'reopen';
+type PeriodAction = 'close' | 'soft-close' | 'reopen' | 'lock' | 'unlock';
 
 const EMPTY: PeriodInput = { name: '', from: '', to: '', cap: '' };
 
 /** The sheet's periods: a form that adds one, and each period by from-date with its due-total (the
  *  due of the claims that count whose date falls in it, n/a ones and OPEN unbound ones dated within their person's hold skipped; once closed, the one fixed
- *  when it was closed or soft-closed), the fiscal year its from-date falls in, its cap on each person's open claims (blank for none), whether it is closed (yes, soft or no), and buttons that close, soft-close and reopen it (each by the roles the permission matrix allows). */
+ *  when it was closed or soft-closed), the fiscal year its from-date falls in, its cap on each person's open claims (blank for none), whether it is closed (yes, soft or no), whether it is locked (yes or no), and buttons that close, soft-close and reopen it (each by the roles the permission matrix allows) and lock and unlock it (a steward only). */
 export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
@@ -57,7 +57,9 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const act = useMutation({
     mutationFn: ({ name, action }: { name: string; action: PeriodAction }) =>
       action === 'close' ? closePeriod(sheetId, user, name)
-        : action === 'soft-close' ? softClosePeriod(sheetId, user, name) : reopenPeriod(sheetId, user, name),
+        : action === 'soft-close' ? softClosePeriod(sheetId, user, name)
+          : action === 'lock' || action === 'unlock' ? lockPeriod(sheetId, user, name, action === 'lock')
+            : reopenPeriod(sheetId, user, name),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
   });
 
@@ -178,6 +180,9 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
                 Closed <span data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</span>
               </td>
               <td>
+                Locked <span data-testid="period-locked">{p.locked ? 'yes' : 'no'}</span>
+              </td>
+              <td>
                 <button type="button" data-testid="period-close" disabled={act.isPending}
                   onClick={() => actOne(p.name, 'close')}>
                   Close
@@ -189,13 +194,25 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
                 <button type="button" data-testid="period-reopen" disabled={act.isPending}
                   onClick={() => actOne(p.name, 'reopen')}>
                   Reopen
+                </button>{' '}
+                <button type="button" data-testid="period-lock" disabled={act.isPending}
+                  onClick={() => actOne(p.name, 'lock')}>
+                  Lock
+                </button>{' '}
+                <button type="button" data-testid="period-unlock" disabled={act.isPending}
+                  onClick={() => actOne(p.name, 'unlock')}>
+                  Unlock
                 </button>
                 {act.isError && act.variables?.name === p.name && (
                   <span data-testid="period-error">{act.variables.action === 'close'
                     ? 'Your role may not close a period, or it is already closed.'
                     : act.variables.action === 'soft-close'
                       ? 'Your role may not close a period, or it is already closed or soft-closed.'
-                      : 'Your role may not reopen a period, or it is not closed.'}</span>
+                      : act.variables.action === 'lock'
+                        ? 'Only a steward may lock a period, and it must not already be locked.'
+                        : act.variables.action === 'unlock'
+                          ? 'Only a steward may unlock a period, and it must be locked.'
+                          : 'Your role may not reopen a period, or it is not closed or is locked.'}</span>
                 )}
               </td>
             </tr>
