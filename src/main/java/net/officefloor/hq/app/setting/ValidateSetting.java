@@ -63,6 +63,12 @@ public class ValidateSetting {
             }
             body.set(new SettingRequest(key, value.isEmpty() ? null : new BigDecimal(value).setScale(2).toPlainString(), null));
             return;
+        } else if (SettingRepository.ALERT_THRESHOLD.equals(key)) {
+            if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
+                throw new InvalidSettingException("The alert threshold is blank or 0.00 or more with up to two decimals");
+            }
+            body.set(new SettingRequest(key, value.isEmpty() ? null : new BigDecimal(value).setScale(2).toPlainString(), null));
+            return;
         } else if (SettingRepository.FLOOR.equals(key)) {
             if (!MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("The floor is 0.00 or more with up to two decimals");

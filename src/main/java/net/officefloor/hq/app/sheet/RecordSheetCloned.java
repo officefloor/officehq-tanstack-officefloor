@@ -19,7 +19,7 @@ public class RecordSheetCloned {
         String user = by == null ? "" : by;
         audit.record("SHEET_CLONE_MADE sheet=" + clone.from() + " by=" + user + " to=" + clone.to());
         audit.record("SHEET_CLONED sheet=" + clone.to() + " by=" + user + " from=" + clone.from());
-        Rollup nothing = new Rollup(Map.of(), null, null, null);
+        Rollup nothing = new Rollup(Map.of(), null, null, null, null);
         for (String line : Rollup.of(clone.to(), people, claims, rates, sheets, settings)
                 .changesSince(nothing, clone.to(), user)) {
             audit.record(line);

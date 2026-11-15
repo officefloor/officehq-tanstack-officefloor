@@ -39,8 +39,10 @@ export type Role = { sheetId: string; user: string; role: string };
  *  not dated): a grade with no rate in force on a date on this sheet takes its parent's, then its parent's
  *  parent's, up to three levels up; refused for the sheet itself, a sheet not loaded yet, or one below it.
  *  The fiscal year start month (1 to 12; 1 until set; not dated): a fiscal year runs twelve months from the
- *  first of it and is named FY<yyyy> by the calendar year its first day falls in (see `fiscalYearOf`). */
-export const SETTING_KEYS = ['clerk-limit', 'cap', 'pot', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
+ *  first of it and is named FY<yyyy> by the calendar year its first day falls in (see `fiscalYearOf`).
+ *  The alert threshold (two decimals; blank means off; not dated): a person whose due-total goes from at
+ *  or below it to above it after a change is alerted (an ALERT audit line). */
+export const SETTING_KEYS = ['clerk-limit', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
   'period-numbering-from', 'entry-date', 'grace-days', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'] as const;
 
 /** The roles that may take each action of the permission matrix while its entry is blank. */
@@ -53,7 +55,7 @@ export const PERMISSION_STANDING: Record<string, string> = {
 export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00', 'fiscal-start-month': '1' };
 
 /** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
-export const UNDATED_KEYS: readonly string[] = ['pot', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'perm-open', 'perm-settle', 'perm-void',
+export const UNDATED_KEYS: readonly string[] = ['pot', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'perm-open', 'perm-settle', 'perm-void',
   'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'];
 
 /** The fiscal year a date (yyyy-MM-dd) falls in, FY<yyyy>, for a fiscal year start month (1 to 12). */

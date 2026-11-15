@@ -21,8 +21,10 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 /** The sheet's figures at one moment, as the screen shows them: each person's claimed and
  *  due-total (null: n/a; else at most the sheet's cap) and overdue-total, in the order they were added, and the
  *  sheet's claimed-total, due-total and overdue-total (these two leave out the single highest and
- *  lowest person's figure when three or more people have one). */
-public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueTotal, String overdueTotal) {
+ *  lowest person's figure when three or more people have one), with the sheet's alert threshold
+ *  (null: off). */
+public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueTotal, String overdueTotal,
+        BigDecimal alertThreshold) {
 
     /** A person's figures: their name, claimed, due-total (null: n/a) and overdue-total (the shown
      *  dues of their open claims past their due-by plus grace days on the sheet's today, n/a ones skipped). */
@@ -75,11 +77,13 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             overdues.add(overdue);
         }
         return new Rollup(figures, claimedTotal.toPlainString(), trimmedSum(dues).toPlainString(),
-                trimmedSum(overdues).toPlainString());
+                trimmedSum(overdues).toPlainString(), settings.alertThreshold(sheetId));
     }
 
     /** The audit lines after a change from {@code before} to this: one ROLLUP per person whose
-     *  figures moved (a new person counts as moved), then TOTALS when a sheet total moved. */
+     *  figures moved (a new person counts as moved), then TOTALS when a sheet total moved, then an
+     *  ALERT per person (in list order) whose due-total went from at or below the alert threshold
+     *  (or none) to above it. */
     public List<String> changesSince(Rollup before, String sheetId, String by) {
         String head = " sheet=" + sheetId + " by=" + by;
         List<String> lines = new ArrayList<>();
@@ -95,7 +99,20 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             lines.add("TOTALS" + head + " claimed-total=" + claimedTotal + " due-total=" + dueTotal
                     + " overdue-total=" + overdueTotal);
         }
+        if (alertThreshold != null) {
+            people.forEach((id, now) -> {
+                Figures was = before.people.get(id);
+                if (above(now) && (was == null || !above(was))) {
+                    lines.add("ALERT" + head + " name=" + now.name() + " due-total=" + now.dueTotal());
+                }
+            });
+        }
         return lines;
+    }
+
+    /** Whether the person's due-total is above the alert threshold (none: not). */
+    private boolean above(Figures figures) {
+        return figures.dueTotal() != null && new BigDecimal(figures.dueTotal()).compareTo(alertThreshold) > 0;
     }
 
     /** The grade's rate in force on the date (yyyy-MM-dd), inherited up the parent chain; null when none. */

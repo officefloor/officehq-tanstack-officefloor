@@ -44,6 +44,10 @@ public class SettingRepository {
     /** The pot: the sum a balanced pool's members cut between them (two decimals; blank: none; not dated). */
     public static final String POT = "pot";
 
+    /** The alert threshold: a person whose due-total crosses above it is alerted (two decimals;
+     *  blank: off; not dated). */
+    public static final String ALERT_THRESHOLD = "alert-threshold";
+
     /** The floor: the least a claim's live due can be (two decimals). */
     public static final String FLOOR = "floor";
 
@@ -102,7 +106,7 @@ public class SettingRepository {
      *  numbering date, the grace days, the pot, the fiscal year start month and the permission matrix are not). */
     public static boolean isDated(String key) {
         return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
-                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !FISCAL_START_MONTH.equals(key) && !PARENT.equals(key) && !Permissions.isKey(key);
+                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !FISCAL_START_MONTH.equals(key) && !PARENT.equals(key) && !Permissions.isKey(key);
     }
 
     private final JdbcTemplate jdbc;
@@ -173,6 +177,12 @@ public class SettingRepository {
     /** The sheet's pot; null when there is none. */
     public BigDecimal pot(String sheetId) {
         String value = find(sheetId, POT);
+        return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The sheet's alert threshold; null when it is off. */
+    public BigDecimal alertThreshold(String sheetId) {
+        String value = find(sheetId, ALERT_THRESHOLD);
         return value == null ? null : new BigDecimal(value);
     }
 
