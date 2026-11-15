@@ -101,6 +101,14 @@ public class SettingRepository {
      *  (the sheet's today when it went to REVIEW) plus them is before the sheet's today is late. */
     public static final String REVIEW_SLA = "review-sla";
 
+    /** The mid score threshold (a whole number; blank: none; not dated): while both score thresholds are
+     *  set, a person whose score is at or above it, and below the high one, is in the MID band. */
+    public static final String SCORE_MID = "score-mid";
+
+    /** The high score threshold (a whole number; blank: none; not dated): while both score thresholds are
+     *  set, a person whose score is at or above it is in the HIGH band. */
+    public static final String SCORE_HIGH = "score-high";
+
     /** A grade's grace days ({@code grace-<grade>}, dated; a whole number; blank: none): a claim whose
      *  person's grade in force on its date has them in force on that date is overdue, and gains its late
      *  charge, counting from its due-by plus them. */
@@ -134,7 +142,7 @@ public class SettingRepository {
     /** Whether a key is dated: every key that carries a figure (the policy date, the period
      *  numbering date, the grace days, the pot, the proof kinds, the fiscal year start month and the permission matrix are not). */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
+        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
                 && !ENTRY_DATE.equals(key) && !PROOF_KINDS.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !FISCAL_START_MONTH.equals(key) && !PARENT.equals(key) && !DEFAULT_GRADE.equals(key) && !Permissions.isKey(key);
     }
 

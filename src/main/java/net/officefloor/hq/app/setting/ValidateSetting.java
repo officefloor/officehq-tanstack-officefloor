@@ -18,6 +18,9 @@ public class ValidateSetting {
     /** A whole number of days, 0 or more. */
     private static final Pattern DAYS = Pattern.compile("\\d{1,6}");
 
+    /** A whole number, which may be negative. */
+    private static final Pattern WHOLE = Pattern.compile("-?\\d{1,6}");
+
     /** The grades that may have their own terms and grace days. */
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
@@ -124,6 +127,12 @@ public class ValidateSetting {
         } else if (SettingRepository.REVIEW_SLA.equals(key)) {
             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
                 throw new InvalidSettingException("The review SLA is blank or a whole number of days, 0 or more");
+            }
+            body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null));
+            return;
+        } else if (SettingRepository.SCORE_MID.equals(key) || SettingRepository.SCORE_HIGH.equals(key)) {
+            if (!value.isEmpty() && !WHOLE.matcher(value).matches()) {
+                throw new InvalidSettingException("A score threshold is blank or a whole number");
             }
             body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null));
             return;

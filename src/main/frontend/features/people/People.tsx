@@ -14,7 +14,7 @@ import { backing, claimedClaims, claimsKey, patronShares, isActive, correctsAnot
 import { listPeriods, periodOf, periodsKey, personPeriodCarried, personPeriodDue } from '../periods/api';
 import { listPools, personCutTotal, poolsKey } from '../pools/api';
 import { agedDues, claimDue, excessOf, listRates, overdue, personDue, personScore, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
-import { roleOf, roleOfKey, useCap, useFloor, useLate } from '../settings/api';
+import { roleOf, roleOfKey, scoreBand, useCap, useFloor, useLate, useScoreThresholds } from '../settings/api';
 import { crewsKey, listCrews, type Crew } from '../crews/api';
 import { useSheetToday } from '../sheet/api';
 import { BulkGrade } from './BulkGrade';
@@ -78,6 +78,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const floor = useFloor(sheetId);
   const today = useSheetToday(sheetId, user);
   const cap = useCap(sheetId, today);
+  const scoreThresholds = useScoreThresholds(sheetId);
   const charges = useLate(sheetId, today);
   const byGrade = rateByGrade(rates.data, today);
   const [form, setForm] = useState<PersonInput>(EMPTY);
@@ -688,7 +689,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   {shows('overdue-total') && <>totalling <span data-testid="person-overdue-total"><Fig>{late.total}</Fig></span></>}
                 </td>
                 <td>
-                  Score <span data-testid="person-score">{personScore(split.settled, late.count)}</span>
+                  Score <span data-testid="person-score">{personScore(split.settled, late.count)}</span>{' '}
+                  <span data-testid="person-band">{scoreBand(personScore(split.settled, late.count), scoreThresholds)}</span>
                 </td>
                 <td>
                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>

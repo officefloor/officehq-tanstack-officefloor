@@ -53,12 +53,14 @@ export type Role = { sheetId: string; user: string; role: string };
  *  once per claim ever.
  *  The review SLA (a number of days; blank means none; not dated): a REVIEW claim whose review day (the
  *  sheet's today when it went to REVIEW) plus them is before the sheet's today is review-late (see `isReviewLate`).
+ *  The score thresholds (score-mid and score-high, whole numbers; blank means none; not dated): while both
+ *  are set, each person shows a score band (see `scoreBand`).
  *  The default grade (A, B or C; blank means A; not dated): the grade the quick-add bar gives a new person,
  *  and an import line with a blank grade; changing it changes no one.
  *  A grade's clerk limit (clerk-limit-<grade>, two decimals; blank means none; dated): a claim whose person's
  *  grade on the sheet's today has one in force then goes by it instead of the sheet's clerk limit. */
 export const SETTING_KEYS = ['clerk-limit', 'clerk-limit-A', 'clerk-limit-B', 'clerk-limit-C', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'rounding',
-  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'] as const;
+  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'score-mid', 'score-high', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'] as const;
 
 /** The roles that may take each action of the permission matrix while its entry is blank. */
 export const PERMISSION_STANDING: Record<string, string> = {
@@ -70,7 +72,7 @@ export const PERMISSION_STANDING: Record<string, string> = {
 export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00', 'fiscal-start-month': '1' };
 
 /** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
-export const UNDATED_KEYS: readonly string[] = ['pot', 'proof-kinds', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'perm-open', 'perm-settle', 'perm-void',
+export const UNDATED_KEYS: readonly string[] = ['pot', 'proof-kinds', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'score-mid', 'score-high', 'perm-open', 'perm-settle', 'perm-void',
   'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'];
 
 /** The fiscal year a date (yyyy-MM-dd) falls in, FY<yyyy>, for a fiscal year start month (1 to 12). */
@@ -162,6 +164,22 @@ export function useReviewSla(sheetId: string): number | null {
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
   const value = settingOn(settings.data, 'review-sla', '9999-12-31');
   return value ? Number(value) : null;
+}
+
+/** The sheet's score thresholds as whole numbers (null: either is blank). */
+export function useScoreThresholds(sheetId: string): { mid: number; high: number } | null {
+  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+  const mid = settingOn(settings.data, 'score-mid', '9999-12-31');
+  const high = settingOn(settings.data, 'score-high', '9999-12-31');
+  return mid && high ? { mid: Number(mid), high: Number(high) } : null;
+}
+
+/** A person's score band: HIGH at or above the high threshold, MID at or above the mid one, else LOW;
+ *  blank while either threshold is. */
+export function scoreBand(score: string, thresholds: { mid: number; high: number } | null): string {
+  if (!thresholds) return '';
+  const n = Number(score);
+  return n >= thresholds.high ? 'HIGH' : n >= thresholds.mid ? 'MID' : 'LOW';
 }
 
 /** The day a claim last went to REVIEW (yyyy-MM-dd), from its status log (null: never). */
