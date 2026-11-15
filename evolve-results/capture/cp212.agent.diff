@@ -1,0 +1,67 @@
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 6e64de858..1738ab59c 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -49,7 +49,7 @@ function snapshotOn(p: Person, day: string): string {
+  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
+  *  patrons (each `<name> <share>`, sorted by name (see `patronShares`), with a picker that names one more), their plans (see `PersonPlans`), their aliases (sorted as names are
+  *  compared, with an entry and a button that adds one) and backing (see `backing`), and
+- *  their due-total and carried figure for each period (see `personPeriodDue`, `personPeriodCarried`), the due of their open claims by age (see `agedDues`), their overdue claims (OPEN ones past their due-by; the count and their due added up), their score (see `personScore`) and their claims, each
++ *  their due-total and carried figure for each period (see `personPeriodDue`, `personPeriodCarried`), the due of their open claims by age (see `agedDues`), their overdue claims (OPEN ones past their due-by; the count and their due added up), their score (see `personScore`; corrections left out of its settled figures) and their claims, each
+  *  with a checkbox that selects it for a button that opens the selected claims together.
+  *  Each person has a checkbox that selects them for a grade given to the selected people together.
+  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
+@@ -599,6 +599,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+             const late = overdue(live, charges, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
+             const aged = agedDues(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
+             const split = splitDues(live, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
++            const scored = splitDues(live.filter((c) => !correctsAnother(c)), (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
+             return (
+               <tr key={p.id} data-testid={`person-row-${p.id}`}>
+                 <td>
+@@ -689,8 +690,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   {shows('overdue-total') && <>totalling <span data-testid="person-overdue-total"><Fig>{late.total}</Fig></span></>}
+                 </td>
+                 <td>
+-                  Score <span data-testid="person-score">{personScore(split.settled, late.count)}</span>{' '}
+-                  <span data-testid="person-band">{scoreBand(personScore(split.settled, late.count), scoreThresholds)}</span>
++                  Score <span data-testid="person-score">{personScore(scored.settled, late.count)}</span>{' '}
++                  <span data-testid="person-band">{scoreBand(personScore(scored.settled, late.count), scoreThresholds)}</span>
+                 </td>
+                 <td>
+                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
+diff --git a/src/main/frontend/features/rates/api.ts b/src/main/frontend/features/rates/api.ts
+index 6260abdf0..ec3c63149 100644
+--- a/src/main/frontend/features/rates/api.ts
++++ b/src/main/frontend/features/rates/api.ts
+@@ -199,7 +199,7 @@ export function overdue(claims: Claim[], charges: Late, dueOfClaim: (c: Claim) =
+   return { count: late.length, total: sumDues(late.map(dueOfClaim)) };
+ }
+ 
+-/** A person's score: their settled figures (`settled`, see `splitDues`) divided by 100, less 5 for each of
++/** A person's score: their settled figures (`settled`, see `splitDues`, corrections left out) divided by 100, less 5 for each of
+  *  their overdue claims (`overdueCount`, see `overdue`), rounded half to even to a whole number. */
+ export function personScore(settled: string, overdueCount: number): string {
+   const scaled = hundredths(settled) - BigInt(overdueCount) * 50_000n; // in 1/10_000 of a point
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 563fe8d7c..d9a5e1526 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -29,7 +29,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+ 
+     /** A person's figures: their name, claimed, due-total (null: n/a) and overdue-total (the shown
+      *  dues of their open claims past their due-by plus grace days on the sheet's today, n/a ones skipped) and
+-     *  score (their settled claims' shown dues divided by 100, less 5 per overdue claim, rounded half to even;
++     *  score (their settled claims' shown dues, corrections left out, divided by 100, less 5 per overdue claim, rounded half to even;
+      *  not part of {@link #sameAs}). */
+     public record Figures(String name, String claimed, String dueTotal, String overdueTotal, String score) {
+         public boolean sameAs(Figures other) {
+@@ -71,7 +71,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+                 kept |= c.getSettledDue() != null || c.isBound()
+                         || (pct != null && (!grade.equals(p.getGrade()) || c.getDate().compareTo(today) <= 0));
+                 if (d != null) due = due.add(new BigDecimal(d));
+-                if (d != null && ClaimStatus.SETTLED.name().equals(c.getStatus())) settled = settled.add(new BigDecimal(d));
++                if (d != null && !corrects(c) && ClaimStatus.SETTLED.name().equals(c.getStatus())) settled = settled.add(new BigDecimal(d));
+                 if (ClaimStatus.isOpen(c.getStatus()) && late.lateFrom(c).isBefore(todayDate)) {
+                     overdueCount++;
+                     if (d != null) overdue = overdue.add(new BigDecimal(d));
