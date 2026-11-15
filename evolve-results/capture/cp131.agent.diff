@@ -1,0 +1,716 @@
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 41e2b94dc..a299a9351 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -7,6 +7,7 @@ import { PasteClaims } from '../claims/PasteClaims';
+ import { BulkSettle } from '../claims/BulkSettle';
+ import { BulkReassign } from '../claims/BulkReassign';
+ import { PersonClaims } from '../claims/PersonClaims';
++import { PersonPlans } from '../plans/PersonPlans';
+ import { backing, claimsKey, patronShares, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
+ import { listPeriods, periodOf, periodsKey, personPeriodDue } from '../periods/api';
+ import { listPools, personCutTotal, poolsKey } from '../pools/api';
+@@ -31,7 +32,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
+  *  they are retired and from when (with a date and a button that retires them, a button that unretires them, and their past retirements, each `<from> to <to>`), whether they have
+  *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
+  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
+- *  patrons (each `<name> <share>`, sorted by name (see `patronShares`), with a picker that names one more), their aliases (sorted as names are
++ *  patrons (each `<name> <share>`, sorted by name (see `patronShares`), with a picker that names one more), their plans (see `PersonPlans`), their aliases (sorted as names are
+  *  compared, with an entry and a button that adds one) and backing (see `backing`), and
+  *  their due-total for each period (see `personPeriodDue`), the due of their open claims by age (see `agedDues`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
+  *  with a checkbox that selects it for a button that opens the selected claims together.
+@@ -659,6 +660,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                     Transfer
+                   </button>
+                 </td>
++                <td>
++                  <PersonPlans sheetId={sheetId} user={user} personId={p.id} />
++                </td>
+                 <td>
+                   <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} gradeOn={(d) => gradeOn(p, d)} rates={rates.data} floor={floor}
+                     today={today} charges={charges} selected={selected} onSelect={select}
+diff --git a/src/main/frontend/features/plans/GeneratePlans.tsx b/src/main/frontend/features/plans/GeneratePlans.tsx
+new file mode 100644
+index 000000000..2fd9f8e15
+--- /dev/null
++++ b/src/main/frontend/features/plans/GeneratePlans.tsx
+@@ -0,0 +1,40 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { useSubmitOnce } from '../../forms/useSubmitOnce';
++import { claimsKey } from '../claims/api';
++import { generatePlans, plansKey } from './api';
++
++/** A button that makes the claims every plan is due (see `generatePlans`), and how many it made. The
++ *  count is cleared while it runs; a refused generate makes nothing and shows an error. */
++export function GeneratePlans({ sheetId, user }: { sheetId: string; user: string }) {
++  const queryClient = useQueryClient();
++  const submitOnce = useSubmitOnce();
++
++  const generate = useMutation({
++    mutationFn: () => generatePlans(sheetId, user),
++    // Not awaited: the count shows as soon as the generate is done, never after its new rows.
++    onSuccess: () => {
++      void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
++      void queryClient.invalidateQueries({ queryKey: plansKey(sheetId) });
++    },
++  });
++
++  return (
++    <section>
++      <button type="button" data-testid="plan-generate" disabled={generate.isPending}
++        onClick={() => submitOnce(() => {
++          generate.reset();
++          return generate.mutateAsync();
++        })}>
++        Generate plan claims
++      </button>
++      {generate.isSuccess && (
++        <>
++          {' '}Made <span data-testid="plan-generated-count">{generate.data.made}</span>
++        </>
++      )}
++      {generate.isError && (
++        <span data-testid="plan-generate-error">The plans' claims could not be generated.</span>
++      )}
++    </section>
++  );
++}
+diff --git a/src/main/frontend/features/plans/PersonPlans.tsx b/src/main/frontend/features/plans/PersonPlans.tsx
+new file mode 100644
+index 000000000..22e320192
+--- /dev/null
++++ b/src/main/frontend/features/plans/PersonPlans.tsx
+@@ -0,0 +1,72 @@
++import { useState } from 'react';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { useSubmitOnce } from '../../forms/useSubmitOnce';
++import { addPlan, listPlans, plansKey, type PlanInput } from './api';
++
++const EMPTY: PlanInput = { amount: '', start: '', every: '', end: '' };
++
++/** A person's plans (each its amount, start, every N days, end and how many claims it has made so far)
++ *  and a form that adds one; a refused add shows an error on the row and adds nothing. */
++export function PersonPlans({ sheetId, user, personId }: { sheetId: string; user: string; personId: number }) {
++  const queryClient = useQueryClient();
++  const plans = useQuery({ queryKey: plansKey(sheetId), queryFn: () => listPlans(sheetId) });
++  const [form, setForm] = useState<PlanInput>(EMPTY);
++  const submitOnce = useSubmitOnce();
++
++  const add = useMutation({
++    mutationFn: (input: PlanInput) => addPlan(sheetId, user, personId, input),
++    onSuccess: () => {
++      setForm(EMPTY);
++      return queryClient.invalidateQueries({ queryKey: plansKey(sheetId) });
++    },
++  });
++
++  const change = (patch: Partial<PlanInput>) => {
++    setForm((f) => ({ ...f, ...patch }));
++    add.reset();
++  };
++
++  return (
++    <div>
++      Plans
++      <table>
++        <tbody>
++          {(plans.data ?? []).filter((pl) => pl.personId === personId).map((pl) => (
++            <tr key={pl.id} data-testid={`plan-row-${pl.id}`}>
++              <td data-testid="plan-amount-shown">{Number(pl.amount).toFixed(2)}</td>
++              <td data-testid="plan-start">{pl.start}</td>
++              <td>every <span data-testid="plan-every">{pl.every}</span> days</td>
++              <td>to <span data-testid="plan-end">{pl.end}</span></td>
++              <td>made <span data-testid="plan-generated">{pl.generated}</span></td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++      <form
++        onSubmit={(e) => {
++          e.preventDefault();
++          const input = form;
++          submitOnce(() => {
++            add.reset();
++            return add.mutateAsync(input);
++          });
++        }}
++      >
++        <input data-testid="plan-form-amount" placeholder="Amount" value={form.amount}
++          onChange={(e) => change({ amount: e.target.value })} />{' '}
++        <input type="date" data-testid="plan-form-start" value={form.start}
++          onChange={(e) => change({ start: e.target.value })} />{' '}
++        <input data-testid="plan-form-every" placeholder="Every N days" value={form.every}
++          onChange={(e) => change({ every: e.target.value })} />{' '}
++        <input type="date" data-testid="plan-form-end" value={form.end}
++          onChange={(e) => change({ end: e.target.value })} />{' '}
++        <button type="submit" data-testid="plan-form-submit" disabled={add.isPending}>
++          Add plan
++        </button>
++        {add.isError && (
++          <span data-testid="plan-error">A plan needs an amount of 0.00 or more with up to two decimals, a start, every a whole number of days (at least 1) and an end not before the start.</span>
++        )}
++      </form>
++    </div>
++  );
++}
+diff --git a/src/main/frontend/features/plans/api.ts b/src/main/frontend/features/plans/api.ts
+new file mode 100644
+index 000000000..a3dd7907b
+--- /dev/null
++++ b/src/main/frontend/features/plans/api.ts
+@@ -0,0 +1,30 @@
++import { getJson, postJson } from '../../api/http';
++import { sheetKey } from '../sheet/api';
++
++/** A person's plan: an amount, a start date, every N days and an end date, and how many claims it has
++ *  made so far. */
++export type Plan = { id: number; sheetId: string; personId: number; amount: string; start: string; every: number; end: string; by: string; generated: number };
++
++export type PlanInput = { amount: string; start: string; every: string; end: string };
++
++export type GenerateResult = { made: number };
++
++const sheetBase = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}`;
++
++export const plansKey = (sheetId: string) => [...sheetKey(sheetId), 'plans'] as const;
++
++/** The sheet's plans, in the order they were added. */
++export function listPlans(sheetId: string): Promise<Plan[]> {
++  return getJson<Plan[]>(`${sheetBase(sheetId)}/plans`);
++}
++
++/** Give the person a plan; refused (rejects) for an amount the claim form would refuse, an interval that is
++ *  not a whole number of at least 1, or an end before the start. */
++export function addPlan(sheetId: string, by: string, personId: number, input: PlanInput): Promise<Plan> {
++  return postJson<Plan>(`${sheetBase(sheetId)}/people/${personId}/plans?by=${encodeURIComponent(by)}`, input);
++}
++
++/** Make the DRAFT claims every plan is due up to its end and the sheet's today, that it has not made yet. */
++export function generatePlans(sheetId: string, by: string): Promise<GenerateResult> {
++  return postJson<GenerateResult>(`${sheetBase(sheetId)}/generate-plans?by=${encodeURIComponent(by)}`, {});
++}
+diff --git a/src/main/frontend/features/plans/plans.slot.tsx b/src/main/frontend/features/plans/plans.slot.tsx
+new file mode 100644
+index 000000000..f1a9eba11
+--- /dev/null
++++ b/src/main/frontend/features/plans/plans.slot.tsx
+@@ -0,0 +1,4 @@
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { GeneratePlans } from './GeneratePlans';
++
++export const contribution = SheetBody.fill({ order: 9.8, Component: GeneratePlans });
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index cb93f0557..b77d64813 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -408,7 +408,7 @@ public class PersonRepository {
+     /** Merge the person {@code from} into {@code into}: from's name and aliases become into's aliases;
+      *  from's patrons are added to into's (not into themselves, no repeats); anyone naming from as
+      *  patron names into instead (no repeats); from's statements, holds, watchers, grades and the
+-     *  person themselves are dropped. Their claims, pool memberships and period totals must have
++     *  person themselves are dropped; from's plans become into's. Their claims, pool memberships and period totals must have
+      *  moved first. */
+     public void merge(Person from, Person into, String user) {
+         String sheetId = into.getSheetId();
+@@ -435,12 +435,14 @@ public class PersonRepository {
+                 "person_grade_history", "person_retired_history", "person_retirement")) {
+             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
+         }
++        // from's plans go on making claims, now for into.
++        jdbc.update("UPDATE plan SET person_id = ? WHERE sheet_id = ? AND person_id = ?", into.getId(), sheetId, from.getId());
+         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, from.getId());
+         withAliases(sheetId, List.of(into));
+     }
+ 
+     /** Move the person to the sheet {@code to} with their grades (and grade history) and aliases, their
+-     *  statements dropped (the count back to 0); their holds, watchers, patron links (either way), pool
++     *  statements dropped (the count back to 0) and their plans going with them; their holds, watchers, patron links (either way), pool
+      *  memberships and closed periods' fixed totals are dropped; they keep the sheet they came from as their
+      *  origin. Their claims must have moved first. */
+     public void transfer(Person person, String to) {
+@@ -451,7 +453,7 @@ public class PersonRepository {
+             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+         }
+         jdbc.update("DELETE FROM period_person_total WHERE person_id = ?", id);
+-        for (String table : List.of("person_grade", "person_grade_history", "person_retired_history", "person_retirement", "person_alias")) {
++        for (String table : List.of("person_grade", "person_grade_history", "person_retired_history", "person_retirement", "person_alias", "plan")) {
+             jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, sheetId, id);
+         }
+         jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL, "
+diff --git a/src/main/java/net/officefloor/hq/app/plan/AddPlan.java b/src/main/java/net/officefloor/hq/app/plan/AddPlan.java
+new file mode 100644
+index 000000000..a7054afca
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/AddPlan.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.plan;
++
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++public class AddPlan {
++    public void add(@RequestParam(name = "by", required = false) String by, @Val ValidPlan request,
++            @Val Person person, PlanRepository plans, Out<Plan> plan) {
++        plan.set(plans.add(person.getSheetId(), person.getId(), request, by == null ? "" : by));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java b/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
+new file mode 100644
+index 000000000..602f3e31c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
+@@ -0,0 +1,65 @@
++package net.officefloor.hq.app.plan;
++
++import java.time.LocalDate;
++import java.util.Set;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimLogRepository;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.holiday.HolidayRepository;
++import net.officefloor.hq.app.period.PeriodClosedException;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** For every plan on the sheet, in the order they were added, adds a DRAFT claim of the plan's amount,
++ *  dated that day with an empty note, for every plan date (the start, then every N days) up to the end
++ *  and the sheet's today that the plan has made none for yet. Each is checked as
++ *  {@link net.officefloor.hq.app.claim.AddClaim} checks a claim (its person not retired before its date,
++ *  its due-by outside a closed period): a date that is refused is skipped, to be tried again next time.
++ *  Each claim made is logged and recorded as CLAIM_ADDED. */
++public class GeneratePlanClaims {
++    public void generate(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "by", required = false) String by, PlanRepository plans,
++            PersonRepository people, SheetRepository sheets, ClaimRepository claims, PeriodRepository periods,
++            SettingRepository settings, HolidayRepository holidays, ClaimLogRepository log, Audit audit,
++            Out<GenerateResult> result) {
++        String id = sheetId.trim();
++        String user = by == null ? "" : by;
++        LocalDate today = sheets.today(id);
++        int made = 0;
++        for (Plan plan : plans.list(id)) {
++            Person person = people.find(id, plan.personId());
++            if (person == null) continue;
++            Set<LocalDate> done = plans.made(plan.id());
++            LocalDate last = plan.end().isBefore(today) ? plan.end() : today;
++            for (LocalDate date = plan.start(); !date.isAfter(last); date = date.plusDays(plan.every())) {
++                if (done.contains(date) || person.retiredBefore(date)) continue;
++                // The due-by is fixed now, as for a claim added on the form.
++                LocalDate dueBy = holidays.dueBy(id, date, settings.terms(id, person, date.toString()));
++                try {
++                    periods.requireOpen(id, dueBy.toString());
++                } catch (PeriodClosedException e) {
++                    continue;
++                }
++                Claim claim = claims.add(id, person.getId(), plan.amount(), date, "", null, dueBy, user);
++                if (periods.softClosedOn(id, dueBy.toString())) claims.markLateEntry(claim);
++                plans.recordMade(plan.id(), date, claim.getId());
++                log.record(claim, user);
++                audit.record("CLAIM_ADDED sheet=" + id + " by=" + user + " person=" + person.getName()
++                        + " amount=" + claim.getAmount() + " date=" + claim.getDate() + claim.getAuditRef());
++                if (claim.isLateEntry()) {
++                    audit.record("LATE_ENTRY sheet=" + id + " by=" + user + " person=" + person.getName()
++                            + " amount=" + claim.getAmount() + " date=" + claim.getDate());
++                }
++                made++;
++            }
++        }
++        result.set(new GenerateResult(made));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/GenerateResult.java b/src/main/java/net/officefloor/hq/app/plan/GenerateResult.java
+new file mode 100644
+index 000000000..9df5155e6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/GenerateResult.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.plan;
++
++/** How many claims a generate made. */
++public record GenerateResult(int made) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/HandleInvalidPlan.java b/src/main/java/net/officefloor/hq/app/plan/HandleInvalidPlan.java
+new file mode 100644
+index 000000000..9ec01d01a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/HandleInvalidPlan.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.plan;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidPlan {
++    public void handle(@Parameter InvalidPlanException ex,
++            ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/InvalidPlanException.java b/src/main/java/net/officefloor/hq/app/plan/InvalidPlanException.java
+new file mode 100644
+index 000000000..a840dc816
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/InvalidPlanException.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.plan;
++
++/** The plan's amount is one the claim form refuses (or negative), a date is not a date, its interval is
++ *  not a whole number of at least 1, or its end is before its start: refused and nothing is written. */
++public class InvalidPlanException extends Exception {
++    public InvalidPlanException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/ListPlans.java b/src/main/java/net/officefloor/hq/app/plan/ListPlans.java
+new file mode 100644
+index 000000000..e2140ad6e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/ListPlans.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.plan;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class ListPlans {
++    public void list(@PathVariable("sheetId") String sheetId, PlanRepository plans,
++            ObjectResponse<List<Plan>> response) {
++        response.send(plans.list(sheetId.trim()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/Plan.java b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+new file mode 100644
+index 000000000..9c8ddc27c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.plan;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++
++/** A person's plan: its amount (two decimals), start, every N days and end, who added it, and how many
++ *  claims it has made so far. */
++public record Plan(long id, String sheetId, long personId, BigDecimal amount, LocalDate start, int every,
++        LocalDate end, String by, int generated) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java b/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java
+new file mode 100644
+index 000000000..92acb6cf1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java
+@@ -0,0 +1,72 @@
++package net.officefloor.hq.app.plan;
++
++import java.sql.Date;
++import java.sql.PreparedStatement;
++import java.time.LocalDate;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Set;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.core.RowMapper;
++import org.springframework.jdbc.support.GeneratedKeyHolder;
++import org.springframework.stereotype.Repository;
++
++@Repository
++public class PlanRepository {
++
++    private static final String SELECT = "SELECT p.id, p.sheet_id, p.person_id, p.amount, p.start_date, p.every_days, "
++            + "p.end_date, p.added_by, (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS made FROM plan p ";
++
++    private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"),
++            rs.getLong("person_id"), rs.getBigDecimal("amount").setScale(2), rs.getDate("start_date").toLocalDate(),
++            rs.getInt("every_days"), rs.getDate("end_date").toLocalDate(), rs.getString("added_by"), rs.getInt("made"));
++
++    private final JdbcTemplate jdbc;
++
++    public PlanRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The sheet's plans, in the order they were added. */
++    public List<Plan> list(String sheetId) {
++        return jdbc.query(SELECT + "WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId);
++    }
++
++    public Plan find(long id) {
++        List<Plan> found = jdbc.query(SELECT + "WHERE p.id = ?", ROW, id);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
++    /** Adds the plan to the person. */
++    public Plan add(String sheetId, long personId, ValidPlan plan, String by) {
++        GeneratedKeyHolder key = new GeneratedKeyHolder();
++        jdbc.update(con -> {
++            PreparedStatement ps = con.prepareStatement(
++                    "INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, end_date, added_by) "
++                            + "VALUES (?, ?, ?, ?, ?, ?, ?)",
++                    new String[] { "id" });
++            ps.setString(1, sheetId);
++            ps.setLong(2, personId);
++            ps.setBigDecimal(3, plan.amount());
++            ps.setDate(4, Date.valueOf(plan.start()));
++            ps.setInt(5, plan.every());
++            ps.setDate(6, Date.valueOf(plan.end()));
++            ps.setString(7, by);
++            return ps;
++        }, key);
++        return find(key.getKey().longValue());
++    }
++
++    /** The plan dates the plan has made a claim for. */
++    public Set<LocalDate> made(long planId) {
++        return new HashSet<>(jdbc.query("SELECT claim_date FROM plan_claim WHERE plan_id = ?",
++                (rs, n) -> rs.getDate("claim_date").toLocalDate(), planId));
++    }
++
++    /** Keeps that the plan made the claim for that plan date. */
++    public void recordMade(long planId, LocalDate date, long claimId) {
++        jdbc.update("INSERT INTO plan_claim (plan_id, claim_date, claim_id) VALUES (?, ?, ?)",
++                planId, Date.valueOf(date), claimId);
++    }
++
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanRequest.java b/src/main/java/net/officefloor/hq/app/plan/PlanRequest.java
+new file mode 100644
+index 000000000..157c6bd05
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.plan;
++
++/** Body of an add of a plan: an amount, a start date, every N days and an end date. */
++public record PlanRequest(String amount, String start, String every, String end) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/RecordPlanAdded.java b/src/main/java/net/officefloor/hq/app/plan/RecordPlanAdded.java
+new file mode 100644
+index 000000000..75659766e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/RecordPlanAdded.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.plan;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++
++/** Last write step: only a plan that was added is recorded (PLAN_ADDED). */
++public class RecordPlanAdded {
++    public void record(@Val Plan plan, @Val Person person, Audit audit) {
++        audit.record("PLAN_ADDED sheet=" + plan.sheetId() + " by=" + plan.by() + " name=" + person.getName()
++                + " amount=" + plan.amount().toPlainString() + " start=" + plan.start() + " every=" + plan.every()
++                + " end=" + plan.end());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/RespondWithGenerated.java b/src/main/java/net/officefloor/hq/app/plan/RespondWithGenerated.java
+new file mode 100644
+index 000000000..0eed1d4ce
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/RespondWithGenerated.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.plan;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithGenerated {
++    public void respond(@Val GenerateResult result, ObjectResponse<GenerateResult> response) {
++        response.send(result);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlan.java b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlan.java
+new file mode 100644
+index 000000000..303f08fb0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlan.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.plan;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithPlan {
++    public void respond(@Val Plan plan, ObjectResponse<Plan> response) {
++        response.send(plan);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/ValidPlan.java b/src/main/java/net/officefloor/hq/app/plan/ValidPlan.java
+new file mode 100644
+index 000000000..4c87ed498
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/ValidPlan.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.plan;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++
++/** A plan request once checked: the amount to two decimals, the start, every N days (N >= 1) and the end
++ *  (not before the start). */
++public record ValidPlan(BigDecimal amount, LocalDate start, int every, LocalDate end) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/ValidatePlan.java b/src/main/java/net/officefloor/hq/app/plan/ValidatePlan.java
+new file mode 100644
+index 000000000..850fe4486
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/ValidatePlan.java
+@@ -0,0 +1,43 @@
++package net.officefloor.hq.app.plan;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.claim.ClaimForm;
++import net.officefloor.hq.app.claim.ClaimRequest;
++import net.officefloor.hq.app.claim.InvalidClaimException;
++import net.officefloor.hq.app.claim.ValidClaim;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Refused for an amount the claim form would refuse (a plan makes no corrections, so not negative), a
++ *  start or end that is not a date, an interval that is not a whole number of at least 1, and an end
++ *  before the start. */
++public class ValidatePlan {
++    public void validate(@RequestBody PlanRequest request, Out<ValidPlan> body) throws InvalidPlanException {
++        if (request == null) throw new InvalidPlanException("A plan is required");
++        ValidClaim amount;
++        try {
++            amount = ClaimForm.check(new ClaimRequest(request.amount(), "", ""));
++        } catch (InvalidClaimException e) {
++            throw new InvalidPlanException(e.getMessage());
++        }
++        if (amount.isCorrection()) throw new InvalidPlanException("A plan's amount is not negative");
++        LocalDate start = date(request.start());
++        LocalDate end = date(request.end());
++        String every = request.every() == null ? "" : request.every().trim();
++        if (!every.matches("\\d{1,9}") || Integer.parseInt(every) < 1) {
++            throw new InvalidPlanException("Every N days needs a whole number of at least 1");
++        }
++        if (end.isBefore(start)) throw new InvalidPlanException("The end is before the start");
++        body.set(new ValidPlan(amount.amount(), start, Integer.parseInt(every), end));
++    }
++
++    private static LocalDate date(String text) throws InvalidPlanException {
++        String t = text == null ? "" : text.trim();
++        try {
++            return LocalDate.parse(t);
++        } catch (DateTimeParseException e) {
++            throw new InvalidPlanException("Not a date: " + t);
++        }
++    }
++}
+diff --git a/src/main/resources/db/migration/V63__plan.sql b/src/main/resources/db/migration/V63__plan.sql
+new file mode 100644
+index 000000000..52dde46ad
+--- /dev/null
++++ b/src/main/resources/db/migration/V63__plan.sql
+@@ -0,0 +1,20 @@
++-- A person's plans: an amount (as the claim form keeps it), a start date, every N days (N >= 1) and an
++-- end date (not before the start). Generating makes a DRAFT claim for each plan date up to the end and
++-- the sheet's today that has none yet; plan_claim keeps the dates each plan has made a claim for.
++CREATE TABLE plan (
++    id          BIGINT        GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
++    sheet_id    VARCHAR(200)  NOT NULL REFERENCES sheet (id),
++    person_id   BIGINT        NOT NULL REFERENCES person (id),
++    amount      DECIMAL(19,2) NOT NULL,
++    start_date  DATE          NOT NULL,
++    every_days  INT           NOT NULL,
++    end_date    DATE          NOT NULL,
++    added_by    VARCHAR(200)  NOT NULL
++);
++
++CREATE TABLE plan_claim (
++    plan_id    BIGINT NOT NULL REFERENCES plan (id),
++    claim_date DATE   NOT NULL,
++    claim_id   BIGINT NOT NULL REFERENCES claim (id),
++    CONSTRAINT plan_claim_unique UNIQUE (plan_id, claim_date)
++);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.plan.InvalidPlanException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.plan.InvalidPlanException.yml
+new file mode 100644
+index 000000000..5860866d0
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.plan.InvalidPlanException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.plan.HandleInvalidPlan
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-plans.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-plans.POST.yml
+new file mode 100644
+index 000000000..1565021d9
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-plans.POST.yml
+@@ -0,0 +1,22 @@
++# POST /api/sheets/{sheetId}/generate-plans — for every plan on the sheet, in the order they were added,
++# add a DRAFT claim of its amount for every plan date up to its end and the sheet's today that it has made
++# none for yet, by the claim form's rules (a refused date is skipped, and tried again next time).
++# Responds with how many were made.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: generate
++generate:
++  class: net.officefloor.hq.app.plan.GeneratePlanClaims
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.plan.RespondWithGenerated
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/plans.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/plans.POST.yml
+new file mode 100644
+index 000000000..6d5a1b8ae
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/plans.POST.yml
+@@ -0,0 +1,24 @@
++# POST /api/sheets/{sheetId}/people/{personId}/plans — give the person a plan: an amount, a start date,
++# every N days and an end date. An amount the claim form would refuse (or negative), a date that is not a
++# date, an interval that is not a whole number of at least 1, or an end before the start, is refused.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
++validate:
++  class: net.officefloor.hq.app.plan.ValidatePlan
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: add
++add:
++  class: net.officefloor.hq.app.plan.AddPlan
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.plan.RecordPlanAdded
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.plan.RespondWithPlan
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans.GET.yml
+new file mode 100644
+index 000000000..047a6f076
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans.GET.yml
+@@ -0,0 +1,5 @@
++# GET /api/sheets/{sheetId}/plans — the sheet's plans, in the order they were added, each with how many
++# claims it has made so far.
++list:
++  class: net.officefloor.hq.app.plan.ListPlans
++  govern: [ readonly-transaction ]
