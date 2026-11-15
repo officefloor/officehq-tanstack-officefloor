@@ -113,6 +113,14 @@ export function listRoles(sheetId: string): Promise<Role[]> {
   return getJson<Role[]>(`${base(sheetId)}/roles`);
 }
 
+/** The role the user acts in on the sheet on its today: their own, or steward while a delegation to
+ *  them covers it (as the sheet stood then while it is shown as of a date). */
+export function roleOf(sheetId: string, user: string): Promise<Role> {
+  return getJson<Role>(`${base(sheetId)}/role?user=${encodeURIComponent(user)}`);
+}
+
+export const roleOfKey = (sheetId: string, user: string) => [...rolesKey(sheetId), 'of', user] as const;
+
 /** Assign a user name a role; refused (rejects) when the role is not clerk or steward. */
 export function setRole(sheetId: string, by: string, user: string, role: string): Promise<Role> {
   return postJson<Role>(`${base(sheetId)}/roles?by=${encodeURIComponent(by)}`, { user, role });

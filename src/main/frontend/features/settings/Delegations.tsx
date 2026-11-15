@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
-import { delegate, delegationsKey, listDelegations } from './api';
+import { delegate, delegationsKey, listDelegations, rolesKey } from './api';
 
 const EMPTY = { user: '', from: '', to: '' };
 
@@ -16,6 +16,7 @@ export function Delegations({ sheetId, user }: { sheetId: string; user: string }
     mutationFn: (input: typeof EMPTY) => delegate(sheetId, user, input.user, input.from, input.to),
     onSuccess: () => {
       setForm(EMPTY);
+      queryClient.invalidateQueries({ queryKey: rolesKey(sheetId) });
       return queryClient.invalidateQueries({ queryKey: delegationsKey(sheetId) });
     },
   });
