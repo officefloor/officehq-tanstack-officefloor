@@ -3,10 +3,11 @@ import { sheetKey } from '../sheet/api';
 
 /** A claim's status: DRAFT, opened to OPEN, settled to SETTLED (or, by a clerk above the clerk limit,
  *  to PENDING, which a steward approves to SETTLED or rejects back to OPEN); a DRAFT, OPEN or PENDING
- *  claim can be voided, and a SETTLED one by a steward within 7 days of its settlement. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+ *  claim can be voided, and a SETTLED one by a steward within 7 days of its settlement. A DRAFT can be
+ *  deleted to DELETED (counted nowhere), and restored to DRAFT on the sheet's today it was deleted. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
 /** A change of a claim's status. */
-export type ClaimAction = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle';
+export type ClaimAction = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle' | 'delete' | 'restore';
 
 /** Whether a claim is open: OPEN, or PENDING a steward's approval. */
 export const isOpen = (c: Pick<Claim, 'status'>) => c.status === 'OPEN' || c.status === 'PENDING';
@@ -113,7 +114,9 @@ export function unlockClaim(sheetId: string, by: string, id: number): Promise<Cl
 /** Change a claim's status; refused (rejects) when its status does not allow the change, when the
  *  user settling or approving it is the one who opened it, when a non-steward approves or rejects it,
  *  or when a rejection has no `reason`, or a void none from the sheet's void reasons while it has any. A steward's `resettle` freezes a SETTLED claim again at the
- *  figure it would have today as an open claim bound by no statement. */
+ *  figure it would have today as an open claim bound by no statement. `delete` makes a DRAFT DELETED (refused for
+ *  any other status or one due by a day in a closed period); `restore` makes a DELETED claim a DRAFT again,
+ *  refused on a later sheet's today than the one it was deleted on. */
 export function moveClaim(sheetId: string, by: string, id: number, action: ClaimAction, reason = ''): Promise<Claim> {
   const extra = action === 'reject' || action === 'void' ? `&reason=${encodeURIComponent(reason)}` : '';
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/${action}?by=${encodeURIComponent(by)}${extra}`, {});

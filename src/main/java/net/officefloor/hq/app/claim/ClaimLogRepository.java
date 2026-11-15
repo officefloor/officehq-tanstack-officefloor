@@ -72,6 +72,14 @@ public class ClaimLogRepository {
         return dates.isEmpty() ? null : dates.get(0);
     }
 
+    /** The day the claim was last logged DELETED (null: never). */
+    public LocalDate deletedOn(String sheetId, long claimId) {
+        List<LocalDate> dates = jdbc.query("SELECT on_date FROM claim_log WHERE sheet_id = ? AND claim_id = ? "
+                + "AND status = 'DELETED' ORDER BY id DESC", (rs, i) -> rs.getObject("on_date", LocalDate.class),
+                sheetId, claimId);
+        return dates.isEmpty() ? null : dates.get(0);
+    }
+
     /** Each logged claim's status at the end of the day, as its log records it: the last status
      *  logged on or before it, or null when it was added after it. Claims with no log are absent. */
     public Map<Long, String> statusesOn(String sheetId, LocalDate date) {

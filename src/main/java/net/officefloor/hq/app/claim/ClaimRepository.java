@@ -262,7 +262,7 @@ public class ClaimRepository {
     public void refixDueBys(String sheetId, LocalDate holiday) {
         Set<LocalDate> holidays = holidays(sheetId);
         jdbc.query("SELECT id, claim_date, terms, due_by FROM claim WHERE sheet_id = ? "
-                + "AND status NOT IN ('SETTLED', 'VOID') AND due_by >= ? ORDER BY id", (rs) -> {
+                + "AND status NOT IN ('SETTLED', 'VOID', 'DELETED') AND due_by >= ? ORDER BY id", (rs) -> {
                     long id = rs.getLong("id");
                     LocalDate dueBy = BusinessDays.dueBy(rs.getObject("claim_date", LocalDate.class),
                             rs.getInt("terms"), holidays);

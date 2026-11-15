@@ -10,8 +10,8 @@ import { addClaim, addProof, claimsKey, commentClaim, listVoidReasons, voidReaso
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
 
-const LABELS: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void', approve: 'Approve', reject: 'Reject', resettle: 'Re-settle' };
-const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided', approve: 'approved', reject: 'rejected', resettle: 're-settled' };
+const LABELS: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void', approve: 'Approve', reject: 'Reject', resettle: 'Re-settle', delete: 'Delete', restore: 'Restore' };
+const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided', approve: 'approved', reject: 'rejected', resettle: 're-settled', delete: 'deleted', restore: 'restored' };
 
 /** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
  *  with its status, its due (fixed when settled, else at the rate in force on the claim's date of the
@@ -23,7 +23,10 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  change its status (the user who opened a claim cannot settle it; a clerk settling one whose due is
  *  above the sheet's clerk limit makes it PENDING, which a steward other than its opener approves,
  *  or any steward rejects with a reason typed beside it), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
- *  charge) the number of the SETTLED claim it corrects. Only a DRAFT can be edited:
+ *  charge) the number of the SETTLED claim it corrects. A DRAFT can be deleted with a button beside it (any other
+ *  status, or one in a closed period, refused with an error on the claim): DELETED, it counts nowhere and cannot be
+ *  edited, opened or voided, and a restore button makes it a DRAFT again on the sheet's today it was deleted
+ *  (refused on a later day). Only a DRAFT can be edited:
  *  editing any other claim, or one due by a day in a closed period, is refused with an error on the claim. Opening a
  *  claim's editor locks it for other users until it is saved or cancelled or the sheet's today changes:
  *  another user's edit button on it is refused likewise, and the editor of a claim the user holds is
@@ -574,7 +577,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 </button>
               </td>
               <td>
-                {(['open', 'settle', 'void', 'approve', 'resettle'] as const).map((a) => (
+                {(['open', 'settle', 'void', 'approve', 'resettle', 'delete', 'restore'] as const).map((a) => (
                   <button key={a} type="button" data-testid={`claim-${a}`} disabled={move.isPending}
                     onClick={() => act(c.id, a)}>
                     {LABELS[a]}
@@ -676,6 +679,8 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     ? 'Only a steward can reject a claim.'
                     : c.status === 'SETTLED' && move.variables.action === 'resettle'
                     ? 'Only a steward can re-settle a claim.'
+                    : c.status === 'DELETED' && move.variables.action === 'restore'
+                    ? 'A deleted claim can be restored only on the day it was deleted.'
                     : `A ${c.status} claim cannot be ${DONE[move.variables.action]}, or your role may not ${move.variables.action} a claim.`}</span>
                 )}
                 {deferral.isError && deferral.variables?.id === c.id && (
