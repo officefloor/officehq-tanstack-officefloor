@@ -25,4 +25,14 @@ public final class BusinessDays {
         }
         return due;
     }
+
+    /** The terms a due-by was fixed with: the business days after {@code date} up to and including
+     *  {@code dueBy} (none when it is not after the date). */
+    public static int between(LocalDate date, LocalDate dueBy, Set<LocalDate> holidays) {
+        int terms = 0;
+        for (LocalDate day = date.plusDays(1); !day.isAfter(dueBy); day = day.plusDays(1)) {
+            if (isBusinessDay(day, holidays)) terms++;
+        }
+        return terms;
+    }
 }

@@ -2,9 +2,12 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { addHoliday, holidaysKey, listHolidays } from './api';
+import { claimsKey } from '../claims/api';
+import { peopleKey } from '../people/api';
 
 /** The sheet's holidays (by date) and a form to add one. A claim's due-by, fixed when it is created,
- *  counts its terms in business days, skipping weekends and these holidays. */
+ *  counts its terms in business days, skipping weekends and these holidays; adding one works out again
+ *  the due-by of every claim not SETTLED or VOID due by it or later. */
 export function Holidays({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const holidays = useQuery({ queryKey: holidaysKey(sheetId), queryFn: () => listHolidays(sheetId) });
@@ -14,7 +17,11 @@ export function Holidays({ sheetId, user }: { sheetId: string; user: string }) {
     mutationFn: (input: string) => addHoliday(sheetId, user, input),
     onSuccess: () => {
       setDate('');
-      return queryClient.invalidateQueries({ queryKey: holidaysKey(sheetId) });
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: holidaysKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+      ]);
     },
   });
 

@@ -99,7 +99,8 @@ public class Claim {
     public void setRoundDate(String roundDate) { this.roundDate = roundDate; }
 
     /** Its due-by (yyyy-MM-dd), fixed when it was added: the terms-th business day after its date then, by
-     *  the terms in force on that date (skipping weekends and the sheet's holidays then). */
+     *  the terms in force on that date (skipping weekends and the sheet's holidays then); a holiday added
+     *  later works it out again, with those terms, while the claim is not SETTLED or VOID. */
     public String getDueBy() { return dueBy; }
     public void setDueBy(String dueBy) { this.dueBy = dueBy; }
 
