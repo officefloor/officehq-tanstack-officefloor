@@ -1,0 +1,178 @@
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index c00d83e52..b2797bebd 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -31,7 +31,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
+  *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap, with the excess above it, and split into settled and open (see `splitDues`); n/a
+  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
+  *  their statements (a button that takes one, now or as of the date typed beside it, a button that cancels the last, the count, the last one's due-total and date), whether
+- *  they are retired and from when (with a date and a button that retires them, a button that unretires them, and their past retirements, each `<from> to <to>`), whether they have
++ *  they are retired and from when (with a date and a button that retires them, a button that unretires them, and their past retirements, each `<from> to <to>`), their snapshot lines (one per SNAPSHOT written for them, oldest first, each `<the day being left> <due-total>`), whether they have
+  *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
+  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
+  *  patrons (each `<name> <share>`, sorted by name (see `patronShares`), with a picker that names one more), their plans (see `PersonPlans`), their aliases (sorted as names are
+@@ -638,6 +638,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   {p.retirements.map((r, i) => (
+                     <Fragment key={i}><span data-testid="person-retirement-line">{r.from} to {r.to}</span>; </Fragment>
+                   ))}
++                  Snapshots{' '}
++                  {p.snapshots.map((s, i) => (
++                    <Fragment key={i}><span data-testid="person-snapshot-line">{s.day} {s.dueTotal}</span>; </Fragment>
++                  ))}
+                 </td>
+                 <td>
+                   On hold <span data-testid="person-hold">{p.held ? 'yes' : 'no'}</span>{' '}
+diff --git a/src/main/frontend/features/people/api.ts b/src/main/frontend/features/people/api.ts
+index 76b29ab17..7cc8bf2e6 100644
+--- a/src/main/frontend/features/people/api.ts
++++ b/src/main/frontend/features/people/api.ts
+@@ -23,12 +23,16 @@ export type Hold = { from: string; to: string | null };
+ /** A past retirement: from its from-date to the day they were unretired (yyyy-MM-dd). */
+ export type Retirement = { from: string; to: string };
+ 
++export type Snapshot = { day: string; dueTotal: string };
++
+ export type Person = {
+   id: number; sheetId: string; name: string; grade: Grade; grades: GradeFrom[]; version: number;
+   statementCount: number; statedTotal: string | null; statementDate: string | null;
+   retired: boolean; retiredFrom: string | null; retiredReached: boolean;
+   /** Their past retirements, oldest first: a claim dated after one's from and before its to is refused. */
+   retirements: Retirement[];
++  /** The SNAPSHOTs written for them, oldest first: the day being left and their due-total on it (or n/a). */
++  snapshots: Snapshot[];
+   held: boolean; holds: Hold[]; patronIds: number[];
+   /** Their own terms in whole days (null: none): a claim's due-by goes by them before their grade's or the sheet's. */
+   terms: number | null;
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 32305db52..9c6e8c43d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -36,6 +36,8 @@ public class Person {
+     private String retiredFrom;
+     /** Their past retirements, oldest first. */
+     private java.util.List<Retirement> retirements = new java.util.ArrayList<>();
++    /** The SNAPSHOTs written for them, oldest first. */
++    private java.util.List<Snapshot> snapshots = new java.util.ArrayList<>();
+     /** Their holds, in the order they were added. */
+     private java.util.List<Hold> holds = new java.util.ArrayList<>();
+     /** The sheet's today (null: not known). */
+@@ -143,6 +145,8 @@ public class Person {
+     public boolean isRetired() { return retiredFrom != null; }
+     public java.util.List<Retirement> getRetirements() { return retirements; }
+     public void setRetirements(java.util.List<Retirement> retirements) { this.retirements = retirements; }
++    public java.util.List<Snapshot> getSnapshots() { return snapshots; }
++    public void setSnapshots(java.util.List<Snapshot> snapshots) { this.snapshots = snapshots; }
+ 
+     /** Unretire them on the date: no longer retired, the retirement kept as a past one up to it. */
+     public void unretire(String on) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index d43816f6d..2bf8c96f5 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -50,6 +50,7 @@ public class PersonRepository {
+         withAliases(sheetId, people);
+         withClashing(sheetId, people);
+         withRetirements(sheetId, people);
++        withSnapshots(sheetId, people);
+         jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY added_at, patron_id",
+                 (rs) -> {
+                     Person p = byId.get(rs.getLong("person_id"));
+@@ -72,6 +73,7 @@ public class PersonRepository {
+             withAliases(sheetId, List.of(person));
+             withClashing(sheetId, List.of(person));
+             withRetirements(sheetId, List.of(person));
++            withSnapshots(sheetId, List.of(person));
+         }
+         return person;
+     }
+@@ -163,6 +165,26 @@ public class PersonRepository {
+         people.forEach((p) -> p.setRetirements(retirements.getOrDefault(p.getId(), new ArrayList<>())));
+     }
+ 
++    /** Give each person the SNAPSHOTs written for them, oldest first. */
++    private void withSnapshots(String sheetId, List<Person> people) {
++        if (people.isEmpty()) {
++            return;
++        }
++        Map<Long, List<Snapshot>> snapshots = new HashMap<>();
++        jdbc.query("SELECT person_id, day_left, due_total FROM person_snapshot WHERE sheet_id = ? ORDER BY person_id, id",
++                (rs) -> {
++                    snapshots.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())
++                            .add(new Snapshot(rs.getObject("day_left", LocalDate.class).toString(), rs.getString("due_total")));
++                }, sheetId);
++        people.forEach((p) -> p.setSnapshots(snapshots.getOrDefault(p.getId(), new ArrayList<>())));
++    }
++
++    /** Keep a SNAPSHOT written for the person: the day being left and their due-total on it (or n/a). */
++    public void addSnapshot(String sheetId, long personId, LocalDate dayLeft, String dueTotal) {
++        jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, day_left, due_total) VALUES (?, ?, ?, ?)",
++                sheetId, personId, dayLeft, dueTotal);
++    }
++
+     /** Give each person their aliases, sorted as names are compared. */
+     private void withAliases(String sheetId, List<Person> people) {
+         if (people.isEmpty()) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/Snapshot.java b/src/main/java/net/officefloor/hq/app/person/Snapshot.java
+new file mode 100644
+index 000000000..403cc11c6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/Snapshot.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A SNAPSHOT written for a person: the day being left (yyyy-MM-dd) and their due-total on it (or n/a). */
++public record Snapshot(String day, String dueTotal) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RecordSnapshots.java b/src/main/java/net/officefloor/hq/app/sheet/RecordSnapshots.java
+index d2016e74c..60e014b8e 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/RecordSnapshots.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/RecordSnapshots.java
+@@ -2,21 +2,27 @@ package net.officefloor.hq.app.sheet;
+ 
+ import java.time.LocalDate;
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** Before a new today takes effect: one SNAPSHOT line per person, in list order, with the
+- *  due-total as it stood on the day being left; nothing when the today does not change. */
++ *  due-total as it stood on the day being left, kept on the person too; nothing when the today does not change. */
+ public class RecordSnapshots {
+     public void record(@PathVariable("sheetId") String sheetId,
+             @RequestParam(name = "by", required = false) String by, @Val LocalDate today,
+-            @Val Rollup before, SheetRepository sheets, Audit audit) {
++            @Val Rollup before, SheetRepository sheets, PersonRepository people,
++            Audit audit) {
+         String id = sheetId.trim();
+-        if (today.equals(sheets.today(id))) return;
++        LocalDate leaving = sheets.today(id);
++        if (today.equals(leaving)) return;
+         String head = "SNAPSHOT sheet=" + id + " by=" + (by == null ? "" : by);
+-        before.people().values().forEach(figures -> audit.record(head + " name=" + figures.name()
+-                + " due-total=" + (figures.dueTotal() == null ? "n/a" : figures.dueTotal())));
++        before.people().forEach((personId, figures) -> {
++            String due = figures.dueTotal() == null ? "n/a" : figures.dueTotal();
++            people.addSnapshot(id, personId, leaving, due);
++            audit.record(head + " name=" + figures.name() + " due-total=" + due);
++        });
+     }
+ }
+diff --git a/src/main/resources/db/migration/V68__person_snapshot.sql b/src/main/resources/db/migration/V68__person_snapshot.sql
+new file mode 100644
+index 000000000..7b94545b9
+--- /dev/null
++++ b/src/main/resources/db/migration/V68__person_snapshot.sql
+@@ -0,0 +1,10 @@
++-- Each SNAPSHOT written for a person, in the order written: the day being left (the sheet's today
++-- before it changed) and their due-total on it (text: two decimals, or n/a).
++CREATE TABLE person_snapshot (
++    id        BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id  VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    person_id BIGINT       NOT NULL,
++    day_left  DATE         NOT NULL,
++    due_total VARCHAR(30)  NOT NULL
++);
++CREATE INDEX person_snapshot_person ON person_snapshot (sheet_id, person_id, id);
