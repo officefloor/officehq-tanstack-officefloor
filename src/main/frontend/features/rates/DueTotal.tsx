@@ -9,6 +9,11 @@ import { Fig } from '../session/Fig';
 /** The sheet's due-total: everyone's due-total added up, skipping those shown n/a, less the single
  *  highest and lowest when three or more have one (`current`: as it is now, even while shown as of a date). */
 export function useDueTotal(sheetId: string, user: string, current = false): string {
+  return trimmedSum(usePersonDues(sheetId, user, current));
+}
+
+/** Each person's due-total as their row shows it (null: n/a), in list order. */
+export function usePersonDues(sheetId: string, user: string, current = false): Array<string | null> {
   const people = useQuery({ queryKey: liveKey(peopleKey(sheetId), current), queryFn: () => listPeople(sheetId, current) });
   const claims = useQuery({ queryKey: liveKey(claimsKey(sheetId), current), queryFn: () => listClaims(sheetId, current) });
   const rates = useQuery({ queryKey: liveKey(ratesKey(sheetId), current), queryFn: () => listRates(sheetId, current) });
@@ -18,10 +23,9 @@ export function useDueTotal(sheetId: string, user: string, current = false): str
   const charges = useLate(sheetId, today, current);
   const byGrade = rateByGrade(rates.data, today);
   const live = liveClaims(claims.data ?? [], people.data);
-  const dues = (people.data ?? []).map((p) =>
+  return (people.data ?? []).map((p) =>
     personDue(live.filter((c) => c.personId === p.id), rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap),
   );
-  return trimmedSum(dues);
 }
 
 /** The sheet's settled-total and open-total (see `splitDues`) and the due of open claims by age (see `agedDues`):
