@@ -139,6 +139,16 @@ export function excessOf(claims: Claim[], rates: Rate[] | undefined, gradeOn: Gr
     : formatCents(hundredths(full) - hundredths(cap));
 }
 
+/** A person's due split by status among their claims that count (`claims`, the live ones): settled (their SETTLED
+ *  claims, at their frozen figures, corrections included) and open (their OPEN and PENDING ones); n/a ones skipped.
+ *  The two add up to their due-total before the cap. */
+export function splitDues(claims: Claim[], dueOfClaim: (c: Claim) => string | null) {
+  return {
+    settled: sumDues(claims.filter((c) => c.status === 'SETTLED').map(dueOfClaim)),
+    open: sumDues(claims.filter(isOpen).map(dueOfClaim)),
+  };
+}
+
 /** The overdue claims among those that count (`claims`, the live ones): their count and the sum
  *  of their due figures (n/a ones skipped). */
 export function overdue(claims: Claim[], today: string, dueOfClaim: (c: Claim) => string | null) {

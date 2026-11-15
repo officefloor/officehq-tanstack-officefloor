@@ -8,7 +8,7 @@ import { BulkSettle } from '../claims/BulkSettle';
 import { PersonClaims } from '../claims/PersonClaims';
 import { backing, claimsKey, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
 import { listPeriods, periodsKey, personPeriodDue } from '../periods/api';
-import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
+import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
 import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { BulkGrade } from './BulkGrade';
@@ -20,7 +20,7 @@ import { GRADES, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, lis
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '' };
 
 /** The people on the sheet: a form that adds a person or edits one, and the list in added order,
- *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap, with the excess above it; n/a
+ *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap, with the excess above it, and split into settled and open (see `splitDues`); n/a
  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
  *  their statements (a button that takes one, now or as of the date typed beside it, a button that cancels the last, the count, the last one's due-total and date), whether
  *  they are retired and from when (with a date and a button that retires them), whether they have
@@ -313,6 +313,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
             const pct = byGrade.get(p.grade);
             const late = overdue(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
             const aged = agedDues(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
+            const split = splitDues(live, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
             return (
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
                 <td>
@@ -333,6 +334,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                 <td>
                   Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap))}</span>{' '}
                   excess <span data-testid="person-excess">{excessOf(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap)}</span>
+                </td>
+                <td>
+                  Settled <span data-testid="person-settled-total">{split.settled}</span>{' '}
+                  open <span data-testid="person-open-total">{split.open}</span>
                 </td>
                 {(periods.data ?? []).map((q) => (
                   <td key={q.name}>
