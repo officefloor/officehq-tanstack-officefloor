@@ -1,0 +1,64 @@
+{
+  "checkpoint": 217,
+  "stack": {
+    "repo": "/home/daniel/officehq-tanstack-officefloor",
+    "origin": "git@github.com:officefloor/officehq-tanstack-officefloor.git",
+    "name": "officehq-tanstack-officefloor",
+    "base_ref": "base-empty",
+    "base_commit": "0db228df6732aec155107d75aa5bacd004c1475a"
+  },
+  "checkpoint_id": "cp217_shared-claims",
+  "phase": "late",
+  "type": "additive",
+  "mutates": [],
+  "replaced_tests": [],
+  "request": {
+    "spec": "A claim can be shared with other people on the sheet: a person select, a share percent (two\ndecimals, more than 0.00) and a button on the claim (CLAIM_SHARED naming the claim, ending\nwith=<person> share=<share>; the claim's own person, a person already holding a share, or shares\ntotalling more than 100.00 are refused; a SETTLED, VOID or DELETED claim cannot be shared). Each\nholder's due-total includes their part: the claim's due times their share divided by 100, rounded\nhalf to even; the claim's own person's due-total counts the claim's due less the holders' parts,\nand each person's settled-total and open-total count the same part. Show the holders on the claim as\n<name> <share>, comma and space separated.\n",
+    "prompt": "You are implementing ONE change to this application.\n\nFIRST read AGENTS.md \u2014 it states the working rules and how the app is tested, and sends you to\nDESIGN.md for the app's stack and conventions. Follow both.\n\nTHE CHANGE REQUEST:\nA claim can be shared with other people on the sheet: a person select, a share percent (two\ndecimals, more than 0.00) and a button on the claim (CLAIM_SHARED naming the claim, ending\nwith=<person> share=<share>; the claim's own person, a person already holding a share, or shares\ntotalling more than 100.00 are refused; a SETTLED, VOID or DELETED claim cannot be shared). Each\nholder's due-total includes their part: the claim's due times their share divided by 100, rounded\nhalf to even; the claim's own person's due-total counts the claim's due less the holders' parts,\nand each person's settled-total and open-total count the same part. Show the holders on the claim as\n<name> <share>, comma and space separated.\n\nYour work is verified by an automated Playwright UI test already installed under e2e/specs/.\nRead that spec: it declares the exact data-testid anchors, values, test data and any audit\nrecords it expects \u2014 match them. Run `bin/e2e` to build the app, start it, and run the test as\nyou work; iterate until it passes. Change whatever the request needs across the app \u2014 its stored\ndata, its server and its front end. Do NOT edit bin/build, bin/start, bin/stop, bin/e2e,\nAGENTS.md, CLAUDE.md, DESIGN.md, e2e/support/ or the test spec.\n"
+  },
+  "commit_sha": "1082f572449648b3e92db8b559b3a18052293282",
+  "reset_sha": "",
+  "preagent_sha": "78fbb25f0f0ef30733e5a16813f16b10a95994c1",
+  "prev_sha": "78fbb25f0f0ef30733e5a16813f16b10a95994c1",
+  "base_sha": "0db228df6732aec155107d75aa5bacd004c1475a",
+  "agent": {
+    "ok": true,
+    "cost_usd": 4.2413538000000015,
+    "input_tokens": 148,
+    "output_tokens": 41524,
+    "cache_read_tokens": 9767529,
+    "cache_creation_tokens": 182097,
+    "num_turns": 77,
+    "duration_ms": 1761261,
+    "duration_api_ms": 441533,
+    "model": "claude-opus-5-5",
+    "session_id": "cea0f9e0-0c1a-46cf-8b72-16ab779663aa",
+    "stop_reason": "success",
+    "result_text": "Claims can now be shared, and `bin/e2e` passes all 4 tests in the shared-claims spec.\n\n**What it does**\n- **Sharing:** each claim row has a person select, a share percent and a Share button. Holders show in `claim-shares` as `Ben 33.33, Cam 33.33`.\n- **Refusals:** the server refuses a SETTLED, VOID or DELETED claim, the claim's own person, a person who already holds a share, a share of 0.00 or less (or with more than two decimals), and shares totalling more than 100.00. A refusal shows `claim-error` and writes nothing.\n- **Audit:** a share writes `CLAIM_SHARED \u2026 with=<name> share=<share>`, followed by the usual ROLLUP/TOTALS lines.\n- **Totals:** each holder's part is the claim's due \u00d7 share \u00f7 100, rounded half to even. The holder's due-total, settled-total and open-total include that part. The claim's own person counts the due less the holders' parts. The claim's own `claim-due` still shows the full due.\n- **n/a holders:** someone whose grade has no rate stops showing n/a once they hold a part. The test needs this: Cam, grade C with no rate, shows 0.33.\n- **Where the totals apply:** both the server's per-person figures (ROLLUP, TOTALS, snapshots, scores) and the screen's per-person due-totals (people rows, header, summaries, crews, tree search).\n\n**Main pieces**\n- **Storage:** a new `claim_share` table (migration `V96__claim_share.sql`). Shares are copied when a sheet is cloned and moved when a person is transferred.\n- **Endpoint:** `POST /api/sheets/{id}/claims/{claimId}/share?with=<personId>&share=<pct>`, defined in `share.POST.yml`, with the `ShareClaim`, `SaveClaimShare` and `RecordClaimShared` steps.\n- **Server totals:** `Rollup.java` now works in two passes, so each holder gets their parts of other people's claims.\n- **Front-end totals:** new `sharePart`, `ownPart` and `heldParts` helpers in `rates/api.ts`, plus `heldOf` in the new `rates/shares.ts`.\n\n**An extra fix you should know about:** scenario 3 failed every time, and the cause wasn't the sharing code. The sheet id appeared before the people rows had rendered, because the rows also wait for the user's role. The test helper reads the \"before\" claim rows at that moment, so it took an existing 4.00 claim for a newly added one. The server had refused the part-settle correctly; no split was recorded. I changed `ActiveSheet.tsx` to also wait for the role and crews before showing the sheet, which matches what its own comment says it should do. This touches every page load, not just sharing.\n\n**Choices the request didn't settle (the tests don't check them):**\n- Overdue-total stays on the claim's own person at the full due; holders get no overdue part.\n- Statements (`STATEMENT \u2026 due-total=`) are unchanged and don't include shares.\n- A claim of any status other than SETTLED, VOID or DELETED can be shared, including DRAFT (scenario 1 shares a DRAFT claim and expects it to work).",
+    "error": "",
+    "attempts": [
+      {
+        "ok": true,
+        "limit_reached": false,
+        "retryable": false,
+        "timed_out": false,
+        "cost_usd": 4.2413538000000015,
+        "num_turns": 77,
+        "duration_ms": 1761261,
+        "duration_api_ms": 441533,
+        "error": ""
+      }
+    ]
+  },
+  "agent_stream_file": "cp217.agent.jsonl",
+  "agent_diff_file": "cp217.agent.diff",
+  "build_log_file": null,
+  "tests": {
+    "gated": false,
+    "queued": true
+  },
+  "probe": null,
+  "pinned_touched": [],
+  "acceptance_touched": [],
+  "impact_gate": null
+}
