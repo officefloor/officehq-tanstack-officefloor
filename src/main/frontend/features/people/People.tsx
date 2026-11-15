@@ -8,14 +8,14 @@ import { BulkSettle } from '../claims/BulkSettle';
 import { BulkReassign } from '../claims/BulkReassign';
 import { PersonClaims } from '../claims/PersonClaims';
 import { backing, claimsKey, patronShares, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
-import { listPeriods, periodsKey, personPeriodDue } from '../periods/api';
+import { listPeriods, periodOf, periodsKey, personPeriodDue } from '../periods/api';
 import { listPools, personCutTotal, poolsKey } from '../pools/api';
 import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
 import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { BulkGrade } from './BulkGrade';
 import { BulkRetire } from './BulkRetire';
-import { ExportPeople } from './ExportPeople';
+import { ExportClaims, ExportPeople } from './ExportPeople';
 import { ImportPeople } from './ImportPeople';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
@@ -41,7 +41,8 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
  *  A picker and a button merge the person into another (see `mergePerson`), and an entry and a
  *  button transfer them to another sheet by id (see `transferPerson`).
  *  Whether the signed-in user watches each person, with a button that starts or stops it.
- *  A button exports everyone, retired people included, as a CSV file. */
+ *  A button exports everyone, retired people included, as a CSV file, and another exports their claims
+ *  (people in list order, each one's claims oldest first, with the figures their rows show). */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
@@ -417,6 +418,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       <ImportPeople sheetId={sheetId} user={user} />
       <ShowRetired />{' '}
       <ExportPeople rows={() => everyone.map((p) => [p.name, gradeOn(p, today), p.retiredFrom ?? '', showDue(dueOf.get(p.id) ?? null)])} />
+      <ExportClaims rows={() => everyone.flatMap((p) => (claims.data ?? []).filter((c) => c.personId === p.id).reverse().map((c) => [
+        p.name, c.number ?? '', c.date, Number(c.amount).toFixed(2),
+        showDue(claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges)), c.status,
+        periodOf(periods.data, c.dueBy)?.name ?? '']))} />
       <BulkOpen sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
       <BulkGrade sheetId={sheetId} user={user} selected={[...selectedPeople]} onDone={() => setSelectedPeople(new Set())} />
       <BulkRetire sheetId={sheetId} user={user} selected={[...selectedPeople]} onDone={() => setSelectedPeople(new Set())} />
