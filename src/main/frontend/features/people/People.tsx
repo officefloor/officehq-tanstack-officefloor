@@ -29,6 +29,13 @@ import { Fig } from '../session/Fig';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFrom: '', contact: '', tags: '' };
 
+/** The due-total of the person's SNAPSHOT written when the sheet's today was left on the day
+ *  (the latest, when it was left more than once); empty when there is none. */
+function snapshotOn(p: Person, day: string): string {
+  const on = p.snapshots.filter((s) => s.day === day);
+  return on.length === 0 ? '' : on[on.length - 1].dueTotal;
+}
+
 /** The people on the sheet: a form that adds a person or edits one, and the list in list order (each with buttons that move
  *  them up or down a place; new people go to the end),
  *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap, with the excess above it, and split into settled and open (see `splitDues`); n/a
@@ -52,7 +59,10 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', ter
  *  A button exports everyone, retired people included, as a CSV file, and another exports their claims
  *  (people in list order, each one's claims oldest first, with the figures their rows show).
  *  The list can be sorted on this screen only (see `SortBy`), and each user chooses which of its
- *  columns their screen shows (see `ColumnChooser`): a column switched off has no cell at all. */
+ *  columns their screen shows (see `ColumnChooser`): a column switched off has no cell at all.
+ *  Two snapshot dates can be compared: a from-date, a to-date and a button list everyone in list order,
+ *  each `<name> <then> <now>` (trimmed): their SNAPSHOT due-total for the from-date and for the to-date
+ *  (see `snapshotOn`), or for a blank to-date their due-total now. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
@@ -93,6 +103,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const [gradePicks, setGradePicks] = useState<Record<number, string>>({});
   // The alias typed on each person's row.
   const [aliasInputs, setAliasInputs] = useState<Record<number, string>>({});
+  // The snapshot dates typed for a comparison, and the pair last compared (null: none yet).
+  const [snapFrom, setSnapFrom] = useState('');
+  const [snapTo, setSnapTo] = useState('');
+  const [compared, setCompared] = useState<{ from: string; to: string } | null>(null);
   // The people selected for a bulk grade.
   const [selectedPeople, setSelectedPeople] = useState<ReadonlySet<number>>(new Set());
   const selectPerson = (id: number, on: boolean) => setSelectedPeople((s) => {
@@ -547,6 +561,25 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
         onDone={() => setSelected(new Set())} />
       <BulkRedate sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
       <BulkVoid sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
+      <div>
+        Compare snapshots from{' '}
+        <input type="date" data-testid="snapshot-from" value={snapFrom} onChange={(e) => setSnapFrom(e.target.value)} />{' '}
+        to{' '}
+        <input type="date" data-testid="snapshot-to" value={snapTo} onChange={(e) => setSnapTo(e.target.value)} />{' '}
+        <button type="button" data-testid="snapshot-compare"
+          onClick={() => setCompared({ from: snapFrom.trim(), to: snapTo.trim() })}>
+          Compare
+        </button>
+        {compared !== null && (
+          <ul>
+            {everyone.map((p) => {
+              const then = snapshotOn(p, compared.from);
+              const now = compared.to === '' ? showDue(dueOf.get(p.id) ?? null) : snapshotOn(p, compared.to);
+              return <li key={p.id} data-testid="snapshot-line">{[p.name, then, now].join(' ').trimEnd()}</li>;
+            })}
+          </ul>
+        )}
+      </div>
       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
       <table>
         <tbody>
