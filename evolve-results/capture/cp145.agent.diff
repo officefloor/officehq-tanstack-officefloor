@@ -1,0 +1,252 @@
+diff --git a/src/main/frontend/features/claims/BulkRedate.tsx b/src/main/frontend/features/claims/BulkRedate.tsx
+new file mode 100644
+index 000000000..2821b0211
+--- /dev/null
++++ b/src/main/frontend/features/claims/BulkRedate.tsx
+@@ -0,0 +1,49 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { useSubmitOnce } from '../../forms/useSubmitOnce';
++import { bulkRedateClaims, claimsKey } from './api';
++
++/** A date entry and a button that re-dates the selected claims to it together, and how many it re-dated
++ *  and refused. The counts are cleared while it runs; the selection is cleared once it is done. */
++export function BulkRedate({ sheetId, user, selected, onDone }: {
++  sheetId: string; user: string; selected: number[]; onDone: () => void;
++}) {
++  const queryClient = useQueryClient();
++  const runOnce = useSubmitOnce();
++  const [date, setDate] = useState('');
++  const bulk = useMutation({
++    mutationFn: (v: { ids: number[]; date: string }) => bulkRedateClaims(sheetId, user, v.ids, v.date),
++    onSuccess: () => {
++      onDone();
++      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
++    },
++  });
++
++  return (
++    <div>
++      <input type="date" data-testid="bulk-redate-date" value={date}
++        onChange={(e) => {
++          setDate(e.target.value);
++          bulk.reset();
++        }} />{' '}
++      <button type="button" data-testid="bulk-redate" disabled={bulk.isPending}
++        onClick={() => {
++          const ids = [...selected];
++          const to = date.trim();
++          runOnce(() => {
++            bulk.reset();
++            return bulk.mutateAsync({ ids, date: to });
++          });
++        }}>
++        Re-date selected ({selected.length})
++      </button>
++      {bulk.isSuccess && (
++        <>
++          {' '}Re-dated <span data-testid="bulk-redated">{bulk.data.redated}</span>,{' '}
++          refused <span data-testid="bulk-redate-refused">{bulk.data.refused}</span>
++        </>
++      )}
++      {bulk.isError && <span data-testid="bulk-redate-error">The selected claims could not be re-dated.</span>}
++    </div>
++  );
++}
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index 70deb3318..7a7bfe035 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -325,3 +325,13 @@ export type BulkReassignResult = { reassigned: number; refused: number };
+ export function bulkReassignClaims(sheetId: string, by: string, claimIds: number[], toPersonId: number): Promise<BulkReassignResult> {
+   return postJson<BulkReassignResult>(`${sheetBase(sheetId)}/bulk-reassign?by=${encodeURIComponent(by)}`, { claimIds, to: toPersonId });
+ }
++
++/** How many of the selected claims a bulk re-date re-dated, and how many it refused (left as they were). */
++export type BulkRedateResult = { redated: number; refused: number };
++
++/** Re-date the selected claims to one `date` together in list order (people in their list places, newest
++ *  claim first within a person), each by the rules of re-dating one; each that cannot be re-dated is left
++ *  as it is and counted as refused. */
++export function bulkRedateClaims(sheetId: string, by: string, claimIds: number[], date: string): Promise<BulkRedateResult> {
++  return postJson<BulkRedateResult>(`${sheetBase(sheetId)}/bulk-redate?by=${encodeURIComponent(by)}`, { claimIds, date });
++}
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index fd4606004..c00d83e52 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -6,6 +6,7 @@ import { BulkOpen } from '../claims/BulkOpen';
+ import { PasteClaims } from '../claims/PasteClaims';
+ import { BulkSettle } from '../claims/BulkSettle';
+ import { BulkReassign } from '../claims/BulkReassign';
++import { BulkRedate } from '../claims/BulkRedate';
+ import { PersonClaims } from '../claims/PersonClaims';
+ import { PersonPlans } from '../plans/PersonPlans';
+ import { backing, claimsKey, patronShares, isActive, listClaims, liveClaims, showTags, sumAmounts, tagsKey } from '../claims/api';
+@@ -468,6 +469,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+       <BulkSettle sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
+       <BulkReassign sheetId={sheetId} user={user} selected={[...selected]} people={everyone}
+         onDone={() => setSelected(new Set())} />
++      <BulkRedate sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
+       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
+       <table>
+         <tbody>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkRedateClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkRedateClaims.java
+new file mode 100644
+index 000000000..1ae24352f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkRedateClaims.java
+@@ -0,0 +1,73 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.ArrayList;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Set;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.period.PeriodClosedException;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.setting.RoleRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Re-dates the selected claims to one date in list order (people in the order they were added, newest
++ *  claim first within a person), each by exactly the rules of {@link RedateClaim#redate} and recorded as
++ *  it would record it (its CLAIM_REDATED line, then the rollup lines it moved). A claim that cannot be
++ *  re-dated (the user's role, its status, a closed period, the date, the person's retirement, or it is not
++ *  on the sheet) is left as it is and counted as refused; every one is on an archived sheet. */
++public class BulkRedateClaims {
++    public void redate(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "by", required = false) String by,
++            @RequestBody BulkRedateRequest request, ClaimRepository claims, PeriodRepository periods,
++            PersonRepository people, RateRepository rates, SheetRepository sheets,
++            SettingRepository settings, RoleRepository roles, Audit audit,
++            Out<BulkRedateResult> result) {
++        String id = sheetId.trim();
++        String user = by == null ? "" : by;
++        Set<Long> selected = new HashSet<>(request == null || request.claimIds() == null
++                ? List.of() : request.claimIds());
++        selected.remove(null);
++        String date = request == null ? null : request.date();
++
++        // The selected claims of the sheet, in list order.
++        List<Claim> all = claims.list(id);
++        List<Claim> ordered = new ArrayList<>();
++        for (Person p : people.list(id)) {
++            for (Claim c : all) {
++                if (c.getPersonId() == p.getId() && selected.contains(c.getId())) ordered.add(c);
++            }
++        }
++
++        boolean archived = sheets.isArchived(id);
++        int redated = 0;
++        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
++        for (Claim claim : ordered) {
++            if (archived) continue;
++            Redating redating;
++            try {
++                redating = RedateClaim.redate(user, claim, date, people, roles, periods);
++            } catch (ClaimStatusException | InvalidClaimException | PeriodClosedException refused) {
++                continue;
++            }
++            claims.redate(claim);
++            redated++;
++            audit.record(RecordClaimStatus.line("CLAIM_REDATED", user, claim, people)
++                    + " old=" + redating.oldDate() + " new=" + redating.newDate());
++            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
++            for (String line : after.changesSince(before, id, user)) {
++                audit.record(line);
++            }
++            before = after;
++        }
++        result.set(new BulkRedateResult(redated, selected.size() - redated));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkRedateRequest.java b/src/main/java/net/officefloor/hq/app/claim/BulkRedateRequest.java
+new file mode 100644
+index 000000000..0b92aa579
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkRedateRequest.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++
++/** Body of a bulk re-date: the ids of the selected claims, in any order, and the date (yyyy-MM-dd) they take. */
++public record BulkRedateRequest(List<Long> claimIds, String date) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkRedateResult.java b/src/main/java/net/officefloor/hq/app/claim/BulkRedateResult.java
+new file mode 100644
+index 000000000..5b130c383
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkRedateResult.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** How many of the selected claims were re-dated, and how many were refused (left as they were). */
++public record BulkRedateResult(int redated, int refused) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RedateClaim.java b/src/main/java/net/officefloor/hq/app/claim/RedateClaim.java
+index 843852c8f..e6624da6a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RedateClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RedateClaim.java
+@@ -20,6 +20,12 @@ public class RedateClaim {
+     public void redate(@RequestParam(name = "by", required = false) String by,
+             @RequestParam(name = "date", required = false) String date, @Val Claim claim,
+             PersonRepository people, RoleRepository roles, PeriodRepository periods, Out<Redating> redating) throws ClaimStatusException, InvalidClaimException, PeriodClosedException {
++        redating.set(redate(by, claim, date, people, roles, periods));
++    }
++
++    /** Re-dates the claim in place by the rules above (writing nothing): the date it had and the one it has now. */
++    static Redating redate(String by, Claim claim, String date, PersonRepository people, RoleRepository roles,
++            PeriodRepository periods) throws ClaimStatusException, InvalidClaimException, PeriodClosedException {
+         String sheetId = claim.getSheetId();
+         if (!Role.STEWARD.equals(roles.roleOf(sheetId, by == null ? "" : by))) {
+             throw new ClaimStatusException("Only a steward can re-date a claim");
+@@ -40,6 +46,6 @@ public class RedateClaim {
+         }
+         String old = claim.getDate();
+         claim.setDate(to.toString());
+-        redating.set(new Redating(old, claim.getDate()));
++        return new Redating(old, claim.getDate());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkRedate.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkRedate.java
+new file mode 100644
+index 000000000..10a8f2893
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkRedate.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithBulkRedate {
++    public void respond(@Val BulkRedateResult result, ObjectResponse<BulkRedateResult> response) {
++        response.send(result);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-redate.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-redate.POST.yml
+new file mode 100644
+index 000000000..b4d4e9e6b
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-redate.POST.yml
+@@ -0,0 +1,9 @@
++# POST /api/sheets/{sheetId}/bulk-redate — re-date the selected claims to one date together, in list
++# order, each by the rules of re-dating one; each that cannot be re-dated is left as it is. Responds with
++# how many were re-dated and how many refused.
++redate:
++  class: net.officefloor.hq.app.claim.BulkRedateClaims
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithBulkRedate
