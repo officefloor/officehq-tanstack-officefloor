@@ -96,8 +96,8 @@ export function useCap(sheetId: string, today: string): string | null {
   return settingOn(settings.data, 'cap', today) || null;
 }
 
-/** What a claim's late charge and rounding go by: the sheet's late percent by date (a claim goes
- *  by the one in force on its date), today and policy date (its today when blank). */
+/** What a claim's late charge and rounding go by: the sheet's late percent by date (a late charge goes
+ *  by the one in force on each 30-day boundary), today and policy date (its today when blank). */
 export function useLate(sheetId: string, today: string): Late {
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
   const pct = (date: string) => settingOn(settings.data, 'late-pct', date) || SETTING_DEFAULTS['late-pct'];

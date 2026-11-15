@@ -11,7 +11,7 @@ public final class Dues {
     private Dues() {
     }
 
-    /** What a late charge goes by: the sheet's late percent by date (a claim goes by the one in force on its date) and its today (a claim's due-by is its own); and the
+    /** What a late charge goes by: the sheet's late percent by date (a charge goes by the one in force on each 30-day boundary) and its today (a claim's due-by is its own); and the
      *  sheet's policy date (its today when blank), which decides how a claim's live figures round. */
     public record Late(DatedSetting pct, LocalDate today, LocalDate policy) {
 
@@ -35,16 +35,23 @@ public final class Dues {
         return new BigDecimal(amount).signum() < 0;
     }
 
-    /** The late charge on a claim's figure: the late percent of it for every full 30 days its open (OPEN or PENDING)
-     *  claim is past its due-by (fixed when it was added) on the sheet's today, rounded by the
-     *  policy date to two decimals; none (0.00) when it is not overdue (a deferred claim never is), or on a correction. */
+    /** The late charge on a claim's figure: for each full 30 days its open (OPEN or PENDING) claim is past its
+     *  due-by (fixed when it was added) on the sheet's today, the late percent in force on that boundary date
+     *  (its due-by plus 30, 60, 90 ... days) of it, each rounded by the policy date to two decimals, added up;
+     *  none (0.00) when it is not overdue (a deferred claim never is), or on a correction. */
     public static BigDecimal charge(Claim claim, String figure, Late late) {
-        if (figure == null || isCorrection(claim.getAmount()) || !ClaimStatus.isOpen(claim.getStatus()) || claim.isDeferred()) return BigDecimal.ZERO.setScale(2);
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
+        if (figure == null || isCorrection(claim.getAmount()) || !ClaimStatus.isOpen(claim.getStatus()) || claim.isDeferred()) return total;
         LocalDate dueBy = LocalDate.parse(claim.getDueBy());
         long periods = Math.max(0, ChronoUnit.DAYS.between(dueBy, late.today())) / 30;
-        return new BigDecimal(figure).multiply(new BigDecimal(late.pct().on(claim.getDate())))
-                .multiply(BigDecimal.valueOf(periods))
-                .divide(BigDecimal.valueOf(100), 2, late.rounding(claim.getRoundDate()));
+        RoundingMode rounding = late.rounding(claim.getRoundDate());
+        for (long k = 1; k <= periods; k++) {
+            String pct = late.pct().on(dueBy.plusDays(30 * k).toString());
+            if (pct == null) continue;
+            total = total.add(new BigDecimal(figure).multiply(new BigDecimal(pct))
+                    .divide(BigDecimal.valueOf(100), 2, rounding));
+        }
+        return total;
     }
 
     /** The due a claim shows: the one fixed when settled, else its figure (bound by a statement, else

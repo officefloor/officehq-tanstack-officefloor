@@ -68,7 +68,7 @@ export function dueOf(amount: string, pct: string | undefined, floor: string, ha
   return formatCents(cents < least && hundredths(amount) >= 0n ? least : cents);
 }
 
-/** What a claim's late charge goes by: the sheet's late percent by date (a claim goes by the one in force on its date) and its today (a claim's due-by is its own);
+/** What a claim's late charge goes by: the sheet's late percent by date (a charge goes by the one in force on each 30-day boundary) and its today (a claim's due-by is its own);
  *  and the sheet's policy date (its today when blank), which decides how a claim's live figures round. */
 export type Late = { pct: DatedOn; today: string; policy: string };
 
@@ -76,13 +76,19 @@ export type Late = { pct: DatedOn; today: string; policy: string };
  *  date of the claim it corrects) is before the policy date; else they round half to even. */
 export const roundsHalfUp = (c: Claim, late: Late) => (c.roundDate ?? c.date) < late.policy;
 
-/** The late charge on an open (OPEN or PENDING) claim's `figure`: the late percent of it for every full 30 days it is
- *  past its due-by on the sheet's today, rounded by the policy date to two decimals (0 when not overdue, and
- *  on a correction). */
+/** The late charge on an open (OPEN or PENDING) claim's `figure`: for each full 30 days it is past its due-by on
+ *  the sheet's today, the late percent in force on that boundary date (its due-by plus 30, 60, 90 ... days) of it,
+ *  each rounded by the policy date to two decimals, added up (0 when not overdue, and on a correction). */
 export function lateCharge(c: Claim, figure: string, late: Late): bigint {
   if (isCorrection(c) || !isOverdue(c, late.today)) return 0n;
-  const days = (Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(c)}T00:00:00Z`)) / 86_400_000;
-  return roundPct(hundredths(figure) * hundredths(late.pct(c.date)) * BigInt(Math.floor(days / 30)), roundsHalfUp(c, late));
+  const start = Date.parse(`${dueBy(c)}T00:00:00Z`);
+  const periods = Math.floor((Date.parse(`${late.today}T00:00:00Z`) - start) / 86_400_000 / 30);
+  let total = 0n;
+  for (let k = 1; k <= periods; k++) {
+    const boundary = new Date(start + k * 30 * 86_400_000).toISOString().slice(0, 10);
+    total += roundPct(hundredths(figure) * hundredths(late.pct(boundary)), roundsHalfUp(c, late));
+  }
+  return total;
 }
 
 /** A person's grade in force on a date (yyyy-MM-dd). */

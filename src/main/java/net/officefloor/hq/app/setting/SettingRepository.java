@@ -124,7 +124,7 @@ public class SettingRepository {
         return Integer.parseInt(value != null ? value : dated(sheetId, TERMS, DEFAULT_TERMS).on(date));
     }
 
-    /** The sheet's late percent (two decimals) by date: a claim goes by the one in force on its date. */
+    /** The sheet's late percent (two decimals) by date: a late charge goes by the one in force on each 30-day boundary. */
     public DatedSetting latePct(String sheetId) {
         return dated(sheetId, LATE_PCT, DEFAULT_LATE_PCT);
     }
