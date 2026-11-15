@@ -1,0 +1,165 @@
+diff --git a/src/main/frontend/features/rates/api.ts b/src/main/frontend/features/rates/api.ts
+index 5d4b742ab..2e5f621f6 100644
+--- a/src/main/frontend/features/rates/api.ts
++++ b/src/main/frontend/features/rates/api.ts
+@@ -56,7 +56,7 @@ export function rateByGrade(rates: Rate[] | undefined, date: string): Map<string
+ }
+ 
+ /** Two-decimal text (may be negative) as a whole number of hundredths. */
+-function hundredths(text: string): bigint {
++export function hundredths(text: string): bigint {
+   const t = text.trim();
+   const negative = t.startsWith('-');
+   const [whole, frac = ''] = (negative ? t.slice(1) : t).split('.');
+@@ -193,7 +193,7 @@ export function trimmedSum(figures: Array<string | null>): string {
+   return formatCents(kept.reduce((t, c) => t + c, 0n));
+ }
+ 
+-function formatCents(cents: bigint): string {
++export function formatCents(cents: bigint): string {
+   const abs = cents < 0n ? -cents : cents;
+   const frac = (abs % 100n).toString().padStart(2, '0');
+   return `${cents < 0n ? '-' : ''}${abs / 100n}.${frac}`;
+diff --git a/src/main/frontend/features/sheet/api.ts b/src/main/frontend/features/sheet/api.ts
+index 09716dd66..dfafad849 100644
+--- a/src/main/frontend/features/sheet/api.ts
++++ b/src/main/frontend/features/sheet/api.ts
+@@ -1,5 +1,5 @@
+ import { useQuery } from '@tanstack/react-query';
+-import { postJson } from '../../api/http';
++import { getJson, postJson } from '../../api/http';
+ 
+ /** `today` is the sheet's own date (yyyy-MM-dd): every date decision and default uses it.
+  *  `archived`: a steward archived it; everything stays visible and every change is refused. */
+@@ -37,3 +37,10 @@ export function useSheetToday(id: string, by: string): string {
+   const sheet = useQuery({ queryKey: sheetKey(id), queryFn: () => openSheet(id, by) });
+   return sheet.data?.today ?? '';
+ }
++
++export const descendantsKey = (id: string) => [...sheetKey(id), 'descendants'] as const;
++
++/** The ids of the sheet's descendants: its children (the sheets naming it as their parent), theirs, ... */
++export function listDescendants(id: string): Promise<string[]> {
++  return getJson<string[]>(`/api/sheets/${encodeURIComponent(id)}/descendants`);
++}
+diff --git a/src/main/frontend/features/summary/Consolidated.tsx b/src/main/frontend/features/summary/Consolidated.tsx
+new file mode 100644
+index 000000000..9c3860ff1
+--- /dev/null
++++ b/src/main/frontend/features/summary/Consolidated.tsx
+@@ -0,0 +1,45 @@
++import { useEffect, useState } from 'react';
++import { useIsFetching, useQuery } from '@tanstack/react-query';
++import { listPeople, peopleKey } from '../people/api';
++import { useDueTotal } from '../rates/DueTotal';
++import { useOverdue } from '../rates/Overdue';
++import { formatCents, hundredths } from '../rates/api';
++import { descendantsKey, listDescendants } from '../sheet/api';
++
++/** A sheet's own figures, as that sheet shows them in its header. */
++type Figures = { people: number; due: string; overdue: string };
++
++function useFigures(sheetId: string, user: string): Figures {
++  const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
++  return { people: (people.data ?? []).length, due: useDueTotal(sheetId, user), overdue: useOverdue(sheetId, user).total };
++}
++
++/** Works out one descendant sheet's own figures and hands them up; shows nothing. */
++function Descendant({ sheetId, user, report }: { sheetId: string; user: string; report: (id: string, f: Figures) => void }) {
++  const f = useFigures(sheetId, user);
++  useEffect(() => report(sheetId, f), [sheetId, f.people, f.due, f.overdue]);
++  return null;
++}
++
++/** The consolidated figures over the sheet and all its descendants (its children, theirs, ...): the
++ *  number of people, and each sheet's due- and overdue-total as that sheet shows it, added up. */
++export function Consolidated({ sheetId, user }: { sheetId: string; user: string }) {
++  const own = useFigures(sheetId, user);
++  const descendants = useQuery({ queryKey: descendantsKey(sheetId), queryFn: () => listDescendants(sheetId) });
++  const ids = descendants.data ?? [];
++  const [reported, setReported] = useState<Record<string, Figures>>({});
++  const report = (id: string, f: Figures) => setReported((r) => ({ ...r, [id]: f }));
++  // A descendant's figures count once its own queries have been read afresh.
++  const fetching = useIsFetching({ predicate: (q) => q.queryKey[0] === 'sheet' && ids.includes(q.queryKey[1] as string) });
++  const ready = descendants.isSuccess && fetching === 0 && ids.every((id) => reported[id] !== undefined);
++  const all = [own, ...ids.map((id) => reported[id]).filter((f): f is Figures => f !== undefined)];
++  const sum = (pick: (f: Figures) => string) => formatCents(all.reduce((t, f) => t + hundredths(pick(f)), 0n));
++  return (
++    <p>
++      {ids.map((id) => <Descendant key={id} sheetId={id} user={user} report={report} />)}
++      Consolidated: people <span data-testid="consolidated-people-count">{ready ? all.reduce((t, f) => t + f.people, 0) : ''}</span>
++      {' · '}due <span data-testid="consolidated-due-total">{ready ? sum((f) => f.due) : ''}</span>
++      {' · '}overdue <span data-testid="consolidated-overdue-total">{ready ? sum((f) => f.overdue) : ''}</span>
++    </p>
++  );
++}
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index efd0ac883..64e2a82c1 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -1,8 +1,10 @@
+ import { SheetBody } from '../../slots/defs/sheetBody';
++import { Consolidated } from './Consolidated';
+ import { Header } from './Header';
+ import { Summary } from './Summary';
+ 
+ export const contributions = [
+   SheetBody.fill({ order: -100, Component: Header }),
++  SheetBody.fill({ order: -99, Component: Consolidated }),
+   SheetBody.fill({ order: 27, Component: Summary }),
+ ];
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ListDescendants.java b/src/main/java/net/officefloor/hq/app/sheet/ListDescendants.java
+new file mode 100644
+index 000000000..39b0c6603
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/ListDescendants.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.sheet;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** The ids of the sheet's descendants: its children (the sheets naming it as their parent), theirs, ... */
++public class ListDescendants {
++    public void list(@PathVariable("sheetId") String sheetId, SheetRepository sheets,
++            ObjectResponse<List<String>> response) {
++        response.send(sheets.descendants(sheetId.trim()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+index ad51d0589..7655499bf 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -26,6 +26,21 @@ public class SheetRepository {
+         return find(id);
+     }
+ 
++    /** The sheet's descendants: the sheets naming it as their parent (its children), their children,
++     *  and so on, each once, nearest first. */
++    public java.util.List<String> descendants(String id) {
++        java.util.List<String> found = new java.util.ArrayList<>();
++        java.util.Set<String> seen = new java.util.HashSet<>(java.util.List.of(id));
++        for (int i = -1; i < found.size(); i++) {
++            String at = i < 0 ? id : found.get(i);
++            for (String child : jdbc.queryForList("SELECT sheet_id FROM sheet_setting WHERE setting = 'parent' "
++                    + "AND val = ? ORDER BY sheet_id", String.class, at)) {
++                if (seen.add(child)) found.add(child);
++            }
++        }
++        return found;
++    }
++
+     /** The sheet's today: the date every date decision and default on the sheet uses. */
+     public LocalDate today(String id) {
+         Sheet sheet = find(id);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+new file mode 100644
+index 000000000..89780fadb
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+@@ -0,0 +1,4 @@
++# GET /api/sheets/{sheetId}/descendants — the ids of the sheets below it (children, their children, ...).
++list:
++  class: net.officefloor.hq.app.sheet.ListDescendants
++  govern: [ readonly-transaction ]
