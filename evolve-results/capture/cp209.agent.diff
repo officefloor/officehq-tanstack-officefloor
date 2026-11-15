@@ -1,0 +1,55 @@
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 1a2631663..059584f87 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -13,7 +13,7 @@ import { PersonPlans } from '../plans/PersonPlans';
+ import { backing, claimedClaims, claimsKey, patronShares, isActive, correctsAnother, listClaims, liveClaims, showTags, sumAmounts, tagsKey } from '../claims/api';
+ import { listPeriods, periodOf, periodsKey, personPeriodCarried, personPeriodDue } from '../periods/api';
+ import { listPools, personCutTotal, poolsKey } from '../pools/api';
+-import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
++import { agedDues, claimDue, excessOf, listRates, overdue, personDue, personScore, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
+ import { roleOf, roleOfKey, useCap, useFloor, useLate } from '../settings/api';
+ import { crewsKey, listCrews, type Crew } from '../crews/api';
+ import { useSheetToday } from '../sheet/api';
+@@ -49,7 +49,7 @@ function snapshotOn(p: Person, day: string): string {
+  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
+  *  patrons (each `<name> <share>`, sorted by name (see `patronShares`), with a picker that names one more), their plans (see `PersonPlans`), their aliases (sorted as names are
+  *  compared, with an entry and a button that adds one) and backing (see `backing`), and
+- *  their due-total and carried figure for each period (see `personPeriodDue`, `personPeriodCarried`), the due of their open claims by age (see `agedDues`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
++ *  their due-total and carried figure for each period (see `personPeriodDue`, `personPeriodCarried`), the due of their open claims by age (see `agedDues`), their overdue claims (OPEN ones past their due-by; the count and their due added up), their score (see `personScore`) and their claims, each
+  *  with a checkbox that selects it for a button that opens the selected claims together.
+  *  Each person has a checkbox that selects them for a grade given to the selected people together.
+  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
+@@ -687,6 +687,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   {shows('overdue-count') && <>Overdue <span data-testid="person-overdue-count">{late.count}</span>{' '}</>}
+                   {shows('overdue-total') && <>totalling <span data-testid="person-overdue-total"><Fig>{late.total}</Fig></span></>}
+                 </td>
++                <td>
++                  Score <span data-testid="person-score">{personScore(split.settled, late.count)}</span>
++                </td>
+                 <td>
+                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
+                     Edit
+diff --git a/src/main/frontend/features/rates/api.ts b/src/main/frontend/features/rates/api.ts
+index c351c24e7..6260abdf0 100644
+--- a/src/main/frontend/features/rates/api.ts
++++ b/src/main/frontend/features/rates/api.ts
+@@ -199,6 +199,18 @@ export function overdue(claims: Claim[], charges: Late, dueOfClaim: (c: Claim) =
+   return { count: late.length, total: sumDues(late.map(dueOfClaim)) };
+ }
+ 
++/** A person's score: their settled figures (`settled`, see `splitDues`) divided by 100, less 5 for each of
++ *  their overdue claims (`overdueCount`, see `overdue`), rounded half to even to a whole number. */
++export function personScore(settled: string, overdueCount: number): string {
++  const scaled = hundredths(settled) - BigInt(overdueCount) * 50_000n; // in 1/10_000 of a point
++  const negative = scaled < 0n;
++  const abs = negative ? -scaled : scaled;
++  let whole = abs / 10_000n;
++  const rest = abs % 10_000n;
++  if (rest > 5_000n || (rest === 5_000n && whole % 2n === 1n)) whole += 1n;
++  return negative && whole !== 0n ? `-${whole}` : `${whole}`;
++}
++
+ /** The due of the open (OPEN or PENDING) claims among those that count (`claims`, the live ones), split by
+  *  their age on the sheet's `today` (the days from the claim's date): 0 to 30, 31 to 60, and 61 or more
+  *  (one dated after today is 0 to 30); n/a ones skipped. */
