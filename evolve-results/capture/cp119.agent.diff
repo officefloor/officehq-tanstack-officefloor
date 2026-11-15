@@ -1,0 +1,97 @@
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 981941751..0886e7597 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -9,7 +9,7 @@ import { BulkReassign } from '../claims/BulkReassign';
+ import { PersonClaims } from '../claims/PersonClaims';
+ import { backing, claimsKey, patronShares, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
+ import { listPeriods, periodsKey, personPeriodDue } from '../periods/api';
+-import { poolsKey } from '../pools/api';
++import { listPools, personCutTotal, poolsKey } from '../pools/api';
+ import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
+ import { useCap, useFloor, useLate } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+@@ -36,7 +36,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
+  *  with a checkbox that selects it for a button that opens the selected claims together.
+  *  Each person has a checkbox that selects them for a grade given to the selected people together.
+  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
+- *  Whether each person is active (see `isActive`).
++ *  Whether each person is active (see `isActive`). Their cut total (see `personCutTotal`).
+  *  A picker and a button merge the person into another (see `mergePerson`), and an entry and a
+  *  button transfer them to another sheet by id (see `transferPerson`).
+  *  Whether the signed-in user watches each person, with a button that starts or stops it.
+@@ -49,6 +49,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const watches = useQuery({ queryKey: watchesKey(sheetId, user), queryFn: () => listWatches(sheetId, user) });
+   const watched = new Set(watches.data ?? []);
+   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
++  const pools = useQuery({ queryKey: poolsKey(sheetId), queryFn: () => listPools(sheetId) });
+   const floor = useFloor(sheetId);
+   const today = useSheetToday(sheetId, user);
+   const cap = useCap(sheetId, today);
+@@ -445,6 +446,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap))}</span>{' '}
+                   excess <span data-testid="person-excess">{excessOf(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap)}</span>
+                 </td>
++                <td>
++                  Cut <span data-testid="person-cut-total">{personCutTotal(pools.data ?? [], p.id)}</span>
++                </td>
+                 <td>
+                   Settled <span data-testid="person-settled-total">{split.settled}</span>{' '}
+                   open <span data-testid="person-open-total">{split.open}</span>
+diff --git a/src/main/frontend/features/pools/CutTotal.tsx b/src/main/frontend/features/pools/CutTotal.tsx
+new file mode 100644
+index 000000000..c3ae12fc1
+--- /dev/null
++++ b/src/main/frontend/features/pools/CutTotal.tsx
+@@ -0,0 +1,12 @@
++import { useQuery } from '@tanstack/react-query';
++import { listPools, poolsKey, sheetCutTotal } from './api';
++
++/** The sheet's cut total: everyone's cuts across the pools added up. */
++export function CutTotal({ sheetId }: { sheetId: string; user: string }) {
++  const pools = useQuery({ queryKey: poolsKey(sheetId), queryFn: () => listPools(sheetId) });
++  return (
++    <p>
++      Cut total <span data-testid="rollup-cut-total">{sheetCutTotal(pools.data ?? [])}</span>
++    </p>
++  );
++}
+diff --git a/src/main/frontend/features/pools/api.ts b/src/main/frontend/features/pools/api.ts
+index f7770cb53..85ad97358 100644
+--- a/src/main/frontend/features/pools/api.ts
++++ b/src/main/frontend/features/pools/api.ts
+@@ -36,3 +36,20 @@ export type MemberRef = { personId: number } | { memberPoolId: number };
+ export function addPoolMember(sheetId: string, by: string, poolId: number, member: MemberRef, share: string): Promise<Pool[]> {
+   return postJson<Pool[]>(`${base(sheetId)}/${poolId}/members?by=${encodeURIComponent(by)}`, { ...member, share });
+ }
++
++/** Add up cuts (two decimals) in cents, a blank cut adding nothing. */
++function sumCuts(cuts: string[]): string {
++  const cents = cuts.filter((c) => c !== '').reduce((total, c) => total + Math.round(Number(c) * 100), 0);
++  return (cents / 100).toFixed(2);
++}
++
++/** A person's cut total: their cuts across every pool they are a member of, added up (a pool that shows
++ *  no cut adds nothing). */
++export function personCutTotal(pools: Pool[], personId: number): string {
++  return sumCuts(pools.flatMap((p) => p.members.filter((m) => m.personId === personId).map((m) => m.cut)));
++}
++
++/** The sheet's cut total: every person's cuts in every pool added up. */
++export function sheetCutTotal(pools: Pool[]): string {
++  return sumCuts(pools.flatMap((p) => p.members.filter((m) => m.personId !== null).map((m) => m.cut)));
++}
+diff --git a/src/main/frontend/features/pools/pools.slot.tsx b/src/main/frontend/features/pools/pools.slot.tsx
+index 3b28edea4..c2758eb98 100644
+--- a/src/main/frontend/features/pools/pools.slot.tsx
++++ b/src/main/frontend/features/pools/pools.slot.tsx
+@@ -1,4 +1,8 @@
+ import { SheetBody } from '../../slots/defs/sheetBody';
++import { CutTotal } from './CutTotal';
+ import { Pools } from './Pools';
+ 
+-export const contribution = SheetBody.fill({ order: 9.7, Component: Pools });
++export const contributions = [
++  SheetBody.fill({ order: 9.7, Component: Pools }),
++  SheetBody.fill({ order: 20.5, Component: CutTotal }),
++];
