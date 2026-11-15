@@ -94,6 +94,24 @@ public class Audit {
         return found;
     }
 
+    /** A claim's timeline: the sheet's lines exactly as the file holds them, newest first, that carry
+     *  {@code number=<its number>}; for a claim with no number, those naming its person, amount and
+     *  date together (and no number, which would make them another claim's). */
+    public List<String> claimLines(String sheetId, String number, String person, String amount, String date) {
+        List<String> found = new ArrayList<>();
+        for (String line : lines(sheetId, null)) {
+            String padded = " " + line + " ";
+            boolean ours = number != null && !number.isBlank()
+                    ? padded.contains(" number=" + number + " ")
+                    : !padded.contains(" number=")
+                            && padded.contains(" person=" + person + " ")
+                            && padded.contains(" amount=" + amount + " ")
+                            && padded.contains(" date=" + date + " ");
+            if (ours) found.add(line);
+        }
+        return found;
+    }
+
     /** Whether the line carries name=<who> or person=<who> (who: trimmed, lower case). */
     private static boolean about(String line, String who) {
         String lower = " " + line.toLowerCase(Locale.ROOT) + " ";

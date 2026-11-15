@@ -6,7 +6,7 @@ import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import { useNoteThreshold, useProofThreshold, type DatedOn } from '../settings/api';
 import { claimFromTemplate, listTemplates, templatesKey } from '../templates/api';
-import { addClaim, addClaimLine, addProof, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
+import { addClaim, addClaimLine, claimTimeline, addProof, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
 import { Fig } from '../session/Fig';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
@@ -185,6 +185,14 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
   };
 
   // The new date typed for each claim to re-date it to.
+  // Each claim's timeline as last read from the audit file (absent: not shown); re-read on each press.
+  const [timelines, setTimelines] = useState<Record<number, string[]>>({});
+  const timeline = useMutation({
+    mutationFn: (id: number) => claimTimeline(sheetId, id),
+    onMutate: (id) => setTimelines((t) => { const rest = { ...t }; delete rest[id]; return rest; }),
+    onSuccess: (lines, id) => setTimelines((t) => ({ ...t, [id]: lines })),
+  });
+
   const [redates, setRedates] = useState<Record<number, string>>({});
 
   const redating = useMutation({
@@ -612,6 +620,10 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
               <td data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</td>
               <td>
                 {(c.log ?? []).map((line, i) => <div key={i} data-testid="claim-log-line">{line}</div>)}
+                <button type="button" data-testid="claim-timeline" onClick={() => timeline.mutate(c.id)}>
+                  Timeline
+                </button>
+                {(timelines[c.id] ?? []).map((line, i) => <div key={i} data-testid="claim-timeline-line">{line}</div>)}
               </td>
               <td>
                 {(c.comments ?? []).map((line, i) => <div key={i} data-testid="claim-comments-line">{line}</div>)}

@@ -135,6 +135,12 @@ export function deferClaim(sheetId: string, by: string, id: number, until: strin
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/defer?by=${encodeURIComponent(by)}&until=${encodeURIComponent(until)}`, {});
 }
 
+/** A claim's timeline: the audit lines about it exactly as the file holds them, newest first — those
+ *  carrying its number, or for a claim with no number those naming its person, amount and date together. */
+export function claimTimeline(sheetId: string, id: number): Promise<string[]> {
+  return getJson<string[]>(`${sheetBase(sheetId)}/claims/${id}/timeline`);
+}
+
 /** Remind an OPEN or PENDING claim on the sheet's today; refused (rejects) with 409 for any other
  *  status, or when it was already reminded on the sheet's today. */
 export function remindClaim(sheetId: string, by: string, id: number): Promise<Claim> {
