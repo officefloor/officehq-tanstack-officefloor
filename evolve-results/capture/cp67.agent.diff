@@ -1,0 +1,90 @@
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index b2e04f2ea..7ba4d19e8 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -122,6 +122,16 @@ export function liveClaims(claims: Claim[],
+   return claims.filter((c) => !c.deferred && !(isOpen(c) && !c.stated && held(c)));
+ }
+ 
++/** Whether a person is active: one of their claims that count (`live`, see `liveClaims`) is open (OPEN or
++ *  PENDING) and dated within the 30 days up to and including the sheet's `today`. */
++export function isActive(live: Claim[], today: string): boolean {
++  if (today === '') return false;
++  const since = new Date(`${today}T00:00:00Z`);
++  since.setUTCDate(since.getUTCDate() - 29);
++  const from = since.toISOString().slice(0, 10);
++  return live.some((c) => isOpen(c) && from <= c.date && c.date <= today);
++}
++
+ /** Sum the amounts of the claims that count (see `counts`) exactly (in cents), shown with two decimals. */
+ export function sumAmounts(claims: Claim[]): string {
+   const cents = claims.filter(counts).reduce((t, c) => t + Math.round(Number(c.amount) * 100), 0);
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index ea6d85129..8c1651f35 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -6,7 +6,7 @@ import { BulkOpen } from '../claims/BulkOpen';
+ import { PasteClaims } from '../claims/PasteClaims';
+ import { BulkSettle } from '../claims/BulkSettle';
+ import { PersonClaims } from '../claims/PersonClaims';
+-import { claimsKey, listClaims, liveClaims, sumAmounts } from '../claims/api';
++import { claimsKey, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
+ import { listPeriods, periodsKey, personPeriodDue } from '../periods/api';
+ import { claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, sumDues } from '../rates/api';
+ import { useCap, useFloor, useLate } from '../settings/api';
+@@ -30,6 +30,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '' };
+  *  their due-total for each period (see `personPeriodDue`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
+  *  with a checkbox that selects it for a button that opens the selected claims together.
+  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
++ *  Whether each person is active (see `isActive`).
+  *  Whether the signed-in user watches each person, with a button that starts or stops it.
+  *  A button exports everyone, retired people included, as a CSV file. */
+ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+@@ -280,6 +281,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+               <tr key={p.id} data-testid={`person-row-${p.id}`}>
+                 <td data-testid="person-name">{p.name}</td>
+                 <td data-testid="person-grade">{p.grade}</td>
++                <td>
++                  Active <span data-testid="person-active">{isActive(live, today) ? 'yes' : 'no'}</span>
++                </td>
+                 <td>
+                   Terms <span data-testid="person-terms">{p.terms ?? ''}</span>
+                 </td>
+diff --git a/src/main/frontend/features/summary/Summary.tsx b/src/main/frontend/features/summary/Summary.tsx
+index 9270198bf..d53daef1d 100644
+--- a/src/main/frontend/features/summary/Summary.tsx
++++ b/src/main/frontend/features/summary/Summary.tsx
+@@ -1,5 +1,5 @@
+ import { useQuery } from '@tanstack/react-query';
+-import { claimsKey, listClaims, liveClaims, type Claim } from '../claims/api';
++import { claimsKey, isActive, listClaims, liveClaims, type Claim } from '../claims/api';
+ import { GRADES, gradeOn, listPeople, peopleKey } from '../people/api';
+ import { listPeriods, periodDueTotal, periodsKey } from '../periods/api';
+ import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
+@@ -15,7 +15,7 @@ export function statusCount(claims: Claim[] | undefined, status: (typeof STATUSE
+ }
+ 
+ /** The sheet's summary, agreeing with the lists: per grade, how many people not retired are on it
+- *  today and their due-totals added up (n/a ones skipped); per period, its due-total; per status,
++ *  today, their due-totals added up (n/a ones skipped) and how many of them are active (see `isActive`); per period, its due-total; per status,
+  *  how many claims have it. */
+ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
+   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
+@@ -29,7 +29,8 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
+   const byGrade = rateByGrade(rates.data, today);
+   const all = claims.data ?? [];
+   const active = (people.data ?? []).filter((p) => !p.retired);
+-  const dueOf = (p: (typeof active)[number]) => personDue(liveClaims(all.filter((c) => c.personId === p.id), [p]),
++  const liveOf = (p: (typeof active)[number]) => liveClaims(all.filter((c) => c.personId === p.id), [p]);
++  const dueOf = (p: (typeof active)[number]) => personDue(liveOf(p),
+     rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap);
+ 
+   return (
+@@ -44,6 +45,7 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
+                 <td>Grade {g}</td>
+                 <td>People <span data-testid={`summary-grade-${g}-count`}>{on.length}</span></td>
+                 <td>Due <span data-testid={`summary-grade-${g}-due-total`}>{sumDues(on.map(dueOf))}</span></td>
++                <td>Active <span data-testid={`summary-grade-${g}-active`}>{on.filter((p) => isActive(liveOf(p), today)).length}</span></td>
+               </tr>
+             );
+           })}
