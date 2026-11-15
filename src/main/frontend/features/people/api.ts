@@ -26,10 +26,12 @@ export type Person = {
   retired: boolean; retiredFrom: string | null; retiredReached: boolean; held: boolean; holds: Hold[]; patronIds: number[];
   /** Their own terms in whole days (null: none): a claim's due-by goes by them before their grade's or the sheet's. */
   terms: number | null;
+  /** Their contact, trimmed and lower-cased (null: none); no two people on a sheet share one. */
+  contact: string | null;
 };
 /** `gradeFrom` is the date an edit's grade applies from (blank: the sheet's today); `terms` their
- *  own terms in whole days (blank: none). */
-export type PersonInput = { name: string; grade: string; gradeFrom: string; terms: string };
+ *  own terms in whole days (blank: none); `contact` their contact (blank: none). */
+export type PersonInput = { name: string; grade: string; gradeFrom: string; terms: string; contact: string };
 
 /** The person's grade in force on a date (yyyy-MM-dd): the one with the latest from-date on or before it. */
 export function gradeOn(p: Person, date: string): string {

@@ -16,8 +16,11 @@ public class AddPerson {
         if (people.nameTaken(id, request.name(), null)) {
             throw new InvalidPersonException("The name is already in use");
         }
+        if (request.contact() != null && people.contactTaken(id, request.contact(), null)) {
+            throw new InvalidPersonException("The contact is already in use");
+        }
         sheets.open(id, user);
         person.set(people.add(id, request.name(), request.grade(),
-                request.terms() == null ? null : Integer.valueOf(request.terms()), user));
+                request.terms() == null ? null : Integer.valueOf(request.terms()), request.contact(), user));
     }
 }

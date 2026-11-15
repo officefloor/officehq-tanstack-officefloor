@@ -34,7 +34,11 @@ public class ValidatePerson {
             }
             terms = String.valueOf(Integer.parseInt(terms));
         }
+        String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(java.util.Locale.ROOT);
+        if (contact.length() > 200) {
+            throw new InvalidPersonException("A contact is at most 200 characters");
+        }
         body.set(new PersonRequest(name, grade, from.isEmpty() ? null : from, terms.isEmpty() ? null : terms,
-                request.version()));
+                request.version(), contact.isEmpty() ? null : contact));
     }
 }

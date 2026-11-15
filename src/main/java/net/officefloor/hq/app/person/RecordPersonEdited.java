@@ -10,6 +10,7 @@ public class RecordPersonEdited {
             @Val Person person, Audit audit) {
         audit.record("PERSON_EDITED sheet=" + person.getSheetId() + " by=" + (by == null ? "" : by)
                 + " name=" + person.getName() + " grade=" + person.getGrade()
-                + (person.isTermsChanged() ? " terms=" + (person.getTerms() == null ? "" : person.getTerms()) : ""));
+                + (person.isTermsChanged() ? " terms=" + (person.getTerms() == null ? "" : person.getTerms()) : "")
+                + (person.isContactChanged() ? " contact=" + (person.getContact() == null ? "" : person.getContact()) : ""));
     }
 }

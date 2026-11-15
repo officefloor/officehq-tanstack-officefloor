@@ -23,6 +23,10 @@ public class Person {
     private Integer terms;
     /** Whether this request's save changed their terms, for its audit line. */
     private boolean termsChanged;
+    /** Their contact, trimmed and lower-cased (null: none). */
+    private String contact;
+    /** Whether this request's save changed their contact, for its audit line. */
+    private boolean contactChanged;
     private long version;
     private int statementCount;
     private String statedTotal;
@@ -104,6 +108,18 @@ public class Person {
 
     @JsonIgnore
     public boolean isTermsChanged() { return termsChanged; }
+
+    public String getContact() { return contact; }
+    public void setContact(String contact) { this.contact = contact; }
+
+    /** Give them this contact (null: none); the audit line records it when it changed. */
+    public void giveContact(String contact) {
+        contactChanged = !java.util.Objects.equals(this.contact, contact);
+        this.contact = contact;
+    }
+
+    @JsonIgnore
+    public boolean isContactChanged() { return contactChanged; }
 
     @JsonIgnore
     public GradeFrom getRecorded() { return recorded; }

@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, terms";
+    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, terms, contact";
 
     private static final RowMapper<Person> ROW = (rs, n) -> {
         LocalDate stated = rs.getObject("statement_date", LocalDate.class);
@@ -24,6 +24,7 @@ public class PersonRepository {
                 rs.getString("stated_total"), stated == null ? null : stated.toString());
         person.setRetiredFrom(retired == null ? null : retired.toString());
         person.setTerms(rs.getObject("terms", Integer.class));
+        person.setContact(rs.getString("contact"));
         return person;
     };
 
@@ -153,23 +154,33 @@ public class PersonRepository {
         return n != null && n > 0;
     }
 
-    public Person add(String sheetId, String name, String grade, String user) {
-        return add(sheetId, name, grade, null, user);
+    /** Whether another person on the sheet (not {@code exceptId}) has this contact. */
+    public boolean contactTaken(String sheetId, String contact, Long exceptId) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND contact = ? AND (? IS NULL OR id <> ?)",
+                Integer.class, sheetId, contact, exceptId, exceptId);
+        return n != null && n > 0;
     }
 
-    /** Add a person with their grade (from the beginning of time) and own terms (null: none). */
-    public Person add(String sheetId, String name, String grade, Integer terms, String user) {
+    public Person add(String sheetId, String name, String grade, String user) {
+        return add(sheetId, name, grade, null, null, user);
+    }
+
+    /** Add a person with their grade (from the beginning of time), own terms (null: none) and
+     *  contact (null: none). */
+    public Person add(String sheetId, String name, String grade, Integer terms, String contact, String user) {
         GeneratedKeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, created_by, terms, added_on) "
-                            + "VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                    "INSERT INTO person (sheet_id, name, created_by, terms, contact, added_on) "
+                            + "VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setString(3, user);
             ps.setObject(4, terms);
-            ps.setString(5, sheetId);
+            ps.setString(5, contact);
+            ps.setString(6, sheetId);
             return ps;
         }, key);
         long id = key.getKey().longValue();
@@ -180,6 +191,7 @@ public class PersonRepository {
         Person person = new Person(id, sheetId, name, grade, 0);
         person.getGrades().add(new GradeFrom(grade, null));
         person.setTerms(terms);
+        person.setContact(contact);
         return person;
     }
 
@@ -209,8 +221,8 @@ public class PersonRepository {
      *  written) when someone else has saved the person since. */
     public boolean update(Person person) {
         int n = jdbc.update(
-                "UPDATE person SET name = ?, terms = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
-                person.getName(), person.getTerms(), person.getSheetId(), person.getId(), person.getVersion());
+                "UPDATE person SET name = ?, terms = ?, contact = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
+                person.getName(), person.getTerms(), person.getContact(), person.getSheetId(), person.getId(), person.getVersion());
         if (n == 0) {
             return false;
         }

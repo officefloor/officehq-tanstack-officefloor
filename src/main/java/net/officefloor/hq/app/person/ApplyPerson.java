@@ -13,7 +13,11 @@ public class ApplyPerson {
         if (people.nameTaken(person.getSheetId(), request.name(), person.getId())) {
             throw new InvalidPersonException("The name is already in use");
         }
+        if (request.contact() != null && people.contactTaken(person.getSheetId(), request.contact(), person.getId())) {
+            throw new InvalidPersonException("The contact is already in use");
+        }
         person.setName(request.name());
+        person.giveContact(request.contact());
         person.giveTerms(request.terms() == null ? null : Integer.valueOf(request.terms()));
         // The form's grade is given from its from-date (blank: the sheet's today); a save leaving
         // the grade as the row showed it, with no from-date, gives none.
