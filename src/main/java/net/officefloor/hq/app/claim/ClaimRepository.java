@@ -371,6 +371,29 @@ public class ClaimRepository {
                 + "WHERE id IN (" + in + ")) + 1 WHERE id = ?)", Long.class, args.toArray()));
     }
 
+    /** The next claim number in fiscal year {@code fy}'s sequence shared by the sheets of a tree
+     *  ({@code FY<yyyy>-<n>}, from 1; {@code tree}, the sheet among them): one after the last number of
+     *  that fiscal year given on any of them, taken under the same lock as {@link #nextNumber}. */
+    public String nextFiscalYearNumber(String sheetId, java.util.List<String> tree, String fy) {
+        jdbc.queryForList("SELECT id FROM sheet WHERE id = ? FOR UPDATE", String.class, tree.get(0));
+        try {
+            jdbc.update("INSERT INTO sheet_fy_number (sheet_id, fy) SELECT ?, ? WHERE NOT EXISTS "
+                    + "(SELECT 1 FROM sheet_fy_number WHERE sheet_id = ? AND fy = ?)", sheetId, fy, sheetId, fy);
+        } catch (DuplicateKeyException raced) {
+            // Another request started the sequence at the same moment.
+        }
+        String in = String.join(", ", java.util.Collections.nCopies(tree.size(), "?"));
+        java.util.List<Object> args = new java.util.ArrayList<>();
+        args.add(fy);
+        args.addAll(tree);
+        args.add(sheetId);
+        args.add(fy);
+        Long n = jdbc.queryForObject("SELECT last_number FROM FINAL TABLE ("
+                + "UPDATE sheet_fy_number SET last_number = (SELECT COALESCE(MAX(last_number), 0) FROM sheet_fy_number "
+                + "WHERE fy = ? AND sheet_id IN (" + in + ")) + 1 WHERE sheet_id = ? AND fy = ?)", Long.class, args.toArray());
+        return fy + "-" + n;
+    }
+
     /** The next number in a period's own sequence on the sheet ({@code <period>-<n>}, from 1), or
      *  for a claim in no period ({@code period} null) in the X sequence ({@code X-<n>}); taken
      *  atomically as {@link #nextNumber} is. */
