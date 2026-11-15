@@ -5,6 +5,7 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import { useNoteThreshold, useProofThreshold, type DatedOn } from '../settings/api';
+import { claimFromTemplate, listTemplates, templatesKey } from '../templates/api';
 import { addClaim, addProof, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
@@ -365,6 +366,35 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
   const change = (patch: Partial<ClaimInput>) => {
     setForm((f) => ({ ...f, ...patch }));
     save.reset();
+    fromTemplate.reset();
+  };
+
+  // A DRAFT claim from the template picked beside the form: its amount and note as they stand now,
+  // dated like a claim with no date, refused like the form (its error shown as the form's).
+  const templates = useQuery({ queryKey: templatesKey(sheetId), queryFn: () => listTemplates(sheetId) });
+  const [template, setTemplate] = useState('');
+  const fromTemplate = useMutation({
+    mutationFn: (name: string) => claimFromTemplate(sheetId, user, personId, name),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
+
+  const addFromTemplate = () => {
+    const name = template;
+    actOnce(() => {
+      save.reset();
+      fromTemplate.reset();
+      move.reset();
+      reassign.reset();
+      deferral.reset();
+      reminder.reset();
+      redating.reset();
+      proof.reset();
+      commenting.reset();
+      division.reset();
+      inline.reset();
+      setEditRefused(null);
+      return fromTemplate.mutateAsync(name);
+    });
   };
 
   const open = (c: Claim) => {
@@ -415,6 +445,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
           const v = { id: editing, input: form };
           submitOnce(() => {
             save.reset();
+            fromTemplate.reset();
             return save.mutateAsync(v);
           });
         }}
@@ -446,6 +477,29 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
             : 'A claim needs an amount with up to two decimals; a negative one (a correction) must name, by number, a SETTLED claim of this person; a reference cannot be one already used on the sheet.'}</span>
         )}
       </form>
+      <div>
+        <select data-testid="claim-template-select" value={template}
+          onChange={(e) => {
+            setTemplate(e.target.value);
+            fromTemplate.reset();
+          }}>
+          <option value="">Pick a template</option>
+          {(templates.data ?? []).map((t) => (
+            <option key={t.name} value={t.name}>{t.name}</option>
+          ))}
+        </select>{' '}
+        <button type="button" data-testid="claim-template-add" disabled={fromTemplate.isPending}
+          onClick={addFromTemplate}>
+          Add from template
+        </button>
+        {fromTemplate.isError && !save.isError && (
+          <span data-testid="claim-form-error">{fromTemplate.error instanceof HttpError && fromTemplate.error.status === 423
+            ? 'A claim due by a day inside a closed period cannot be added.'
+            : fromTemplate.error instanceof HttpError && fromTemplate.error.status === 403
+            ? 'Your role may not change anything on this sheet.'
+            : 'Pick a template; its claim is refused by the claim form\'s rules.'}</span>
+        )}
+      </div>
       <table>
         <tbody>
           {claims.map((c) => (
