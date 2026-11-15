@@ -1,0 +1,81 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java
+index 6f84dc33b..3a0138825 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java
+@@ -8,7 +8,8 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ 
+ /** The number a claim gets when opened: while the sheet's period numbering is in force (its
+  *  period-numbering-from is a date on or before the sheet's today) the next in the sequence of the
+- *  period its due-by falls in ({@code <period>-<n>}; {@code X-<n>} in no period), else the sheet's next. */
++ *  period its due-by falls in ({@code <period>-<n>}; {@code X-<n>} in no period), else the next in the
++ *  sequence the sheets of its tree share (see {@link SheetRepository#tree}). */
+ public final class ClaimNumbers {
+     private ClaimNumbers() {
+     }
+@@ -18,7 +19,7 @@ public final class ClaimNumbers {
+         String sheetId = claim.getSheetId();
+         LocalDate from = settings.periodNumberingFrom(sheetId);
+         if (from == null || sheets.today(sheetId).isBefore(from)) {
+-            return claims.nextNumber(sheetId);
++            return claims.nextNumber(sheetId, sheets.tree(sheetId));
+         }
+         String period = periods.list(sheetId).stream().filter((p) -> p.contains(claim.getDueBy()))
+                 .map(Period::name).findFirst().orElse(null);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index ff46fc369..35a6e0ec5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -357,12 +357,18 @@ public class ClaimRepository {
+         snapshot(claim.getSheetId(), claim.getId());
+     }
+ 
+-    /** The sheet's next claim number, taken in one atomic statement so two claims opened at the same
+-     *  moment never get the same one; rolled back with the request when it is refused. */
+-    public String nextNumber(String sheetId) {
++    /** The next claim number in the sequence shared by the sheets of a tree ({@code tree}, the sheet
++     *  among them): one after the last number given on any of them. The tree's root is locked first so
++     *  two claims opened at the same moment anywhere in the tree never get the same one; rolled back
++     *  with the request when it is refused. */
++    public String nextNumber(String sheetId, java.util.List<String> tree) {
++        jdbc.queryForList("SELECT id FROM sheet WHERE id = ? FOR UPDATE", String.class, tree.get(0));
++        String in = String.join(", ", java.util.Collections.nCopies(tree.size(), "?"));
++        java.util.List<Object> args = new java.util.ArrayList<>(tree);
++        args.add(sheetId);
+         return String.valueOf(jdbc.queryForObject("SELECT last_claim_number FROM FINAL TABLE ("
+-                + "UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?)",
+-                Long.class, sheetId));
++                + "UPDATE sheet SET last_claim_number = (SELECT COALESCE(MAX(last_claim_number), 0) FROM sheet "
++                + "WHERE id IN (" + in + ")) + 1 WHERE id = ?)", Long.class, args.toArray()));
+     }
+ 
+     /** The next number in a period's own sequence on the sheet ({@code <period>-<n>}, from 1), or
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+index 7655499bf..70848b36e 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -41,6 +41,25 @@ public class SheetRepository {
+         return found;
+     }
+ 
++    /** The sheets of the sheet's tree: its root (the top of its parent chain, stopping at a sheet named
++     *  twice) first, then the root's descendants, nearest first. */
++    public java.util.List<String> tree(String id) {
++        String root = id;
++        java.util.Set<String> seen = new java.util.HashSet<>(java.util.List.of(id));
++        for (String up = parent(root); up != null && seen.add(up); up = parent(up)) {
++            root = up;
++        }
++        java.util.List<String> tree = new java.util.ArrayList<>(java.util.List.of(root));
++        tree.addAll(descendants(root));
++        if (!tree.contains(id)) tree.add(id);
++        return tree;
++    }
++
++    private String parent(String id) {
++        return jdbc.queryForList("SELECT val FROM sheet_setting WHERE sheet_id = ? AND setting = 'parent'",
++                String.class, id).stream().filter((v) -> v != null && !v.isEmpty()).findFirst().orElse(null);
++    }
++
+     /** The sheet's today: the date every date decision and default on the sheet uses. */
+     public LocalDate today(String id) {
+         Sheet sheet = find(id);
