@@ -199,6 +199,18 @@ export function overdue(claims: Claim[], charges: Late, dueOfClaim: (c: Claim) =
   return { count: late.length, total: sumDues(late.map(dueOfClaim)) };
 }
 
+/** A person's score: their settled figures (`settled`, see `splitDues`) divided by 100, less 5 for each of
+ *  their overdue claims (`overdueCount`, see `overdue`), rounded half to even to a whole number. */
+export function personScore(settled: string, overdueCount: number): string {
+  const scaled = hundredths(settled) - BigInt(overdueCount) * 50_000n; // in 1/10_000 of a point
+  const negative = scaled < 0n;
+  const abs = negative ? -scaled : scaled;
+  let whole = abs / 10_000n;
+  const rest = abs % 10_000n;
+  if (rest > 5_000n || (rest === 5_000n && whole % 2n === 1n)) whole += 1n;
+  return negative && whole !== 0n ? `-${whole}` : `${whole}`;
+}
+
 /** The due of the open (OPEN or PENDING) claims among those that count (`claims`, the live ones), split by
  *  their age on the sheet's `today` (the days from the claim's date): 0 to 30, 31 to 60, and 61 or more
  *  (one dated after today is 0 to 30); n/a ones skipped. */
