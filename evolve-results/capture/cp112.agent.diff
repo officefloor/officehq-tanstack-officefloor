@@ -1,0 +1,213 @@
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 1204ac7be..e1a8344d0 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -518,6 +518,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                     Hold
+                   </button>
+                 </td>
++                <td>
++                  Clashing <span data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</span>
++                </td>
+                 <td>
+                   Aliases <span data-testid="person-aliases">{p.aliases.join(', ')}</span>{' '}
+                   <input data-testid="person-alias-input" value={aliasInputs[p.id] ?? ''}
+diff --git a/src/main/frontend/features/people/api.ts b/src/main/frontend/features/people/api.ts
+index 2fea3100b..787f4178d 100644
+--- a/src/main/frontend/features/people/api.ts
++++ b/src/main/frontend/features/people/api.ts
+@@ -30,6 +30,9 @@ export type Person = {
+   contact: string | null;
+   /** Their aliases, sorted as names are compared; the quick-add bar and the paste box find them by one. */
+   aliases: string[];
++  /** Whether their name or an alias is used on another sheet of the sheet's tree (its ancestors and
++   *  descendants): until renamed clear of it, every edit through the person form is refused. */
++  clashing: boolean;
+ };
+ /** `gradeFrom` is the date an edit's grade applies from (blank: the sheet's today); `terms` their
+  *  own terms in whole days (blank: none); `contact` their contact (blank: none). */
+diff --git a/src/main/java/net/officefloor/hq/app/person/AddAlias.java b/src/main/java/net/officefloor/hq/app/person/AddAlias.java
+index 63a2d9dbf..bb8f71bb4 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AddAlias.java
++++ b/src/main/java/net/officefloor/hq/app/person/AddAlias.java
+@@ -5,12 +5,13 @@ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** Gives the person the alias: refused (nothing written) when it equals, as names are compared,
+- *  any name or alias on the sheet. */
++ *  any name or alias on the sheet or on another sheet of its tree. */
+ public class AddAlias {
+     public void add(@RequestParam(name = "by", required = false) String by,
+             @Val AliasRequest request, @Val Person person, PersonRepository people,
+             Out<Alias> added) throws InvalidPersonException {
+-        if (people.nameTaken(person.getSheetId(), request.alias(), null)) {
++        if (people.nameTaken(person.getSheetId(), request.alias(), null)
++                || people.nameTakenInTree(person.getSheetId(), request.alias())) {
+             throw new InvalidPersonException("The alias is already in use");
+         }
+         people.addAlias(person, request.alias(), by == null ? "" : by);
+diff --git a/src/main/java/net/officefloor/hq/app/person/AddPerson.java b/src/main/java/net/officefloor/hq/app/person/AddPerson.java
+index f8ad4c6a6..f722a8c46 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AddPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/AddPerson.java
+@@ -13,7 +13,7 @@ public class AddPerson {
+             Out<Person> person) throws InvalidPersonException {
+         String id = sheetId.trim();
+         String user = by == null ? "" : by;
+-        if (people.nameTaken(id, request.name(), null)) {
++        if (people.nameTaken(id, request.name(), null) || people.nameTakenInTree(id, request.name())) {
+             throw new InvalidPersonException("The name is already in use");
+         }
+         if (request.contact() != null && people.contactTaken(id, request.contact(), null)) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index b771704f0..c4fcbd0d7 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -13,6 +13,15 @@ public class ApplyPerson {
+         if (people.nameTaken(person.getSheetId(), request.name(), person.getId())) {
+             throw new InvalidPersonException("The name is already in use");
+         }
++        // Someone clashing with another sheet of the tree can only be saved under a name, and with
++        // aliases, that no longer clash.
++        java.util.Set<String> tree = people.treeNames(person.getSheetId());
++        if (tree.contains(request.name().trim().toLowerCase(java.util.Locale.ROOT))) {
++            throw new InvalidPersonException("The name is already in use on the sheet's tree");
++        }
++        if (person.getAliases().stream().anyMatch((a) -> tree.contains(a.trim().toLowerCase(java.util.Locale.ROOT)))) {
++            throw new InvalidPersonException("An alias is already in use on the sheet's tree");
++        }
+         if (request.contact() != null && people.contactTaken(person.getSheetId(), request.contact(), person.getId())) {
+             throw new InvalidPersonException("The contact is already in use");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index d46115769..8770a8056 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -146,6 +146,10 @@ public class Person {
+     public void setPatronIds(java.util.List<Long> patronIds) { this.patronIds = patronIds; }
+     public java.util.List<String> getAliases() { return aliases; }
+     public void setAliases(java.util.List<String> aliases) { this.aliases = aliases; }
++    /** Whether their name or an alias is used, as a name or alias, on another sheet of the sheet's tree. */
++    private boolean clashing;
++    public boolean isClashing() { return clashing; }
++    public void setClashing(boolean clashing) { this.clashing = clashing; }
+ 
+     /** Whether the claim counts in live totals: it counts by status, and is not an open (OPEN or
+      *  PENDING) claim dated within one of their holds, or of a person whose retirement date is reached,
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index fa769e2d8..ee51f302b 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -43,6 +43,7 @@ public class PersonRepository {
+         withGrades(sheetId, people);
+         withHolds(sheetId, people);
+         withAliases(sheetId, people);
++        withClashing(sheetId, people);
+         jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY added_at, patron_id",
+                 (rs) -> {
+                     Person p = byId.get(rs.getLong("person_id"));
+@@ -63,6 +64,7 @@ public class PersonRepository {
+             withGrades(sheetId, List.of(person));
+             withHolds(sheetId, List.of(person));
+             withAliases(sheetId, List.of(person));
++            withClashing(sheetId, List.of(person));
+         }
+         return person;
+     }
+@@ -147,6 +149,65 @@ public class PersonRepository {
+         people.forEach((p) -> p.setAliases(aliases.getOrDefault(p.getId(), new ArrayList<>())));
+     }
+ 
++    /** The other sheets of the sheet's tree, among the sheets that exist: its ancestors (its parent,
++     *  its parent's parent, ...) and its descendants (its children, their children, ...). */
++    public java.util.Set<String> treeSheets(String sheetId) {
++        java.util.Set<String> tree = new java.util.LinkedHashSet<>();
++        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
++        for (String at = parentOf(sheetId); at != null && seen.add(at); at = parentOf(at)) {
++            tree.add(at);
++        }
++        List<String> below = new ArrayList<>(List.of(sheetId));
++        java.util.Set<String> seenBelow = new java.util.HashSet<>(List.of(sheetId));
++        for (int i = 0; i < below.size(); i++) {
++            for (String child : jdbc.queryForList("SELECT sheet_id FROM sheet_setting WHERE setting = 'parent' AND val = ?",
++                    String.class, below.get(i))) {
++                if (seenBelow.add(child)) {
++                    below.add(child);
++                    tree.add(child);
++                }
++            }
++        }
++        tree.remove(sheetId);
++        tree.removeIf((s) -> jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ?", Integer.class, s) == 0);
++        return tree;
++    }
++
++    private String parentOf(String sheetId) {
++        return jdbc.queryForList("SELECT val FROM sheet_setting WHERE sheet_id = ? AND setting = 'parent'",
++                String.class, sheetId).stream().filter((v) -> v != null && !v.isBlank()).findFirst().orElse(null);
++    }
++
++    /** The names and aliases used on the other sheets of the sheet's tree, as names are compared
++     *  (lower-cased, trimmed). */
++    public java.util.Set<String> treeNames(String sheetId) {
++        java.util.Set<String> names = new java.util.HashSet<>();
++        for (String other : treeSheets(sheetId)) {
++            names.addAll(jdbc.queryForList("SELECT name_key FROM person WHERE sheet_id = ?", String.class, other));
++            names.addAll(jdbc.queryForList("SELECT alias_key FROM person_alias WHERE sheet_id = ?", String.class, other));
++        }
++        return names;
++    }
++
++    /** Whether the name is used, as a name or alias, on another sheet of the sheet's tree. */
++    public boolean nameTakenInTree(String sheetId, String name) {
++        return treeNames(sheetId).contains(key(name));
++    }
++
++    private static String key(String name) {
++        return name == null ? "" : name.trim().toLowerCase(java.util.Locale.ROOT);
++    }
++
++    /** Mark each person whose name or an alias is used on another sheet of the sheet's tree. */
++    private void withClashing(String sheetId, List<Person> people) {
++        if (people.isEmpty()) {
++            return;
++        }
++        java.util.Set<String> names = treeNames(sheetId);
++        people.forEach((p) -> p.setClashing(names.contains(key(p.getName()))
++                || p.getAliases().stream().anyMatch((a) -> names.contains(key(a)))));
++    }
++
+     /** Give the person the alias (stored as given, trimmed). */
+     public void addAlias(Person person, String alias, String user) {
+         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, added_by) VALUES (?, ?, ?, ?)",
+diff --git a/src/main/java/net/officefloor/hq/app/quick/FindOrAddPerson.java b/src/main/java/net/officefloor/hq/app/quick/FindOrAddPerson.java
+index c1f4d6269..6a60c68bf 100644
+--- a/src/main/java/net/officefloor/hq/app/quick/FindOrAddPerson.java
++++ b/src/main/java/net/officefloor/hq/app/quick/FindOrAddPerson.java
+@@ -5,6 +5,7 @@ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.holiday.HolidayRepository;
+ import net.officefloor.hq.app.period.PeriodClosedException;
+ import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.InvalidPersonException;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+@@ -25,7 +26,7 @@ public class FindOrAddPerson {
+             @Val Rollup before, SheetRepository sheets, PersonRepository people,
+             ClaimRepository claims, RateRepository rates, PeriodRepository periods,
+             SettingRepository settings, HolidayRepository holidays, Audit audit,
+-            Out<Person> person) throws PeriodClosedException {
++            Out<Person> person) throws PeriodClosedException, InvalidPersonException {
+         String id = sheetId.trim();
+         String user = by == null ? "" : by;
+         Person found = people.findByName(id, name.name());
+@@ -33,6 +34,9 @@ public class FindOrAddPerson {
+             person.set(found);
+             return;
+         }
++        if (people.nameTakenInTree(id, name.name())) {
++            throw new InvalidPersonException("The name is already in use on the sheet's tree");
++        }
+         // The claim would be refused when its due-by (grade A's terms in business days after its date) falls in a closed period.
+         java.time.LocalDate date = settings.entryDate(id);
+         periods.requireOpen(id, holidays.dueBy(id, date, settings.terms(id, "A", date.toString())).toString());
