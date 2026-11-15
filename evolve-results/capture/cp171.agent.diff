@@ -1,0 +1,203 @@
+diff --git a/src/main/frontend/features/claims/PersonClaims.tsx b/src/main/frontend/features/claims/PersonClaims.tsx
+index 2cdb55308..ae68e2e4d 100644
+--- a/src/main/frontend/features/claims/PersonClaims.tsx
++++ b/src/main/frontend/features/claims/PersonClaims.tsx
+@@ -4,7 +4,7 @@ import { HttpError } from '../../api/http';
+ import { useSubmitOnce } from '../../forms/useSubmitOnce';
+ import { listPeriods, periodOf, periodsKey } from '../periods/api';
+ import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
+-import { useNoteThreshold, useProofThreshold, type DatedOn } from '../settings/api';
++import { isReviewLate, useNoteThreshold, useProofThreshold, useReviewSla, type DatedOn } from '../settings/api';
+ import { claimFromTemplate, listTemplates, templatesKey } from '../templates/api';
+ import { addClaim, addClaimLine, claimTimeline, addProof, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
+ import { Fig } from '../session/Fig';
+@@ -372,6 +372,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+   };
+ 
+   const noteThreshold = useNoteThreshold(sheetId);
++  const reviewSla = useReviewSla(sheetId);
+   // Whether a claim needs a note before it is opened: an empty one, and its due above the threshold.
+   const needsNote = (c: Claim) => {
+     const threshold = noteThreshold(c.date);
+@@ -581,6 +582,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+                 overdue <span data-testid="claim-overdue">{isOverdue(c, today, charges.lateFrom(c)) ? 'yes' : 'no'}</span>
+               </td>
+               <td data-testid="claim-status">{c.status}</td>
++              <td>Review late <span data-testid="claim-review-late">{isReviewLate(c, today, reviewSla) ? 'yes' : 'no'}</span></td>
+               <td>Batch <span data-testid="claim-batch">{c.settleBatch ?? ''}</span></td>
+               <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>
+               <td>
+diff --git a/src/main/frontend/features/settings/Settings.tsx b/src/main/frontend/features/settings/Settings.tsx
+index 9cf51863e..baeaea0bb 100644
+--- a/src/main/frontend/features/settings/Settings.tsx
++++ b/src/main/frontend/features/settings/Settings.tsx
+@@ -67,6 +67,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+                 : key === 'entry-date' ? 'Entry date'
+                 : key === 'grace-days' ? 'Grace days'
+                 : key === 'escalate-after' ? 'Escalate after (days)'
++                : key === 'review-sla' ? 'Review SLA (days)'
+                 : key === 'proof-threshold' ? 'Proof threshold'
+                 : key === 'note-threshold' ? 'Note threshold'
+                 : key === 'review-threshold' ? 'Review threshold'
+@@ -77,7 +78,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+                 : key.startsWith('grace-') ? `Grace days for grade ${key.slice('grace-'.length)}`
+                 : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (business days)` : 'Terms (business days)'}{' '}
+               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
+-                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' || key === 'review-threshold' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key === 'cap' ? 'No cap' : key === 'pot' || key === 'parent' ? 'None' : key === 'alert-threshold' ? 'Off' : key === 'rounding' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
++                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' || key === 'review-threshold' || key === 'review-sla' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key === 'cap' ? 'No cap' : key === 'pot' || key === 'parent' ? 'None' : key === 'alert-threshold' ? 'Off' : key === 'rounding' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
+                   : key === 'period-numbering-from' || key === 'entry-date' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' || key === 'escalate-after' ? 'Off' : key.startsWith('grace-') ? 'None' : key.startsWith('terms-') ? "Sheet's terms"
+                   : key.startsWith('perm-') ? PERMISSION_STANDING[key.slice('perm-'.length)] : undefined}
+                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
+@@ -100,7 +101,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+         {save.isError && (
+           <span data-testid="settings-error">
+             The clerk limit, the cap, the pot, the proof threshold, a grade's proof threshold, the note threshold and the review threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
+-            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the rounding mode blank, half-up or half-even; the policy date, period numbering date and entry date blank or a date; the grace days and a grade's grace days blank or a whole number of days; a permission blank or a comma separated list of clerk and steward; the parent sheet blank or a sheet that has been loaded, not this one nor one with this one above it; the fiscal year start month a whole number from 1 to 12; a from-date blank or a date.
++            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the rounding mode blank, half-up or half-even; the policy date, period numbering date and entry date blank or a date; the grace days, a grade's grace days and the review SLA blank or a whole number of days; a permission blank or a comma separated list of clerk and steward; the parent sheet blank or a sheet that has been loaded, not this one nor one with this one above it; the fiscal year start month a whole number from 1 to 12; a from-date blank or a date.
+           </span>
+         )}
+       </form>
+diff --git a/src/main/frontend/features/settings/api.ts b/src/main/frontend/features/settings/api.ts
+index 10b09b0a0..e017c376b 100644
+--- a/src/main/frontend/features/settings/api.ts
++++ b/src/main/frontend/features/settings/api.ts
+@@ -48,9 +48,11 @@ export type Role = { sheetId: string; user: string; role: string };
+  *  force rounds its live figures by it instead of by the policy date.
+  *  The escalation gap (a number of days; blank means off; not dated): reminding a claim whose previous
+  *  reminder was at least that many days before the sheet's today escalates it (an ESCALATE audit line),
+- *  once per claim ever. */
++ *  once per claim ever.
++ *  The review SLA (a number of days; blank means none; not dated): a REVIEW claim whose review day (the
++ *  sheet's today when it went to REVIEW) plus them is before the sheet's today is review-late (see `isReviewLate`). */
+ export const SETTING_KEYS = ['clerk-limit', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'rounding',
+-  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'] as const;
++  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'] as const;
+ 
+ /** The roles that may take each action of the permission matrix while its entry is blank. */
+ export const PERMISSION_STANDING: Record<string, string> = {
+@@ -62,7 +64,7 @@ export const PERMISSION_STANDING: Record<string, string> = {
+ export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00', 'fiscal-start-month': '1' };
+ 
+ /** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
+-export const UNDATED_KEYS: readonly string[] = ['pot', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'perm-open', 'perm-settle', 'perm-void',
++export const UNDATED_KEYS: readonly string[] = ['pot', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'perm-open', 'perm-settle', 'perm-void',
+   'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'];
+ 
+ /** The fiscal year a date (yyyy-MM-dd) falls in, FY<yyyy>, for a fiscal year start month (1 to 12). */
+@@ -134,6 +136,32 @@ export function useNoteThreshold(sheetId: string): (date: string) => string | nu
+   return (date) => settingOn(settings.data, 'note-threshold', date) || null;
+ }
+ 
++/** The sheet's review SLA in whole days (null: none). */
++export function useReviewSla(sheetId: string): number | null {
++  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
++  const value = settingOn(settings.data, 'review-sla', '9999-12-31');
++  return value ? Number(value) : null;
++}
++
++/** The day a claim last went to REVIEW (yyyy-MM-dd), from its status log (null: never). */
++export function reviewDay(c: Pick<Claim, 'log'>): string | null {
++  for (let i = (c.log ?? []).length - 1; i >= 0; i--) {
++    const m = /^REVIEW by .* on (\d{4}-\d{2}-\d{2}) due=/.exec(c.log[i]);
++    if (m) return m[1];
++  }
++  return null;
++}
++
++/** Whether a claim is review-late: REVIEW, and its review day plus the review SLA (null: none) is
++ *  before the sheet's today. */
++export function isReviewLate(c: Pick<Claim, 'status' | 'log'>, today: string, sla: number | null): boolean {
++  if (c.status !== 'REVIEW' || sla === null) return false;
++  const day = reviewDay(c);
++  if (day === null) return false;
++  const until = new Date(Date.parse(`${day}T00:00:00Z`) + sla * 86_400_000).toISOString().slice(0, 10);
++  return until < today;
++}
++
+ /** The sheet's cap in force on its today: the most a person's due-total can be; null when there is none. */
+ export function useCap(sheetId: string, today: string, live = false): string | null {
+   const settings = useQuery({ queryKey: liveKey(settingsKey(sheetId), live), queryFn: () => listSettings(sheetId, live) });
+diff --git a/src/main/frontend/features/summary/Summary.tsx b/src/main/frontend/features/summary/Summary.tsx
+index 062ca35b1..ac46a01c1 100644
+--- a/src/main/frontend/features/summary/Summary.tsx
++++ b/src/main/frontend/features/summary/Summary.tsx
+@@ -3,7 +3,7 @@ import { claimsKey, isActive, listClaims, listVoidReasons, liveClaims, voidReaso
+ import { GRADES, gradeOn, listPeople, peopleKey } from '../people/api';
+ import { listPeriods, periodDueTotal, periodsKey } from '../periods/api';
+ import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
+-import { useCap, useFloor, useLate } from '../settings/api';
++import { isReviewLate, useCap, useFloor, useLate, useReviewSla } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+ import { Fig } from '../session/Fig';
+ 
+@@ -23,7 +23,7 @@ export function dueChange(previous: string, current: string): string {
+ 
+ /** The sheet's summary, agreeing with the lists: per grade, how many people not retired are on it
+  *  today, their due-totals added up (n/a ones skipped) and how many of them are active (see `isActive`); per period by from-date, its due-total and its change from the period before (none for the earliest); per status,
+- *  how many claims have it; per void reason on the list, how many VOID claims were voided with it. */
++ *  how many claims have it; how many REVIEW claims are review-late (see `isReviewLate`); per void reason on the list, how many VOID claims were voided with it. */
+ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
+   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
+   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
+@@ -34,6 +34,7 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
+   const today = useSheetToday(sheetId, user);
+   const cap = useCap(sheetId, today);
+   const charges = useLate(sheetId, today);
++  const reviewSla = useReviewSla(sheetId);
+   const byGrade = rateByGrade(rates.data, today);
+   const all = claims.data ?? [];
+   const active = (people.data ?? []).filter((p) => !p.retired);
+@@ -75,6 +76,12 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
+               <td />
+             </tr>
+           ))}
++          <tr>
++            <td>Review late</td>
++            <td>Claims <span data-testid="summary-review-late-count">
++              {all.filter((c) => isReviewLate(c, today, reviewSla)).length}</span></td>
++            <td />
++          </tr>
+           {(voidReasons.data ?? []).map((r) => (
+             <tr key={r.reason}>
+               <td>Voided: {r.reason}</td>
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 5c76f079e..e3640b22a 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -89,6 +89,10 @@ public class SettingRepository {
+      *  reminder was at least that many days before the sheet's today escalates it, once per claim. */
+     public static final String ESCALATE_AFTER = "escalate-after";
+ 
++    /** The review SLA (a whole number of days; blank: none; not dated): a REVIEW claim whose review day
++     *  (the sheet's today when it went to REVIEW) plus them is before the sheet's today is late. */
++    public static final String REVIEW_SLA = "review-sla";
++
+     /** A grade's grace days ({@code grace-<grade>}, dated; a whole number; blank: none): a claim whose
+      *  person's grade in force on its date has them in force on that date is overdue, and gains its late
+      *  charge, counting from its due-by plus them. */
+@@ -117,7 +121,7 @@ public class SettingRepository {
+     /** Whether a key is dated: every key that carries a figure (the policy date, the period
+      *  numbering date, the grace days, the pot, the fiscal year start month and the permission matrix are not). */
+     public static boolean isDated(String key) {
+-        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
++        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
+                 && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !FISCAL_START_MONTH.equals(key) && !PARENT.equals(key) && !Permissions.isKey(key);
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 49ec88b17..090504ba0 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -106,6 +106,12 @@ public class ValidateSetting {
+             }
+             body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null));
+             return;
++        } else if (SettingRepository.REVIEW_SLA.equals(key)) {
++            if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
++                throw new InvalidSettingException("The review SLA is blank or a whole number of days, 0 or more");
++            }
++            body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null));
++            return;
+         } else if (SettingRepository.GRACE_DAYS.equals(key)) {
+             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+                 throw new InvalidSettingException("The grace days are blank or a whole number of days, 0 or more");
