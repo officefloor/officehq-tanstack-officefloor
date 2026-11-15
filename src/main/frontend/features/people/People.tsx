@@ -15,6 +15,7 @@ import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { BulkGrade } from './BulkGrade';
 import { ExportPeople } from './ExportPeople';
+import { ImportPeople } from './ImportPeople';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, peopleKey, retirePerson, takeStatement, transferPerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
@@ -376,6 +377,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       </form>
       <QuickAdd sheetId={sheetId} user={user} />
       <PasteClaims sheetId={sheetId} user={user} />
+      <ImportPeople sheetId={sheetId} user={user} />
       <ShowRetired />{' '}
       <ExportPeople rows={() => everyone.map((p) => [p.name, gradeOn(p, today), p.retiredFrom ?? '', showDue(dueOf.get(p.id) ?? null)])} />
       <BulkOpen sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />

@@ -62,6 +62,16 @@ export function addPerson(sheetId: string, by: string, input: PersonInput): Prom
   return postJson<Person>(`${base(sheetId)}?by=${encodeURIComponent(by)}`, input);
 }
 
+/** How many people an import added. */
+export type ImportResult = { added: number };
+
+/** Add a person per line of name,grade,terms,contact (terms and contact may be absent or blank), in
+ *  order, each as the person form adds them; refused (rejects), adding nothing, when any line would be
+ *  refused by the person form or repeats a name or contact of another line. */
+export function importPeople(sheetId: string, by: string, text: string): Promise<ImportResult> {
+  return postJson<ImportResult>(`/api/sheets/${encodeURIComponent(sheetId)}/import-people?by=${encodeURIComponent(by)}`, { text });
+}
+
 /** Edit a person loaded at `version`; refused (rejects) like an add, and with a 409 when someone
  *  else has saved the person since. */
 export function updatePerson(sheetId: string, by: string, id: number, version: number, input: PersonInput): Promise<Person> {
