@@ -1,0 +1,132 @@
+diff --git a/src/main/frontend/features/rates/DueTotal.tsx b/src/main/frontend/features/rates/DueTotal.tsx
+index 4063c9562..73c6e4a0c 100644
+--- a/src/main/frontend/features/rates/DueTotal.tsx
++++ b/src/main/frontend/features/rates/DueTotal.tsx
+@@ -3,9 +3,10 @@ import { claimsKey, listClaims, liveClaims } from '../claims/api';
+ import { gradeOn, listPeople, peopleKey } from '../people/api';
+ import { useCap, useFloor, useLate } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+-import { listRates, personDue, rateByGrade, ratesKey, sumDues } from './api';
++import { listRates, personDue, rateByGrade, ratesKey, trimmedSum } from './api';
+ 
+-/** The sheet's due-total: everyone's due-total added up, skipping those shown n/a. */
++/** The sheet's due-total: everyone's due-total added up, skipping those shown n/a, less the single
++ *  highest and lowest when three or more have one. */
+ export function useDueTotal(sheetId: string, user: string): string {
+   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
+   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
+@@ -19,7 +20,7 @@ export function useDueTotal(sheetId: string, user: string): string {
+   const dues = (people.data ?? []).map((p) =>
+     personDue(live.filter((c) => c.personId === p.id), rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap),
+   );
+-  return sumDues(dues);
++  return trimmedSum(dues);
+ }
+ 
+ export function DueTotal({ sheetId, user }: { sheetId: string; user: string }) {
+diff --git a/src/main/frontend/features/rates/Overdue.tsx b/src/main/frontend/features/rates/Overdue.tsx
+index 10a549db3..0531d8127 100644
+--- a/src/main/frontend/features/rates/Overdue.tsx
++++ b/src/main/frontend/features/rates/Overdue.tsx
+@@ -3,10 +3,11 @@ import { claimsKey, listClaims, liveClaims } from '../claims/api';
+ import { gradeOn, listPeople, peopleKey, type Person } from '../people/api';
+ import { useFloor, useLate } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+-import { claimDue, listRates, overdue, ratesKey } from './api';
++import { claimDue, listRates, overdue, ratesKey, trimmedSum } from './api';
+ 
+ /** The sheet's overdue claims: how many of the claims that count are OPEN past their due-by, and
+- *  their due (with its late charge) added up. */
++ *  their due (with its late charge) added up per person, the sheet's total leaving out the single
++ *  highest and lowest person's when there are three or more people. */
+ export function useOverdue(sheetId: string, user: string): ReturnType<typeof overdue> {
+   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
+   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
+@@ -16,7 +17,9 @@ export function useOverdue(sheetId: string, user: string): ReturnType<typeof ove
+   const charges = useLate(sheetId, today);
+   const byId = new Map<number, Person>((people.data ?? []).map((p) => [p.id, p]));
+   const live = liveClaims(claims.data ?? [], people.data).filter((c) => byId.has(c.personId));
+-  return overdue(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(byId.get(c.personId)!, d), floor, charges));
++  const dueOf = (c: Parameters<typeof claimDue>[0]) => claimDue(c, rates.data, (d) => gradeOn(byId.get(c.personId)!, d), floor, charges);
++  const perPerson = (people.data ?? []).map((p) => overdue(live.filter((c) => c.personId === p.id), today, dueOf).total);
++  return { count: overdue(live, today, dueOf).count, total: trimmedSum(perPerson) };
+ }
+ 
+ export function Overdue({ sheetId, user }: { sheetId: string; user: string }) {
+diff --git a/src/main/frontend/features/rates/api.ts b/src/main/frontend/features/rates/api.ts
+index f5009b946..a8b3cc29a 100644
+--- a/src/main/frontend/features/rates/api.ts
++++ b/src/main/frontend/features/rates/api.ts
+@@ -150,6 +150,14 @@ export function sumDues(dues: Array<string | null>): string {
+   return formatCents(dues.reduce<bigint>((t, d) => (d === null ? t : t + hundredths(d)), 0n));
+ }
+ 
++/** A sheet total of per-person figures: added up (n/a ones are no figure), leaving out the single
++ *  highest and the single lowest figure when there are three or more. */
++export function trimmedSum(figures: Array<string | null>): string {
++  const cents = figures.filter((f): f is string => f !== null).map(hundredths).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
++  const kept = cents.length >= 3 ? cents.slice(1, -1) : cents;
++  return formatCents(kept.reduce((t, c) => t + c, 0n));
++}
++
+ function formatCents(cents: bigint): string {
+   const abs = cents < 0n ? -cents : cents;
+   const frac = (abs % 100n).toString().padStart(2, '0');
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index c800b98f1..334eafa96 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -20,7 +20,8 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ 
+ /** The sheet's figures at one moment, as the screen shows them: each person's claimed and
+  *  due-total (null: n/a; else at most the sheet's cap) and overdue-total, in the order they were added, and the
+- *  sheet's claimed-total, due-total and overdue-total. */
++ *  sheet's claimed-total, due-total and overdue-total (these two leave out the single highest and
++ *  lowest person's figure when three or more people have one). */
+ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueTotal, String overdueTotal) {
+ 
+     /** A person's figures: their name, claimed, due-total (null: n/a) and overdue-total (the shown
+@@ -45,8 +46,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+         List<Claim> all = claims.list(sheetId);
+         Map<Long, Figures> figures = new LinkedHashMap<>();
+         BigDecimal claimedTotal = zero();
+-        BigDecimal dueTotal = zero();
+-        BigDecimal overdueTotal = zero();
++        List<BigDecimal> dues = new ArrayList<>();
++        List<BigDecimal> overdues = new ArrayList<>();
+         for (Person p : people.list(sheetId)) {
+             BigDecimal claimed = zero();
+             BigDecimal due = zero();
+@@ -70,11 +71,11 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+             figures.put(p.getId(), new Figures(p.getName(), claimed.toPlainString(),
+                     na ? null : due.toPlainString(), overdue.toPlainString()));
+             claimedTotal = claimedTotal.add(claimed);
+-            if (!na) dueTotal = dueTotal.add(due);
+-            overdueTotal = overdueTotal.add(overdue);
++            if (!na) dues.add(due);
++            overdues.add(overdue);
+         }
+-        return new Rollup(figures, claimedTotal.toPlainString(), dueTotal.toPlainString(),
+-                overdueTotal.toPlainString());
++        return new Rollup(figures, claimedTotal.toPlainString(), trimmedSum(dues).toPlainString(),
++                trimmedSum(overdues).toPlainString());
+     }
+ 
+     /** The audit lines after a change from {@code before} to this: one ROLLUP per person whose
+@@ -108,6 +109,16 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+         return found == null || found.endedBefore(date) ? null : found.pct();
+     }
+ 
++    /** The figures added up, leaving out the single highest and the single lowest when there are three or more. */
++    private static BigDecimal trimmedSum(List<BigDecimal> figures) {
++        List<BigDecimal> sorted = new ArrayList<>(figures);
++        sorted.sort(BigDecimal::compareTo);
++        if (sorted.size() >= 3) sorted = sorted.subList(1, sorted.size() - 1);
++        BigDecimal total = zero();
++        for (BigDecimal f : sorted) total = total.add(f);
++        return total;
++    }
++
+     private static String nz(String from) {
+         return from == null ? "" : from;
+     }
