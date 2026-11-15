@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import { useNoteThreshold, useProofThreshold, type DatedOn } from '../settings/api';
-import { addClaim, addProof, claimsKey, deferClaim, redateClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
+import { addClaim, addProof, claimsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
 
@@ -29,6 +29,8 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  open again when the sheet is re-loaded. A role the permission matrix allows (by default a steward) can move a DRAFT, OPEN or
  *  PENDING claim to another person picked beside it (any other refused with an error on the claim), and
  *  re-settle a SETTLED one (anyone else, any other status or a claim in a closed period refused likewise).
+ *  An OPEN or PENDING claim can be reminded with a button beside it, once per sheet's today (a second reminder
+ *  that day, or any other claim, refused with an error on the claim); the last day it was reminded is shown.
  *  An OPEN claim can be deferred until a date typed beside it, after the sheet's today (any other claim, date,
  *  or a claim in a closed period refused with an error on the claim); whether it is deferred, and until when, is shown.
  *  Its proofs count is shown and raised by one with a button beside it (a SETTLED or VOID claim, or one in a
@@ -128,12 +130,33 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       move.reset();
       reassign.reset();
       deferral.reset();
+      reminder.reset();
       redating.reset();
       proof.reset();
       division.reset();
       setEditRefused(null);
       locking.reset();
       return deferral.mutateAsync({ id, until });
+    });
+  };
+
+  const reminder = useMutation({
+    mutationFn: (id: number) => remindClaim(sheetId, user, id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
+
+  const remind = (id: number) => {
+    actOnce(() => {
+      move.reset();
+      reassign.reset();
+      deferral.reset();
+      reminder.reset();
+      redating.reset();
+      proof.reset();
+      division.reset();
+      setEditRefused(null);
+      locking.reset();
+      return reminder.mutateAsync(id);
     });
   };
 
@@ -151,6 +174,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       move.reset();
       reassign.reset();
       deferral.reset();
+      reminder.reset();
       redating.reset();
       proof.reset();
       division.reset();
@@ -177,6 +201,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       move.reset();
       reassign.reset();
       deferral.reset();
+      reminder.reset();
       redating.reset();
       proof.reset();
       division.reset();
@@ -196,6 +221,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       move.reset();
       reassign.reset();
       deferral.reset();
+      reminder.reset();
       redating.reset();
       proof.reset();
       division.reset();
@@ -232,6 +258,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       move.reset();
       reassign.reset();
       deferral.reset();
+      reminder.reset();
       redating.reset();
       proof.reset();
       division.reset();
@@ -246,6 +273,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       move.reset();
       reassign.reset();
       deferral.reset();
+      reminder.reset();
       redating.reset();
       proof.reset();
       division.reset();
@@ -264,6 +292,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     move.reset();
     reassign.reset();
     deferral.reset();
+    reminder.reset();
     redating.reset();
     proof.reset();
     division.reset();
@@ -358,6 +387,13 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
               <td>
                 Deferred <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
                 until <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>
+              </td>
+              <td>
+                Reminded <span data-testid="claim-reminded">{c.reminded ?? ''}</span>{' '}
+                <button type="button" data-testid="claim-remind" disabled={reminder.isPending}
+                  onClick={() => remind(c.id)}>
+                  Remind
+                </button>
               </td>
               <td>
                 Proofs <span data-testid="claim-proofs">{c.proofs ?? 0}</span>{' '}
@@ -475,6 +511,13 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     : deferral.error instanceof HttpError && deferral.error.status === 400
                     ? 'A claim can only be deferred to a date after the sheet\'s today.'
                     : `A ${c.status} claim cannot be deferred.`}</span>
+                )}
+                {reminder.isError && reminder.variables === c.id && (
+                  <span data-testid="claim-error">{reminder.error instanceof HttpError && reminder.error.status === 409
+                    ? (c.status === 'OPEN' || c.status === 'PENDING'
+                      ? `The claim was already reminded on ${c.reminded ?? today}.`
+                      : `A ${c.status} claim cannot be reminded.`)
+                    : 'Your role may not remind a claim.'}</span>
                 )}
                 {redating.isError && redating.variables?.id === c.id && (
                   <span data-testid="claim-error">{redating.error instanceof HttpError && redating.error.status === 423

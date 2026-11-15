@@ -33,6 +33,7 @@ public class Claim {
     private boolean reversal;
     private String lockedBy;
     private boolean lateEntry;
+    private String reminded;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, String number, String settledDue, String openedBy) {
@@ -129,6 +130,10 @@ public class Claim {
     /** Whether it was added while the period its due-by falls in was soft-closed. */
     public boolean isLateEntry() { return lateEntry; }
     public void setLateEntry(boolean lateEntry) { this.lateEntry = lateEntry; }
+
+    /** The last sheet's today it was reminded on (yyyy-MM-dd; none: never reminded). */
+    public String getReminded() { return reminded; }
+    public void setReminded(String reminded) { this.reminded = reminded; }
 
     public boolean isStated() { return stated; }
     public String getStatedDue() { return statedDue; }

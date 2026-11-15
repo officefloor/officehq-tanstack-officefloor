@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, "
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, "
             // Deferred now: OPEN and deferred until a date after the sheet's today.
             + "(status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > "
             + "(SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred, "
@@ -21,7 +21,7 @@ public class ClaimRepository {
             + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = claim.sheet_id AND k.number = claim.corrects), "
             + "claim_date) AS round_date";
 
-    private static final RowMapper<Claim> ROW = (rs, n) -> withCorrects(new Claim(rs.getLong("id"),
+    private static final RowMapper<Claim> ROW = (rs, n) -> withReminded(withCorrects(new Claim(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getLong("person_id"),
             rs.getBigDecimal("amount").setScale(2).toPlainString(),
             rs.getObject("claim_date", LocalDate.class).toString(), rs.getString("note"),
@@ -33,7 +33,13 @@ public class ClaimRepository {
                     : rs.getBigDecimal("stated_due").setScale(2).toPlainString()), rs.getString("corrects"),
             rs.getObject("round_date", LocalDate.class).toString(),
             rs.getObject("due_by", LocalDate.class).toString(),
-            rs.getObject("deferred_until", LocalDate.class), rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"), rs.getString("locked_by"), rs.getBoolean("late_entry"));
+            rs.getObject("deferred_until", LocalDate.class), rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"), rs.getString("locked_by"), rs.getBoolean("late_entry")),
+            rs.getObject("reminded_on", LocalDate.class));
+
+    private static Claim withReminded(Claim claim, LocalDate reminded) {
+        claim.setReminded(reminded == null ? null : reminded.toString());
+        return claim;
+    }
 
     private static Claim withCorrects(Claim claim, String corrects, String roundDate, String dueBy,
             LocalDate deferredUntil, boolean deferred, int proofs, String splitFrom, String lockedBy, boolean lateEntry) {
@@ -176,6 +182,13 @@ public class ClaimRepository {
                 claim.getDeferredUntil() == null ? null : LocalDate.parse(claim.getDeferredUntil()),
                 claim.getSheetId(), claim.getId());
         snapshot(claim.getSheetId(), claim.getId());
+    }
+
+    /** Save the date a claim was last reminded on. */
+    public void updateReminded(Claim claim) {
+        jdbc.update("UPDATE claim SET reminded_on = ? WHERE sheet_id = ? AND id = ?",
+                claim.getReminded() == null ? null : LocalDate.parse(claim.getReminded()),
+                claim.getSheetId(), claim.getId());
     }
 
     /** Save the number of the claim a claim was split from. */

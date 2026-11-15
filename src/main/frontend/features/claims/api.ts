@@ -42,6 +42,8 @@ export type Claim = {
   lockedBy: string | null;
   /** Whether it was added while the period its due-by falls in was soft-closed. */
   lateEntry: boolean;
+  /** The last sheet's today it was reminded on (null: never reminded). */
+  reminded: string | null;
 };
 /** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects. */
 export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
@@ -95,6 +97,12 @@ export function moveClaim(sheetId: string, by: string, id: number, action: Claim
  *  the date is not after today, or it is due by a day in a closed period. */
 export function deferClaim(sheetId: string, by: string, id: number, until: string): Promise<Claim> {
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/defer?by=${encodeURIComponent(by)}&until=${encodeURIComponent(until)}`, {});
+}
+
+/** Remind an OPEN or PENDING claim on the sheet's today; refused (rejects) with 409 for any other
+ *  status, or when it was already reminded on the sheet's today. */
+export function remindClaim(sheetId: string, by: string, id: number): Promise<Claim> {
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/remind?by=${encodeURIComponent(by)}`, {});
 }
 
 /** A steward re-dates an OPEN or PENDING claim to `date`: its due-by and any bound figure stay, and
