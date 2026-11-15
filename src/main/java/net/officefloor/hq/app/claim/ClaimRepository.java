@@ -194,12 +194,12 @@ public class ClaimRepository {
         return jdbc.queryForList("SELECT tag FROM sheet_tag WHERE sheet_id = ? ORDER BY tag", String.class, sheetId);
     }
 
-    /** Save a claim moved to another person: its person, its binding (dropped), and its place in the
-     *  list, now the newest. */
+    /** Save a claim moved to another person: its person, its number (renumbered), its binding
+     *  (dropped), and its place in the list, now the newest. */
     public void reassign(Claim claim) {
-        jdbc.update("UPDATE claim SET person_id = ?, stated = ?, stated_due = ?, list_seq = " + NEXT_SEQ
-                + " WHERE sheet_id = ? AND id = ?",
-                claim.getPersonId(), claim.isStated(),
+        jdbc.update("UPDATE claim SET person_id = ?, number = ?, stated = ?, stated_due = ?, list_seq = "
+                + NEXT_SEQ + " WHERE sheet_id = ? AND id = ?",
+                claim.getPersonId(), claim.getNumber(), claim.isStated(),
                 claim.getStatedDue() == null ? null : new BigDecimal(claim.getStatedDue()),
                 claim.getSheetId(), claim.getSheetId(), claim.getId());
         snapshot(claim.getSheetId(), claim.getId());

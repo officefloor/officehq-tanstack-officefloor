@@ -54,7 +54,8 @@ public class BulkReassignClaims {
             if (archived) continue;
             Reassignment reassignment;
             try {
-                reassignment = ReassignClaim.reassign(user, claim, target, people, roles, periods, settings);
+                reassignment = ReassignClaim.reassign(user, claim, target, people, roles, periods, settings,
+                        claims, sheets);
             } catch (ClaimStatusException | PeriodClosedException refused) {
                 continue;
             }
