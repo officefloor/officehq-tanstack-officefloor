@@ -39,8 +39,13 @@ export type Person = {
   /** Their statements still standing (a cancelled one is gone), oldest first: by date, then as taken. */
   statements: StatementLine[];
   held: boolean; holds: Hold[]; patronIds: number[];
-  /** Their own terms in whole days (null: none): a claim's due-by goes by them before their grade's or the sheet's. */
+  /** Their own terms in whole days in force on the sheet's today (null: none): a claim's due-by goes by
+   *  those in force on its date before their grade's or the sheet's. */
   terms: number | null;
+  /** Their own terms from the beginning of time (null: none). */
+  baseTerms: number | null;
+  /** Their own terms given from a from-date, by from-date (null terms: none from it). */
+  datedTerms: TermsFrom[];
   /** Their contact, trimmed and lower-cased (null: none); no two people on a sheet share one. */
   contact: string | null;
   /** Their tags, sorted and comma separated (null: none); a claim counts for the tag totals under
@@ -54,10 +59,13 @@ export type Person = {
    *  descendants): until renamed clear of it, every edit through the person form is refused. */
   clashing: boolean;
 };
+export type TermsFrom = { terms: number | null; from: string };
+
 /** `gradeFrom` is the date an edit's grade applies from (blank: the sheet's today); `terms` their
- *  own terms in whole days (blank: none); `contact` their contact (blank: none); `tags` their tags,
+ *  own terms in whole days (blank: none), from `termsFrom` (blank: the beginning of time, the
+ *  dated ones kept); `contact` their contact (blank: none); `tags` their tags,
  *  comma separated (blank: none). */
-export type PersonInput = { name: string; grade: string; gradeFrom: string; terms: string; contact: string; tags: string };
+export type PersonInput = { name: string; grade: string; gradeFrom: string; terms: string; termsFrom: string; contact: string; tags: string };
 
 /** The person's grade in force on a date (yyyy-MM-dd): the one with the latest from-date on or before it. */
 export function gradeOn(p: Person, date: string): string {

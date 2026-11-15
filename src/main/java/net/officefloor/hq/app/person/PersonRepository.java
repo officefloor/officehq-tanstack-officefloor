@@ -46,6 +46,7 @@ public class PersonRepository {
         Map<Long, Person> byId = new HashMap<>();
         people.forEach((p) -> byId.put(p.getId(), p));
         withGrades(sheetId, people);
+        withTerms(sheetId, people);
         withHolds(sheetId, people);
         withAliases(sheetId, people);
         withClashing(sheetId, people);
@@ -70,6 +71,7 @@ public class PersonRepository {
                     "SELECT patron_id FROM person_patron WHERE sheet_id = ? AND person_id = ? ORDER BY added_at, patron_id",
                     Long.class, sheetId, id)));
             withGrades(sheetId, List.of(person));
+            withTerms(sheetId, List.of(person));
             withHolds(sheetId, List.of(person));
             withAliases(sheetId, List.of(person));
             withClashing(sheetId, List.of(person));
@@ -103,6 +105,7 @@ public class PersonRepository {
                     return new GradeFrom(rs.getString("grade"), from == null ? null : from.toString());
                 }, sheetId, id, asOf);
         person.setGrades(new ArrayList<>(grades), asOf);
+        withTerms(sheetId, List.of(person));
         person.setHolds(new ArrayList<>(jdbc.query("SELECT from_date, to_date FROM person_hold WHERE sheet_id = ? "
                 + "AND person_id = ? AND (added_on IS NULL OR added_on <= ?) ORDER BY id", (rs, n) -> {
                     LocalDate to = rs.getObject("to_date", LocalDate.class);
@@ -134,6 +137,21 @@ public class PersonRepository {
                             .add(new GradeFrom(rs.getString("grade"), from == null ? null : from.toString()));
                 }, sheetId);
         people.forEach((p) -> p.setGrades(grades.getOrDefault(p.getId(), new ArrayList<>()), today));
+    }
+
+    /** Give each person their dated terms, by from-date. */
+    private void withTerms(String sheetId, List<Person> people) {
+        if (people.isEmpty()) {
+            return;
+        }
+        Map<Long, List<TermsFrom>> terms = new HashMap<>();
+        jdbc.query("SELECT person_id, terms, from_date FROM person_terms WHERE sheet_id = ? ORDER BY person_id, from_date",
+                (rs) -> {
+                    terms.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())
+                            .add(new TermsFrom(rs.getObject("terms", Integer.class),
+                                    rs.getObject("from_date", LocalDate.class).toString()));
+                }, sheetId);
+        people.forEach((p) -> p.setDatedTerms(terms.getOrDefault(p.getId(), new ArrayList<>())));
     }
 
     /** Give each person their holds, in the order they were added. */
@@ -392,6 +410,16 @@ public class PersonRepository {
         gradeHistory(person.getSheetId(), person.getId(), given.grade(), from);
     }
 
+    /** Record the dated terms the person was just given (see {@link Person#giveTermsFrom}), replacing
+     *  those with the same from-date. */
+    public void saveTerms(Person person, TermsFrom given, String user) {
+        LocalDate from = LocalDate.parse(given.from());
+        jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ? AND from_date = ?",
+                person.getSheetId(), person.getId(), from);
+        jdbc.update("INSERT INTO person_terms (sheet_id, person_id, terms, from_date, set_by) VALUES (?, ?, ?, ?, ?)",
+                person.getSheetId(), person.getId(), given.terms(), from, user);
+    }
+
     /** Keep a grade given in the person's history, with the sheet's today. */
     private void gradeHistory(String sheetId, long personId, String grade, LocalDate from) {
         jdbc.update("INSERT INTO person_grade_history (sheet_id, person_id, grade, from_date, on_date) "
@@ -403,7 +431,7 @@ public class PersonRepository {
     public boolean update(Person person) {
         int n = jdbc.update(
                 "UPDATE person SET name = ?, terms = ?, contact = ?, tags = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
-                person.getName(), person.getTerms(), person.getContact(), person.getTags(), person.getSheetId(), person.getId(), person.getVersion());
+                person.getName(), person.getBaseTerms(), person.getContact(), person.getTags(), person.getSheetId(), person.getId(), person.getVersion());
         if (n == 0) {
             return false;
         }
@@ -520,7 +548,7 @@ public class PersonRepository {
         }
         into.absorbStatements(from);
         saveStatements(into);
-        for (String table : List.of("person_hold", "person_watch", "person_grade",
+        for (String table : List.of("person_hold", "person_watch", "person_grade", "person_terms",
                 "person_grade_history", "person_retired_history", "person_retirement")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
         }
@@ -563,7 +591,7 @@ public class PersonRepository {
                     + "WHERE sheet_id = ? AND id = ?", sheetId, id);
         }
         jdbc.update("DELETE FROM period_person_total WHERE person_id = ?", id);
-        for (String table : List.of("person_grade", "person_grade_history", "person_retired_history", "person_retirement", "person_alias", "plan")) {
+        for (String table : List.of("person_grade", "person_terms", "person_grade_history", "person_retired_history", "person_retirement", "person_alias", "plan")) {
             jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, sheetId, id);
         }
         String name = merging ? "#merging-" + id : person.getName();

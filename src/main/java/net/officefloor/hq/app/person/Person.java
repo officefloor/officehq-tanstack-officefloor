@@ -19,8 +19,12 @@ public class Person {
     private java.util.List<GradeFrom> grades = new java.util.ArrayList<>();
     /** The grade this request's save records (null: none). */
     private GradeFrom recorded;
-    /** Their own terms in whole days (null: none). */
+    /** Their own terms in whole days from the beginning of time (null: none). */
     private Integer terms;
+    /** Their own terms given from a from-date, by from-date. */
+    private java.util.List<TermsFrom> datedTerms = new java.util.ArrayList<>();
+    /** The dated terms this request's save records (null: none). */
+    private TermsFrom recordedTerms;
     /** Whether this request's save changed their terms, for its audit line. */
     private boolean termsChanged;
     /** Their contact, trimmed and lower-cased (null: none). */
@@ -107,8 +111,40 @@ public class Person {
         recorded = new GradeFrom(grade, from);
     }
 
-    public Integer getTerms() { return terms; }
+    /** Their own terms in force on the sheet's today (null: none). */
+    public Integer getTerms() { return today == null ? terms : termsOn(today.toString()); }
+    /** Their own terms from the beginning of time (null: none). */
+    public Integer getBaseTerms() { return terms; }
     public void setTerms(Integer terms) { this.terms = terms; }
+    public java.util.List<TermsFrom> getDatedTerms() { return datedTerms; }
+    public void setDatedTerms(java.util.List<TermsFrom> datedTerms) { this.datedTerms = datedTerms; }
+
+    /** Their own terms in force on the date (yyyy-MM-dd): the dated ones with the latest from-date on
+     *  or before it, else those from the beginning of time (null: none). */
+    public Integer termsOn(String date) {
+        TermsFrom found = null;
+        for (TermsFrom t : datedTerms) {
+            if (t.from().compareTo(date) > 0) continue;
+            if (found == null || found.from().compareTo(t.from()) < 0) found = t;
+        }
+        return found == null ? terms : found.terms();
+    }
+
+    /** Give them these terms (null: none) from the from-date, replacing those with the same from-date;
+     *  the save records them, and the audit line records the terms in force when they changed. */
+    public void giveTermsFrom(Integer terms, String from) {
+        TermsFrom was = datedTerms.stream().filter((t) -> t.from().equals(from)).findFirst().orElse(null);
+        termsChanged = was == null || !java.util.Objects.equals(was.terms(), terms);
+        java.util.List<TermsFrom> now = new java.util.ArrayList<>(datedTerms);
+        now.removeIf((t) -> t.from().equals(from));
+        now.add(new TermsFrom(terms, from));
+        now.sort(java.util.Comparator.comparing(TermsFrom::from));
+        datedTerms = now;
+        recordedTerms = new TermsFrom(terms, from);
+    }
+
+    @JsonIgnore
+    public TermsFrom getRecordedTerms() { return recordedTerms; }
 
     /** Give them these terms (null: none); the audit line records them when they changed. */
     public void giveTerms(Integer terms) {

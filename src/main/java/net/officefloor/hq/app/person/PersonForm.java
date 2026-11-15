@@ -36,12 +36,20 @@ public final class PersonForm {
             }
             terms = String.valueOf(Integer.parseInt(terms));
         }
+        String termsFrom = request.termsFrom() == null ? "" : request.termsFrom().trim();
+        if (!termsFrom.isEmpty()) {
+            try {
+                LocalDate.parse(termsFrom);
+            } catch (DateTimeParseException e) {
+                throw new InvalidPersonException("Not a date: " + termsFrom);
+            }
+        }
         String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(java.util.Locale.ROOT);
         if (contact.length() > 200) {
             throw new InvalidPersonException("A contact is at most 200 characters");
         }
         return new PersonRequest(name, grade, from.isEmpty() ? null : from, terms.isEmpty() ? null : terms,
                 request.version(), contact.isEmpty() ? null : contact,
-                net.officefloor.hq.app.claim.ClaimForm.tags(request.tags()));
+                net.officefloor.hq.app.claim.ClaimForm.tags(request.tags()), termsFrom.isEmpty() ? null : termsFrom);
     }
 }

@@ -12,5 +12,8 @@ public class SavePerson {
         if (person.getRecorded() != null) {
             people.saveGrade(person, person.getRecorded(), by == null ? "" : by);
         }
+        if (person.getRecordedTerms() != null) {
+            people.saveTerms(person, person.getRecordedTerms(), by == null ? "" : by);
+        }
     }
 }

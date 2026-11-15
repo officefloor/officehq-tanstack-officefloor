@@ -54,7 +54,7 @@ public class SheetCloner {
         unstated.put("version", 0);
         Map<Long, Long> people = copy("person", from, to, Map.of(), unstated);
         Map<String, Map<Long, Long>> byPerson = Map.of("person_id", people);
-        for (String table : List.of("person_grade", "person_grade_history", "person_retired_history",
+        for (String table : List.of("person_grade", "person_terms", "person_grade_history", "person_retired_history",
                 "person_retirement", "person_hold", "person_alias")) {
             copy(table, from, to, byPerson, none);
         }

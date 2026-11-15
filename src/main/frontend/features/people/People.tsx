@@ -26,7 +26,7 @@ import { SortBy, sortPeople, useSortBy } from './SortBy';
 import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, takeStatement, transferPerson, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 import { Fig } from '../session/Fig';
 
-const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '', tags: '' };
+const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFrom: '', contact: '', tags: '' };
 
 /** The people on the sheet: a form that adds a person or edits one, and the list in list order (each with buttons that move
  *  them up or down a place; new people go to the end),
@@ -112,7 +112,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
         if (e instanceof HttpError && e.status === 409) {
           const now = await queryClient.fetchQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId), staleTime: 0 });
           const current = now.find((p) => p.id === v.editing?.id);
-          if (current) setForm({ name: current.name, grade: current.grade, gradeFrom: '', terms: current.terms === null ? '' : String(current.terms), contact: current.contact ?? '', tags: showTags(current.tags) });
+          if (current) setForm({ name: current.name, grade: current.grade, gradeFrom: '', terms: current.baseTerms === null ? '' : String(current.baseTerms), termsFrom: '', contact: current.contact ?? '', tags: showTags(current.tags) });
         }
         throw e;
       }
@@ -235,7 +235,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   // the person form would save the grade from the sheet's today, the rest of the person unchanged.
   const grading = useMutation({
     mutationFn: (v: { id: number; person: Person; grade: string }) => updatePerson(sheetId, user, v.id, v.person.version, {
-      name: v.person.name, grade: v.grade, gradeFrom: '', terms: v.person.terms === null ? '' : String(v.person.terms),
+      name: v.person.name, grade: v.grade, gradeFrom: '', terms: v.person.baseTerms === null ? '' : String(v.person.baseTerms), termsFrom: '',
       contact: v.person.contact ?? '', tags: showTags(v.person.tags),
     }),
     onSuccess: (_, v) => {
@@ -376,7 +376,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   };
 
   const open = (p: Person) => {
-    setForm({ name: p.name, grade: p.grade, gradeFrom: '', terms: p.terms === null ? '' : String(p.terms), contact: p.contact ?? '', tags: showTags(p.tags) });
+    setForm({ name: p.name, grade: p.grade, gradeFrom: '', terms: p.baseTerms === null ? '' : String(p.baseTerms), termsFrom: '', contact: p.contact ?? '', tags: showTags(p.tags) });
     setEditing({ id: p.id, version: p.version });
     save.reset();
   };
@@ -432,6 +432,11 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
           Terms{' '}
           <input data-testid="person-form-terms" value={form.terms} placeholder="business days"
             onChange={(e) => change({ terms: e.target.value })} />
+        </label>{' '}
+        <label>
+          from{' '}
+          <input type="date" data-testid="person-form-terms-from" value={form.termsFrom}
+            onChange={(e) => change({ termsFrom: e.target.value })} />
         </label>{' '}
         <label>
           Contact{' '}

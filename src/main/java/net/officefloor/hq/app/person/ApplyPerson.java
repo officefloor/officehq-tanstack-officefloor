@@ -28,7 +28,13 @@ public class ApplyPerson {
         person.setName(request.name());
         person.giveContact(request.contact());
         person.setTags(request.tags());
-        person.giveTerms(request.terms() == null ? null : Integer.valueOf(request.terms()));
+        // Terms with a from-date are given from it, keeping the others; with none, from the beginning of time.
+        Integer terms = request.terms() == null ? null : Integer.valueOf(request.terms());
+        if (request.termsFrom() != null) {
+            person.giveTermsFrom(terms, request.termsFrom());
+        } else {
+            person.giveTerms(terms);
+        }
         // The form's grade is given from its from-date (blank: the sheet's today); a save leaving
         // the grade as the row showed it, with no from-date, gives none.
         if (request.gradeFrom() != null || !request.grade().equals(person.getGrade())) {

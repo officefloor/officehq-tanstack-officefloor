@@ -20,7 +20,14 @@ public class AddPerson {
             throw new InvalidPersonException("The contact is already in use");
         }
         sheets.open(id, user);
-        person.set(people.add(id, request.name(), request.grade(),
-                request.terms() == null ? null : Integer.valueOf(request.terms()), request.contact(), request.tags(), user));
+        Integer terms = request.terms() == null ? null : Integer.valueOf(request.terms());
+        // Terms with a from-date apply from it; with none, from the beginning of time.
+        Person added = people.add(id, request.name(), request.grade(),
+                request.termsFrom() == null ? terms : null, request.contact(), request.tags(), user);
+        if (request.termsFrom() != null) {
+            added.giveTermsFrom(terms, request.termsFrom());
+            people.saveTerms(added, added.getRecordedTerms(), user);
+        }
+        person.set(added);
     }
 }

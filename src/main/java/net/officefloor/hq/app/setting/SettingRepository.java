@@ -248,8 +248,9 @@ public class SettingRepository {
     /** The terms (whole days) of a claim of the person on a date: their own, else those of their
      *  grade in force on it, else the sheet's, each as in force on the date (a null person: the sheet's). */
     public int terms(String sheetId, net.officefloor.hq.app.person.Person person, String date) {
-        if (person != null && person.getTerms() != null) {
-            return person.getTerms();
+        Integer own = person == null ? null : person.termsOn(date);
+        if (own != null) {
+            return own;
         }
         return terms(sheetId, person == null ? null : person.gradeOn(date), date);
     }
