@@ -46,10 +46,19 @@ export type Claim = {
   reminded: string | null;
   /** Its external reference (null: none); used once per sheet, compared without regard to case. */
   ref: string | null;
+  /** Its tags: trimmed, lower-cased, without repeats, sorted and comma separated (null: none). */
+  tags: string | null;
 };
 /** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects.
- *  `ref`: its external reference (trimmed; blank: none), refused when already used on the sheet. */
-export type ClaimInput = { amount: string; date: string; note: string; corrects: string; ref: string };
+ *  `ref`: its external reference (trimmed; blank: none), refused when already used on the sheet.
+ *  `tags`: its tags, comma separated (each trimmed and lower-cased, repeats dropped; blank: none). */
+export type ClaimInput = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
+
+/** A claim's tags as shown: sorted, comma and space separated (blank: none). */
+export const showTags = (tags: string | null) => (tags ?? '').split(',').filter((t) => t !== '').join(', ');
+
+/** A claim's tags as a list (empty: none). */
+export const tagsOf = (c: Pick<Claim, 'tags'>) => (c.tags ?? '').split(',').filter((t) => t !== '');
 
 /** Whether a claim is a correction: its amount is negative. */
 export const isCorrection = (c: Pick<Claim, 'amount'>) => c.amount.trim().startsWith('-') && Number(c.amount) !== 0;
@@ -57,6 +66,14 @@ export const isCorrection = (c: Pick<Claim, 'amount'>) => c.amount.trim().starts
 const sheetBase = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}`;
 
 export const claimsKey = (sheetId: string) => [...sheetKey(sheetId), 'claims'] as const;
+
+/** Under the claims' key, so whatever refreshes the claims refreshes the tags too. */
+export const tagsKey = (sheetId: string) => [...claimsKey(sheetId), 'tags'] as const;
+
+/** Every tag ever used on the sheet's claims, sorted. */
+export function listTags(sheetId: string): Promise<string[]> {
+  return getJson<string[]>(`${sheetBase(sheetId)}/tags`);
+}
 
 /** Every claim on the sheet, newest first. */
 export function listClaims(sheetId: string): Promise<Claim[]> {

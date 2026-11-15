@@ -30,7 +30,7 @@ public class AddClaim {
         String corrects = Corrections.check(request, person.getSheetId(), person.getId(), claims);
         claims.requireRefFree(person.getSheetId(), request.ref(), 0);
         Claim added = claims.add(person.getSheetId(), person.getId(), request.amount(), date,
-                request.note(), corrects, dueBy, user, request.ref());
+                request.note(), corrects, dueBy, user, request.ref(), request.tags());
         if (periods.softClosedOn(person.getSheetId(), dueBy.toString())) claims.markLateEntry(added);
         claim.set(added);
     }

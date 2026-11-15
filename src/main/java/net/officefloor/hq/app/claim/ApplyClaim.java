@@ -38,5 +38,6 @@ public class ApplyClaim {
         claim.setDate(date.toString());
         claim.setNote(request.note());
         claim.setRef(request.ref());
+        claim.setTags(request.tags());
     }
 }

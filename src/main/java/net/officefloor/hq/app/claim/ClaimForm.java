@@ -3,9 +3,12 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.Arrays;
+import java.util.Locale;
+import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 
-/** The claim form's rules for a claim's own fields: its amount, date, note, the claim it corrects and its reference. */
+/** The claim form's rules for a claim's own fields: its amount, date, note, the claim it corrects and its reference and its tags. */
 public final class ClaimForm {
     /** An amount (negative for a correction), with up to two decimals. */
     private static final Pattern AMOUNT = Pattern.compile("-?(\\d+(\\.\\d{0,2})?|\\.\\d{1,2})");
@@ -41,6 +44,16 @@ public final class ClaimForm {
                 throw new InvalidClaimException("Not a date: " + date);
             }
         }
-        return new ValidClaim(value, day, note, corrected, ref.isEmpty() ? null : ref);
+        return new ValidClaim(value, day, note, corrected, ref.isEmpty() ? null : ref,
+                tags(request == null ? null : request.tags()));
+    }
+
+    /** Comma separated tags as kept: each trimmed and lower-cased, repeats and blanks dropped, sorted and
+     *  joined by commas; null when there are none. */
+    public static String tags(String text) {
+        if (text == null) return null;
+        String kept = Arrays.stream(text.split(",")).map((t) -> t.trim().toLowerCase(Locale.ROOT))
+                .filter((t) -> !t.isEmpty()).distinct().sorted().collect(Collectors.joining(","));
+        return kept.isEmpty() ? null : kept;
     }
 }

@@ -5,9 +5,9 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import { useNoteThreshold, useProofThreshold, type DatedOn } from '../settings/api';
-import { addClaim, addProof, claimsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
+import { addClaim, addProof, claimsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
-const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '' };
+const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
 
 const LABELS: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void', approve: 'Approve', reject: 'Reject', resettle: 'Re-settle' };
 const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided', approve: 'approved', reject: 'rejected', resettle: 're-settled' };
@@ -92,7 +92,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     const was = heldWas.current;
     heldWas.current = held?.id ?? null;
     if (held && editing === null) {
-      setForm({ amount: held.amount, date: held.date, note: held.note, corrects: held.corrects ?? '', ref: held.ref ?? '' });
+      setForm({ amount: held.amount, date: held.date, note: held.note, corrects: held.corrects ?? '', ref: held.ref ?? '', tags: showTags(held.tags) });
       setEditing(held.id);
     } else if (!held && was !== null && editing === was && !locking.isPending) {
       setForm(EMPTY);
@@ -229,7 +229,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
   });
 
   const saveInline = (c: Claim) => {
-    const input = { amount: (inlineAmounts[c.id] ?? '').trim(), date: c.date, note: c.note, corrects: c.corrects ?? '', ref: c.ref ?? '' };
+    const input = { amount: (inlineAmounts[c.id] ?? '').trim(), date: c.date, note: c.note, corrects: c.corrects ?? '', ref: c.ref ?? '', tags: showTags(c.tags) };
     actOnce(() => {
       move.reset();
       reassign.reset();
@@ -348,7 +348,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       return;
     }
     setEditRefused(null);
-    setForm({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '', ref: c.ref ?? '' });
+    setForm({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '', ref: c.ref ?? '', tags: showTags(c.tags) });
     setEditing(c.id);
     save.reset();
     locking.mutate(c.id);
@@ -386,6 +386,8 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
           onChange={(e) => change({ corrects: e.target.value })} />{' '}
         <input data-testid="claim-form-ref" placeholder="Reference" value={form.ref}
           onChange={(e) => change({ ref: e.target.value })} />{' '}
+        <input data-testid="claim-form-tags" placeholder="Tags, comma separated" value={form.tags}
+          onChange={(e) => change({ tags: e.target.value })} />{' '}
         <button type="submit" data-testid="claim-form-submit" disabled={save.isPending || locking.isPending}>
           {editing === null ? 'Add claim' : 'Save claim'}
         </button>
@@ -415,6 +417,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
               <td data-testid="claim-note">{c.note}</td>
               <td data-testid="claim-corrects">{c.corrects ?? ''}</td>
               <td data-testid="claim-ref">{c.ref ?? ''}</td>
+              <td data-testid="claim-tags">{showTags(c.tags)}</td>
               <td data-testid="claim-due">{showDue(claimDue(c, rates, gradeOn, floor, charges))}</td>
               <td>
                 Due by <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}

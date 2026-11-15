@@ -35,6 +35,7 @@ public class Claim {
     private boolean lateEntry;
     private String reminded;
     private String ref;
+    private String tags;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, String number, String settledDue, String openedBy) {
@@ -139,6 +140,16 @@ public class Claim {
     /** Its external reference (none: no reference); used once per sheet, compared without regard to case. */
     public String getRef() { return ref; }
     public void setRef(String ref) { this.ref = ref; }
+
+    /** Its tags, sorted and comma separated (none: no tags). */
+    public String getTags() { return tags; }
+    public void setTags(String tags) { this.tags = tags; }
+
+    /** The audit suffix: {@code " tags=<tags>"} for a claim that has tags. */
+    @JsonIgnore
+    public String getAuditTags() {
+        return tags == null ? "" : " tags=" + tags;
+    }
 
     /** The audit suffix: {@code " ref=<reference>"} for a claim that has a reference. */
     @JsonIgnore

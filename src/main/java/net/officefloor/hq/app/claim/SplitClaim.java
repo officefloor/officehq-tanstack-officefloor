@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /** Splits an OPEN claim: it keeps the rest of its amount and is unbound; a new OPEN claim of the
  *  split-off amount, with its date and note, the next number, opened by the user and a due-by fixed
- *  now from the terms in force on its date (counted in business days), is split from its number (a late entry when its due-by
+ *  now from the terms in force on its date (counted in business days), carrying its tags, is split from its number (a late entry when its due-by
  *  falls in a soft-closed period). The split is judged by the original claim alone: refused for a claim
  *  due by a day in a closed period, one not OPEN or deferred, a role that may not open a claim, and an amount that is
  *  not more than 0.00 and less than the claim's (two decimals at most). */
@@ -55,7 +55,7 @@ public class SplitClaim {
         Person person = people.find(sheetId, claim.getPersonId());
         LocalDate dueBy = holidays.dueBy(sheetId, date, settings.terms(sheetId, person, claim.getDate()));
         Claim created = claims.add(sheetId, claim.getPersonId(), part.setScale(2), date, claim.getNote(),
-                null, dueBy, user);
+                null, dueBy, user, null, claim.getTags());
         if (periods.softClosedOn(sheetId, created.getDueBy())) claims.markLateEntry(created);
         created.setStatus(ClaimStatus.OPEN.name());
         created.setNumber(ClaimNumbers.next(created, claims, periods, settings, sheets));
