@@ -81,6 +81,14 @@ export function deferClaim(sheetId: string, by: string, id: number, until: strin
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/defer?by=${encodeURIComponent(by)}&until=${encodeURIComponent(until)}`, {});
 }
 
+/** A steward re-dates an OPEN or PENDING claim to `date`: its due-by and any bound figure stay, its
+ *  period follows the new date (under period numbering, a new period gives it that period's next
+ *  number). Refused (rejects) for anyone else, any other status, a date after its person's
+ *  retirement, or a claim dated in a closed period or a new date inside one. */
+export function redateClaim(sheetId: string, by: string, id: number, date: string): Promise<Claim> {
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/redate?by=${encodeURIComponent(by)}&date=${encodeURIComponent(date)}`, {});
+}
+
 /** Split an OPEN claim: it keeps the rest of its amount and loses any figure a statement bound it to;
  *  a new OPEN claim of `amount` (more than 0.00, less than the claim's), opened by the user, is split
  *  from its number. Refused (rejects) for a PENDING, deferred or settled claim, one dated in a closed

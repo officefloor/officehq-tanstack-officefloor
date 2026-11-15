@@ -115,6 +115,12 @@ public class ClaimRepository {
                 claim.getSheetId(), claim.getSheetId(), claim.getId());
     }
 
+    /** Save a re-dated claim: its date and its number (a new one when its period changed). */
+    public void redate(Claim claim) {
+        jdbc.update("UPDATE claim SET claim_date = ?, number = ? WHERE sheet_id = ? AND id = ?",
+                LocalDate.parse(claim.getDate()), claim.getNumber(), claim.getSheetId(), claim.getId());
+    }
+
     /** The person's claims, newest first. */
     public List<Claim> listOf(String sheetId, long personId) {
         return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY list_seq DESC, id DESC",

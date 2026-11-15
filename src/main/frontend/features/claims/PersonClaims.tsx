@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import { useProofThreshold, type DatedOn } from '../settings/api';
-import { addClaim, addProof, claimsKey, deferClaim, dueBy, isOverdue, moveClaim, reassignClaim, splitClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
+import { addClaim, addProof, claimsKey, deferClaim, redateClaim, dueBy, isOverdue, moveClaim, reassignClaim, splitClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
 
@@ -31,6 +31,9 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  Its proofs count is shown and raised by one with a button beside it (a SETTLED or VOID claim, or one in a
  *  closed period, refused with an error on the claim); one with no proofs whose due is above the sheet's proof
  *  threshold in force on its date cannot be settled or approved.
+ *  A steward can re-date an OPEN or PENDING claim to a date typed beside it: its due-by and any bound figure
+ *  stay, its period follows the new date (anyone else, any other status, a date after its person's retirement,
+ *  or a claim in a closed period or a new date inside one refused with an error on the claim).
  *  An OPEN claim can be split by an amount typed beside it (more than 0.00, less than its own): it keeps the
  *  rest and is unbound, and a new OPEN claim of that amount, opened by the user, shows its number as split-from
  *  (a PENDING, deferred or settled claim, one in a closed period, or a role that may not open a claim refused
@@ -93,10 +96,33 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       move.reset();
       reassign.reset();
       deferral.reset();
+      redating.reset();
       proof.reset();
       division.reset();
       setEditRefused(null);
       return deferral.mutateAsync({ id, until });
+    });
+  };
+
+  // The new date typed for each claim to re-date it to.
+  const [redates, setRedates] = useState<Record<number, string>>({});
+
+  const redating = useMutation({
+    mutationFn: (v: { id: number; date: string }) => redateClaim(sheetId, user, v.id, v.date),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
+
+  const redate = (id: number) => {
+    const date = (redates[id] ?? '').trim();
+    actOnce(() => {
+      move.reset();
+      reassign.reset();
+      deferral.reset();
+      redating.reset();
+      proof.reset();
+      division.reset();
+      setEditRefused(null);
+      return redating.mutateAsync({ id, date });
     });
   };
 
@@ -117,6 +143,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       move.reset();
       reassign.reset();
       deferral.reset();
+      redating.reset();
       proof.reset();
       division.reset();
       setEditRefused(null);
@@ -134,6 +161,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       move.reset();
       reassign.reset();
       deferral.reset();
+      redating.reset();
       proof.reset();
       division.reset();
       setEditRefused(null);
@@ -160,6 +188,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       move.reset();
       reassign.reset();
       deferral.reset();
+      redating.reset();
       proof.reset();
       division.reset();
       setEditRefused(null);
@@ -172,6 +201,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       move.reset();
       reassign.reset();
       deferral.reset();
+      redating.reset();
       proof.reset();
       division.reset();
       setEditRefused(null);
@@ -188,6 +218,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     move.reset();
     reassign.reset();
     deferral.reset();
+    redating.reset();
     proof.reset();
     division.reset();
     if (c.status !== 'DRAFT') {
@@ -312,6 +343,15 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                   onClick={() => defer(c.id)}>
                   Defer
                 </button>{' '}
+                <input type="date" data-testid="claim-date-new" value={redates[c.id] ?? ''}
+                  onChange={(e) => {
+                    setRedates((d) => ({ ...d, [c.id]: e.target.value }));
+                    if (redating.variables?.id === c.id) redating.reset();
+                  }} />{' '}
+                <button type="button" data-testid="claim-redate" disabled={redating.isPending}
+                  onClick={() => redate(c.id)}>
+                  Re-date
+                </button>{' '}
                 <select data-testid="claim-reassign-to" value={targets[c.id] ?? String(others[0]?.id ?? '')}
                   onChange={(e) => {
                     setTargets((t) => ({ ...t, [c.id]: e.target.value }));
@@ -361,6 +401,15 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     : deferral.error instanceof HttpError && deferral.error.status === 400
                     ? 'A claim can only be deferred to a date after the sheet\'s today.'
                     : `A ${c.status} claim cannot be deferred.`}</span>
+                )}
+                {redating.isError && redating.variables?.id === c.id && (
+                  <span data-testid="claim-error">{redating.error instanceof HttpError && redating.error.status === 423
+                    ? 'A claim dated inside a closed period, or a new date inside one, cannot be re-dated.'
+                    : redating.error instanceof HttpError && redating.error.status === 400
+                    ? 'A claim needs a date on or before its person\'s retirement.'
+                    : c.status === 'OPEN' || c.status === 'PENDING'
+                    ? 'Only a steward can re-date a claim.'
+                    : `A ${c.status} claim cannot be re-dated.`}</span>
                 )}
                 {division.isError && division.variables?.id === c.id && (
                   <span data-testid="claim-error">{division.error instanceof HttpError && division.error.status === 423
