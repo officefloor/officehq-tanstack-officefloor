@@ -23,10 +23,24 @@ public class RoleRepository {
                 ROW, sheetId);
     }
 
-    /** The user's role on the sheet: clerk when none was assigned. */
+    /** The role the user acts in on the sheet: steward while a delegation to them covers the sheet's
+     *  today, else the one assigned (clerk when none was). */
     public String roleOf(String sheetId, String user) {
+        return delegatorOf(sheetId, user) != null ? Role.STEWARD : assignedRoleOf(sheetId, user);
+    }
+
+    /** The user's own role on the sheet, delegations aside: clerk when none was assigned. */
+    public String assignedRoleOf(String sheetId, String user) {
         return jdbc.query("SELECT sheet_id, user_name, role FROM sheet_role WHERE sheet_id = ? AND user_name = ?",
                 ROW, sheetId, user).stream().findFirst().map(Role::role).orElse(Role.CLERK);
+    }
+
+    /** The steward who delegated the steward role to the user by a delegation covering the sheet's
+     *  today (the latest, when several do); null when none does. */
+    public String delegatorOf(String sheetId, String user) {
+        return jdbc.queryForList("SELECT d.delegated_by FROM delegation d JOIN sheet s ON s.id = d.sheet_id "
+                + "WHERE d.sheet_id = ? AND d.user_name = ? AND d.from_date <= s.today AND s.today <= d.to_date "
+                + "ORDER BY d.id DESC LIMIT 1", String.class, sheetId, user).stream().findFirst().orElse(null);
     }
 
     /** Assign (or replace) the user's role on the sheet. */

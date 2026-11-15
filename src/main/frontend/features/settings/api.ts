@@ -104,3 +104,20 @@ export function useLate(sheetId: string, today: string): Late {
   const policy = settingOn(settings.data, 'policy-date', today) || today;
   return { pct, today, policy };
 }
+
+/** A steward's delegation of the steward role to a user, from a date to a date (yyyy-MM-dd, inclusive):
+ *  while the sheet's today is inside it, the user acts as a steward. */
+export type Delegation = { id: number; sheetId: string; user: string; from: string; to: string; by: string };
+
+export const delegationsKey = (sheetId: string) => [...sheetKey(sheetId), 'delegations'] as const;
+
+/** The sheet's delegations, newest first. */
+export function listDelegations(sheetId: string): Promise<Delegation[]> {
+  return getJson<Delegation[]>(`${base(sheetId)}/delegations`);
+}
+
+/** Delegate the steward role (a blank date: the sheet's today); refused (rejects) for anyone but a
+ *  steward, or a to-date before the from-date. */
+export function delegate(sheetId: string, by: string, user: string, from: string, to: string): Promise<Delegation> {
+  return postJson<Delegation>(`${base(sheetId)}/delegations?by=${encodeURIComponent(by)}`, { user, from, to });
+}
