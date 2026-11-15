@@ -122,6 +122,16 @@ export function liveClaims(claims: Claim[],
   return claims.filter((c) => !c.deferred && !(isOpen(c) && !c.stated && held(c)));
 }
 
+/** Whether a person is active: one of their claims that count (`live`, see `liveClaims`) is open (OPEN or
+ *  PENDING) and dated within the 30 days up to and including the sheet's `today`. */
+export function isActive(live: Claim[], today: string): boolean {
+  if (today === '') return false;
+  const since = new Date(`${today}T00:00:00Z`);
+  since.setUTCDate(since.getUTCDate() - 29);
+  const from = since.toISOString().slice(0, 10);
+  return live.some((c) => isOpen(c) && from <= c.date && c.date <= today);
+}
+
 /** Sum the amounts of the claims that count (see `counts`) exactly (in cents), shown with two decimals. */
 export function sumAmounts(claims: Claim[]): string {
   const cents = claims.filter(counts).reduce((t, c) => t + Math.round(Number(c.amount) * 100), 0);

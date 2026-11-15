@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { claimsKey, listClaims, liveClaims, type Claim } from '../claims/api';
+import { claimsKey, isActive, listClaims, liveClaims, type Claim } from '../claims/api';
 import { GRADES, gradeOn, listPeople, peopleKey } from '../people/api';
 import { listPeriods, periodDueTotal, periodsKey } from '../periods/api';
 import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
@@ -15,7 +15,7 @@ export function statusCount(claims: Claim[] | undefined, status: (typeof STATUSE
 }
 
 /** The sheet's summary, agreeing with the lists: per grade, how many people not retired are on it
- *  today and their due-totals added up (n/a ones skipped); per period, its due-total; per status,
+ *  today, their due-totals added up (n/a ones skipped) and how many of them are active (see `isActive`); per period, its due-total; per status,
  *  how many claims have it. */
 export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
@@ -29,7 +29,8 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
   const byGrade = rateByGrade(rates.data, today);
   const all = claims.data ?? [];
   const active = (people.data ?? []).filter((p) => !p.retired);
-  const dueOf = (p: (typeof active)[number]) => personDue(liveClaims(all.filter((c) => c.personId === p.id), [p]),
+  const liveOf = (p: (typeof active)[number]) => liveClaims(all.filter((c) => c.personId === p.id), [p]);
+  const dueOf = (p: (typeof active)[number]) => personDue(liveOf(p),
     rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap);
 
   return (
@@ -44,6 +45,7 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
                 <td>Grade {g}</td>
                 <td>People <span data-testid={`summary-grade-${g}-count`}>{on.length}</span></td>
                 <td>Due <span data-testid={`summary-grade-${g}-due-total`}>{sumDues(on.map(dueOf))}</span></td>
+                <td>Active <span data-testid={`summary-grade-${g}-active`}>{on.filter((p) => isActive(liveOf(p), today)).length}</span></td>
               </tr>
             );
           })}

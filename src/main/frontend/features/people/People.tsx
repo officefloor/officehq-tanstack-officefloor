@@ -6,7 +6,7 @@ import { BulkOpen } from '../claims/BulkOpen';
 import { PasteClaims } from '../claims/PasteClaims';
 import { BulkSettle } from '../claims/BulkSettle';
 import { PersonClaims } from '../claims/PersonClaims';
-import { claimsKey, listClaims, liveClaims, sumAmounts } from '../claims/api';
+import { claimsKey, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
 import { listPeriods, periodsKey, personPeriodDue } from '../periods/api';
 import { claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, sumDues } from '../rates/api';
 import { useCap, useFloor, useLate } from '../settings/api';
@@ -30,6 +30,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '' };
  *  their due-total for each period (see `personPeriodDue`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
  *  with a checkbox that selects it for a button that opens the selected claims together.
  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
+ *  Whether each person is active (see `isActive`).
  *  Whether the signed-in user watches each person, with a button that starts or stops it.
  *  A button exports everyone, retired people included, as a CSV file. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
@@ -280,6 +281,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
                 <td data-testid="person-name">{p.name}</td>
                 <td data-testid="person-grade">{p.grade}</td>
+                <td>
+                  Active <span data-testid="person-active">{isActive(live, today) ? 'yes' : 'no'}</span>
+                </td>
                 <td>
                   Terms <span data-testid="person-terms">{p.terms ?? ''}</span>
                 </td>
