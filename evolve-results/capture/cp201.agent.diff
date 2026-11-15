@@ -1,0 +1,112 @@
+diff --git a/src/main/frontend/features/summary/Consolidated.tsx b/src/main/frontend/features/summary/Consolidated.tsx
+index a06d112e2..0bb8b5cda 100644
+--- a/src/main/frontend/features/summary/Consolidated.tsx
++++ b/src/main/frontend/features/summary/Consolidated.tsx
+@@ -7,25 +7,33 @@ import { formatCents, hundredths } from '../rates/api';
+ import { useAsOf } from '../sheet/AsOf';
+ import { descendantsKey, listDescendants, liveKey } from '../sheet/api';
+ import { Fig } from '../session/Fig';
++import { GRADES } from '../people/api';
++import { claimsKey, listClaims } from '../claims/api';
++import { STATUSES, statusCount, useGradeDues } from './Summary';
+ 
+ /** A sheet's own figures, as that sheet shows them in its header. */
+-type Figures = { people: number; due: string; overdue: string };
++type Figures = { people: number; due: string; overdue: string; grades: Record<string, string>; statuses: Record<string, number> };
+ 
+ /** As the screen shows the sheet: as of its date while one is set, each sheet as it stood then. */
+ function useFigures(sheetId: string, user: string): Figures {
+   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
+-  return { people: (people.data ?? []).length, due: useDueTotal(sheetId, user), overdue: useOverdue(sheetId, user).total };
++  const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
++  const statuses = Object.fromEntries(STATUSES.map((s) => [s, statusCount(claims.data, s)]));
++  return { people: (people.data ?? []).length, due: useDueTotal(sheetId, user), overdue: useOverdue(sheetId, user).total,
++    grades: useGradeDues(sheetId, user), statuses };
+ }
+ 
+ /** Works out one descendant sheet's own figures and hands them up; shows nothing. */
+ function Descendant({ sheetId, user, report }: { sheetId: string; user: string; report: (id: string, f: Figures) => void }) {
+   const f = useFigures(sheetId, user);
+-  useEffect(() => report(sheetId, f), [sheetId, f.people, f.due, f.overdue]);
++  useEffect(() => report(sheetId, f), [sheetId, f.people, f.due, f.overdue, JSON.stringify(f.grades), JSON.stringify(f.statuses)]);
+   return null;
+ }
+ 
+ /** The consolidated figures over the sheet and all its descendants (its children, theirs, ...): the
+- *  number of people, and each sheet's due- and overdue-total as that sheet shows it, added up. They
++ *  number of people, and each sheet's due- and overdue-total as that sheet shows it, added up; per grade,
++ *  each sheet's due-total of that grade (retired people left out, as its summary shows it) added up; per
++ *  status, the number of claims in it over the tree.
+  *  While the screen shows the sheet as of a date, every sheet of the tree is as it stood at the end of
+  *  that day, with that date as its today; the tree itself is the one the sheets' parents make now. */
+ export function Consolidated({ sheetId, user }: { sheetId: string; user: string }) {
+@@ -48,6 +56,14 @@ export function Consolidated({ sheetId, user }: { sheetId: string; user: string
+       Consolidated: people <span data-testid="consolidated-people-count">{ready ? all.reduce((t, f) => t + f.people, 0) : ''}</span>
+       {' · '}due <span data-testid="consolidated-due-total"><Fig>{ready ? sum((f) => f.due) : ''}</Fig></span>
+       {' · '}overdue <span data-testid="consolidated-overdue-total"><Fig>{ready ? sum((f) => f.overdue) : ''}</Fig></span>
++      {GRADES.map((g) => (
++        <span key={g}>{' · '}grade {g} due <span data-testid={`consolidated-grade-${g}-due-total`}>
++          <Fig>{ready ? sum((f) => f.grades[g]) : ''}</Fig></span></span>
++      ))}
++      {STATUSES.map((s) => (
++        <span key={s}>{' · '}{s} <span data-testid={`consolidated-status-${s}-count`}>
++          {ready ? all.reduce((t, f) => t + f.statuses[s], 0) : ''}</span></span>
++      ))}
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/summary/Summary.tsx b/src/main/frontend/features/summary/Summary.tsx
+index ac46a01c1..8f94c17e7 100644
+--- a/src/main/frontend/features/summary/Summary.tsx
++++ b/src/main/frontend/features/summary/Summary.tsx
+@@ -15,6 +15,24 @@ export function statusCount(claims: Claim[] | undefined, status: (typeof STATUSE
+   return (claims ?? []).filter((c) => c.status === status).length;
+ }
+ 
++/** Per grade, the due-totals of the people not retired on it added up (n/a ones skipped), as the
++ *  sheet's summary shows them. */
++export function useGradeDues(sheetId: string, user: string): Record<string, string> {
++  const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
++  const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
++  const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
++  const floor = useFloor(sheetId);
++  const today = useSheetToday(sheetId, user);
++  const cap = useCap(sheetId, today);
++  const charges = useLate(sheetId, today);
++  const byGrade = rateByGrade(rates.data, today);
++  const all = claims.data ?? [];
++  const active = (people.data ?? []).filter((p) => !p.retired);
++  const dueOf = (p: (typeof active)[number]) => personDue(liveClaims(all.filter((c) => c.personId === p.id), [p]),
++    rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap);
++  return Object.fromEntries(GRADES.map((g) => [g, sumDues(active.filter((p) => p.grade === g).map(dueOf))]));
++}
++
+ /** A period's due-total minus the previous one's, two decimals, a minus sign when lower. */
+ export function dueChange(previous: string, current: string): string {
+   const cents = Math.round(Number(current) * 100) - Math.round(Number(previous) * 100);
+@@ -32,15 +50,12 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
+   const voidReasons = useQuery({ queryKey: voidReasonsKey(sheetId), queryFn: () => listVoidReasons(sheetId) });
+   const floor = useFloor(sheetId);
+   const today = useSheetToday(sheetId, user);
+-  const cap = useCap(sheetId, today);
+   const charges = useLate(sheetId, today);
+   const reviewSla = useReviewSla(sheetId);
+-  const byGrade = rateByGrade(rates.data, today);
+   const all = claims.data ?? [];
+   const active = (people.data ?? []).filter((p) => !p.retired);
+   const liveOf = (p: (typeof active)[number]) => liveClaims(all.filter((c) => c.personId === p.id), [p]);
+-  const dueOf = (p: (typeof active)[number]) => personDue(liveOf(p),
+-    rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap);
++  const gradeDues = useGradeDues(sheetId, user);
+   const byStart = [...(periods.data ?? [])].sort((a, b) => a.from.localeCompare(b.from));
+   const periodDues = byStart.map((p) => periodDueTotal(p, all, people.data, rates.data, floor, charges));
+ 
+@@ -55,7 +70,7 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
+               <tr key={g}>
+                 <td>Grade {g}</td>
+                 <td>People <span data-testid={`summary-grade-${g}-count`}>{on.length}</span></td>
+-                <td>Due <span data-testid={`summary-grade-${g}-due-total`}><Fig>{sumDues(on.map(dueOf))}</Fig></span></td>
++                <td>Due <span data-testid={`summary-grade-${g}-due-total`}><Fig>{gradeDues[g]}</Fig></span></td>
+                 <td>Active <span data-testid={`summary-grade-${g}-active`}>{on.filter((p) => isActive(liveOf(p), today)).length}</span></td>
+               </tr>
+             );
