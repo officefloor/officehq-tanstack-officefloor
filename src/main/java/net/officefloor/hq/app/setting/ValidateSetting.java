@@ -44,6 +44,10 @@ public class ValidateSetting {
             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("The proof threshold is blank or 0.00 or more with up to two decimals");
             }
+        } else if (SettingRepository.NOTE_THRESHOLD.equals(key)) {
+            if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
+                throw new InvalidSettingException("The note threshold is blank or 0.00 or more with up to two decimals");
+            }
         } else if (SettingRepository.CAP.equals(key)) {
             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("The cap is blank or 0.00 or more with up to two decimals");

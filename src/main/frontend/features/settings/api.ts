@@ -21,12 +21,13 @@ export type Role = { sheetId: string; user: string; role: string };
  *  (terms-<grade>; blank means the sheet's terms) fix the due-by of a claim added for a person of that
  *  grade on its date: its date plus those terms, kept when the terms or its date change later. The proof
  *  threshold (two decimals; blank means none): a claim whose due is above the one in force on its date
- *  cannot be settled or approved while it has no proofs. The permission matrix (perm-<action>, a comma
+ *  cannot be settled or approved while it has no proofs. The note threshold (two decimals; blank means none):
+ *  a claim whose due is above the one in force on its date cannot be opened with an empty note. The permission matrix (perm-<action>, a comma
  *  separated list of roles; blank means the standing rule, PERMISSION_STANDING): who may take each action.
  *  The grace days (whole days; blank means off): when the sheet's today changes, every open period whose
  *  to-date plus them is before the new today is closed. */
 export const SETTING_KEYS = ['clerk-limit', 'cap', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
-  'period-numbering-from', 'grace-days', 'proof-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen'] as const;
+  'period-numbering-from', 'grace-days', 'proof-threshold', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen'] as const;
 
 /** The roles that may take each action of the permission matrix while its entry is blank. */
 export const PERMISSION_STANDING: Record<string, string> = {
@@ -88,6 +89,12 @@ export function useFloor(sheetId: string): DatedOn {
 export function useProofThreshold(sheetId: string): (date: string) => string | null {
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
   return (date) => settingOn(settings.data, 'proof-threshold', date) || null;
+}
+
+/** The sheet's note threshold by date (null: none in force on that date). */
+export function useNoteThreshold(sheetId: string): (date: string) => string | null {
+  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+  return (date) => settingOn(settings.data, 'note-threshold', date) || null;
 }
 
 /** The sheet's cap in force on its today: the most a person's due-total can be; null when there is none. */

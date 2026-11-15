@@ -4,7 +4,7 @@ import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
-import { useProofThreshold, type DatedOn } from '../settings/api';
+import { useNoteThreshold, useProofThreshold, type DatedOn } from '../settings/api';
 import { addClaim, addProof, claimsKey, deferClaim, redateClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
@@ -211,6 +211,14 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     const threshold = proofThreshold(c.date);
     const due = claimDue(c, rates, gradeOn, floor, charges);
     return c.proofs === 0 && threshold !== null && due !== null && Number(due) > Number(threshold);
+  };
+
+  const noteThreshold = useNoteThreshold(sheetId);
+  // Whether a claim needs a note before it is opened: an empty one, and its due above the threshold.
+  const needsNote = (c: Claim) => {
+    const threshold = noteThreshold(c.date);
+    const due = claimDue(c, rates, gradeOn, floor, charges);
+    return (c.note ?? '').trim() === '' && threshold !== null && due !== null && Number(due) > Number(threshold);
   };
 
   const reassign = useMutation({
@@ -447,6 +455,8 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     ? 'A rejection needs a reason.'
                     : (move.variables.action === 'settle' || move.variables.action === 'approve') && needsProof(c)
                     ? 'A claim whose due is above the proof threshold needs a proof first.'
+                    : move.variables.action === 'open' && c.status === 'DRAFT' && needsNote(c)
+                    ? 'A claim whose due is above the note threshold needs a note before it is opened.'
                     : c.deferred && move.variables.action === 'settle'
                     ? `A deferred claim cannot be settled until ${c.deferredUntil}.`
                     : c.status === 'OPEN' && move.variables.action === 'settle'

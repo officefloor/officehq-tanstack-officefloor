@@ -23,7 +23,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** Opens the selected claims in list order (people in the order they were added, newest claim first
  *  within a person), each numbered in turn as {@link OpenClaim} numbers one and recorded as it would
  *  record it (its CLAIM_OPENED line, then the rollup lines it moved). A claim that cannot be opened
- *  (its status does not allow it, its date is in a closed period, or it is not on the sheet) is left
+ *  (its status does not allow it, its date is in a closed period, it has an empty note and a due
+ *  above the note threshold, or it is not on the sheet) is left
  *  as it is and counted as refused; every one is, for a role the permission matrix does not let open
  *  or on an archived sheet. */
 public class BulkOpenClaims {
@@ -56,7 +57,9 @@ public class BulkOpenClaims {
             if (!allowed) continue;
             try {
                 periods.requireOpen(id, claim.getDate());
-                claim.setStatus(ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.OPEN).name());
+                ClaimStatus status = ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.OPEN);
+                OpenClaim.requireNote(claim, people, rates, settings, sheets);
+                claim.setStatus(status.name());
             } catch (ClaimStatusException | PeriodClosedException refused) {
                 continue;
             }

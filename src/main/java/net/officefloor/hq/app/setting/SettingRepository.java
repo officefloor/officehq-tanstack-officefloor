@@ -20,6 +20,10 @@ public class SettingRepository {
      *  or approved without a proof (two decimals; blank: none). */
     public static final String PROOF_THRESHOLD = "proof-threshold";
 
+    /** The note threshold: a claim whose due is above the one in force on its date cannot be opened
+     *  with an empty note (two decimals; blank: none). */
+    public static final String NOTE_THRESHOLD = "note-threshold";
+
     /** The cap: the most a person's due-total can be (two decimals; blank: no cap). */
     public static final String CAP = "cap";
 
@@ -127,6 +131,12 @@ public class SettingRepository {
     /** The sheet's proof threshold in force on a date (yyyy-MM-dd); null when there is none. */
     public BigDecimal proofThreshold(String sheetId, String date) {
         String value = dated(sheetId, PROOF_THRESHOLD, null).on(date);
+        return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The sheet's note threshold in force on a date (yyyy-MM-dd); null when there is none. */
+    public BigDecimal noteThreshold(String sheetId, String date) {
+        String value = dated(sheetId, NOTE_THRESHOLD, null).on(date);
         return value == null ? null : new BigDecimal(value);
     }
 
