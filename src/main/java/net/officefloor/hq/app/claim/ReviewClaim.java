@@ -9,7 +9,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** Reviews a REVIEW claim: it becomes OPEN and gets its number (see {@link ClaimNumbers}); who opened it
+/** Reviews a REVIEW claim: it becomes OPEN (still unnumbered until settled, see {@link ClaimNumbers}); who opened it
  *  stays as it was. Refused unless the user is a steward, when it is not REVIEW, for one due by a day
  *  in a closed period, and when its period caps its person's open claims and they already have that many. */
 public class ReviewClaim {
@@ -26,6 +26,5 @@ public class ReviewClaim {
         periods.requireOpen(claim.getSheetId(), claim.getDueBy());
         OpenClaim.requireUnderCap(claim, claims, periods);
         claim.setStatus(ClaimStatus.REVIEW.moveTo(ClaimStatus.OPEN).name());
-        claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
     }
 }

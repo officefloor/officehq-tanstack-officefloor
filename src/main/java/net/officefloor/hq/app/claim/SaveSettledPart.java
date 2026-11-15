@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.person.WatchRepository;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -16,13 +17,14 @@ public class SaveSettledPart {
     public void save(@RequestParam(name = "by", required = false) String by, @Val Split split,
             @Val PartSettle part, ClaimRepository claims, ClaimLogRepository log, PersonRepository people,
             WatchRepository watches, RateRepository rates, SheetRepository sheets, SettingRepository settings,
-            Audit audit) {
+            PeriodRepository periods, Audit audit) {
         Claim created = split.created();
         String sheetId = created.getSheetId();
         Rollup before = Rollup.of(sheetId, people, claims, rates, sheets, settings);
         created.setStatus(part.status());
         created.setSettledDue(part.settledDue());
         created.setSettleBatch(null);
+        ClaimNumbers.settled(created, claims, periods, settings, sheets);
         claims.update(created);
         log.record(created, by);
         new RecordClaimStatus().record(by, created, people, audit);

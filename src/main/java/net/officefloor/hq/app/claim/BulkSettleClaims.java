@@ -74,6 +74,7 @@ public class BulkSettleClaims {
         Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
         for (Claim claim : ordered) {
             claim.setSettleBatch(batch);
+            ClaimNumbers.settled(claim, claims, periods, settings, sheets);
             claims.update(claim);
             log.record(claim, user);
             audit.record(RecordClaimStatus.line(ClaimStatus.valueOf(claim.getStatus()).event(), user, claim, people)

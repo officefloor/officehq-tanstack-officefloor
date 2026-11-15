@@ -11,7 +11,7 @@ public class RecordClaimSplit {
     public void record(@RequestParam(name = "by", required = false) String by,
             @Val Split split, PersonRepository people, Audit audit) {
         audit.record(RecordClaimStatus.line("CLAIM_SPLIT", by, split.original(), people)
-                + " into=" + split.created().getNumber());
+                + " into=" + (split.created().getNumber() == null ? "" : split.created().getNumber()));
         audit.record(RecordClaimStatus.line(ClaimStatus.OPEN.event(), by, split.created(), people));
     }
 }

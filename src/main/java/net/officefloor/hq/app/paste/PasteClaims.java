@@ -12,7 +12,6 @@ import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimLineRepository;
 import net.officefloor.hq.app.claim.ClaimLockedException;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
-import net.officefloor.hq.app.claim.ClaimNumbers;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.ClaimStatusException;
@@ -140,9 +139,6 @@ public class PasteClaims {
             OpenChecks.requireNote(claim, people, rates, settings, sheets);
             OpenChecks.requireUnderCap(claim, claims, periods);
             claim.setStatus(opened.name());
-            if (opened == ClaimStatus.OPEN) {
-                claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
-            }
             claim.setOpenedBy(user);
             claims.update(claim);
             log.record(claim, user);

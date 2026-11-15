@@ -26,7 +26,8 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  or any steward (or the person's approver) rejects with a reason typed beside it; opening one whose due is above the review threshold in
  *  force on its date makes it REVIEW, unnumbered and counted nowhere, which only a steward's review button
  *  opens), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
- *  charge) the number of the SETTLED claim it corrects. A DRAFT can be deleted with a button beside it (any other
+ *  charge) the number of the SETTLED claim it corrects. A claim is numbered only when settled or approved (claims
+ *  numbered earlier keep theirs): an OPEN, PENDING or REVIEW claim shows none. A DRAFT can be deleted with a button beside it (any other
  *  status, or one in a closed period, refused with an error on the claim): DELETED, it counts nowhere and cannot be
  *  edited, opened or voided, and a restore button makes it a DRAFT again on the sheet's today it was deleted
  *  (refused on a later day). Only a DRAFT can be edited:

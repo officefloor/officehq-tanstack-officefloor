@@ -57,6 +57,7 @@ public class SettleClaim {
             claim.setSettledAsOf(date.toString());
         }
         settle(by, claim, true, people, rates, periods, roles, settings, sheets, asOfDue);
+        ClaimNumbers.settled(claim, claims, periods, settings, sheets);
         // Settled one at a time: in no batch.
         claim.setSettleBatch(null);
     }

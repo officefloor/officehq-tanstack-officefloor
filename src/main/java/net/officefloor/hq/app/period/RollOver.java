@@ -27,7 +27,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** Rolls fiscal year FY<yyyy> over: makes the next fiscal year's twelve monthly periods exactly as the fiscal
- *  year generator does, then adds each person's open figure at the end of the old year's last period (the
+ *  year generator does, then adds each person's open figure (a person with none: nothing) at the end of the old year's last period (the
  *  due, as shown now, of their claims that count, due by a day in a period of the old year, whose status at
  *  that period's end was OPEN or PENDING) to their opening balance for the new year's first period, each
  *  recorded as OPENING_SET, then ROLLOVER. Refused, with nothing written, for anyone but a steward, a year
@@ -65,7 +65,9 @@ public class RollOver {
         Period firstNew = periods.containing(id, next.toString());
         if (firstNew != null) {
             for (Person p : people.list(id)) {
-                BigDecimal amount = open.getOrDefault(p.getId(), BigDecimal.ZERO.setScale(2));
+                BigDecimal amount = open.get(p.getId());
+                // A person with no open figure has nothing to carry.
+                if (amount == null) continue;
                 periods.addOpening(id, firstNew.name(), p.getId(), amount);
                 audit.record("OPENING_SET sheet=" + id + " by=" + user + " name=" + p.getName() + " period="
                         + firstNew.name() + " amount=" + amount.toPlainString());

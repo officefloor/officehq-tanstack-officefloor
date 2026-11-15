@@ -17,9 +17,9 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** Opens a claim, giving it its number (see {@link ClaimNumbers}) and recording who opened it; one
- *  whose due is above the review threshold in force on its date goes to REVIEW instead, unnumbered
- *  until a steward reviews it (see {@link ReviewClaim}). Refused for a REVIEW claim, for anyone but a steward while the person's flag is in force, for a role the permission matrix does not let open, and for a claim with an empty note
+/** Opens a claim, recording who opened it (it is numbered only when settled or approved, see
+ *  {@link ClaimNumbers}); one whose due is above the review threshold in force on its date goes to
+ *  REVIEW instead, until a steward reviews it (see {@link ReviewClaim}). Refused for a REVIEW claim, for anyone but a steward while the person's flag is in force, for a role the permission matrix does not let open, and for a claim with an empty note
  *  whose due is above the note threshold in force on its date. */
 public class OpenClaim {
     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
@@ -35,9 +35,6 @@ public class OpenClaim {
         requireNote(claim, people, rates, settings, sheets);
         requireUnderCap(claim, claims, periods);
         claim.setStatus(opened.name());
-        if (opened == ClaimStatus.OPEN) {
-            claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
-        }
         claim.setOpenedBy(by == null ? "" : by);
     }
 

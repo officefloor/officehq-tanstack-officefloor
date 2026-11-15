@@ -14,14 +14,14 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** Approves a PENDING claim: it becomes SETTLED, its due fixed at the figure it shows at that moment
+/** Approves a PENDING claim: it becomes SETTLED and gets its number (see {@link ClaimNumbers}), its due fixed at the figure it shows at that moment
  *  (the figure a statement bound it to, else its live figure, with its late charge on the sheet's
  *  today). Refused unless the user is a steward or the person's approver, and for the user who opened it or last edited it, and for one
  *  with no proofs whose due is above the proof threshold in force on its date. */
 public class ApproveClaim {
     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
             PersonRepository people, RateRepository rates, PeriodRepository periods,
-            RoleRepository roles, SettingRepository settings, SheetRepository sheets)
+            RoleRepository roles, SettingRepository settings, SheetRepository sheets, ClaimRepository claims)
             throws ClaimStatusException, PeriodClosedException {
         periods.requireOpen(claim.getSheetId(), claim.getDueBy());
         String user = by == null ? "" : by;
@@ -46,6 +46,7 @@ public class ApproveClaim {
         SettleClaim.requireProof(claim, person, due, settings);
         claim.setStatus(ClaimStatus.PENDING.moveTo(ClaimStatus.SETTLED).name());
         claim.setSettledDue(due);
+        ClaimNumbers.settled(claim, claims, periods, settings, sheets);
     }
 
     /** Whether the user is the person's approver: they may approve or reject the person's PENDING
