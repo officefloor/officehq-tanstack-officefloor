@@ -41,7 +41,7 @@ public class ClaimLogRepository {
         LocalDate today = sheets.today(sheetId);
         Person person = people.find(sheetId, claim.getPersonId());
         Rate rate = person == null ? null : rates.find(sheetId, person.gradeOn(claim.getDate()),
-                LocalDate.parse(claim.getDate()));
+                LocalDate.parse(claim.getDate()), claim.getId());
         Dues.Late late = settings.late(sheetId, today);
         String due = Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
                 late.rounding(claim.getRoundDate())), settings.floor(sheetId).on(claim.getDate()), late);

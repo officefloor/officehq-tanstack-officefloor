@@ -91,6 +91,19 @@ public class SheetCloner {
         unbound.put("stated_due", null);
         copy("claim_history", from, to, Map.of("claim_id", copied, "person_id", people), unbound);
 
+        // A forward-only rate applies to the claims added after it was saved: the copies of those now.
+        for (String table : List.of("rate", "rate_version", "rate_history")) {
+            for (Long after : jdbc.queryForList("SELECT DISTINCT claims_after FROM " + table
+                    + " WHERE sheet_id = ? AND claims_after IS NOT NULL", Long.class, to)) {
+                long now = copied.entrySet().stream().filter((e) -> e.getKey() <= after)
+                        .mapToLong(Map.Entry::getValue).max().orElse(0);
+                jdbc.update("UPDATE " + table + " SET claims_after = ? WHERE sheet_id = ? AND claims_after = ?",
+                        -now - 1, to, after);
+            }
+            jdbc.update("UPDATE " + table + " SET claims_after = -claims_after - 1 WHERE sheet_id = ? "
+                    + "AND claims_after < 0", to);
+        }
+
         // Number afresh, in the order the originals were opened, by the clone's own numbering.
         Map<String, String> numbers = new HashMap<>();
         for (Map<String, Object> row : jdbc.queryForList("SELECT c.id, c.number FROM claim c "

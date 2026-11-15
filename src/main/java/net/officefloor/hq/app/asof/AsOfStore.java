@@ -72,17 +72,22 @@ public class AsOfStore {
             c.setAutoCommit(true);
             String[] sheet = liveSheet(c, sheetId);
             String source;
+            // The day the source was taken on: its SNAPSHOT lines for that day were written as it was left.
+            LocalDate leftFrom = asOf;
             if (sheet != null && !LocalDate.parse(sheet[1]).isAfter(asOf)) {
                 source = LIVE;
             } else {
                 source = null;
-                try (PreparedStatement ps = c.prepareStatement("SELECT id FROM sheet_snapshot "
+                try (PreparedStatement ps = c.prepareStatement("SELECT id, today_was FROM sheet_snapshot "
                         + "WHERE sheet_id = ? AND today_was <= ? AND today_now > ? ORDER BY id DESC LIMIT 1")) {
                     ps.setString(1, sheetId);
                     ps.setObject(2, asOf);
                     ps.setObject(3, asOf);
                     try (ResultSet rs = ps.executeQuery()) {
-                        if (rs.next()) source = "SNAP_" + rs.getLong(1);
+                        if (rs.next()) {
+                            source = "SNAP_" + rs.getLong(1);
+                            leftFrom = rs.getObject(2, LocalDate.class);
+                        }
                     }
                 }
             }
@@ -113,7 +118,7 @@ public class AsOfStore {
             try (PreparedStatement ps = c.prepareStatement(
                     "DELETE FROM " + q(schema) + ".PERSON_SNAPSHOT WHERE SHEET_ID = ? AND DAY_LEFT >= ?")) {
                 ps.setString(1, sheetId);
-                ps.setObject(2, asOf);
+                ps.setObject(2, leftFrom);
                 ps.executeUpdate();
             }
             try (PreparedStatement ps = c.prepareStatement(

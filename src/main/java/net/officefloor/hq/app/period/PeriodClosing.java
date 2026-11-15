@@ -49,7 +49,7 @@ public final class PeriodClosing {
             Person person = people.find(id, c.getPersonId());
             if (person != null && person.leftOutLive(c)) continue;
             Rate rate = person == null ? null
-                    : rates.find(id, person.gradeOn(c.getDate()), LocalDate.parse(c.getDate()));
+                    : rates.find(id, person.gradeOn(c.getDate()), LocalDate.parse(c.getDate()), c.getId());
             String due = Dues.shown(c, rate == null ? null : Dues.of(c.getAmount(), rate.pct(), late.rounding(c.getRoundDate())), floor.on(c.getDate()), late);
             if (due != null) {
                 total = total.add(new BigDecimal(due));

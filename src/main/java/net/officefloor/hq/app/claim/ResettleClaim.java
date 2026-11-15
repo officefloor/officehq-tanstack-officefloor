@@ -33,7 +33,7 @@ public class ResettleClaim {
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),
-                LocalDate.parse(claim.getDate()));
+                LocalDate.parse(claim.getDate()), claim.getId());
         Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
         String live = rate == null ? null : Dues.of(claim.getAmount(), rate.pct(), late.rounding(claim.getRoundDate()));
         // Figured as an open claim with no fixed due and no statement binding it.

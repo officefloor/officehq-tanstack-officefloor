@@ -54,7 +54,7 @@ public class SettleClaim {
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),
-                LocalDate.parse(claim.getDate()));
+                LocalDate.parse(claim.getDate()), claim.getId());
         // A claim bound by a statement settles at the figure it was bound to.
         // Its late charge on the sheet's today is frozen in.
         Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));

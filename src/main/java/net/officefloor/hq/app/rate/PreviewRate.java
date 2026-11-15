@@ -38,7 +38,7 @@ public class PreviewRate {
             if (!ClaimStatus.isOpen(c.getStatus())) continue;
             Person p = byId.get(c.getPersonId());
             if (p == null || !candidate.grade().equals(p.gradeOn(c.getDate()))) continue;
-            Rate rate = RateRepository.inForce(sheetRates, candidate.grade(), c.getDate());
+            Rate rate = RateRepository.inForce(sheetRates, candidate.grade(), c.getDate(), c.getId());
             String now = Dues.shown(c, rate == null ? null
                     : Dues.of(c.getAmount(), rate.pct(), late.rounding(c.getRoundDate())), floor.on(c.getDate()), late);
             String then = Dues.shown(c, Dues.of(c.getAmount(), pct, late.rounding(c.getRoundDate())),

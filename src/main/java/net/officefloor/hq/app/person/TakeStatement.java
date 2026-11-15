@@ -73,7 +73,7 @@ public class TakeStatement {
         for (Claim c : own) {
             if (!then.countsLive(c)) continue;
             String grade = then.gradeOn(c.getDate());
-            Rate rate = RateRepository.inForce(sheetRates, grade, c.getDate());
+            Rate rate = RateRepository.inForce(sheetRates, grade, c.getDate(), c.getId());
             String live = rate == null ? null : Dues.of(c.getAmount(), rate.pct(), late.rounding(c.getRoundDate()));
             String shown = Dues.shown(c, live, floor.on(c.getDate()), late);
             kept |= c.getSettledDue() != null || c.isBound()

@@ -39,7 +39,7 @@ public class ApproveClaim {
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),
-                LocalDate.parse(claim.getDate()));
+                LocalDate.parse(claim.getDate()), claim.getId());
         Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
         String due = Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
                 late.rounding(claim.getRoundDate())), settings.floor(claim.getSheetId()).on(claim.getDate()), late);

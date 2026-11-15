@@ -60,7 +60,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 if (c.getPersonId() != p.getId() || !p.countsLive(c)) continue;
                 if (!corrects(c)) claimed = claimed.add(new BigDecimal(c.getAmount()));
                 String grade = p.gradeOn(c.getDate());
-                String pct = rateOn(sheetRates, grade, c.getDate());
+                Rate rate = RateRepository.inForce(sheetRates, grade, c.getDate(), c.getId());
+                String pct = rate == null ? null : rate.pct();
                 String d = Dues.shown(c, pct == null ? null : Dues.of(c.getAmount(), pct, late.rounding(c.getRoundDate())), floor.on(c.getDate()), late);
                 kept |= c.getSettledDue() != null || c.isBound()
                         || (pct != null && (!grade.equals(p.getGrade()) || c.getDate().compareTo(today) <= 0));

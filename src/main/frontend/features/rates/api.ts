@@ -7,10 +7,20 @@ import type { DatedOn } from '../settings/api';
  *  (yyyy-MM-dd; null applies from the beginning of time) through its to-date (null: no end). A grade
  *  with no rate is not listed. Its level is how far up the sheet's parent chain it comes from (0: the
  *  sheet's own; 1: its parent's; up to 3). Its version is how many versions the grade's rate from that
- *  from-date has had: setting it again keeps the old value as an older version; this, the newest, is in force. */
+ *  from-date has had: setting it again keeps the old value as an older version; this, the newest, is in force.
+ *  A forward-only rate (saved with a from-date on or after the sheet's today) has `claimsAfter`, the highest
+ *  claim id there was when it was saved: it applies only to claims with a higher id; those up to it go by
+ *  `prior`, the version it replaced (null: none from its from-date). Without it, it applies to every claim. */
 export type Rate = {
   sheetId: string; grade: string; pct: string; from: string | null; to: string | null; level: number; version: number;
+  claimsAfter: number | null; prior: Rate | null;
 };
+
+/** The version of a rate that applies to a claim (by its id): see `Rate`; undefined when none does. */
+function forClaim(r: Rate, claimId: number): Rate | undefined {
+  if (r.claimsAfter == null || claimId > r.claimsAfter) return r;
+  return r.prior == null ? undefined : forClaim(r.prior, claimId);
+}
 /** A blank `from` sets the rate that applies from the beginning of time; a blank `to` has no end. */
 export type RateInput = { grade: string; pct: string; from: string; to: string };
 
@@ -44,13 +54,15 @@ export function importRates(sheetId: string, by: string, text: string): Promise<
 /** The grade's rate in force on a date (yyyy-MM-dd): the one with the latest from-date on or
  *  before it; at a level where the date is before every rate the grade has, or it has none, or
  *  that one ended (its to-date) before the date, the next level up is looked at; undefined (n/a)
- *  when no level has one. */
-export function rateOn(rates: Rate[] | undefined, grade: string, date: string): string | undefined {
+ *  when no level has one. With a claim id, only the versions that apply to that claim are looked at
+ *  (a forward-only rate saved after the claim was added does not). */
+export function rateOn(rates: Rate[] | undefined, grade: string, date: string, claimId?: number): string | undefined {
   const levels = [...new Set((rates ?? []).map((r) => r.level ?? 0))].sort((a, b) => a - b);
   for (const level of levels) {
     let found: Rate | undefined;
-    for (const r of rates ?? []) {
-      if ((r.level ?? 0) !== level || r.grade !== grade || (r.from !== null && r.from > date)) continue;
+    for (const listed of rates ?? []) {
+      const r = claimId === undefined ? listed : forClaim(listed, claimId);
+      if (r === undefined || (r.level ?? 0) !== level || r.grade !== grade || (r.from !== null && r.from > date)) continue;
       if (found === undefined || (found.from ?? '') < (r.from ?? '')) found = r;
     }
     if (found !== undefined && (found.to === null || found.to >= date)) return found.pct;
@@ -127,7 +139,7 @@ export type GradeOn = (date: string) => string;
  *  at least the `floor` in force on its date, applied last (a correction, a negative amount, has no floor). */
 export function claimDue(c: Claim, rates: Rate[] | undefined, gradeOn: GradeOn, floor: DatedOn, late: Late): string | null {
   if (c.settledDue !== null) return c.settledDue;
-  const figure = c.stated && c.status !== 'PENDING' ? c.statedDue : dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date), roundsHalfUp(c, late));
+  const figure = c.stated && c.status !== 'PENDING' ? c.statedDue : dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date, c.id), roundsHalfUp(c, late));
   if (figure === null) return null;
   const due = hundredths(figure) + lateCharge(c, figure, late);
   const least = hundredths(floor(c.date));
@@ -153,7 +165,7 @@ export function personDue(claims: Claim[], rates: Rate[] | undefined, gradeOn: G
   const own = claims.filter(counts);
   const now = gradeOn(late.today);
   const kept = (c: Claim) => c.settledDue !== null || isBound(c)
-    || ((gradeOn(c.date) !== now || c.date <= late.today) && rateOn(rates, gradeOn(c.date), c.date) !== undefined);
+    || ((gradeOn(c.date) !== now || c.date <= late.today) && rateOn(rates, gradeOn(c.date), c.date, c.id) !== undefined);
   if (pct === undefined && !own.some(kept)) return null;
   const sum = sumDues(own.map((c) => claimDue(c, rates, gradeOn, floor, late)));
   return cap !== null && hundredths(sum) > hundredths(cap) ? formatCents(hundredths(cap)) : sum;
