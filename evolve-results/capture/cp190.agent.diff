@@ -1,0 +1,239 @@
+diff --git a/src/main/frontend/features/claims/BulkVoid.tsx b/src/main/frontend/features/claims/BulkVoid.tsx
+new file mode 100644
+index 000000000..e03984291
+--- /dev/null
++++ b/src/main/frontend/features/claims/BulkVoid.tsx
+@@ -0,0 +1,58 @@
++import { useState } from 'react';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { useSubmitOnce } from '../../forms/useSubmitOnce';
++import { bulkVoidClaims, claimsKey, listVoidReasons, voidReasonsKey } from './api';
++
++/** A void reason select (while the sheet has void reasons) and a button that voids the selected claims
++ *  together, and how many it voided and refused. The counts are cleared while it runs; the selection is
++ *  cleared once it is done. */
++export function BulkVoid({ sheetId, user, selected, onDone }: {
++  sheetId: string; user: string; selected: number[]; onDone: () => void;
++}) {
++  const queryClient = useQueryClient();
++  const runOnce = useSubmitOnce();
++  const [reason, setReason] = useState('');
++  const reasons = useQuery({ queryKey: voidReasonsKey(sheetId), queryFn: () => listVoidReasons(sheetId) });
++  const bulk = useMutation({
++    mutationFn: (v: { ids: number[]; reason: string }) => bulkVoidClaims(sheetId, user, v.ids, v.reason),
++    onSuccess: () => {
++      onDone();
++      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
++    },
++  });
++
++  return (
++    <div>
++      {(reasons.data ?? []).length > 0 && (
++        <>
++          <select data-testid="bulk-void-reason" value={reason}
++            onChange={(e) => {
++              setReason(e.target.value);
++              bulk.reset();
++            }}>
++            <option value="">No void reason</option>
++            {(reasons.data ?? []).map((r) => <option key={r.reason} value={r.reason}>{r.reason}</option>)}
++          </select>{' '}
++        </>
++      )}
++      <button type="button" data-testid="bulk-void" disabled={bulk.isPending}
++        onClick={() => {
++          const ids = [...selected];
++          const chosen = reason;
++          runOnce(() => {
++            bulk.reset();
++            return bulk.mutateAsync({ ids, reason: chosen });
++          });
++        }}>
++        Void selected ({selected.length})
++      </button>
++      {bulk.isSuccess && (
++        <>
++          {' '}Voided <span data-testid="bulk-voided">{bulk.data.voided}</span>,{' '}
++          refused <span data-testid="bulk-void-refused">{bulk.data.refused}</span>
++        </>
++      )}
++      {bulk.isError && <span data-testid="bulk-void-error">The selected claims could not be voided.</span>}
++    </div>
++  );
++}
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index 34d1bda2c..3d7aa836e 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -386,3 +386,12 @@ export type BulkRedateResult = { redated: number; refused: number };
+ export function bulkRedateClaims(sheetId: string, by: string, claimIds: number[], date: string): Promise<BulkRedateResult> {
+   return postJson<BulkRedateResult>(`${sheetBase(sheetId)}/bulk-redate?by=${encodeURIComponent(by)}`, { claimIds, date });
+ }
++
++export type BulkVoidResult = { voided: number; refused: number };
++
++/** Void the selected claims together in list order (people in their list places, newest claim first
++ *  within a person), each by the rules of voiding one with `reason` (needed while the sheet has void
++ *  reasons); each that cannot be voided is left as it is and counted as refused. */
++export function bulkVoidClaims(sheetId: string, by: string, claimIds: number[], reason: string): Promise<BulkVoidResult> {
++  return postJson<BulkVoidResult>(`${sheetBase(sheetId)}/bulk-void?by=${encodeURIComponent(by)}`, { claimIds, reason });
++}
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 4d5cd91c0..95d604f3e 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -7,6 +7,7 @@ import { PasteClaims } from '../claims/PasteClaims';
+ import { BulkSettle } from '../claims/BulkSettle';
+ import { BulkReassign } from '../claims/BulkReassign';
+ import { BulkRedate } from '../claims/BulkRedate';
++import { BulkVoid } from '../claims/BulkVoid';
+ import { PersonClaims } from '../claims/PersonClaims';
+ import { PersonPlans } from '../plans/PersonPlans';
+ import { backing, claimedClaims, claimsKey, patronShares, isActive, correctsAnother, listClaims, liveClaims, showTags, sumAmounts, tagsKey } from '../claims/api';
+@@ -526,6 +527,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+       <BulkReassign sheetId={sheetId} user={user} selected={[...selected]} people={everyone}
+         onDone={() => setSelected(new Set())} />
+       <BulkRedate sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
++      <BulkVoid sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
+       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
+       <table>
+         <tbody>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkVoidClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkVoidClaims.java
+new file mode 100644
+index 000000000..9d565747b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkVoidClaims.java
+@@ -0,0 +1,77 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.ArrayList;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Set;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.period.PeriodClosedException;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.setting.Role;
++import net.officefloor.hq.app.setting.RoleRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.hq.app.voidreason.VoidReasonRepository;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Voids the selected claims in list order (people in the order they were added, newest claim first
++ *  within a person), each by exactly the rules of {@link VoidClaim} and recorded as it would record it
++ *  (its status log line, its CLAIM_VOIDED line, then the rollup lines it moved). A claim that cannot be
++ *  voided (the user's role, its status, a closed period, a missing void reason, or it is not on the sheet)
++ *  is left as it is and counted as refused; every one is for a viewer or on an archived sheet. */
++public class BulkVoidClaims {
++    public void voidAll(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "by", required = false) String by,
++            @RequestBody BulkVoidRequest request, ClaimRepository claims, PeriodRepository periods,
++            PersonRepository people, RateRepository rates, SheetRepository sheets,
++            SettingRepository settings, RoleRepository roles, ClaimLogRepository log,
++            VoidReasonRepository reasons, Audit audit, Out<BulkVoidResult> result) {
++        String id = sheetId.trim();
++        String user = by == null ? "" : by;
++        Set<Long> selected = new HashSet<>(request == null || request.claimIds() == null
++                ? List.of() : request.claimIds());
++        selected.remove(null);
++        String reason = request == null ? null : request.reason();
++
++        // The selected claims of the sheet, in list order.
++        List<Claim> all = claims.list(id);
++        List<Claim> ordered = new ArrayList<>();
++        for (Person p : people.list(id)) {
++            for (Claim c : all) {
++                if (c.getPersonId() == p.getId() && selected.contains(c.getId())) ordered.add(c);
++            }
++        }
++
++        boolean refusedAll = sheets.isArchived(id) || Role.VIEWER.equals(roles.roleOf(id, user));
++        VoidClaim rules = new VoidClaim();
++        int voided = 0;
++        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
++        for (Claim claim : ordered) {
++            if (refusedAll) continue;
++            try {
++                rules.move(user, reason, claim, periods, roles, settings, log, sheets, reasons);
++            } catch (ClaimStatusException | InvalidClaimException | PeriodClosedException refused) {
++                continue;
++            }
++            claims.update(claim);
++            log.record(claim, user);
++            voided++;
++            audit.record(RecordClaimStatus.line(ClaimStatus.VOID.event(), user, claim, people)
++                    + (claim.isReversal() ? RecordClaimStatus.reversed(claim) : "")
++                    + (claim.getVoidReason() != null ? " reason=" + claim.getVoidReason() : ""));
++            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
++            for (String line : after.changesSince(before, id, user)) {
++                audit.record(line);
++            }
++            before = after;
++        }
++        result.set(new BulkVoidResult(voided, selected.size() - voided));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkVoidRequest.java b/src/main/java/net/officefloor/hq/app/claim/BulkVoidRequest.java
+new file mode 100644
+index 000000000..f7ee2ad3b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkVoidRequest.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++
++/** Body of a bulk void: the ids of the selected claims, in any order, and the void reason (may be empty). */
++public record BulkVoidRequest(List<Long> claimIds, String reason) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkVoidResult.java b/src/main/java/net/officefloor/hq/app/claim/BulkVoidResult.java
+new file mode 100644
+index 000000000..6dd5af625
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkVoidResult.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** How many of the selected claims were voided, and how many were refused (left as they were). */
++public record BulkVoidResult(int voided, int refused) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkVoid.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkVoid.java
+new file mode 100644
+index 000000000..40c4096a9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkVoid.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithBulkVoid {
++    public void respond(@Val BulkVoidResult result, ObjectResponse<BulkVoidResult> response) {
++        response.send(result);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-void.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-void.POST.yml
+new file mode 100644
+index 000000000..862436ce2
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-void.POST.yml
+@@ -0,0 +1,9 @@
++# POST /api/sheets/{sheetId}/bulk-void — void the selected claims together, in list order, each by the rules
++# of voiding one (with the reason chosen, while the sheet has void reasons); each that cannot be voided is
++# left as it is. Responds with how many were voided and how many refused.
++void:
++  class: net.officefloor.hq.app.claim.BulkVoidClaims
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithBulkVoid
