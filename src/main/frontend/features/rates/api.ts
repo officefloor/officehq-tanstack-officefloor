@@ -5,8 +5,9 @@ import type { DatedOn } from '../settings/api';
 
 /** A grade's rate on the sheet: a percent as two-decimal text, in force from its from-date
  *  (yyyy-MM-dd; null applies from the beginning of time) through its to-date (null: no end). A grade
- *  with no rate is not listed. */
-export type Rate = { sheetId: string; grade: string; pct: string; from: string | null; to: string | null };
+ *  with no rate is not listed. Its level is how far up the sheet's parent chain it comes from (0: the
+ *  sheet's own; 1: its parent's; up to 3). */
+export type Rate = { sheetId: string; grade: string; pct: string; from: string | null; to: string | null; level: number };
 /** A blank `from` sets the rate that applies from the beginning of time; a blank `to` has no end. */
 export type RateInput = { grade: string; pct: string; from: string; to: string };
 
@@ -14,7 +15,8 @@ const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/ra
 
 export const ratesKey = (sheetId: string) => [...sheetKey(sheetId), 'rates'] as const;
 
-/** The sheet's rates, by grade, then by from-date (none first). */
+/** The sheet's own rates, by grade, then by from-date (none first), then those it inherits from its
+ *  parent chain, each at its level. */
 export function listRates(sheetId: string): Promise<Rate[]> {
   return getJson<Rate[]>(base(sheetId));
 }
@@ -27,15 +29,20 @@ export function setRate(sheetId: string, by: string, input: RateInput): Promise<
 }
 
 /** The grade's rate in force on a date (yyyy-MM-dd): the one with the latest from-date on or
- *  before it; undefined (n/a) when the date is before every rate the grade has, or it has none, or
- *  that one ended (its to-date) before the date. */
+ *  before it; at a level where the date is before every rate the grade has, or it has none, or
+ *  that one ended (its to-date) before the date, the next level up is looked at; undefined (n/a)
+ *  when no level has one. */
 export function rateOn(rates: Rate[] | undefined, grade: string, date: string): string | undefined {
-  let found: Rate | undefined;
-  for (const r of rates ?? []) {
-    if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
-    if (found === undefined || (found.from ?? '') < (r.from ?? '')) found = r;
+  const levels = [...new Set((rates ?? []).map((r) => r.level ?? 0))].sort((a, b) => a - b);
+  for (const level of levels) {
+    let found: Rate | undefined;
+    for (const r of rates ?? []) {
+      if ((r.level ?? 0) !== level || r.grade !== grade || (r.from !== null && r.from > date)) continue;
+      if (found === undefined || (found.from ?? '') < (r.from ?? '')) found = r;
+    }
+    if (found !== undefined && (found.to === null || found.to >= date)) return found.pct;
   }
-  return found === undefined || (found.to !== null && found.to < date) ? undefined : found.pct;
+  return undefined;
 }
 
 /** The rate in force on a date for each grade that has one then. */

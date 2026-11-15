@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { useSheetToday } from '../sheet/api';
 import { poolsKey } from '../pools/api';
+import { ratesKey } from '../rates/api';
 import { changeSetting, listSettings, PERMISSION_STANDING, settingOn, settingsKey, SETTING_KEYS, UNDATED_KEYS } from './api';
 
 /** The sheet's settings: each one's value in force on the sheet's today and a form that changes them.
@@ -23,6 +24,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
     onSettled: () => Promise.all([
       queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) }),
       queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) }),
     ]),
   });
 
@@ -65,12 +67,13 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
                 : key === 'grace-days' ? 'Grace days'
                 : key === 'proof-threshold' ? 'Proof threshold'
                 : key === 'note-threshold' ? 'Note threshold'
+                : key === 'parent' ? 'Parent sheet'
                 : key.startsWith('perm-') ? `Who may ${key.slice('perm-'.length)} (roles)`
                 : key.startsWith('proof-threshold-') ? `Proof threshold for grade ${key.slice('proof-threshold-'.length)}`
                 : key.startsWith('grace-') ? `Grace days for grade ${key.slice('grace-'.length)}`
                 : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (business days)` : 'Terms (business days)'}{' '}
               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
-                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key === 'cap' ? 'No cap' : key === 'pot' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
+                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key === 'cap' ? 'No cap' : key === 'pot' || key === 'parent' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
                   : key === 'period-numbering-from' || key === 'entry-date' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' ? 'Off' : key.startsWith('grace-') ? 'None' : key.startsWith('terms-') ? "Sheet's terms"
                   : key.startsWith('perm-') ? PERMISSION_STANDING[key.slice('perm-'.length)] : undefined}
                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
@@ -93,7 +96,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {save.isError && (
           <span data-testid="settings-error">
             The clerk limit, the cap, the pot, the proof threshold, a grade's proof threshold and the note threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
-            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the policy date, period numbering date and entry date blank or a date; the grace days and a grade's grace days blank or a whole number of days; a permission blank or a comma separated list of clerk and steward; a from-date blank or a date.
+            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the policy date, period numbering date and entry date blank or a date; the grace days and a grade's grace days blank or a whole number of days; a permission blank or a comma separated list of clerk and steward; the parent sheet blank or a sheet that has been loaded, not this one nor one with this one above it; a from-date blank or a date.
           </span>
         )}
       </form>

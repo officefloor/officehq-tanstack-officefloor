@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
+import { listSettings, settingOn, settingsKey } from '../settings/api';
 import { archiveSheet, setSheetToday, sheetKey, type Sheet } from './api';
 
 /** Whether a change was refused rather than invalid (the server answers 403: a viewer, an archived
@@ -15,6 +16,7 @@ function refused(error: Error | null): boolean {
 export function SheetToday({ sheet, user }: { sheet: Sheet; user: string }) {
   const queryClient = useQueryClient();
   const [date, setDate] = useState('');
+  const settings = useQuery({ queryKey: settingsKey(sheet.id), queryFn: () => listSettings(sheet.id) });
   const save = useMutation({
     mutationFn: (today: string) => setSheetToday(sheet.id, user, today),
     onSuccess: (updated) => {
@@ -60,6 +62,7 @@ export function SheetToday({ sheet, user }: { sheet: Sheet; user: string }) {
       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
         Set today
       </button>
+      Parent <span data-testid="sheet-parent">{settingOn(settings.data, 'parent', sheet.today) ?? ''}</span>{' '}
       Archived <span data-testid="sheet-archived">{sheet.archived ? 'yes' : 'no'}</span>{' '}
       <button
         type="button"

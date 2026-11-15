@@ -98,15 +98,10 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
         return lines;
     }
 
-    /** The grade's rate in force on the date (yyyy-MM-dd): the one with the latest from-date on or
-     *  before it; null when there is none, or that one ended (its to-date) before the date. */
+    /** The grade's rate in force on the date (yyyy-MM-dd), inherited up the parent chain; null when none. */
     private static String rateOn(List<Rate> rates, String grade, String date) {
-        Rate found = null;
-        for (Rate r : rates) {
-            if (!r.grade().equals(grade) || (r.from() != null && r.from().compareTo(date) > 0)) continue;
-            if (found == null || nz(found.from()).compareTo(nz(r.from())) < 0) found = r;
-        }
-        return found == null || found.endedBefore(date) ? null : found.pct();
+        Rate found = RateRepository.inForce(rates, grade, date);
+        return found == null ? null : found.pct();
     }
 
     /** The figures added up, leaving out the single highest and the single lowest when there are three or more. */
@@ -117,10 +112,6 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
         BigDecimal total = zero();
         for (BigDecimal f : sorted) total = total.add(f);
         return total;
-    }
-
-    private static String nz(String from) {
-        return from == null ? "" : from;
     }
 
     private static BigDecimal zero() {

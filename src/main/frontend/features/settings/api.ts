@@ -35,9 +35,11 @@ export type Role = { sheetId: string; user: string; role: string };
  *  to-date plus them is before the new today is closed. A grade's grace days (grace-<grade>, whole days;
  *  blank means none): a claim whose person's grade in force on its date has them in force on that date is
  *  overdue only once its due-by plus them is before the sheet's today, and its late charge's 30-day
- *  boundaries count from there; the due-by it shows is unchanged. */
+ *  boundaries count from there; the due-by it shows is unchanged. The parent (a sheet id; blank means none;
+ *  not dated): a grade with no rate in force on a date on this sheet takes its parent's, then its parent's
+ *  parent's, up to three levels up; refused for the sheet itself, a sheet not loaded yet, or one below it. */
 export const SETTING_KEYS = ['clerk-limit', 'cap', 'pot', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
-  'period-numbering-from', 'entry-date', 'grace-days', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen'] as const;
+  'period-numbering-from', 'entry-date', 'grace-days', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent'] as const;
 
 /** The roles that may take each action of the permission matrix while its entry is blank. */
 export const PERMISSION_STANDING: Record<string, string> = {
@@ -50,7 +52,7 @@ export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: 
 
 /** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
 export const UNDATED_KEYS: readonly string[] = ['pot', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'perm-open', 'perm-settle', 'perm-void',
-  'perm-reassign', 'perm-close', 'perm-reopen'];
+  'perm-reassign', 'perm-close', 'perm-reopen', 'parent'];
 
 /** A dated setting's value in force on a date (yyyy-MM-dd). */
 export type DatedOn = (date: string) => string;

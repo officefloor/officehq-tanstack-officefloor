@@ -98,6 +98,17 @@ public class AsOfStore {
                     ps.executeUpdate();
                 }
             }
+            // The parent link is not dated: the view names the parent the sheet names now.
+            try (PreparedStatement ps = c.prepareStatement(
+                    "DELETE FROM " + q(schema) + ".SHEET_SETTING WHERE SHEET_ID = ? AND SETTING = 'parent'")) {
+                ps.setString(1, sheetId);
+                ps.executeUpdate();
+            }
+            try (PreparedStatement ps = c.prepareStatement("INSERT INTO " + q(schema) + ".SHEET_SETTING SELECT * FROM "
+                    + "PUBLIC.SHEET_SETTING WHERE SHEET_ID = ? AND SETTING = 'parent'")) {
+                ps.setString(1, sheetId);
+                ps.executeUpdate();
+            }
             try (PreparedStatement ps = c.prepareStatement(
                     "UPDATE " + q(schema) + ".SHEET SET TODAY = ? WHERE ID = ?")) {
                 ps.setObject(1, asOf);

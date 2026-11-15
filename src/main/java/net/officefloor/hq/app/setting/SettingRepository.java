@@ -78,6 +78,10 @@ public class SettingRepository {
      *  charge, counting from its due-by plus them. */
     public static final String GRACE_OF_GRADE = "grace-";
 
+    /** The parent sheet (a sheet id; blank: none; not dated): a grade with no rate in force on a date on
+     *  this sheet takes its parent's, then its parent's parent's, up to three levels up. */
+    public static final String PARENT = "parent";
+
     /** The late percent until it is first set. */
     public static final String DEFAULT_LATE_PCT = "0.00";
 
@@ -91,7 +95,7 @@ public class SettingRepository {
      *  numbering date, the grace days, the pot and the permission matrix are not). */
     public static boolean isDated(String key) {
         return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
-                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !Permissions.isKey(key);
+                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !PARENT.equals(key) && !Permissions.isKey(key);
     }
 
     private final JdbcTemplate jdbc;

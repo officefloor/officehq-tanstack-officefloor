@@ -131,7 +131,7 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
       </table>
       <table>
         <tbody>
-          {(rates.data ?? []).map((r) => (
+          {(rates.data ?? []).filter((r) => r.level === 0).map((r) => (
             <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
               <td>{r.grade}</td>
               <td>{r.from === null ? 'From the start' : `From ${r.from}`}</td>

@@ -109,6 +109,10 @@ public class ValidateSetting {
             }
             body.set(new SettingRequest(key, value.isEmpty() ? null : value, null));
             return;
+        } else if (SettingRepository.PARENT.equals(key)) {
+            // Whether the sheet named exists and is not this one or below it is checked against the store.
+            body.set(new SettingRequest(key, value.isEmpty() ? null : value, null));
+            return;
         } else if (Permissions.isKey(key)) {
             List<String> roles = Permissions.roles(value);
             if (!roles.stream().allMatch(ROLES::contains)) {
