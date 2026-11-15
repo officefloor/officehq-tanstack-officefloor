@@ -34,6 +34,9 @@ export type Person = {
   terms: number | null;
   /** Their contact, trimmed and lower-cased (null: none); no two people on a sheet share one. */
   contact: string | null;
+  /** Their tags, sorted and comma separated (null: none); a claim counts for the tag totals under
+   *  each of its own tags and its person's. */
+  tags: string | null;
   /** The sheet they were last transferred from (null: none). */
   origin: string | null;
   /** Their aliases, sorted as names are compared; the quick-add bar and the paste box find them by one. */
@@ -43,8 +46,9 @@ export type Person = {
   clashing: boolean;
 };
 /** `gradeFrom` is the date an edit's grade applies from (blank: the sheet's today); `terms` their
- *  own terms in whole days (blank: none); `contact` their contact (blank: none). */
-export type PersonInput = { name: string; grade: string; gradeFrom: string; terms: string; contact: string };
+ *  own terms in whole days (blank: none); `contact` their contact (blank: none); `tags` their tags,
+ *  comma separated (blank: none). */
+export type PersonInput = { name: string; grade: string; gradeFrom: string; terms: string; contact: string; tags: string };
 
 /** The person's grade in force on a date (yyyy-MM-dd): the one with the latest from-date on or before it. */
 export function gradeOn(p: Person, date: string): string {

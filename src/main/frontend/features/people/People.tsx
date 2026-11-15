@@ -8,7 +8,7 @@ import { BulkSettle } from '../claims/BulkSettle';
 import { BulkReassign } from '../claims/BulkReassign';
 import { PersonClaims } from '../claims/PersonClaims';
 import { PersonPlans } from '../plans/PersonPlans';
-import { backing, claimsKey, patronShares, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
+import { backing, claimsKey, patronShares, isActive, listClaims, liveClaims, showTags, sumAmounts, tagsKey } from '../claims/api';
 import { listPeriods, periodOf, periodsKey, personPeriodDue } from '../periods/api';
 import { listPools, personCutTotal, poolsKey } from '../pools/api';
 import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
@@ -22,7 +22,7 @@ import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, takeStatement, transferPerson, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 
-const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '' };
+const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '', tags: '' };
 
 /** The people on the sheet: a form that adds a person or edits one, and the list in list order (each with buttons that move
  *  them up or down a place; new people go to the end),
@@ -102,7 +102,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
         if (e instanceof HttpError && e.status === 409) {
           const now = await queryClient.fetchQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId), staleTime: 0 });
           const current = now.find((p) => p.id === v.editing?.id);
-          if (current) setForm({ name: current.name, grade: current.grade, gradeFrom: '', terms: current.terms === null ? '' : String(current.terms), contact: current.contact ?? '' });
+          if (current) setForm({ name: current.name, grade: current.grade, gradeFrom: '', terms: current.terms === null ? '' : String(current.terms), contact: current.contact ?? '', tags: showTags(current.tags) });
         }
         throw e;
       }
@@ -110,7 +110,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     onSuccess: () => {
       setForm(EMPTY);
       setEditing(null);
-      return queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: tagsKey(sheetId) }),
+      ]);
     },
     // A refused edit (not one someone else saved meanwhile) closes the editor, its error still
     // showing, and leaves the form ready for an add; the person is as they were.
@@ -338,7 +341,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   };
 
   const open = (p: Person) => {
-    setForm({ name: p.name, grade: p.grade, gradeFrom: '', terms: p.terms === null ? '' : String(p.terms), contact: p.contact ?? '' });
+    setForm({ name: p.name, grade: p.grade, gradeFrom: '', terms: p.terms === null ? '' : String(p.terms), contact: p.contact ?? '', tags: showTags(p.tags) });
     setEditing({ id: p.id, version: p.version });
     save.reset();
   };
@@ -397,6 +400,11 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
           Contact{' '}
           <input data-testid="person-form-contact" value={form.contact}
             onChange={(e) => change({ contact: e.target.value })} />
+        </label>{' '}
+        <label>
+          Tags{' '}
+          <input data-testid="person-form-tags" value={form.tags} placeholder="comma separated"
+            onChange={(e) => change({ tags: e.target.value })} />
         </label>{' '}
         <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
           {editing === null ? 'Add person' : 'Save person'}
@@ -466,6 +474,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                 </td>
                 <td>
                   Contact <span data-testid="person-contact">{p.contact ?? ''}</span>
+                </td>
+                <td>
+                  Tags <span data-testid="person-tags">{showTags(p.tags)}</span>
                 </td>
                 <td>
                   From <span data-testid="person-origin">{p.origin ?? ''}</span>

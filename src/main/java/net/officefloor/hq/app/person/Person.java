@@ -27,6 +27,8 @@ public class Person {
     private String contact;
     /** Whether this request's save changed their contact, for its audit line. */
     private boolean contactChanged;
+    /** Their tags, sorted and comma separated (null: none). */
+    private String tags;
     private long version;
     private int statementCount;
     private String statedTotal;
@@ -124,6 +126,10 @@ public class Person {
 
     @JsonIgnore
     public boolean isContactChanged() { return contactChanged; }
+
+    /** Their tags, sorted and comma separated (null: none). */
+    public String getTags() { return tags; }
+    public void setTags(String tags) { this.tags = tags; }
 
     @JsonIgnore
     public GradeFrom getRecorded() { return recorded; }

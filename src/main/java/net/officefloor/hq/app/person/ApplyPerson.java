@@ -27,6 +27,7 @@ public class ApplyPerson {
         }
         person.setName(request.name());
         person.giveContact(request.contact());
+        person.setTags(request.tags());
         person.giveTerms(request.terms() == null ? null : Integer.valueOf(request.terms()));
         // The form's grade is given from its from-date (blank: the sheet's today); a save leaving
         // the grade as the row showed it, with no from-date, gives none.

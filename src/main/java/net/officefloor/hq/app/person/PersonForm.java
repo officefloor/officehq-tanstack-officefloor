@@ -41,6 +41,7 @@ public final class PersonForm {
             throw new InvalidPersonException("A contact is at most 200 characters");
         }
         return new PersonRequest(name, grade, from.isEmpty() ? null : from, terms.isEmpty() ? null : terms,
-                request.version(), contact.isEmpty() ? null : contact);
+                request.version(), contact.isEmpty() ? null : contact,
+                net.officefloor.hq.app.claim.ClaimForm.tags(request.tags()));
     }
 }

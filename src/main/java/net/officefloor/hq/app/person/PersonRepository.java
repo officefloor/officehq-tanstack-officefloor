@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, terms, contact, origin";
+    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, terms, contact, tags, origin";
 
     private static final RowMapper<Person> ROW = (rs, n) -> {
         LocalDate stated = rs.getObject("statement_date", LocalDate.class);
@@ -25,6 +25,7 @@ public class PersonRepository {
         person.setRetiredFrom(retired == null ? null : retired.toString());
         person.setTerms(rs.getObject("terms", Integer.class));
         person.setContact(rs.getString("contact"));
+        person.setTags(rs.getString("tags"));
         person.setOrigin(rs.getString("origin"));
         return person;
     };
@@ -276,25 +277,31 @@ public class PersonRepository {
     }
 
     public Person add(String sheetId, String name, String grade, String user) {
-        return add(sheetId, name, grade, null, null, user);
+        return add(sheetId, name, grade, null, null, null, user);
     }
 
     /** Add a person with their grade (from the beginning of time), own terms (null: none) and
      *  contact (null: none). */
     public Person add(String sheetId, String name, String grade, Integer terms, String contact, String user) {
+        return add(sheetId, name, grade, terms, contact, null, user);
+    }
+
+    /** Add a person as above, with their tags (null: none; see {@link net.officefloor.hq.app.claim.ClaimForm#tags}). */
+    public Person add(String sheetId, String name, String grade, Integer terms, String contact, String tags, String user) {
         GeneratedKeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, created_by, terms, contact, added_on, list_pos) "
-                            + "VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?), " + NEXT_POS + ")",
+                    "INSERT INTO person (sheet_id, name, created_by, terms, contact, tags, added_on, list_pos) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?), " + NEXT_POS + ")",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setString(3, user);
             ps.setObject(4, terms);
             ps.setString(5, contact);
-            ps.setString(6, sheetId);
+            ps.setString(6, tags);
             ps.setString(7, sheetId);
+            ps.setString(8, sheetId);
             return ps;
         }, key);
         long id = key.getKey().longValue();
@@ -306,6 +313,8 @@ public class PersonRepository {
         person.getGrades().add(new GradeFrom(grade, null));
         person.setTerms(terms);
         person.setContact(contact);
+        person.setTags(tags);
+        useTags(sheetId, tags);
         return person;
     }
 
@@ -335,13 +344,22 @@ public class PersonRepository {
      *  written) when someone else has saved the person since. */
     public boolean update(Person person) {
         int n = jdbc.update(
-                "UPDATE person SET name = ?, terms = ?, contact = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
-                person.getName(), person.getTerms(), person.getContact(), person.getSheetId(), person.getId(), person.getVersion());
+                "UPDATE person SET name = ?, terms = ?, contact = ?, tags = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
+                person.getName(), person.getTerms(), person.getContact(), person.getTags(), person.getSheetId(), person.getId(), person.getVersion());
         if (n == 0) {
             return false;
         }
         person.setVersion(person.getVersion() + 1);
+        useTags(person.getSheetId(), person.getTags());
         return true;
+    }
+
+    /** Keep each of the tags (comma separated; null: none) among those ever used on the sheet. */
+    private void useTags(String sheetId, String tags) {
+        if (tags == null) return;
+        for (String tag : tags.split(",")) {
+            jdbc.update("MERGE INTO sheet_tag (sheet_id, tag) KEY (sheet_id, tag) VALUES (?, ?)", sheetId, tag);
+        }
     }
 
     /** Save the statement just taken of the person (not an edit: the version stays). */

@@ -21,6 +21,6 @@ public class AddPerson {
         }
         sheets.open(id, user);
         person.set(people.add(id, request.name(), request.grade(),
-                request.terms() == null ? null : Integer.valueOf(request.terms()), request.contact(), user));
+                request.terms() == null ? null : Integer.valueOf(request.terms()), request.contact(), request.tags(), user));
     }
 }

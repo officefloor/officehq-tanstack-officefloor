@@ -21,7 +21,7 @@ public class ValidateImport {
             if (line.isBlank()) continue;
             String[] f = line.split(",", 4);
             PersonRequest person = PersonForm.check(new PersonRequest(f[0], f.length > 1 ? f[1] : "", null,
-                    f.length > 2 ? f[2] : "", null, f.length > 3 ? f[3] : ""));
+                    f.length > 2 ? f[2] : "", null, f.length > 3 ? f[3] : "", null));
             if (!names.add(person.name().toLowerCase(Locale.ROOT))) {
                 throw new InvalidPersonException("The name is repeated in the import: " + person.name());
             }
