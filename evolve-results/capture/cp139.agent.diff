@@ -1,0 +1,65 @@
+diff --git a/src/main/frontend/features/audit/api.ts b/src/main/frontend/features/audit/api.ts
+index d99390044..1be88fa51 100644
+--- a/src/main/frontend/features/audit/api.ts
++++ b/src/main/frontend/features/audit/api.ts
+@@ -1,7 +1,8 @@
+ import { getJson } from '../../api/http';
+ 
+ /** The sheet's audit lines exactly as the audit file holds them, newest first; with a name (case and
+- *  surrounding spaces ignored; blank: all), only those carrying name=<it> or person=<it>, followed, when that
++ *  surrounding spaces ignored; blank: all), only those carrying name=<it> or person=<it>, then those of the sheet's
++ *  descendants (each sheet's newest first, sheets by id), followed, when that
+  *  person was transferred here, by the lines about them from the sheet they came from, newest first. */
+ export function listAudit(sheetId: string, name: string): Promise<string[]> {
+   return getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/audit?name=${encodeURIComponent(name)}`);
+diff --git a/src/main/java/net/officefloor/hq/app/audit/ListAudit.java b/src/main/java/net/officefloor/hq/app/audit/ListAudit.java
+index d5e7f3391..fc903e078 100644
+--- a/src/main/java/net/officefloor/hq/app/audit/ListAudit.java
++++ b/src/main/java/net/officefloor/hq/app/audit/ListAudit.java
+@@ -10,7 +10,8 @@ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** The sheet's audit lines as the audit file holds them, newest first; with a name, only those about
+- *  that person (name=/person= it, compared as names are), and when that person on this sheet was
++ *  that person (name=/person= it, compared as names are), then those of the sheet's descendants (each
++ *  sheet's newest first, sheets by id), and when that person on this sheet was
+  *  transferred here, after them the lines about them from the sheet they came from, newest first. */
+ public class ListAudit {
+     public void list(@PathVariable("sheetId") String sheetId,
+@@ -19,6 +20,9 @@ public class ListAudit {
+         String sheet = sheetId.trim();
+         List<String> lines = new ArrayList<>(audit.lines(sheet, name));
+         if (name != null && !name.isBlank()) {
++            for (String descendant : people.descendantSheets(sheet)) {
++                lines.addAll(audit.lines(descendant, name));
++            }
+             Person person = people.findByName(sheet, name);
+             if (person != null && person.getOrigin() != null && !person.getOrigin().equals(sheet)) {
+                 lines.addAll(audit.lines(person.getOrigin(), name));
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index be8f94a0e..d43816f6d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -200,6 +200,22 @@ public class PersonRepository {
+         return tree;
+     }
+ 
++    /** The sheet's descendants (its children, their children, ...) among the sheets that exist, by id. */
++    public List<String> descendantSheets(String sheetId) {
++        List<String> below = new ArrayList<>(List.of(sheetId));
++        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
++        for (int i = 0; i < below.size(); i++) {
++            for (String child : jdbc.queryForList("SELECT sheet_id FROM sheet_setting WHERE setting = 'parent' AND val = ?",
++                    String.class, below.get(i))) {
++                if (seen.add(child)) below.add(child);
++            }
++        }
++        below.remove(0);
++        below.removeIf((s) -> jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ?", Integer.class, s) == 0);
++        below.sort(null);
++        return below;
++    }
++
+     private String parentOf(String sheetId) {
+         return jdbc.queryForList("SELECT val FROM sheet_setting WHERE sheet_id = ? AND setting = 'parent'",
+                 String.class, sheetId).stream().filter((v) -> v != null && !v.isBlank()).findFirst().orElse(null);
