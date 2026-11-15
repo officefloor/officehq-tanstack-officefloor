@@ -22,12 +22,11 @@ public final class Dues {
         }
     }
 
-    /** An amount times a percent, divided by 100, rounded ({@code rounding}) to two decimals, and at
-     *  least {@code floor}, the sheet's floor in force on the claim's date (a correction, a negative amount, has no floor). */
-    public static String of(String amount, String pct, String floor, RoundingMode rounding) {
-        BigDecimal due = new BigDecimal(amount).multiply(new BigDecimal(pct))
-                .divide(BigDecimal.valueOf(100), 2, rounding);
-        return (isCorrection(amount) ? due : due.max(new BigDecimal(floor).setScale(2))).toPlainString();
+    /** A claim's rate figure: an amount times a percent, divided by 100, rounded ({@code rounding}) to
+     *  two decimals (no floor: that is applied last, by {@link #shown}). */
+    public static String of(String amount, String pct, RoundingMode rounding) {
+        return new BigDecimal(amount).multiply(new BigDecimal(pct))
+                .divide(BigDecimal.valueOf(100), 2, rounding).toPlainString();
     }
 
     /** Whether a claim's amount makes it a correction: it is negative. */
@@ -55,10 +54,14 @@ public final class Dues {
     }
 
     /** The due a claim shows: the one fixed when settled, else its figure (bound by a statement, else
-     *  {@code live}; null: none) with its late charge added on top. */
-    public static String shown(Claim claim, String live, Late late) {
+     *  {@code live}; null: none) with its late charge added on top, and at least {@code floor}, the sheet's
+     *  floor in force on the claim's date (null: none), applied last (a correction has no floor). */
+    public static String shown(Claim claim, String live, String floor, Late late) {
         if (claim.getSettledDue() != null) return claim.getSettledDue();
         String figure = claim.due(live);
-        return figure == null ? null : new BigDecimal(figure).add(charge(claim, figure, late)).toPlainString();
+        if (figure == null) return null;
+        BigDecimal due = new BigDecimal(figure).add(charge(claim, figure, late));
+        if (floor != null && !isCorrection(claim.getAmount())) due = due.max(new BigDecimal(floor).setScale(2));
+        return due.toPlainString();
     }
 }

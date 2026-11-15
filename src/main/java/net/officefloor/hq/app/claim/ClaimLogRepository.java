@@ -44,7 +44,7 @@ public class ClaimLogRepository {
                 LocalDate.parse(claim.getDate()));
         Dues.Late late = settings.late(sheetId, today);
         String due = Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
-                settings.floor(sheetId).on(claim.getDate()), late.rounding(claim.getRoundDate())), late);
+                late.rounding(claim.getRoundDate())), settings.floor(sheetId).on(claim.getDate()), late);
         jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, on_date, due) VALUES (?, ?, ?, ?, ?, ?)",
                 sheetId, claim.getId(), claim.getStatus(), by == null ? "" : by, today,
                 due == null ? null : new BigDecimal(due));

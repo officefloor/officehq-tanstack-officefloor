@@ -57,15 +57,13 @@ function hundredths(text: string): bigint {
   return negative ? -value : value;
 }
 
-/** An amount times a percent, divided by 100, rounded to two decimals (half up when `halfUp`, else
- *  half to even), and at least the sheet's `floor` (a correction, a negative amount, has no floor);
+/** A claim's rate figure: an amount times a percent, divided by 100, rounded to two decimals (half up
+ *  when `halfUp`, else half to even; no floor: that is applied last, by `claimDue`);
  *  null (n/a) when there is no rate. Exact: worked in whole hundredths. */
-export function dueOf(amount: string, pct: string | undefined, floor: string, halfUp: boolean): string | null {
+export function dueOf(amount: string, pct: string | undefined, halfUp: boolean): string | null {
   if (pct === undefined) return null;
   // amount (1/100) x pct (1/100) / 100 is in 1/1_000_000; to cents is / 10_000.
-  const cents = roundPct(hundredths(amount) * hundredths(pct), halfUp);
-  const least = hundredths(floor);
-  return formatCents(cents < least && hundredths(amount) >= 0n ? least : cents);
+  return formatCents(roundPct(hundredths(amount) * hundredths(pct), halfUp));
 }
 
 /** What a claim's late charge goes by: the sheet's late percent by date (a charge goes by the one in force on each 30-day boundary) and its today (a claim's due-by is its own);
@@ -96,12 +94,15 @@ export type GradeOn = (date: string) => string;
 
 /** A claim's due: the one fixed when it was settled (its late charge then frozen in), else its
  *  figure — the one bound by its person's last statement (not while PENDING; n/a when it bound none), else live at the rate in force on the
- *  claim's date of the grade in force then (`gradeOn`), at least the `floor` in force then — with its late charge
- *  on the sheet's today on top. */
+ *  claim's date of the grade in force then (`gradeOn`) — with its late charge on the sheet's today on top, and
+ *  at least the `floor` in force on its date, applied last (a correction, a negative amount, has no floor). */
 export function claimDue(c: Claim, rates: Rate[] | undefined, gradeOn: GradeOn, floor: DatedOn, late: Late): string | null {
   if (c.settledDue !== null) return c.settledDue;
-  const figure = c.stated && c.status !== 'PENDING' ? c.statedDue : dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date), floor(c.date), roundsHalfUp(c, late));
-  return figure === null ? null : formatCents(hundredths(figure) + lateCharge(c, figure, late));
+  const figure = c.stated && c.status !== 'PENDING' ? c.statedDue : dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date), roundsHalfUp(c, late));
+  if (figure === null) return null;
+  const due = hundredths(figure) + lateCharge(c, figure, late);
+  const least = hundredths(floor(c.date));
+  return formatCents(!isCorrection(c) && due < least ? least : due);
 }
 
 /** A product of hundredths and a percent's hundredths (in 1/1_000_000) to cents, half up (away

@@ -16,8 +16,8 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** Re-settles a SETTLED claim: its due is fixed again at the figure it would have today as an OPEN claim
- *  bound by no statement (its amount at its person's grade's rate in force on its date, at least the sheet's
- *  floor, with its late charge on the sheet's today; with no rate, none). It stays SETTLED and keeps its
+ *  bound by no statement (its amount at its person's grade's rate in force on its date, with its late charge
+ *  on the sheet's today, then at least the sheet's floor; with no rate, none). It stays SETTLED and keeps its
  *  binding. Refused unless the user is a steward, for any other status, and for a claim in a closed period. */
 public class ResettleClaim {
     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
@@ -35,8 +35,7 @@ public class ResettleClaim {
         Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),
                 LocalDate.parse(claim.getDate()));
         Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
-        String live = rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
-                settings.floor(claim.getSheetId()).on(claim.getDate()), late.rounding(claim.getRoundDate()));
+        String live = rate == null ? null : Dues.of(claim.getAmount(), rate.pct(), late.rounding(claim.getRoundDate()));
         // Figured as an open claim with no fixed due and no statement binding it.
         String old = claim.getSettledDue();
         boolean stated = claim.isStated();
@@ -44,7 +43,7 @@ public class ResettleClaim {
         claim.setStatus(ClaimStatus.OPEN.name());
         claim.setSettledDue(null);
         claim.bind(false, null);
-        String due = Dues.shown(claim, live, late);
+        String due = Dues.shown(claim, live, settings.floor(claim.getSheetId()).on(claim.getDate()), late);
         claim.bind(stated, statedDue);
         claim.setStatus(ClaimStatus.SETTLED.name());
         claim.setSettledDue(due);
