@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** Takes a statement of the person: records their due-total now (the sum of the due of their claims that
  *  count live (open ones dated within a hold of theirs, and not bound, do not), n/a ones skipped, at most the sheet's cap; n/a when their grade has no rate on the sheet's today and none of
  *  those claims keeps a settled or bound figure, or a live one at a grade no longer in force or dated on or before the sheet's today) on the sheet's today, and binds each counting claim
- *  to its rate figure under the due it shows now (its late charge and the floor are never bound); a claim that does not
+ *  to the due it shows now, late charge and floor included (a claim already bound keeps its figure); a claim that does not
  *  count live is unbound.
  *  <p>Taken as of a date ({@code asof}; blank: now) on or before the sheet's today, it goes by everything as it
  *  stood at the end of that date (every change made while the sheet's today was on or before it counts, every
@@ -80,8 +80,8 @@ public class TakeStatement {
                     || (rate != null && (!grade.equals(then.getGrade())
                             || !LocalDate.parse(c.getDate()).isAfter(on)));
             if (shown != null) total = total.add(new BigDecimal(shown));
-            // The rate figure under it is bound; its late charge and floor keep following the sheet's today.
-            figures.put(c.getId(), c.due(live));
+            // The due as shown is bound, late charge included: it no longer follows the sheet's today.
+            figures.put(c.getId(), shown);
         }
         for (Claim c : claims.listOf(sheetId, person.getId())) {
             if (figures.containsKey(c.getId())) c.bind(true, figures.get(c.getId()));

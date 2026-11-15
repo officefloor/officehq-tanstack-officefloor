@@ -7,7 +7,8 @@ import java.util.List;
  *  (a {@link ClaimStatus} name), and its number on the sheet (given when opened and kept when voided;
  *  none while a draft: the sheet-wide number, or {@code <period>-<n>} while period numbering is in force), its settled due (fixed when settled; none otherwise, or when there was no rate), and
  *  who opened it (none while a draft), and whether its person's last statement bound it, with the
- *  figure it bound (none when it had none): a bound claim shows and totals that figure. A correction (a
+ *  figure it bound (its due as shown then, late charge included; none when it had none): a bound claim
+ *  shows and totals that figure. A correction (a
  *  negative amount) keeps the number of the SETTLED claim of its person it corrects (none otherwise). */
 public class Claim {
     private final long id;

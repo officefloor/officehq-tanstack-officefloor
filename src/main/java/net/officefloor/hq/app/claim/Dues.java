@@ -66,12 +66,14 @@ public final class Dues {
         return total;
     }
 
-    /** The due a claim shows: the one fixed when settled, else its figure (bound by a statement, else
-     *  {@code live}; null: none) with its late charge added on top, and at least {@code floor}, the sheet's
-     *  floor in force on the claim's date (null: none), applied last (a correction has no floor). */
+    /** The due a claim shows: the one fixed when settled, else the one a statement bound it to (its due as
+     *  shown then, late charge and floor included; null: none), else {@code live} (null: none) with its late
+     *  charge on the sheet's today added on top, and at least {@code floor}, the sheet's floor in force on the
+     *  claim's date (null: none), applied last (a correction has no floor). */
     public static String shown(Claim claim, String live, String floor, Late late) {
         if (claim.getSettledDue() != null) return claim.getSettledDue();
-        String figure = claim.due(live);
+        if (claim.isStated()) return claim.getStatedDue();
+        String figure = live;
         if (figure == null) return null;
         BigDecimal due = new BigDecimal(figure).add(charge(claim, figure, late));
         if (floor != null && !isCorrection(claim.getAmount())) due = due.max(new BigDecimal(floor).setScale(2));

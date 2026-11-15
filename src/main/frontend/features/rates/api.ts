@@ -133,13 +133,14 @@ export function lateCharge(c: Claim, figure: string, late: Late): bigint {
 /** A person's grade in force on a date (yyyy-MM-dd). */
 export type GradeOn = (date: string) => string;
 
-/** A claim's due: the one fixed when it was settled (its late charge then frozen in), else its
- *  figure — the one bound by its person's last statement (n/a when it bound none), else live at the rate in force on the
- *  claim's date of the grade in force then (`gradeOn`) — with its late charge on the sheet's today on top, and
+/** A claim's due: the one fixed when it was settled (its late charge then frozen in), else the one bound by its
+ *  person's last statement (its due as shown then, late charge and floor included; n/a when it bound none), else
+ *  live at the rate in force on the claim's date of the grade in force then (`gradeOn`) with its late charge on the sheet's today on top, and
  *  at least the `floor` in force on its date, applied last (a correction, a negative amount, has no floor). */
 export function claimDue(c: Claim, rates: Rate[] | undefined, gradeOn: GradeOn, floor: DatedOn, late: Late): string | null {
   if (c.settledDue !== null) return c.settledDue;
-  const figure = c.stated ? c.statedDue : dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date, c.id), roundsHalfUp(c, late));
+  if (c.stated) return c.statedDue;
+  const figure = dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date, c.id), roundsHalfUp(c, late));
   if (figure === null) return null;
   const due = hundredths(figure) + lateCharge(c, figure, late);
   const least = hundredths(floor(c.date));
