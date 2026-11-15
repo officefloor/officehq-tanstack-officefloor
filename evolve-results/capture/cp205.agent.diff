@@ -1,0 +1,348 @@
+diff --git a/src/main/frontend/features/plans/PersonPlans.tsx b/src/main/frontend/features/plans/PersonPlans.tsx
+index a539794cb..b30ad2cd8 100644
+--- a/src/main/frontend/features/plans/PersonPlans.tsx
++++ b/src/main/frontend/features/plans/PersonPlans.tsx
+@@ -1,12 +1,12 @@
+ import { useState } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { useSubmitOnce } from '../../forms/useSubmitOnce';
+-import { addPlan, listPlans, pausePlan, plansKey, type Plan, type PlanInput } from './api';
++import { addPlan, changePlanAmount, listPlans, pausePlan, plansKey, type Plan, type PlanInput } from './api';
+ import { Fig } from '../session/Fig';
+ 
+ const EMPTY: PlanInput = { amount: '', start: '', every: '', day: '', end: '' };
+ 
+-/** A person's plans (each its amount, start, every N days or day of the month, end, how many claims it has made so far, its next dates and whether it is paused, with pause and resume buttons)
++/** A person's plans (each its amount, start, every N days or day of the month, end, how many claims it has made so far, its next dates and whether it is paused, with pause and resume buttons, and its amount's changes with an entry that changes it)
+  *  and a form that adds one; a refused add shows an error on the row and adds nothing. */
+ export function PersonPlans({ sheetId, user, personId }: { sheetId: string; user: string; personId: number }) {
+   const queryClient = useQueryClient();
+@@ -43,6 +43,7 @@ export function PersonPlans({ sheetId, user, personId }: { sheetId: string; user
+               <td>made <span data-testid="plan-generated">{pl.generated}</span></td>
+               <td>next <span data-testid="plan-next-dates">{(pl.nextDates ?? []).join(', ')}</span></td>
+               <PlanPause sheetId={sheetId} user={user} plan={pl} />
++              <PlanAmount sheetId={sheetId} user={user} plan={pl} />
+             </tr>
+           ))}
+         </tbody>
+@@ -102,3 +103,46 @@ function PlanPause({ sheetId, user, plan }: { sheetId: string; user: string; pla
+     </td>
+   );
+ }
++
++/** The plan's amount changes, oldest first, each as `<date> amount=<amount>`, and an entry and save button
++ *  that change its amount; a refused change shows an error on the row. */
++function PlanAmount({ sheetId, user, plan }: { sheetId: string; user: string; plan: Plan }) {
++  const queryClient = useQueryClient();
++  const submitOnce = useSubmitOnce();
++  const [amount, setAmount] = useState('');
++  const save = useMutation({
++    mutationFn: (value: string) => changePlanAmount(sheetId, user, plan.id, value),
++    onSuccess: () => {
++      setAmount('');
++      return queryClient.invalidateQueries({ queryKey: plansKey(sheetId) });
++    },
++  });
++
++  return (
++    <td>
++      <ul>
++        {(plan.changes ?? []).map((c, i) => (
++          <li key={i} data-testid="plan-change-line">{c.changedOn} amount={Number(c.amount).toFixed(2)}</li>
++        ))}
++      </ul>
++      <input data-testid="plan-amount" placeholder="New amount" value={amount}
++        onChange={(e) => {
++          setAmount(e.target.value);
++          save.reset();
++        }} />{' '}
++      <button type="button" data-testid="plan-amount-save" disabled={save.isPending}
++        onClick={() => {
++          const value = amount;
++          submitOnce(() => {
++            save.reset();
++            return save.mutateAsync(value);
++          });
++        }}>
++        Save amount
++      </button>
++      {save.isError && (
++        <span data-testid="plan-error">A plan's amount is 0.00 or more with up to two decimals.</span>
++      )}
++    </td>
++  );
++}
+diff --git a/src/main/frontend/features/plans/api.ts b/src/main/frontend/features/plans/api.ts
+index a5b77ff25..a79fc28e5 100644
+--- a/src/main/frontend/features/plans/api.ts
++++ b/src/main/frontend/features/plans/api.ts
+@@ -3,8 +3,11 @@ import { sheetKey } from '../sheet/api';
+ 
+ /** A person's plan: an amount, a start date, every N days or else a day of the month (1 to 31), an end
+  *  date, how many claims it has made so far and (when listed) its next dates: the first five plan dates after
+- *  the sheet's today and on or before the end, leaving out the days it was paused on) and whether it is paused now. */
+-export type Plan = { id: number; sheetId: string; personId: number; amount: string; start: string; every: number | null; day: number | null; end: string; by: string; generated: number; nextDates?: string[]; paused?: boolean };
++ *  the sheet's today and on or before the end, leaving out the days it was paused on), whether it is paused now
++ *  and the changes of its amount, oldest first. */
++export type PlanChange = { changedOn: string; amount: string };
++
++export type Plan = { id: number; sheetId: string; personId: number; amount: string; start: string; every: number | null; day: number | null; end: string; by: string; generated: number; nextDates?: string[]; paused?: boolean; changes?: PlanChange[] };
+ 
+ export type PlanInput = { amount: string; start: string; every: string; day: string; end: string };
+ 
+@@ -31,6 +34,12 @@ export function pausePlan(sheetId: string, by: string, planId: number, on: boole
+   return postJson<Plan>(`${sheetBase(sheetId)}/plans/${planId}/${on ? 'pause' : 'resume'}?by=${encodeURIComponent(by)}`, {});
+ }
+ 
++/** Change the plan's amount from the sheet's today; refused (rejects) for an amount the claim form would refuse
++ *  (or negative). The claims it makes from then on are of the new amount; those already made keep theirs. */
++export function changePlanAmount(sheetId: string, by: string, planId: number, amount: string): Promise<Plan> {
++  return postJson<Plan>(`${sheetBase(sheetId)}/plans/${planId}/amount?by=${encodeURIComponent(by)}`, { amount });
++}
++
+ /** Make the DRAFT claims every plan is due up to its end and the sheet's today, that it has not made yet. */
+ export function generatePlans(sheetId: string, by: string): Promise<GenerateResult> {
+   return postJson<GenerateResult>(`${sheetBase(sheetId)}/generate-plans?by=${encodeURIComponent(by)}`, {});
+diff --git a/src/main/java/net/officefloor/hq/app/plan/ChangePlanAmount.java b/src/main/java/net/officefloor/hq/app/plan/ChangePlanAmount.java
+new file mode 100644
+index 000000000..77349b566
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/ChangePlanAmount.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app.plan;
++
++import java.math.BigDecimal;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Changes the plan's amount from the sheet's today (PLAN_CHANGED): the claims it makes from then on are of
++ *  the new amount, the claims it has made keep theirs. */
++public class ChangePlanAmount {
++    public void change(@RequestParam(name = "by", required = false) String by, @Val ValidPlanAmount request,
++            @Val Plan plan, @Val Person person, PlanRepository plans, SheetRepository sheets, Audit audit) {
++        BigDecimal amount = request.amount();
++        plans.changeAmount(plan.id(), sheets.today(plan.sheetId()), amount);
++        audit.record("PLAN_CHANGED sheet=" + plan.sheetId() + " by=" + (by == null ? "" : by)
++                + " name=" + person.getName() + " start=" + plan.start() + " amount=" + amount.toPlainString());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/ListedPlan.java b/src/main/java/net/officefloor/hq/app/plan/ListedPlan.java
+index b071af011..4feee873b 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/ListedPlan.java
++++ b/src/main/java/net/officefloor/hq/app/plan/ListedPlan.java
+@@ -5,14 +5,16 @@ import java.time.LocalDate;
+ import java.util.List;
+ 
+ /** A plan as listed: the plan with its next dates — the first five plan dates after the sheet's today
+- *  and on or before its end, leaving out the days it was paused on — and whether it is paused. */
++ *  and on or before its end, leaving out the days it was paused on — whether it is paused, and the changes
++ *  of its amount, oldest first. */
+ public record ListedPlan(long id, String sheetId, long personId, BigDecimal amount, LocalDate start, Integer every,
+         Integer day, LocalDate end, String by, int generated, List<LocalDate> nextDates,
+-        boolean paused) {
++        boolean paused, List<PlanChange> changes) {
+ 
+     static ListedPlan of(Plan plan, LocalDate today) {
+         List<LocalDate> next = plan.dates(plan.end()).stream().filter((d) -> d.isAfter(today)).limit(5).toList();
+         return new ListedPlan(plan.id(), plan.sheetId(), plan.personId(), plan.amount(), plan.start(), plan.every(),
+-                plan.day(), plan.end(), plan.by(), plan.generated(), next, plan.paused());
++                plan.day(), plan.end(), plan.by(), plan.generated(), next, plan.paused(),
++                plan.changes());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/Plan.java b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+index 35be4232d..4974f37f8 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/Plan.java
++++ b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+@@ -6,9 +6,11 @@ import java.util.ArrayList;
+ import java.util.List;
+ 
+ /** A person's plan: its amount (two decimals), start, every N days or else a day of the month (1 to 31),
+- *  end, who added it, how many claims it has made so far, and its pauses in the order they were made. */
++ *  end, who added it, how many claims it has made so far, its pauses in the order they were made, and the
++ *  changes of its amount, oldest first. */
+ public record Plan(long id, String sheetId, long personId, BigDecimal amount, LocalDate start, Integer every,
+-        Integer day, LocalDate end, String by, int generated, List<PlanPause> pauses) {
++        Integer day, LocalDate end, String by, int generated, List<PlanPause> pauses,
++        List<PlanChange> changes) {
+ 
+     /** Whether the plan is paused now: its last pause has not been resumed. */
+     public boolean paused() {
+@@ -16,7 +18,11 @@ public record Plan(long id, String sheetId, long personId, BigDecimal amount, Lo
+     }
+ 
+     Plan withPauses(List<PlanPause> list) {
+-        return new Plan(id, sheetId, personId, amount, start, every, day, end, by, generated, list);
++        return new Plan(id, sheetId, personId, amount, start, every, day, end, by, generated, list, changes);
++    }
++
++    Plan withChanges(List<PlanChange> list) {
++        return new Plan(id, sheetId, personId, amount, start, every, day, end, by, generated, pauses, list);
+     }
+ 
+     /** The plan dates up to (and including) the last date: the start then every N days, or the day of the
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanAmountRequest.java b/src/main/java/net/officefloor/hq/app/plan/PlanAmountRequest.java
+new file mode 100644
+index 000000000..65777ed8d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanAmountRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.plan;
++
++/** Body of a change of a plan's amount: the new amount. */
++public record PlanAmountRequest(String amount) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanChange.java b/src/main/java/net/officefloor/hq/app/plan/PlanChange.java
+new file mode 100644
+index 000000000..fae91183e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanChange.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.plan;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++
++/** A change of a plan's amount: the sheet's today when it was made and the new amount (two decimals). */
++public record PlanChange(LocalDate changedOn, BigDecimal amount) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java b/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java
+index a7b7a3a03..ce3414c10 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.plan;
+ 
++import java.math.BigDecimal;
+ import java.sql.Date;
+ import java.sql.PreparedStatement;
+ import java.sql.Types;
+@@ -21,7 +22,7 @@ public class PlanRepository {
+     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"),
+             rs.getLong("person_id"), rs.getBigDecimal("amount").setScale(2), rs.getDate("start_date").toLocalDate(),
+             rs.getObject("every_days", Integer.class), rs.getObject("month_day", Integer.class),
+-            rs.getDate("end_date").toLocalDate(), rs.getString("added_by"), rs.getInt("made"), List.of());
++            rs.getDate("end_date").toLocalDate(), rs.getString("added_by"), rs.getInt("made"), List.of(), List.of());
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -32,12 +33,19 @@ public class PlanRepository {
+     /** The sheet's plans, in the order they were added. */
+     public List<Plan> list(String sheetId) {
+         return jdbc.query(SELECT + "WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId).stream()
+-                .map(this::withPauses).toList();
++                .map(this::withHistory).toList();
+     }
+ 
+     public Plan find(long id) {
+         List<Plan> found = jdbc.query(SELECT + "WHERE p.id = ?", ROW, id);
+-        return found.isEmpty() ? null : withPauses(found.get(0));
++        return found.isEmpty() ? null : withHistory(found.get(0));
++    }
++
++    private Plan withHistory(Plan plan) {
++        return withPauses(plan).withChanges(jdbc.query(
++                "SELECT changed_on, amount FROM plan_change WHERE plan_id = ? ORDER BY id",
++                (rs, n) -> new PlanChange(rs.getDate("changed_on").toLocalDate(), rs.getBigDecimal("amount").setScale(2)),
++                plan.id()));
+     }
+ 
+     private Plan withPauses(Plan plan) {
+@@ -58,6 +66,13 @@ public class PlanRepository {
+                 Date.valueOf(day), planId);
+     }
+ 
++    /** Changes the plan's amount from that day, keeping the change. */
++    public void changeAmount(long planId, LocalDate day, BigDecimal amount) {
++        jdbc.update("UPDATE plan SET amount = ? WHERE id = ?", amount, planId);
++        jdbc.update("INSERT INTO plan_change (plan_id, changed_on, amount) VALUES (?, ?, ?)",
++                planId, Date.valueOf(day), amount);
++    }
++
+     /** Adds the plan to the person. */
+     public Plan add(String sheetId, long personId, ValidPlan plan, String by) {
+         GeneratedKeyHolder key = new GeneratedKeyHolder();
+diff --git a/src/main/java/net/officefloor/hq/app/plan/ValidPlanAmount.java b/src/main/java/net/officefloor/hq/app/plan/ValidPlanAmount.java
+new file mode 100644
+index 000000000..8cb496b2e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/ValidPlanAmount.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.plan;
++
++import java.math.BigDecimal;
++
++/** A plan's new amount once checked: two decimals, not negative. */
++public record ValidPlanAmount(BigDecimal amount) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/ValidatePlanAmount.java b/src/main/java/net/officefloor/hq/app/plan/ValidatePlanAmount.java
+new file mode 100644
+index 000000000..a365d1bf1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/ValidatePlanAmount.java
+@@ -0,0 +1,23 @@
++package net.officefloor.hq.app.plan;
++
++import net.officefloor.hq.app.claim.ClaimForm;
++import net.officefloor.hq.app.claim.ClaimRequest;
++import net.officefloor.hq.app.claim.InvalidClaimException;
++import net.officefloor.hq.app.claim.ValidClaim;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Refused for an amount the claim form would refuse, or a negative one (as for adding a plan). */
++public class ValidatePlanAmount {
++    public void validate(@RequestBody PlanAmountRequest request, Out<ValidPlanAmount> body) throws InvalidPlanException {
++        if (request == null) throw new InvalidPlanException("An amount is required");
++        ValidClaim amount;
++        try {
++            amount = ClaimForm.check(new ClaimRequest(request.amount(), "", ""));
++        } catch (InvalidClaimException e) {
++            throw new InvalidPlanException(e.getMessage());
++        }
++        if (amount.isCorrection()) throw new InvalidPlanException("A plan's amount is not negative");
++        body.set(new ValidPlanAmount(amount.amount()));
++    }
++}
+diff --git a/src/main/resources/db/migration/V92__plan_change.sql b/src/main/resources/db/migration/V92__plan_change.sql
+new file mode 100644
+index 000000000..421f926d5
+--- /dev/null
++++ b/src/main/resources/db/migration/V92__plan_change.sql
+@@ -0,0 +1,8 @@
++-- A plan's amount changes, in the order they were made: the sheet's today when changed and the new amount.
++-- The plan's own amount is the latest; claims already made keep the amount they were made with.
++CREATE TABLE plan_change (
++    id         BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
++    plan_id    BIGINT        NOT NULL REFERENCES plan (id),
++    changed_on DATE          NOT NULL,
++    amount     DECIMAL(19,2) NOT NULL
++);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml
+new file mode 100644
+index 000000000..1b94cb104
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml
+@@ -0,0 +1,19 @@
++# POST /api/sheets/{sheetId}/plans/{planId}/amount — change the plan's amount from the sheet's today; an amount
++# the claim form would refuse (or negative) is refused. Claims already made keep their amount.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
++validate:
++  class: net.officefloor.hq.app.plan.ValidatePlanAmount
++  next: load
++load:
++  class: net.officefloor.hq.app.plan.LoadPlan
++  govern: [ transaction ]
++  next: change
++change:
++  class: net.officefloor.hq.app.plan.ChangePlanAmount
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.plan.RespondWithPlan
