@@ -50,6 +50,7 @@ public class PersonRepository {
         withAliases(sheetId, people);
         withClashing(sheetId, people);
         withRetirements(sheetId, people);
+        withSnapshots(sheetId, people);
         jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY added_at, patron_id",
                 (rs) -> {
                     Person p = byId.get(rs.getLong("person_id"));
@@ -72,6 +73,7 @@ public class PersonRepository {
             withAliases(sheetId, List.of(person));
             withClashing(sheetId, List.of(person));
             withRetirements(sheetId, List.of(person));
+            withSnapshots(sheetId, List.of(person));
         }
         return person;
     }
@@ -161,6 +163,26 @@ public class PersonRepository {
                                     rs.getObject("to_date", LocalDate.class).toString()));
                 }, sheetId);
         people.forEach((p) -> p.setRetirements(retirements.getOrDefault(p.getId(), new ArrayList<>())));
+    }
+
+    /** Give each person the SNAPSHOTs written for them, oldest first. */
+    private void withSnapshots(String sheetId, List<Person> people) {
+        if (people.isEmpty()) {
+            return;
+        }
+        Map<Long, List<Snapshot>> snapshots = new HashMap<>();
+        jdbc.query("SELECT person_id, day_left, due_total FROM person_snapshot WHERE sheet_id = ? ORDER BY person_id, id",
+                (rs) -> {
+                    snapshots.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())
+                            .add(new Snapshot(rs.getObject("day_left", LocalDate.class).toString(), rs.getString("due_total")));
+                }, sheetId);
+        people.forEach((p) -> p.setSnapshots(snapshots.getOrDefault(p.getId(), new ArrayList<>())));
+    }
+
+    /** Keep a SNAPSHOT written for the person: the day being left and their due-total on it (or n/a). */
+    public void addSnapshot(String sheetId, long personId, LocalDate dayLeft, String dueTotal) {
+        jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, day_left, due_total) VALUES (?, ?, ?, ?)",
+                sheetId, personId, dayLeft, dueTotal);
     }
 
     /** Give each person their aliases, sorted as names are compared. */

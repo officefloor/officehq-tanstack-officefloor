@@ -23,12 +23,16 @@ export type Hold = { from: string; to: string | null };
 /** A past retirement: from its from-date to the day they were unretired (yyyy-MM-dd). */
 export type Retirement = { from: string; to: string };
 
+export type Snapshot = { day: string; dueTotal: string };
+
 export type Person = {
   id: number; sheetId: string; name: string; grade: Grade; grades: GradeFrom[]; version: number;
   statementCount: number; statedTotal: string | null; statementDate: string | null;
   retired: boolean; retiredFrom: string | null; retiredReached: boolean;
   /** Their past retirements, oldest first: a claim dated after one's from and before its to is refused. */
   retirements: Retirement[];
+  /** The SNAPSHOTs written for them, oldest first: the day being left and their due-total on it (or n/a). */
+  snapshots: Snapshot[];
   held: boolean; holds: Hold[]; patronIds: number[];
   /** Their own terms in whole days (null: none): a claim's due-by goes by them before their grade's or the sheet's. */
   terms: number | null;

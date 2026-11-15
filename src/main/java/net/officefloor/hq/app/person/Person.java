@@ -36,6 +36,8 @@ public class Person {
     private String retiredFrom;
     /** Their past retirements, oldest first. */
     private java.util.List<Retirement> retirements = new java.util.ArrayList<>();
+    /** The SNAPSHOTs written for them, oldest first. */
+    private java.util.List<Snapshot> snapshots = new java.util.ArrayList<>();
     /** Their holds, in the order they were added. */
     private java.util.List<Hold> holds = new java.util.ArrayList<>();
     /** The sheet's today (null: not known). */
@@ -143,6 +145,8 @@ public class Person {
     public boolean isRetired() { return retiredFrom != null; }
     public java.util.List<Retirement> getRetirements() { return retirements; }
     public void setRetirements(java.util.List<Retirement> retirements) { this.retirements = retirements; }
+    public java.util.List<Snapshot> getSnapshots() { return snapshots; }
+    public void setSnapshots(java.util.List<Snapshot> snapshots) { this.snapshots = snapshots; }
 
     /** Unretire them on the date: no longer retired, the retirement kept as a past one up to it. */
     public void unretire(String on) {
