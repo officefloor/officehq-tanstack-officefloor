@@ -304,4 +304,38 @@ public class PersonRepository {
                 hold.to() == null ? null : LocalDate.parse(hold.to()), user, person.getSheetId());
         person.getHolds().add(hold);
     }
+
+    /** Merge the person {@code from} into {@code into}: from's name and aliases become into's aliases;
+     *  from's patrons are added to into's (not into themselves, no repeats); anyone naming from as
+     *  patron names into instead (no repeats); from's statements, holds, watchers, grades and the
+     *  person themselves are dropped. Their claims, pool memberships and period totals must have
+     *  moved first. */
+    public void merge(Person from, Person into, String user) {
+        String sheetId = into.getSheetId();
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, added_by) VALUES (?, ?, ?, ?)",
+                sheetId, into.getId(), from.getName(), user);
+        jdbc.update("UPDATE person_alias SET person_id = ? WHERE sheet_id = ? AND person_id = ?",
+                into.getId(), sheetId, from.getId());
+        for (Long patronId : from.getPatronIds()) {
+            if (patronId != into.getId() && !into.getPatronIds().contains(patronId)) {
+                jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, added_by) VALUES (?, ?, ?, ?)",
+                        sheetId, into.getId(), patronId, user);
+                into.getPatronIds().add(patronId);
+            }
+        }
+        jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
+        // Whoever named from names into instead, unless that is into themselves or they name into already.
+        jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND patron_id = ? AND (person_id = ? OR person_id IN "
+                + "(SELECT k.person_id FROM person_patron k WHERE k.sheet_id = ? AND k.patron_id = ?))",
+                sheetId, from.getId(), into.getId(), sheetId, into.getId());
+        jdbc.update("UPDATE person_patron SET patron_id = ? WHERE sheet_id = ? AND patron_id = ?",
+                into.getId(), sheetId, from.getId());
+        into.getPatronIds().remove(Long.valueOf(from.getId()));
+        for (String table : List.of("person_statement", "person_hold", "person_watch", "person_grade",
+                "person_grade_history", "person_retired_history")) {
+            jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
+        }
+        jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, from.getId());
+        withAliases(sheetId, List.of(into));
+    }
 }

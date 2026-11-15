@@ -12,7 +12,8 @@ export function PasteClaims({ sheetId, user }: { sheetId: string; user: string }
 
   const paste = useMutation({
     mutationFn: (input: string) => pasteClaims(sheetId, user, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    // Not awaited: the count shows as soon as the paste is done, never after its new rows.
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }); },
   });
 
   return (

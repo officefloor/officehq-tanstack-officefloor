@@ -9,6 +9,7 @@ import { BulkReassign } from '../claims/BulkReassign';
 import { PersonClaims } from '../claims/PersonClaims';
 import { backing, claimsKey, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
 import { listPeriods, periodsKey, personPeriodDue } from '../periods/api';
+import { poolsKey } from '../pools/api';
 import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
 import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
@@ -16,7 +17,7 @@ import { BulkGrade } from './BulkGrade';
 import { ExportPeople } from './ExportPeople';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
-import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, peopleKey, retirePerson, takeStatement, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, peopleKey, retirePerson, takeStatement, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '' };
 
@@ -34,6 +35,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
  *  Each person has a checkbox that selects them for a grade given to the selected people together.
  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
  *  Whether each person is active (see `isActive`).
+ *  A picker and a button merge the person into another (see `mergePerson`).
  *  Whether the signed-in user watches each person, with a button that starts or stops it.
  *  A button exports everyone, retired people included, as a CSV file. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
@@ -61,6 +63,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const [holdDates, setHoldDates] = useState<Record<number, { from: string; to: string }>>({});
   // The patron picked on each person's row (blank: none picked).
   const [patronPicks, setPatronPicks] = useState<Record<number, string>>({});
+  // The person picked on each person's row to merge them into (blank: none picked).
+  const [mergePicks, setMergePicks] = useState<Record<number, string>>({});
   // The alias typed on each person's row.
   const [aliasInputs, setAliasInputs] = useState<Record<number, string>>({});
   // The people selected for a bulk grade.
@@ -167,6 +171,19 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     },
   });
 
+  // The person whose last merge was refused; cleared by the next action on the row. A merge moves
+  // claims, pool members, period totals and watches, so these are read again.
+  const merging = useMutation({
+    mutationFn: (v: { id: number; intoId: number }) => mergePerson(sheetId, user, v.id, v.intoId),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: watchesKey(sheetId, user) }),
+    ]),
+  });
+
   // The person whose last watch was refused; cleared by the next action on the row.
   const watching = useMutation({
     mutationFn: (v: { id: number; on: boolean }) => watchPerson(sheetId, user, v.id, v.on),
@@ -181,6 +198,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     holding.reset();
     patronage.reset();
     aliasing.reset();
+    merging.reset();
   };
 
   const state = (id: number) => {
@@ -238,6 +256,14 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     stateOnce(() => {
       resetRowActions();
       return aliasing.mutateAsync({ id, alias: typed });
+    });
+  };
+
+  const merge = (id: number) => {
+    const intoId = Number(mergePicks[id] ?? '');
+    stateOnce(() => {
+      resetRowActions();
+      return merging.mutateAsync({ id, intoId });
     });
   };
 
@@ -426,6 +452,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   {aliasing.isError && aliasing.variables?.id === p.id && (
                     <span data-testid="person-error">The alias could not be added: it needs to be given, and not be a name or alias already in use.</span>
                   )}
+                  {merging.isError && merging.variables?.id === p.id && (
+                    <span data-testid="person-error">The person could not be merged: only a steward can, into someone else, neither of them retired.</span>
+                  )}
                 </td>
                 <td>
                   Watched <span data-testid="person-watched">{watched.has(p.id) ? 'yes' : 'no'}</span>{' '}
@@ -497,6 +526,24 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   {patronage.isError && patronage.variables?.id === p.id && (
                     <span data-testid="person-patron-error">The patron could not be added: not themselves, nor one already named.</span>
                   )}
+                </td>
+                <td>
+                  <select data-testid="person-merge-into" value={mergePicks[p.id] ?? ''}
+                    onChange={(e) => {
+                      setMergePicks((d) => ({ ...d, [p.id]: e.target.value }));
+                      merging.reset();
+                    }}>
+                    <option value="">Merge into…</option>
+                    {everyone.map((q) => (
+                      <option key={q.id} value={String(q.id)}>
+                        {q.name}
+                      </option>
+                    ))}
+                  </select>{' '}
+                  <button type="button" data-testid="person-merge" disabled={merging.isPending}
+                    onClick={() => merge(p.id)}>
+                    Merge
+                  </button>
                 </td>
                 <td>
                   <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} gradeOn={(d) => gradeOn(p, d)} rates={rates.data} floor={floor}

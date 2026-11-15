@@ -205,6 +205,18 @@ public class ClaimRepository {
         snapshot(claim.getSheetId(), claim.getId());
     }
 
+    /** Move every claim of the person {@code fromId} to {@code intoId}, in the order they were added,
+     *  each the newest in the list as it moves: their numbers and dates kept, any figure a statement
+     *  bound dropped. */
+    public void moveAll(String sheetId, long fromId, long intoId) {
+        for (Long id : jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                Long.class, sheetId, fromId)) {
+            jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, list_seq = "
+                    + NEXT_SEQ + " WHERE sheet_id = ? AND id = ?", intoId, sheetId, sheetId, id);
+            snapshot(sheetId, id);
+        }
+    }
+
     /** Save a re-dated claim: its date (its due-by, period and number stay). */
     public void redate(Claim claim) {
         jdbc.update("UPDATE claim SET claim_date = ?, number = ? WHERE sheet_id = ? AND id = ?",

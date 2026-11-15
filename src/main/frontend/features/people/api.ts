@@ -104,6 +104,13 @@ export function addAlias(sheetId: string, by: string, id: number, alias: string)
   return postJson<Person>(`${base(sheetId)}/${id}/aliases?by=${encodeURIComponent(by)}`, { alias });
 }
 
+/** A steward merges the person into another on the sheet (`intoId`): their claims, aliases, patrons
+ *  and pool memberships go to the other and they leave the sheet; refused (rejects) for anyone else,
+ *  for the person themselves, and when either of them is retired. */
+export function mergePerson(sheetId: string, by: string, id: number, intoId: number): Promise<Person> {
+  return postJson<Person>(`${base(sheetId)}/${id}/merge?by=${encodeURIComponent(by)}`, { intoId });
+}
+
 export type QuickAddInput = { name: string; amount: string };
 
 /** Add a DRAFT claim of `amount` (the sheet's today, empty note) to the named person, adding them

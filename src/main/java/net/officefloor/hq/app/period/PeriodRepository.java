@@ -117,4 +117,18 @@ public class PeriodRepository {
                 sheetId, name, from, to, user);
         return new Period(sheetId, name, from.toString(), to.toString(), false, null, Map.of(), false);
     }
+
+    /** Move the person {@code fromId}'s fixed due-totals of closed periods to {@code intoId}, added
+     *  to into's where into has one. */
+    public void moveTotals(String sheetId, long fromId, long intoId) {
+        String ofSheet = "period_id IN (SELECT id FROM period WHERE sheet_id = ?)";
+        jdbc.update("UPDATE period_person_total t SET total = total + (SELECT f.total FROM period_person_total f "
+                + "WHERE f.period_id = t.period_id AND f.person_id = ?) WHERE t.person_id = ? AND t." + ofSheet
+                + " AND t.period_id IN (SELECT f.period_id FROM period_person_total f WHERE f.person_id = ?)",
+                fromId, intoId, sheetId, fromId);
+        jdbc.update("DELETE FROM period_person_total WHERE person_id = ? AND " + ofSheet + " AND period_id IN "
+                + "(SELECT t.period_id FROM period_person_total t WHERE t.person_id = ?)", fromId, sheetId, intoId);
+        jdbc.update("UPDATE period_person_total SET person_id = ? WHERE person_id = ? AND " + ofSheet,
+                intoId, fromId, sheetId);
+    }
 }

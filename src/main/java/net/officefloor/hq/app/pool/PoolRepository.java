@@ -107,4 +107,16 @@ public class PoolRepository {
         jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, person_id, share, added_by) VALUES (?, ?, ?, ?, ?)",
                 sheetId, poolId, personId, share, by);
     }
+
+    /** Move the person {@code fromId}'s pool memberships to {@code intoId}: their share added to
+     *  into's where into is already a member. */
+    public void moveMembers(String sheetId, long fromId, long intoId) {
+        jdbc.update("UPDATE pool_member m SET share = share + (SELECT f.share FROM pool_member f "
+                + "WHERE f.pool_id = m.pool_id AND f.person_id = ?) WHERE m.sheet_id = ? AND m.person_id = ? "
+                + "AND m.pool_id IN (SELECT f.pool_id FROM pool_member f WHERE f.person_id = ?)",
+                fromId, sheetId, intoId, fromId);
+        jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ? AND pool_id IN "
+                + "(SELECT m.pool_id FROM pool_member m WHERE m.person_id = ?)", sheetId, fromId, intoId);
+        jdbc.update("UPDATE pool_member SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);
+    }
 }
