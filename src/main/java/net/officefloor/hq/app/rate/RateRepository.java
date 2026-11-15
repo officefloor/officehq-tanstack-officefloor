@@ -11,14 +11,14 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class RateRepository {
 
-    private static final String COLUMNS = "SELECT sheet_id, grade, pct, from_date, to_date FROM rate ";
+    private static final String COLUMNS = "SELECT sheet_id, grade, pct, from_date, to_date, version FROM rate ";
 
     private static final RowMapper<Rate> ROW = (rs, n) -> {
         LocalDate from = rs.getObject("from_date", LocalDate.class);
         LocalDate to = rs.getObject("to_date", LocalDate.class);
         return new Rate(rs.getString("sheet_id"), rs.getString("grade"),
                 rs.getBigDecimal("pct").setScale(2).toPlainString(), from == null ? null : from.toString(),
-                to == null ? null : to.toString(), 0);
+                to == null ? null : to.toString(), 0, rs.getInt("version"));
     };
 
     /** How many levels up the parent chain a sheet without a rate of its own looks. */
@@ -97,7 +97,7 @@ public class RateRepository {
     }
 
     private List<Rate> ownAsOf(String sheetId, LocalDate asOf) {
-        return jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date FROM rate_history h WHERE h.sheet_id = ? "
+        return jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date, version FROM rate_history h WHERE h.sheet_id = ? "
                 + "AND h.id = (SELECT MAX(h2.id) FROM rate_history h2 WHERE h2.sheet_id = h.sheet_id AND h2.grade = h.grade "
                 + "AND h2.from_key = h.from_key AND (h2.on_date IS NULL OR h2.on_date <= ?)) ORDER BY grade, from_key",
                 ROW, sheetId, asOf);
@@ -117,19 +117,23 @@ public class RateRepository {
         return null;
     }
 
-    /** Set (or replace) the grade's rate from the from-date (null: from the beginning of time) through
-     *  the to-date (null: no end). */
+    /** Set the grade's rate from the from-date (null: from the beginning of time) through the to-date
+     *  (null: no end). When the grade already has a rate from that from-date, the one it replaces is kept
+     *  as an older version and the new one is the next version (the one in force). */
     public Rate set(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to, String user) {
-        if (from == null) {
-            jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NULL", sheetId, grade);
-        } else {
-            jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date = ?", sheetId, grade, from);
-        }
-        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, set_by, set_at) "
-                + "VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)", sheetId, grade, pct, from, to, user);
-        jdbc.update("INSERT INTO rate_history (sheet_id, grade, pct, from_date, to_date, on_date) "
-                + "VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", sheetId, grade, pct, from, to, sheetId);
+        String match = "sheet_id = ? AND grade = ? AND from_key = COALESCE(CAST(? AS DATE), DATE '0001-01-01')";
+        jdbc.update("INSERT INTO rate_version (sheet_id, grade, version, pct, from_date, to_date, set_by, set_at) "
+                + "SELECT sheet_id, grade, version, pct, from_date, to_date, set_by, set_at FROM rate WHERE " + match,
+                sheetId, grade, from);
+        int version = 1 + jdbc.queryForList("SELECT version FROM rate WHERE " + match, Integer.class, sheetId, grade, from)
+                .stream().findFirst().orElse(0);
+        jdbc.update("DELETE FROM rate WHERE " + match, sheetId, grade, from);
+        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, set_by, set_at, version) "
+                + "VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)", sheetId, grade, pct, from, to, user, version);
+        jdbc.update("INSERT INTO rate_history (sheet_id, grade, pct, from_date, to_date, on_date, version) "
+                + "VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?), ?)",
+                sheetId, grade, pct, from, to, sheetId, version);
         return new Rate(sheetId, grade, pct.toPlainString(), from == null ? null : from.toString(),
-                to == null ? null : to.toString(), 0);
+                to == null ? null : to.toString(), 0, version);
     }
 }

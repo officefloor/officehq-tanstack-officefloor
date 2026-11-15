@@ -6,8 +6,11 @@ import type { DatedOn } from '../settings/api';
 /** A grade's rate on the sheet: a percent as two-decimal text, in force from its from-date
  *  (yyyy-MM-dd; null applies from the beginning of time) through its to-date (null: no end). A grade
  *  with no rate is not listed. Its level is how far up the sheet's parent chain it comes from (0: the
- *  sheet's own; 1: its parent's; up to 3). */
-export type Rate = { sheetId: string; grade: string; pct: string; from: string | null; to: string | null; level: number };
+ *  sheet's own; 1: its parent's; up to 3). Its version is how many versions the grade's rate from that
+ *  from-date has had: setting it again keeps the old value as an older version; this, the newest, is in force. */
+export type Rate = {
+  sheetId: string; grade: string; pct: string; from: string | null; to: string | null; level: number; version: number;
+};
 /** A blank `from` sets the rate that applies from the beginning of time; a blank `to` has no end. */
 export type RateInput = { grade: string; pct: string; from: string; to: string };
 
@@ -21,7 +24,7 @@ export function listRates(sheetId: string, live = false): Promise<Rate[]> {
   return getJson<Rate[]>(base(sheetId), live);
 }
 
-/** Set a grade's rate from a from-date, replacing the one with the same grade and from-date;
+/** Set a grade's rate from a from-date, as a new version of the one with the same grade and from-date;
  *  refused (rejects) when the percent is missing, negative or has more than two decimals, or the
  *  from-date or to-date is not a date, or the to-date is before the from-date. */
 export function setRate(sheetId: string, by: string, input: RateInput): Promise<Rate> {

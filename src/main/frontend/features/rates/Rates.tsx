@@ -143,6 +143,9 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
               <td>
                 <span data-testid="rate-pct">{r.pct}</span>
               </td>
+              <td>
+                v<span data-testid="rate-version">{r.version}</span>
+              </td>
             </tr>
           ))}
         </tbody>

@@ -43,7 +43,7 @@ public class SheetCloner {
         jdbc.update("INSERT INTO sheet (id, created_by, today) SELECT ?, ?, today FROM sheet WHERE id = ?",
                 to, user, from);
         Map<String, Object> none = Map.of();
-        for (String table : List.of("sheet_setting", "setting_history", "sheet_role", "rate", "rate_history",
+        for (String table : List.of("sheet_setting", "setting_history", "sheet_role", "rate", "rate_history", "rate_version",
                 "holiday", "void_reason", "claim_template", "sheet_tag")) {
             copy(table, from, to, Map.of(), none);
         }
