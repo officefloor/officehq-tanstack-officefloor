@@ -136,6 +136,12 @@ public class ValidateSetting {
             }
             body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null));
             return;
+        } else if (SettingRepository.SCORE_LOG.equals(key)) {
+            if (!value.isEmpty() && !"on".equals(value)) {
+                throw new InvalidSettingException("The score log is on or blank");
+            }
+            body.set(new SettingRequest(key, value.isEmpty() ? null : value, null));
+            return;
         } else if (SettingRepository.GRACE_DAYS.equals(key)) {
             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
                 throw new InvalidSettingException("The grace days are blank or a whole number of days, 0 or more");

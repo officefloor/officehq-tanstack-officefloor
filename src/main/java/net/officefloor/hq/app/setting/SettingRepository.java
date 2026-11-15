@@ -109,6 +109,10 @@ public class SettingRepository {
      *  set, a person whose score is at or above it is in the HIGH band. */
     public static final String SCORE_HIGH = "score-high";
 
+    /** The score log (on or blank; not dated): while on, changing the sheet's today records, before the
+     *  SNAPSHOT lines, a SCORE line per person with their score on the day being left. */
+    public static final String SCORE_LOG = "score-log";
+
     /** A grade's grace days ({@code grace-<grade>}, dated; a whole number; blank: none): a claim whose
      *  person's grade in force on its date has them in force on that date is overdue, and gains its late
      *  charge, counting from its due-by plus them. */
@@ -142,7 +146,7 @@ public class SettingRepository {
     /** Whether a key is dated: every key that carries a figure (the policy date, the period
      *  numbering date, the grace days, the pot, the proof kinds, the fiscal year start month and the permission matrix are not). */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
+        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !SCORE_LOG.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
                 && !ENTRY_DATE.equals(key) && !PROOF_KINDS.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !FISCAL_START_MONTH.equals(key) && !PARENT.equals(key) && !DEFAULT_GRADE.equals(key) && !Permissions.isKey(key);
     }
 
@@ -204,6 +208,11 @@ public class SettingRepository {
     /** An undated setting's value; null when blank or never set. */
     public String find(String sheetId, String key) {
         return dated(sheetId, key, null).on("9999-12-31");
+    }
+
+    /** Whether the sheet's score log is on. */
+    public boolean scoreLog(String sheetId) {
+        return "on".equals(find(sheetId, SCORE_LOG));
     }
 
     /** The sheet's default grade: the one set, else A. */
