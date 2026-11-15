@@ -4,12 +4,13 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeople, peopleKey } from '../people/api';
 import type { Person } from '../people/api';
 import { addPool, addPoolMember, listPools, poolsKey } from './api';
-import type { Pool } from './api';
+import type { MemberRef, Pool } from './api';
 
 /** The sheet's pools and a form to add one (name trimmed; a blank or repeated one refused). Each pool
  *  lists its members with their shares, its total share (a retired member's counting as 0.00) and
  *  whether it is balanced (exactly 100.00), each member's cut of
- *  the sheet's pot (blank when unbalanced or no pot), and adds a member from its row. */
+ *  the pool's pot (blank when unbalanced or no pot), and adds a member — a person or another pool, listed
+ *  as pool:<name> — from its row. A pool that is a member of another cuts its cut there. */
 export function Pools({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const pools = useQuery({ queryKey: poolsKey(sheetId), queryFn: () => listPools(sheetId) });
@@ -53,23 +54,28 @@ export function Pools({ sheetId, user }: { sheetId: string; user: string }) {
       </form>
       <ul>
         {(pools.data ?? []).map((p) => (
-          <PoolRow key={p.id} sheetId={sheetId} user={user} pool={p} people={people.data ?? []} />
+          <PoolRow key={p.id} sheetId={sheetId} user={user} pool={p} people={people.data ?? []} pools={pools.data ?? []} />
         ))}
       </ul>
     </section>
   );
 }
 
-function PoolRow({ sheetId, user, pool, people }: { sheetId: string; user: string; pool: Pool; people: Person[] }) {
+/** The select's value for a member: a person's id, or pool:<id> for a pool. */
+function memberRef(value: string): MemberRef {
+  return value.startsWith('pool:') ? { memberPoolId: Number(value.slice(5)) } : { personId: Number(value) };
+}
+
+function PoolRow({ sheetId, user, pool, people, pools }: { sheetId: string; user: string; pool: Pool; people: Person[]; pools: Pool[] }) {
   const queryClient = useQueryClient();
-  const [personId, setPersonId] = useState('');
+  const [member, setMember] = useState('');
   const [share, setShare] = useState('');
 
   const add = useMutation({
-    mutationFn: (input: { personId: number; share: string }) =>
-      addPoolMember(sheetId, user, pool.id, input.personId, input.share),
+    mutationFn: (input: { member: MemberRef; share: string }) =>
+      addPoolMember(sheetId, user, pool.id, input.member, input.share),
     onSuccess: (data) => {
-      setPersonId('');
+      setMember('');
       setShare('');
       queryClient.setQueryData(poolsKey(sheetId), data);
     },
@@ -84,8 +90,9 @@ function PoolRow({ sheetId, user, pool, people }: { sheetId: string; user: strin
       balanced <span data-testid="pool-balanced">{pool.balanced ? 'yes' : 'no'}</span>
       <ul>
         {pool.members.map((m) => (
-          <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
-            {m.name}{m.retired ? ' (retired)' : ''} share <span data-testid="pool-share">{m.share}</span>{' '}
+          <li key={m.poolId !== null ? `pool-${m.poolId}` : m.personId}
+            data-testid={`pool-member-${pool.name}-${m.poolId !== null ? `pool-${m.name}` : m.personId}`}>
+            {m.poolId !== null ? `pool:${m.name}` : m.name}{m.retired ? ' (retired)' : ''} share <span data-testid="pool-share">{m.share}</span>{' '}
             cut <span data-testid="pool-cut">{m.cut}</span>
           </li>
         ))}
@@ -93,21 +100,24 @@ function PoolRow({ sheetId, user, pool, people }: { sheetId: string; user: strin
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          const input = { personId: Number(personId), share };
+          const input = { member: memberRef(member), share };
           submitOnce(() => {
             add.reset();
             return add.mutateAsync(input);
           });
         }}
       >
-        <select data-testid="pool-member-select" value={personId}
+        <select data-testid="pool-member-select" value={member}
           onChange={(e) => {
-            setPersonId(e.target.value);
+            setMember(e.target.value);
             add.reset();
           }}>
-          <option value="">Person…</option>
+          <option value="">Member…</option>
           {people.map((person) => (
             <option key={person.id} value={String(person.id)}>{person.name}</option>
+          ))}
+          {pools.map((p) => (
+            <option key={`pool-${p.id}`} value={`pool:${p.id}`}>{`pool:${p.name}`}</option>
           ))}
         </select>{' '}
         <input data-testid="pool-member-share" placeholder="Share %" value={share}
@@ -119,7 +129,7 @@ function PoolRow({ sheetId, user, pool, people }: { sheetId: string; user: strin
           Add member
         </button>
         {add.isError && (
-          <span data-testid="pool-error">The member could not be added: a person not already in the pool, with a share more than 0.00 and at most 100.00 (two decimals).</span>
+          <span data-testid="pool-error">The member could not be added: a person not already in the pool, or a pool not already in one that keeps chains acyclic and at most three deep, with a share more than 0.00 and at most 100.00 (two decimals).</span>
         )}
       </form>
     </li>

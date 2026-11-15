@@ -1,14 +1,17 @@
 import { getJson, postJson } from '../../api/http';
 import { sheetKey } from '../sheet/api';
 
-/** A person in a pool, with their share percent (two decimals); a `retired` member's share counts as
- *  0.00 toward the pool's total. `cut` is their cut of the sheet's pot (two decimals; a retired member's
- *  0.00, the remainder going to the largest share), "" when the pool is unbalanced or there is no pot. */
-export type PoolMember = { personId: number; name: string; share: string; retired: boolean; cut: string };
+/** A member of a pool, a person (`personId`) or another pool (`poolId`, `name` its name), with their share
+ *  percent (two decimals); a `retired` member's share counts as 0.00 toward the pool's total. `cut` is
+ *  their cut of the pool's pot (two decimals; a retired member's 0.00, the remainder going to the largest
+ *  share), "" when the pool is unbalanced or has no pot. A pool that is a member of none cuts the sheet's
+ *  pot; a member pool cuts its own cut in the pool above. */
+export type PoolMember = { personId: number | null; poolId: number | null; name: string; share: string; retired: boolean; cut: string };
 
 /** A pool on the sheet: its members in the order added, the total of their shares and whether that
  *  total is exactly 100.00 (`balanced`). */
-export type Pool = { id: number; sheetId: string; name: string; members: PoolMember[]; totalShare: string; balanced: boolean };
+export type Pool = { id: number; sheetId: string; name: string; members: PoolMember[]; totalShare: string; balanced: boolean;
+  parentId: number | null };
 
 const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/pools`;
 
@@ -24,8 +27,12 @@ export function addPool(sheetId: string, by: string, name: string): Promise<Pool
   return postJson<Pool[]>(`${base(sheetId)}?by=${encodeURIComponent(by)}`, { name });
 }
 
-/** Add a person to a pool with a share percent; refused (rejects) for a person already in the pool or a
- *  share that is not more than 0.00 and at most 100.00 with at most two decimals. */
-export function addPoolMember(sheetId: string, by: string, poolId: number, personId: number, share: string): Promise<Pool[]> {
-  return postJson<Pool[]>(`${base(sheetId)}/${poolId}/members?by=${encodeURIComponent(by)}`, { personId, share });
+/** A pool member to add: a person or another pool of the sheet. */
+export type MemberRef = { personId: number } | { memberPoolId: number };
+
+/** Add a person or another pool to a pool with a share percent; refused (rejects) for a person already in
+ *  the pool, a share that is not more than 0.00 and at most 100.00 with at most two decimals, or a pool
+ *  already a member of a pool, that would contain itself or make a chain of pools more than three deep. */
+export function addPoolMember(sheetId: string, by: string, poolId: number, member: MemberRef, share: string): Promise<Pool[]> {
+  return postJson<Pool[]>(`${base(sheetId)}/${poolId}/members?by=${encodeURIComponent(by)}`, { ...member, share });
 }
