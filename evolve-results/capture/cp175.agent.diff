@@ -1,0 +1,379 @@
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 0de5b5d06..28c80259a 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -23,7 +23,7 @@ import { QuickAdd } from './QuickAdd';
+ import { ColumnChooser, useColumns } from './Columns';
+ import { ShowRetired, useShowRetired } from './ShowRetired';
+ import { SortBy, sortPeople, useSortBy } from './SortBy';
+-import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, takeStatement, transferPerson, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
++import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, takeStatement, transferPerson, undoTransfer, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+ import { Fig } from '../session/Fig';
+ 
+ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFrom: '', contact: '', tags: '' };
+@@ -231,6 +231,19 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+     ]),
+   });
+ 
++  // The person whose last transfer undo was refused; cleared by the next action on the row. The person
++  // leaves this sheet with their claims, so these are read again.
++  const untransferring = useMutation({
++    mutationFn: (v: { id: number }) => undoTransfer(sheetId, user, v.id),
++    onSuccess: () => Promise.all([
++      queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
++      queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++      queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
++      queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
++      queryClient.invalidateQueries({ queryKey: watchesKey(sheetId, user) }),
++    ]),
++  });
++
+   // The person whose last inline grade was refused; cleared by the next action on the row. Saved as
+   // the person form would save the grade from the sheet's today, the rest of the person unchanged.
+   const grading = useMutation({
+@@ -270,6 +283,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+     aliasing.reset();
+     merging.reset();
+     transferring.reset();
++    untransferring.reset();
+     moving.reset();
+     grading.reset();
+   };
+@@ -370,6 +384,13 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+     });
+   };
+ 
++  const undoTransferOf = (id: number) => {
++    stateOnce(() => {
++      resetRowActions();
++      return untransferring.mutateAsync({ id });
++    });
++  };
++
+   const change = (patch: Partial<PersonInput>) => {
+     setForm((f) => ({ ...f, ...patch }));
+     save.reset();
+@@ -637,6 +658,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   {transferring.isError && transferring.variables?.id === p.id && (
+                     <span data-testid="person-error">The person could not be transferred: only a steward can, not a retired person, to another sheet where their names match at most one person (not retired), and no one else has their contact.</span>
+                   )}
++                  {untransferring.isError && untransferring.variables?.id === p.id && (
++                    <span data-testid="person-error">The transfer could not be undone: only a steward can, for a person a transfer brought here, on the sheet's today they arrived.</span>
++                  )}
+                 </td>
+                 <td>
+                   Watched <span data-testid="person-watched">{watched.has(p.id) ? 'yes' : 'no'}</span>{' '}
+@@ -754,6 +778,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   <button type="button" data-testid="person-transfer" disabled={transferring.isPending}
+                     onClick={() => transfer(p.id)}>
+                     Transfer
++                  </button>{' '}
++                  <button type="button" data-testid="person-transfer-undo" disabled={untransferring.isPending}
++                    onClick={() => undoTransferOf(p.id)}>
++                    Undo transfer
+                   </button>
+                 </td>
+                 <td>
+diff --git a/src/main/frontend/features/people/api.ts b/src/main/frontend/features/people/api.ts
+index 4bda31aa7..aa680b227 100644
+--- a/src/main/frontend/features/people/api.ts
++++ b/src/main/frontend/features/people/api.ts
+@@ -53,6 +53,7 @@ export type Person = {
+   tags: string | null;
+   /** The sheet they were last transferred from (null: none). */
+   origin: string | null;
++  arrivedOn: string | null;
+   /** Their aliases, sorted as names are compared; the quick-add bar and the paste box find them by one. */
+   aliases: string[];
+   /** Whether their name or an alias is used on another sheet of the sheet's tree (its ancestors and
+@@ -176,6 +177,13 @@ export function transferPerson(sheetId: string, by: string, id: number, to: stri
+   return postJson<Person>(`${base(sheetId)}/${id}/transfer?by=${encodeURIComponent(by)}`, { to });
+ }
+ 
++/** A steward undoes the transfer that brought the person to this sheet, on the sheet's today they
++ *  arrived: they are transferred back to the sheet they came from, as a transfer does. Refused
++ *  (rejects) for anyone else, a person who did not arrive by transfer, and any later day. */
++export function undoTransfer(sheetId: string, by: string, id: number): Promise<Person> {
++  return postJson<Person>(`${base(sheetId)}/${id}/transfer-undo?by=${encodeURIComponent(by)}`, {});
++}
++
+ export type QuickAddInput = { name: string; amount: string };
+ 
+ /** Add a DRAFT claim of `amount` (the sheet's today, empty note) to the named person, adding them
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index bc3d24d71..eba3b3e03 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -210,6 +210,10 @@ public class Person {
+     private String origin;
+     public String getOrigin() { return origin; }
+     public void setOrigin(String origin) { this.origin = origin; }
++    /** The sheet's today a transfer brought them here on (null: they did not arrive by transfer). */
++    private String arrivedOn;
++    public String getArrivedOn() { return arrivedOn; }
++    public void setArrivedOn(String arrivedOn) { this.arrivedOn = arrivedOn; }
+     /** Whether their name or an alias is used, as a name or alias, on another sheet of the sheet's tree. */
+     private boolean clashing;
+     public boolean isClashing() { return clashing; }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index bc23893cb..f29189916 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class PersonRepository {
+ 
+-    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, terms, contact, tags, origin";
++    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, terms, contact, tags, origin, arrived_on";
+ 
+     private static final RowMapper<Person> ROW = (rs, n) -> {
+         LocalDate stated = rs.getObject("statement_date", LocalDate.class);
+@@ -27,6 +27,8 @@ public class PersonRepository {
+         person.setContact(rs.getString("contact"));
+         person.setTags(rs.getString("tags"));
+         person.setOrigin(rs.getString("origin"));
++        LocalDate arrived = rs.getObject("arrived_on", LocalDate.class);
++        person.setArrivedOn(arrived == null ? null : arrived.toString());
+         return person;
+     };
+ 
+@@ -571,8 +573,8 @@ public class PersonRepository {
+      *  and crew memberships and closed periods' fixed totals are dropped (crews they lead stay, without a lead); they keep the sheet they came from as their
+      *  origin. When {@code merging} (they are to be merged into someone there straight after) they keep
+      *  their statements and arrive under a stand-in name, as theirs is taken there. Their claims must
+-     *  have moved first. */
+-    public void transfer(Person person, String to, boolean merging) {
++     *  have moved first. They are marked as arriving on {@code arrivedOn}, the sheet {@code to}'s today. */
++    public void transfer(Person person, String to, boolean merging, LocalDate arrivedOn) {
+         String sheetId = person.getSheetId();
+         long id = person.getId();
+         jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, id, id);
+@@ -581,9 +583,18 @@ public class PersonRepository {
+         }
+         // A crew they lead stays, without a lead.
+         jdbc.update("UPDATE crew SET lead_id = NULL WHERE sheet_id = ? AND lead_id = ?", sheetId, id);
++        // Statements kept from leaving any sheet but the one they go to (an undo gives those back) go.
++        for (String table : List.of("person_left", "person_statement_left")) {
++            jdbc.update("DELETE FROM " + table + " WHERE person_id = ? AND (sheet_id <> ? OR ?)", id, to, merging);
++        }
+         if (merging) {
+             jdbc.update("UPDATE person_statement SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, sheetId, id);
+         } else {
++            jdbc.update("INSERT INTO person_left (sheet_id, person_id, statement_count, stated_total, statement_date) "
++                    + "SELECT sheet_id, id, statement_count, stated_total, statement_date FROM person WHERE sheet_id = ? AND id = ?", sheetId, id);
++            jdbc.update("INSERT INTO person_statement_left (sheet_id, person_id, stated_total, statement_date, taken_at) "
++                    + "SELECT sheet_id, person_id, stated_total, statement_date, taken_at FROM person_statement "
++                    + "WHERE sheet_id = ? AND person_id = ? ORDER BY id", sheetId, id);
+             jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+             jdbc.update("UPDATE person SET statement_count = 0, stated_total = NULL, statement_date = NULL "
+                     + "WHERE sheet_id = ? AND id = ?", sheetId, id);
+@@ -595,7 +606,22 @@ public class PersonRepository {
+         }
+         String name = merging ? "#merging-" + id : person.getName();
+         jdbc.update("UPDATE person SET sheet_id = ?, name = ?, "
+-                + "origin = ?, list_pos = " + NEXT_POS + " WHERE sheet_id = ? AND id = ?", to, name, sheetId, to, sheetId, id);
++                + "origin = ?, arrived_on = ?, list_pos = " + NEXT_POS + " WHERE sheet_id = ? AND id = ?",
++                to, name, sheetId, arrivedOn, to, sheetId, id);
++    }
++
++    /** Give the person, transferred back to the sheet they last left, the statements that transfer
++     *  dropped from them there. */
++    public void restoreStatements(String sheetId, long id) {
++        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, stated_total, statement_date, taken_at) "
++                + "SELECT sheet_id, person_id, stated_total, statement_date, taken_at FROM person_statement_left "
++                + "WHERE sheet_id = ? AND person_id = ? ORDER BY id", sheetId, id);
++        jdbc.update("UPDATE person p SET (statement_count, stated_total, statement_date) = "
++                + "(SELECT l.statement_count, l.stated_total, l.statement_date FROM person_left l WHERE l.sheet_id = p.sheet_id AND l.person_id = p.id) "
++                + "WHERE p.sheet_id = ? AND p.id = ? AND EXISTS (SELECT 1 FROM person_left l WHERE l.sheet_id = p.sheet_id AND l.person_id = p.id)", sheetId, id);
++        for (String table : List.of("person_left", "person_statement_left")) {
++            jdbc.update("DELETE FROM " + table + " WHERE person_id = ?", id);
++        }
+     }
+ 
+     /** Swap the two people's places in their sheet's list. */
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordPersonTransferUndone.java b/src/main/java/net/officefloor/hq/app/person/RecordPersonTransferUndone.java
+new file mode 100644
+index 000000000..258bfaa75
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RecordPersonTransferUndone.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Records the transfer just undone on the sheet the person left (PERSON_TRANSFER_UNDONE ... to=). */
++public class RecordPersonTransferUndone {
++    public void record(@RequestParam(name = "by", required = false) String by,
++            @Val Transfer transfer, Audit audit) {
++        audit.record("PERSON_TRANSFER_UNDONE sheet=" + transfer.person().getSheetId() + " by=" + (by == null ? "" : by)
++                + " name=" + transfer.person().getName() + " to=" + transfer.to());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/RestoreStatements.java b/src/main/java/net/officefloor/hq/app/person/RestoreStatements.java
+new file mode 100644
+index 000000000..efeef0abc
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RestoreStatements.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Val;
++
++/** A transfer undone: the person, back on the sheet they came from, has the statements the transfer
++ *  dropped from them there again. */
++public class RestoreStatements {
++    public void restore(@Val Transfer transfer, PersonRepository people) {
++        people.restoreStatements(transfer.to(), transfer.person().getId());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+index c99f32a54..918b1332c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+@@ -75,7 +75,7 @@ public class TransferPerson {
+             Claim claim = claims.find(to, id);
+             claims.renumber(claim, ClaimNumbers.next(claim, claims, periods, settings, sheets));
+         }
+-        people.transfer(person, to, into != null);
++        people.transfer(person, to, into != null, sheets.today(to));
+         if (into != null) {
+             Person arrived = people.find(to, person.getId());
+             arrived.setName(person.getName()); // arrived under a stand-in, as the name is taken there
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateTransferUndo.java b/src/main/java/net/officefloor/hq/app/person/ValidateTransferUndo.java
+new file mode 100644
+index 000000000..fc0b201c7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateTransferUndo.java
+@@ -0,0 +1,28 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.setting.Role;
++import net.officefloor.hq.app.setting.RoleRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** A steward undoes the transfer that brought the person to this sheet, on the sheet's today they
++ *  arrived: publishes the transfer back to the sheet they came from (see TransferPerson). Refused for
++ *  anyone else, a person who did not arrive by transfer, and any later day. */
++public class ValidateTransferUndo {
++    public void validate(@RequestParam(name = "by", required = false) String by, @Val Person person,
++            RoleRepository roles, SheetRepository sheets, Out<TransferRequest> back) throws InvalidPersonException {
++        String sheetId = person.getSheetId();
++        if (!Role.STEWARD.equals(roles.roleOf(sheetId, by == null ? "" : by))) {
++            throw new InvalidPersonException("Only a steward can undo a transfer");
++        }
++        if (person.getOrigin() == null || person.getArrivedOn() == null) {
++            throw new InvalidPersonException("The person did not arrive by transfer");
++        }
++        if (!sheets.today(sheetId).toString().equals(person.getArrivedOn())) {
++            throw new InvalidPersonException("A transfer can be undone only on the day they arrived");
++        }
++        back.set(new TransferRequest(person.getOrigin()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index 4ff1048db..4b2cdd45a 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -51,6 +51,7 @@ public class SheetCloner {
+         unstated.put("statement_count", 0);
+         unstated.put("stated_total", null);
+         unstated.put("statement_date", null);
++        unstated.put("arrived_on", null); // a clone did not arrive by transfer: nothing there to undo
+         unstated.put("version", 0);
+         Map<Long, Long> people = copy("person", from, to, Map.of(), unstated);
+         Map<String, Map<Long, Long>> byPerson = Map.of("person_id", people);
+diff --git a/src/main/resources/db/migration/V81__person_arrived_on.sql b/src/main/resources/db/migration/V81__person_arrived_on.sql
+new file mode 100644
+index 000000000..696fe38b5
+--- /dev/null
++++ b/src/main/resources/db/migration/V81__person_arrived_on.sql
+@@ -0,0 +1,2 @@
++-- The sheet's today a transfer brought the person to this sheet on (NULL: they did not arrive by transfer).
++ALTER TABLE person ADD COLUMN arrived_on DATE;
+diff --git a/src/main/resources/db/migration/V82__person_statement_left.sql b/src/main/resources/db/migration/V82__person_statement_left.sql
+new file mode 100644
+index 000000000..66aac72ed
+--- /dev/null
++++ b/src/main/resources/db/migration/V82__person_statement_left.sql
+@@ -0,0 +1,19 @@
++-- The statements a transfer dropped from a person, kept by the sheet they left so that undoing the
++-- transfer gives them back there: their counters (person_left) and each statement (person_statement_left).
++CREATE TABLE person_left (
++    sheet_id        VARCHAR(200) NOT NULL,
++    person_id       BIGINT       NOT NULL,
++    statement_count INT          NOT NULL,
++    stated_total    VARCHAR(30),
++    statement_date  DATE,
++    PRIMARY KEY (sheet_id, person_id)
++);
++CREATE TABLE person_statement_left (
++    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id       VARCHAR(200) NOT NULL,
++    person_id      BIGINT       NOT NULL,
++    stated_total   VARCHAR(30),
++    statement_date DATE         NOT NULL,
++    taken_at       TIMESTAMP    NOT NULL
++);
++CREATE INDEX person_statement_left_person ON person_statement_left (person_id, sheet_id, id);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer-undo.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer-undo.POST.yml
+new file mode 100644
+index 000000000..fc36c11cb
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer-undo.POST.yml
+@@ -0,0 +1,51 @@
++# POST /api/sheets/{sheetId}/people/{personId}/transfer-undo — a steward undoes the transfer that
++# brought the person to this sheet, on the sheet's today they arrived (see ValidateTransferUndo): they
++# are transferred back to the sheet they came from by exactly the transfer's rules and lines (see
++# TransferPerson) and given back the statements it dropped from them there; then PERSON_TRANSFER_UNDONE
++# and this sheet's figures are recorded. Anyone else, a person who did not arrive by transfer, or any
++# later day, is refused.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: validate
++validate:
++  class: net.officefloor.hq.app.person.ValidateTransferUndo
++  govern: [ transaction ]
++  next: transfer
++transfer:
++  class: net.officefloor.hq.app.person.TransferPerson
++  govern: [ transaction ]
++  next: restore
++restore:
++  class: net.officefloor.hq.app.person.RestoreStatements
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.RecordPersonTransferred
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
++  next: arrive
++arrive:
++  class: net.officefloor.hq.app.person.RecordPersonArrived
++  govern: [ transaction ]
++  next: undone
++undone:
++  class: net.officefloor.hq.app.person.RecordPersonTransferUndone
++  govern: [ transaction ]
++  next: totals
++totals:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
