@@ -7,6 +7,7 @@ import { PasteClaims } from '../claims/PasteClaims';
 import { BulkSettle } from '../claims/BulkSettle';
 import { BulkReassign } from '../claims/BulkReassign';
 import { BulkRedate } from '../claims/BulkRedate';
+import { BulkVoid } from '../claims/BulkVoid';
 import { PersonClaims } from '../claims/PersonClaims';
 import { PersonPlans } from '../plans/PersonPlans';
 import { backing, claimedClaims, claimsKey, patronShares, isActive, correctsAnother, listClaims, liveClaims, showTags, sumAmounts, tagsKey } from '../claims/api';
@@ -526,6 +527,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       <BulkReassign sheetId={sheetId} user={user} selected={[...selected]} people={everyone}
         onDone={() => setSelected(new Set())} />
       <BulkRedate sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
+      <BulkVoid sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
       <table>
         <tbody>

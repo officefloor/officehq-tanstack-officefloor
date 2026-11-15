@@ -386,3 +386,12 @@ export type BulkRedateResult = { redated: number; refused: number };
 export function bulkRedateClaims(sheetId: string, by: string, claimIds: number[], date: string): Promise<BulkRedateResult> {
   return postJson<BulkRedateResult>(`${sheetBase(sheetId)}/bulk-redate?by=${encodeURIComponent(by)}`, { claimIds, date });
 }
+
+export type BulkVoidResult = { voided: number; refused: number };
+
+/** Void the selected claims together in list order (people in their list places, newest claim first
+ *  within a person), each by the rules of voiding one with `reason` (needed while the sheet has void
+ *  reasons); each that cannot be voided is left as it is and counted as refused. */
+export function bulkVoidClaims(sheetId: string, by: string, claimIds: number[], reason: string): Promise<BulkVoidResult> {
+  return postJson<BulkVoidResult>(`${sheetBase(sheetId)}/bulk-void?by=${encodeURIComponent(by)}`, { claimIds, reason });
+}
