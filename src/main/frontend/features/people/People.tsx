@@ -11,6 +11,7 @@ import { listPeriods, periodsKey, personPeriodDue } from '../periods/api';
 import { claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
 import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
+import { BulkGrade } from './BulkGrade';
 import { ExportPeople } from './ExportPeople';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
@@ -28,6 +29,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '' };
  *  patrons (names sorted, with a picker that names one more) and backing (see `backing`), and
  *  their due-total for each period (see `personPeriodDue`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
  *  with a checkbox that selects it for a button that opens the selected claims together.
+ *  Each person has a checkbox that selects them for a grade given to the selected people together.
  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
  *  Whether each person is active (see `isActive`).
  *  Whether the signed-in user watches each person, with a button that starts or stops it.
@@ -57,6 +59,13 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const [holdDates, setHoldDates] = useState<Record<number, { from: string; to: string }>>({});
   // The patron picked on each person's row (blank: none picked).
   const [patronPicks, setPatronPicks] = useState<Record<number, string>>({});
+  // The people selected for a bulk grade.
+  const [selectedPeople, setSelectedPeople] = useState<ReadonlySet<number>>(new Set());
+  const selectPerson = (id: number, on: boolean) => setSelectedPeople((s) => {
+    const next = new Set(s);
+    if (on) next.add(id); else next.delete(id);
+    return next;
+  });
   // The claims selected for a bulk action.
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
   const select = (id: number, on: boolean) => setSelected((s) => {
@@ -292,6 +301,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       <ShowRetired />{' '}
       <ExportPeople rows={() => everyone.map((p) => [p.name, gradeOn(p, today), p.retiredFrom ?? '', showDue(dueOf.get(p.id) ?? null)])} />
       <BulkOpen sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
+      <BulkGrade sheetId={sheetId} user={user} selected={[...selectedPeople]} onDone={() => setSelectedPeople(new Set())} />
       <BulkSettle sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
       <table>
@@ -304,6 +314,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
             const late = overdue(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
             return (
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
+                <td>
+                  <input type="checkbox" data-testid="person-select" checked={selectedPeople.has(p.id)}
+                    onChange={(e) => selectPerson(p.id, e.target.checked)} />
+                </td>
                 <td data-testid="person-name">{p.name}</td>
                 <td data-testid="person-grade">{p.grade}</td>
                 <td>

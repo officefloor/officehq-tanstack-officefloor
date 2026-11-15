@@ -115,3 +115,12 @@ export function listWatches(sheetId: string, user: string): Promise<number[]> {
 export function watchPerson(sheetId: string, by: string, id: number, on: boolean): Promise<{ personId: number; watched: boolean }> {
   return postJson(`${base(sheetId)}/${id}/watch?by=${encodeURIComponent(by)}`, { on });
 }
+
+/** How many of the selected people a bulk grade gave the grade. */
+export type BulkGradeResult = { graded: number };
+
+/** Give the selected people `grade` together from `from` (blank: the sheet's today), in list order,
+ *  each as the person form would; refused (rejects) with no one selected or a from-date not a date. */
+export function bulkGradePeople(sheetId: string, by: string, personIds: number[], grade: string, from: string): Promise<BulkGradeResult> {
+  return postJson<BulkGradeResult>(`/api/sheets/${encodeURIComponent(sheetId)}/bulk-grade?by=${encodeURIComponent(by)}`, { personIds, grade, from });
+}
