@@ -63,7 +63,7 @@ public class PoolRepository {
         for (Map.Entry<Long, List<PoolMember>> pool : members.entrySet()) {
             BigDecimal total = BigDecimal.ZERO.setScale(2);
             for (PoolMember m : pool.getValue()) {
-                if (!m.retired() && m.current()) total = total.add(new BigDecimal(m.share()));
+                if (m.current()) total = total.add(new BigDecimal(m.share()));
             }
             totals.put(pool.getKey(), total);
         }
@@ -101,11 +101,16 @@ public class PoolRepository {
 
     /** The members with their cuts of the pot. A member with a cut is one neither retired nor on a hold in
      *  force on the sheet's today ({@code held}); the others' cut is 0.00, but a member whose dates do not
-     *  include the sheet's today is left out entirely (cut ""). Each member with a cut gets the pot
+     *  include the sheet's today is left out entirely (cut ""), as is every member when each current member
+     *  is retired (the pool shows no cuts). Each member with a cut gets the pot
      *  times their share over the shares of the members with a cut added up, rounded half to even to two
      *  decimals; the remainder goes to the member with a cut with the largest share (the earliest added on a
      *  tie), so the cuts total exactly the pot (all 0.00 when no member has a cut). */
     private static List<PoolMember> cut(List<PoolMember> members, BigDecimal pot, Set<Long> held) {
+        if (members.stream().anyMatch(PoolMember::current)
+                && members.stream().filter(PoolMember::current).allMatch(PoolMember::retired)) {
+            return members.stream().map(m -> m.withCut("")).toList();
+        }
         BigDecimal[] cuts = new BigDecimal[members.size()];
         boolean[] cutting = new boolean[members.size()];
         BigDecimal shares = BigDecimal.ZERO.setScale(2);

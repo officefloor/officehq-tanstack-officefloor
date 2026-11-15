@@ -7,7 +7,7 @@ import { addPool, addPoolMember, listPools, poolsKey } from './api';
 import type { MemberRef, Pool } from './api';
 
 /** The sheet's pools and a form to add one (name trimmed; a blank or repeated one refused). Each pool
- *  lists its members with their shares, its total share (a retired member's counting as 0.00) and
+ *  lists its members with their shares, its total share (a retired member's counting as given) and
  *  whether it is balanced (exactly 100.00), each member's cut of
  *  the pool's pot (blank when unbalanced or no pot), and adds a member — a person or another pool, listed
  *  as pool:<name> — from its row, with optional from/to dates (a member whose dates leave out the sheet's
