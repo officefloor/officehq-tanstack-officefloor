@@ -122,7 +122,7 @@ public class AsOfStore {
                 ps.setString(1, sheetId);
                 ps.executeUpdate();
             }
-            // A grade without a rate of its own goes by its ancestors' (as they are now, like the link):
+            // A grade without a rate of its own goes by its ancestors' (as they stood on the date, see RateRepository):
             // their rates and parent links come along, up as far as rates are looked.
             Set<String> chain = new HashSet<>(Set.of(sheetId));
             for (String at = liveParent(c, sheetId); at != null && chain.size() <= RateRepository.LEVELS

@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import net.officefloor.hq.app.asof.AsOfView;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -32,13 +33,16 @@ public class RateRepository {
 
     /** The sheet's own rates (level 0), by grade, then by from-date (none first), then those of its
      *  parent, its parent's parent, up to {@link #LEVELS} up, each at its level. A grade without a rate
-     *  is not listed. */
+     *  is not listed. While the sheet is shown as of a date, its ancestors' rates are as they stood then. */
     public List<Rate> list(String sheetId) {
         List<Rate> all = new ArrayList<>(own(sheetId));
         List<String> chain = ancestors(sheetId);
+        LocalDate asOf = AsOfView.schema() == null ? null
+                : jdbc.queryForList("SELECT today FROM sheet WHERE id = ?", LocalDate.class, sheetId)
+                        .stream().filter((d) -> d != null).findFirst().orElse(null);
         for (int i = 0; i < chain.size(); i++) {
             int level = i + 1;
-            own(chain.get(i)).forEach((r) -> all.add(r.at(level)));
+            (asOf == null ? own(chain.get(i)) : ownAsOf(chain.get(i), asOf)).forEach((r) -> all.add(r.at(level)));
         }
         return all;
     }
