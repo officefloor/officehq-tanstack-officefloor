@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.plan;
 
+import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.Types;
@@ -21,7 +22,7 @@ public class PlanRepository {
     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount").setScale(2), rs.getDate("start_date").toLocalDate(),
             rs.getObject("every_days", Integer.class), rs.getObject("month_day", Integer.class),
-            rs.getDate("end_date").toLocalDate(), rs.getString("added_by"), rs.getInt("made"), List.of());
+            rs.getDate("end_date").toLocalDate(), rs.getString("added_by"), rs.getInt("made"), List.of(), List.of());
 
     private final JdbcTemplate jdbc;
 
@@ -32,12 +33,19 @@ public class PlanRepository {
     /** The sheet's plans, in the order they were added. */
     public List<Plan> list(String sheetId) {
         return jdbc.query(SELECT + "WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId).stream()
-                .map(this::withPauses).toList();
+                .map(this::withHistory).toList();
     }
 
     public Plan find(long id) {
         List<Plan> found = jdbc.query(SELECT + "WHERE p.id = ?", ROW, id);
-        return found.isEmpty() ? null : withPauses(found.get(0));
+        return found.isEmpty() ? null : withHistory(found.get(0));
+    }
+
+    private Plan withHistory(Plan plan) {
+        return withPauses(plan).withChanges(jdbc.query(
+                "SELECT changed_on, amount FROM plan_change WHERE plan_id = ? ORDER BY id",
+                (rs, n) -> new PlanChange(rs.getDate("changed_on").toLocalDate(), rs.getBigDecimal("amount").setScale(2)),
+                plan.id()));
     }
 
     private Plan withPauses(Plan plan) {
@@ -56,6 +64,13 @@ public class PlanRepository {
     public void resume(long planId, LocalDate day) {
         jdbc.update("UPDATE plan_pause SET resumed_on = ? WHERE plan_id = ? AND resumed_on IS NULL",
                 Date.valueOf(day), planId);
+    }
+
+    /** Changes the plan's amount from that day, keeping the change. */
+    public void changeAmount(long planId, LocalDate day, BigDecimal amount) {
+        jdbc.update("UPDATE plan SET amount = ? WHERE id = ?", amount, planId);
+        jdbc.update("INSERT INTO plan_change (plan_id, changed_on, amount) VALUES (?, ?, ?)",
+                planId, Date.valueOf(day), amount);
     }
 
     /** Adds the plan to the person. */

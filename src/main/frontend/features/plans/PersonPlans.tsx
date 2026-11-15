@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
-import { addPlan, listPlans, pausePlan, plansKey, type Plan, type PlanInput } from './api';
+import { addPlan, changePlanAmount, listPlans, pausePlan, plansKey, type Plan, type PlanInput } from './api';
 import { Fig } from '../session/Fig';
 
 const EMPTY: PlanInput = { amount: '', start: '', every: '', day: '', end: '' };
 
-/** A person's plans (each its amount, start, every N days or day of the month, end, how many claims it has made so far, its next dates and whether it is paused, with pause and resume buttons)
+/** A person's plans (each its amount, start, every N days or day of the month, end, how many claims it has made so far, its next dates and whether it is paused, with pause and resume buttons, and its amount's changes with an entry that changes it)
  *  and a form that adds one; a refused add shows an error on the row and adds nothing. */
 export function PersonPlans({ sheetId, user, personId }: { sheetId: string; user: string; personId: number }) {
   const queryClient = useQueryClient();
@@ -43,6 +43,7 @@ export function PersonPlans({ sheetId, user, personId }: { sheetId: string; user
               <td>made <span data-testid="plan-generated">{pl.generated}</span></td>
               <td>next <span data-testid="plan-next-dates">{(pl.nextDates ?? []).join(', ')}</span></td>
               <PlanPause sheetId={sheetId} user={user} plan={pl} />
+              <PlanAmount sheetId={sheetId} user={user} plan={pl} />
             </tr>
           ))}
         </tbody>
@@ -98,6 +99,49 @@ function PlanPause({ sheetId, user, plan }: { sheetId: string; user: string; pla
       <button type="button" data-testid="plan-resume" disabled={pause.isPending} onClick={() => act(false)}>Resume</button>
       {pause.isError && (
         <span data-testid="plan-error">A paused plan cannot be paused again, nor a running plan resumed.</span>
+      )}
+    </td>
+  );
+}
+
+/** The plan's amount changes, oldest first, each as `<date> amount=<amount>`, and an entry and save button
+ *  that change its amount; a refused change shows an error on the row. */
+function PlanAmount({ sheetId, user, plan }: { sheetId: string; user: string; plan: Plan }) {
+  const queryClient = useQueryClient();
+  const submitOnce = useSubmitOnce();
+  const [amount, setAmount] = useState('');
+  const save = useMutation({
+    mutationFn: (value: string) => changePlanAmount(sheetId, user, plan.id, value),
+    onSuccess: () => {
+      setAmount('');
+      return queryClient.invalidateQueries({ queryKey: plansKey(sheetId) });
+    },
+  });
+
+  return (
+    <td>
+      <ul>
+        {(plan.changes ?? []).map((c, i) => (
+          <li key={i} data-testid="plan-change-line">{c.changedOn} amount={Number(c.amount).toFixed(2)}</li>
+        ))}
+      </ul>
+      <input data-testid="plan-amount" placeholder="New amount" value={amount}
+        onChange={(e) => {
+          setAmount(e.target.value);
+          save.reset();
+        }} />{' '}
+      <button type="button" data-testid="plan-amount-save" disabled={save.isPending}
+        onClick={() => {
+          const value = amount;
+          submitOnce(() => {
+            save.reset();
+            return save.mutateAsync(value);
+          });
+        }}>
+        Save amount
+      </button>
+      {save.isError && (
+        <span data-testid="plan-error">A plan's amount is 0.00 or more with up to two decimals.</span>
       )}
     </td>
   );

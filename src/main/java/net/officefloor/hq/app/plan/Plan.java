@@ -6,9 +6,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** A person's plan: its amount (two decimals), start, every N days or else a day of the month (1 to 31),
- *  end, who added it, how many claims it has made so far, and its pauses in the order they were made. */
+ *  end, who added it, how many claims it has made so far, its pauses in the order they were made, and the
+ *  changes of its amount, oldest first. */
 public record Plan(long id, String sheetId, long personId, BigDecimal amount, LocalDate start, Integer every,
-        Integer day, LocalDate end, String by, int generated, List<PlanPause> pauses) {
+        Integer day, LocalDate end, String by, int generated, List<PlanPause> pauses,
+        List<PlanChange> changes) {
 
     /** Whether the plan is paused now: its last pause has not been resumed. */
     public boolean paused() {
@@ -16,7 +18,11 @@ public record Plan(long id, String sheetId, long personId, BigDecimal amount, Lo
     }
 
     Plan withPauses(List<PlanPause> list) {
-        return new Plan(id, sheetId, personId, amount, start, every, day, end, by, generated, list);
+        return new Plan(id, sheetId, personId, amount, start, every, day, end, by, generated, list, changes);
+    }
+
+    Plan withChanges(List<PlanChange> list) {
+        return new Plan(id, sheetId, personId, amount, start, every, day, end, by, generated, pauses, list);
     }
 
     /** The plan dates up to (and including) the last date: the start then every N days, or the day of the
