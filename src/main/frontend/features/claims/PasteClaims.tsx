@@ -3,8 +3,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { claimsKey, pasteClaims } from './api';
 
-/** A box that adds a DRAFT claim per pasted line of name,amount,date,note, and how many it added.
- *  The count is cleared while it runs; a refused paste adds nothing and shows an error. */
+/** A box that puts an OPEN claim per pasted line of name,amount,date,note (a line matching a DRAFT of
+ *  the person's by date and note updates and opens it), and how many lines went through.
+ *  The count is cleared while it runs; a refused paste changes nothing and shows an error. */
 export function PasteClaims({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
@@ -36,15 +37,15 @@ export function PasteClaims({ sheetId, user }: { sheetId: string; user: string }
           }} />
       </label>{' '}
       <button type="submit" data-testid="paste-submit" disabled={paste.isPending}>
-        Add pasted claims
+        Open pasted claims
       </button>
       {paste.isSuccess && (
         <>
-          {' '}Added <span data-testid="paste-added">{paste.data.added}</span>
+          {' '}Went through <span data-testid="paste-added">{paste.data.added}</span>
         </>
       )}
       {paste.isError && (
-        <span data-testid="paste-error">Every line needs a name on the sheet and an amount of 0.00 or more with up to two decimals, dated on or before the person's retirement and outside a closed period: nothing was added.</span>
+        <span data-testid="paste-error">Every line needs a name on the sheet and an amount of 0.00 or more with up to two decimals, dated on or before the person's retirement and outside a closed period, matching no claim but a DRAFT, and openable by you: nothing was changed.</span>
       )}
     </form>
   );
