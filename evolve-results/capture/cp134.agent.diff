@@ -1,0 +1,101 @@
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 14684f2f1..935fc709d 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -20,6 +20,7 @@ import { ExportClaims, ExportPeople } from './ExportPeople';
+ import { ImportPeople } from './ImportPeople';
+ import { QuickAdd } from './QuickAdd';
+ import { ShowRetired, useShowRetired } from './ShowRetired';
++import { SortBy, sortPeople, useSortBy } from './SortBy';
+ import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, takeStatement, transferPerson, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+ 
+ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '', tags: '' };
+@@ -43,7 +44,8 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
+  *  button transfer them to another sheet by id (see `transferPerson`).
+  *  Whether the signed-in user watches each person, with a button that starts or stops it.
+  *  A button exports everyone, retired people included, as a CSV file, and another exports their claims
+- *  (people in list order, each one's claims oldest first, with the figures their rows show). */
++ *  (people in list order, each one's claims oldest first, with the figures their rows show).
++ *  The list can be sorted on this screen only (see `SortBy`). */
+ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const queryClient = useQueryClient();
+   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
+@@ -62,6 +64,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+   // The person being edited and the version of them the form loaded.
+   const [editing, setEditing] = useState<{ id: number; version: number } | null>(null);
+   const [showRetired] = useShowRetired();
++  const [sortBy] = useSortBy();
+   // The retirement date typed on each person's row (blank: the sheet's today).
+   const [retireDates, setRetireDates] = useState<Record<number, string>>({});
+   // The statement date typed on each person's row (blank: the statement is taken now).
+@@ -426,6 +429,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+       <PasteClaims sheetId={sheetId} user={user} />
+       <ImportPeople sheetId={sheetId} user={user} />
+       <ShowRetired />{' '}
++      <SortBy />{' '}
+       <ExportPeople rows={() => everyone.map((p) => [p.name, gradeOn(p, today), p.retiredFrom ?? '', showDue(dueOf.get(p.id) ?? null)])} />
+       <ExportClaims rows={() => everyone.flatMap((p) => (claims.data ?? []).filter((c) => c.personId === p.id).reverse().map((c) => [
+         p.name, c.number ?? '', c.date, Number(c.amount).toFixed(2),
+@@ -440,7 +444,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
+       <table>
+         <tbody>
+-          {(people.data ?? []).filter((p) => showRetired || !p.retired).map((p) => {
++          {sortPeople((people.data ?? []).filter((p) => showRetired || !p.retired), sortBy, (p) => dueOf.get(p.id) ?? null).map((p) => {
+             const own = (claims.data ?? []).filter((c) => c.personId === p.id);
+             const live = liveClaims(own, [p]);
+             const claimed = sumAmounts(live);
+diff --git a/src/main/frontend/features/people/SortBy.tsx b/src/main/frontend/features/people/SortBy.tsx
+new file mode 100644
+index 000000000..974555eef
+--- /dev/null
++++ b/src/main/frontend/features/people/SortBy.tsx
+@@ -0,0 +1,48 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import type { Person } from './api';
++
++export const SORT_KEYS = ['added', 'name', 'grade', 'due-total'] as const;
++export type SortKey = (typeof SORT_KEYS)[number];
++
++/** How this screen orders the people list. It lives in the URL (`sort`), so it belongs to each
++ *  user's own screen: `added` (list order) when the screen is first opened, and left as it is by
++ *  loading a sheet. */
++export const useSortBy = () => useSearchParam('sort', (raw): SortKey =>
++  (SORT_KEYS as readonly unknown[]).includes(raw) ? (raw as SortKey) : 'added');
++
++/** Names as they are compared: trimmed and lower-cased. */
++const nameKey = (name: string) => name.trim().toLowerCase();
++
++/** The people in the order the screen shows them. Only the screen changes: the list order (and so
++ *  positions, rollups and every action in list order) is left as it is. `due-total` puts n/a (null)
++ *  last; equal keys keep list order. */
++export function sortPeople<P extends Person>(people: P[], key: SortKey, dueOf: (p: P) => string | null): P[] {
++  if (key === 'added') return people;
++  const cmp: (a: P, b: P) => number =
++    key === 'name' ? (a, b) => { const x = nameKey(a.name), y = nameKey(b.name); return x < y ? -1 : x > y ? 1 : 0; }
++    : key === 'grade' ? (a, b) => (a.grade < b.grade ? -1 : a.grade > b.grade ? 1 : 0)
++    : (a, b) => {
++      const x = dueOf(a), y = dueOf(b);
++      if (x === null || y === null) return (x === null ? 1 : 0) - (y === null ? 1 : 0);
++      return Number(x) - Number(y);
++    };
++  // Array.prototype.sort is stable, so equal keys keep list order.
++  return [...people].sort(cmp);
++}
++
++/** The select that sorts the people list on this screen. */
++export function SortBy() {
++  const [key, setKey] = useSortBy();
++  return (
++    <label>
++      Sort by{' '}
++      <select data-testid="sort-by" value={key} onChange={(e) => setKey(e.target.value === 'added' ? undefined : (e.target.value as SortKey))}>
++        {SORT_KEYS.map((k) => (
++          <option key={k} value={k}>
++            {k}
++          </option>
++        ))}
++      </select>
++    </label>
++  );
++}
