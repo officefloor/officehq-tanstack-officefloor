@@ -50,6 +50,8 @@ export type Claim = {
   lateEntry: boolean;
   /** The last sheet's today it was reminded on (null: never reminded). */
   reminded: string | null;
+  /** Whether a steward waived its late charge: it bears none from then on, whatever its overdue state. */
+  waived: boolean;
   /** Its external reference (null: none); used once per sheet, compared without regard to case. */
   ref: string | null;
   /** Its tags: trimmed, lower-cased, without repeats, sorted and comma separated (null: none). */
@@ -138,6 +140,12 @@ export function deferClaim(sheetId: string, by: string, id: number, until: strin
  *  carrying its number, or for a claim with no number those naming its person, amount and date together. */
 export function claimTimeline(sheetId: string, id: number): Promise<string[]> {
   return getJson<string[]>(`${sheetBase(sheetId)}/claims/${id}/timeline`);
+}
+
+/** A steward waives an OPEN or PENDING claim's late charge; refused (rejects) with 409 for anyone else,
+ *  any other status, or a claim already waived. */
+export function waiveClaim(sheetId: string, by: string, id: number): Promise<Claim> {
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/waive?by=${encodeURIComponent(by)}`, {});
 }
 
 /** Remind an OPEN or PENDING claim on the sheet's today; refused (rejects) with 409 for any other

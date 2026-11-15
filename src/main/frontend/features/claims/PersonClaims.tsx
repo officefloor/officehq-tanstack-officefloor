@@ -6,7 +6,7 @@ import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import { isReviewLate, useNoteThreshold, useProofThreshold, useReviewSla, type DatedOn } from '../settings/api';
 import { claimFromTemplate, listTemplates, templatesKey } from '../templates/api';
-import { addClaim, addClaimLine, claimTimeline, addProof, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
+import { addClaim, addClaimLine, claimTimeline, addProof, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, waiveClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
 import { Fig } from '../session/Fig';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
@@ -38,6 +38,8 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  re-settle a SETTLED one (anyone else, any other status or a claim in a closed period refused likewise).
  *  An OPEN or PENDING claim can be reminded with a button beside it, once per sheet's today (a second reminder
  *  that day, or any other claim, refused with an error on the claim); the last day it was reminded is shown.
+ *  A steward can waive an OPEN or PENDING claim's late charge with a button beside it (anyone else, any other
+ *  status, or a claim already waived refused with an error on the claim); whether it is waived is shown.
  *  An OPEN claim can be deferred until a date typed beside it, after the sheet's today (any other claim, date,
  *  or a claim in a closed period refused with an error on the claim); whether it is deferred, and until when, is shown.
  *  Its proofs count is shown and raised by one with a button beside it (a SETTLED or VOID claim, or one in a
@@ -149,6 +151,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reassign.reset();
       deferral.reset();
       reminder.reset();
+      waiver.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -172,6 +175,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reassign.reset();
       deferral.reset();
       reminder.reset();
+      waiver.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -181,6 +185,30 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       setEditRefused(null);
       locking.reset();
       return reminder.mutateAsync(id);
+    });
+  };
+
+  const waiver = useMutation({
+    mutationFn: (id: number) => waiveClaim(sheetId, user, id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
+
+  const waive = (id: number) => {
+    actOnce(() => {
+      move.reset();
+      reassign.reset();
+      deferral.reset();
+      reminder.reset();
+      waiver.reset();
+      redating.reset();
+      proof.reset();
+      commenting.reset();
+      lining.reset();
+      division.reset();
+      inline.reset();
+      setEditRefused(null);
+      locking.reset();
+      return waiver.mutateAsync(id);
     });
   };
 
@@ -207,6 +235,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reassign.reset();
       deferral.reset();
       reminder.reset();
+      waiver.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -237,6 +266,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reassign.reset();
       deferral.reset();
       reminder.reset();
+      waiver.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -267,6 +297,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reassign.reset();
       deferral.reset();
       reminder.reset();
+      waiver.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -290,6 +321,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reassign.reset();
       deferral.reset();
       reminder.reset();
+      waiver.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -320,6 +352,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reassign.reset();
       deferral.reset();
       reminder.reset();
+      waiver.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -351,6 +384,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reassign.reset();
       deferral.reset();
       reminder.reset();
+      waiver.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -392,6 +426,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reassign.reset();
       deferral.reset();
       reminder.reset();
+      waiver.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -410,6 +445,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reassign.reset();
       deferral.reset();
       reminder.reset();
+      waiver.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -446,6 +482,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reassign.reset();
       deferral.reset();
       reminder.reset();
+      waiver.reset();
       redating.reset();
       proof.reset();
       commenting.reset();
@@ -462,6 +499,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     reassign.reset();
     deferral.reset();
     reminder.reset();
+    waiver.reset();
     redating.reset();
     proof.reset();
     commenting.reset();
@@ -597,6 +635,13 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 <button type="button" data-testid="claim-remind" disabled={reminder.isPending}
                   onClick={() => remind(c.id)}>
                   Remind
+                </button>
+              </td>
+              <td>
+                Waived <span data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</span>{' '}
+                <button type="button" data-testid="claim-waive" disabled={waiver.isPending}
+                  onClick={() => waive(c.id)}>
+                  Waive late charge
                 </button>
               </td>
               <td>
@@ -780,6 +825,15 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                       ? `The claim was already reminded on ${c.reminded ?? today}.`
                       : `A ${c.status} claim cannot be reminded.`)
                     : 'Your role may not remind a claim.'}</span>
+                )}
+                {waiver.isError && waiver.variables === c.id && (
+                  <span data-testid="claim-error">{waiver.error instanceof HttpError && waiver.error.status === 409
+                    ? (c.waived
+                      ? 'The claim\'s late charge was already waived.'
+                      : c.status === 'OPEN' || c.status === 'PENDING'
+                      ? 'Only a steward can waive a claim\'s late charge.'
+                      : `A ${c.status} claim's late charge cannot be waived.`)
+                    : 'Your role may not waive a claim\'s late charge.'}</span>
                 )}
                 {redating.isError && redating.variables?.id === c.id && (
                   <span data-testid="claim-error">{redating.error instanceof HttpError && redating.error.status === 423

@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, void_reason, edited_by, settle_batch, "
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, void_reason, edited_by, settle_batch, waived_on, "
             // Deferred now: OPEN (or VOID, voided while deferred: it keeps showing the deferral) and
             // deferred until a date after the sheet's today.
             + "(status IN ('OPEN', 'VOID') AND deferred_until IS NOT NULL AND deferred_until > "
@@ -26,7 +26,7 @@ public class ClaimRepository {
             + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = claim.sheet_id AND k.number = claim.corrects), "
             + "claim_date) AS round_date";
 
-    private static final RowMapper<Claim> ROW = (rs, n) -> withSettleBatch(withEditedBy(withVoidReason(withTags(withRef(withReminded(withCorrects(new Claim(rs.getLong("id"),
+    private static final RowMapper<Claim> ROW = (rs, n) -> withWaived(withSettleBatch(withEditedBy(withVoidReason(withTags(withRef(withReminded(withCorrects(new Claim(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getLong("person_id"),
             rs.getBigDecimal("amount").setScale(2).toPlainString(),
             rs.getObject("claim_date", LocalDate.class).toString(), rs.getString("note"),
@@ -39,7 +39,12 @@ public class ClaimRepository {
             rs.getObject("round_date", LocalDate.class).toString(),
             rs.getObject("due_by", LocalDate.class).toString(),
             rs.getObject("deferred_until", LocalDate.class), rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"), rs.getString("locked_by"), rs.getBoolean("late_entry")),
-            rs.getObject("reminded_on", LocalDate.class)), rs.getString("ref")), rs.getString("tags")), rs.getString("void_reason")), rs.getString("edited_by")), rs.getObject("settle_batch", Integer.class));
+            rs.getObject("reminded_on", LocalDate.class)), rs.getString("ref")), rs.getString("tags")), rs.getString("void_reason")), rs.getString("edited_by")), rs.getObject("settle_batch", Integer.class)), rs.getObject("waived_on", LocalDate.class));
+
+    private static Claim withWaived(Claim claim, LocalDate waivedOn) {
+        claim.setWaivedOn(waivedOn == null ? null : waivedOn.toString());
+        return claim;
+    }
 
     private static Claim withSettleBatch(Claim claim, Integer settleBatch) {
         claim.setSettleBatch(settleBatch);
@@ -296,7 +301,7 @@ public class ClaimRepository {
      *  claims there were then), deferred when OPEN and deferred until after the date. */
     public List<Claim> listOfAsOf(String sheetId, long personId, LocalDate asOf) {
         return jdbc.query("SELECT h.claim_id, h.person_id, h.amount, h.claim_date, h.status, h.settled_due, h.stated, "
-                + "h.stated_due, h.deferred_until, h.due_by, c.note, c.ref, c.tags, c.number, c.opened_by, c.corrects, "
+                + "h.stated_due, h.deferred_until, h.due_by, c.note, c.ref, c.tags, c.number, c.opened_by, c.corrects, c.waived_on, "
                 + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = c.sheet_id AND k.number = c.corrects), "
                 + "h.claim_date) AS round_date FROM claim_history h JOIN claim c ON c.id = h.claim_id "
                 + "WHERE h.sheet_id = ? AND h.person_id = ? AND h.id = (SELECT MAX(h2.id) FROM claim_history h2 "
@@ -314,6 +319,8 @@ public class ClaimRepository {
                             stated == null ? null : stated.setScale(2).toPlainString());
                     claim.setRef(rs.getString("ref"));
                     claim.setTags(rs.getString("tags"));
+                    LocalDate waivedOn = rs.getObject("waived_on", LocalDate.class);
+                    claim.setWaivedOn(waivedOn == null || waivedOn.isAfter(asOf) ? null : waivedOn.toString());
                     return withCorrects(claim, rs.getString("corrects"),
                             rs.getObject("round_date", LocalDate.class).toString(),
                             rs.getObject("due_by", LocalDate.class).toString(), until,
@@ -334,6 +341,13 @@ public class ClaimRepository {
     public void updateReminded(Claim claim) {
         jdbc.update("UPDATE claim SET reminded_on = ? WHERE sheet_id = ? AND id = ?",
                 claim.getReminded() == null ? null : LocalDate.parse(claim.getReminded()),
+                claim.getSheetId(), claim.getId());
+    }
+
+    /** Save the sheet's today a claim's late charge was waived on. */
+    public void updateWaived(Claim claim) {
+        jdbc.update("UPDATE claim SET waived_on = ? WHERE sheet_id = ? AND id = ?",
+                claim.getWaivedOn() == null ? null : LocalDate.parse(claim.getWaivedOn()),
                 claim.getSheetId(), claim.getId());
     }
 

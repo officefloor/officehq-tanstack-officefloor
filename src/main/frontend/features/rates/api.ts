@@ -116,10 +116,10 @@ export const roundsHalfUp = (c: Claim, late: Late) => {
 /** The late charge on an open (OPEN or PENDING) claim's `figure`, compounding: for each full 30 days it is past its
  *  due-by plus its grace days (`late.lateFrom`) on the sheet's today, the late percent in force on that boundary date
  *  (that date plus 30, 60, 90 ... days) of the figure plus the charges of the boundaries before it,
- *  each rounded by the policy date to two decimals, added up (0 when not overdue, and on a correction). */
+ *  each rounded by the policy date to two decimals, added up (0 when not overdue, on a correction, and once waived). */
 export function lateCharge(c: Claim, figure: string, late: Late): bigint {
   const from = late.lateFrom(c);
-  if (isCorrection(c) || !isOverdue(c, late.today, from)) return 0n;
+  if (isCorrection(c) || c.waived || !isOverdue(c, late.today, from)) return 0n;
   const start = Date.parse(`${from}T00:00:00Z`);
   const periods = Math.floor((Date.parse(`${late.today}T00:00:00Z`) - start) / 86_400_000 / 30);
   let total = 0n;

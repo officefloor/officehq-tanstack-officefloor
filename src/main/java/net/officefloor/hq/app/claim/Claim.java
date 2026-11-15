@@ -160,6 +160,16 @@ public class Claim {
     public String getReminded() { return reminded; }
     public void setReminded(String reminded) { this.reminded = reminded; }
 
+    private String waivedOn;
+
+    /** The sheet's today its late charge was waived on (yyyy-MM-dd; none: not waived). */
+    @JsonIgnore
+    public String getWaivedOn() { return waivedOn; }
+    public void setWaivedOn(String waivedOn) { this.waivedOn = waivedOn; }
+
+    /** Whether its late charge is waived: it bears none from then on, whatever its overdue state. */
+    public boolean isWaived() { return waivedOn != null; }
+
     private boolean escalating;
 
     /** Whether the reminder being taken escalates it (not stored: a claim's escalation is saved on its own). */

@@ -50,10 +50,10 @@ public final class Dues {
      *  due-by (fixed when it was added) plus its grace days on the sheet's today, the late percent in force on that
      *  boundary date (its due-by plus grace plus 30, 60, 90 ... days) of the figure plus the charges of
      *  the boundaries before it (compounding), each rounded by the policy date to two decimals, added up;
-     *  none (0.00) when it is not overdue (a deferred claim never is), or on a correction. */
+     *  none (0.00) when it is not overdue (a deferred claim never is), on a correction, or when it is waived. */
     public static BigDecimal charge(Claim claim, String figure, Late late) {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
-        if (figure == null || isCorrection(claim.getAmount()) || !ClaimStatus.isOpen(claim.getStatus()) || claim.isDeferred()) return total;
+        if (figure == null || isCorrection(claim.getAmount()) || !ClaimStatus.isOpen(claim.getStatus()) || claim.isDeferred() || claim.isWaived()) return total;
         LocalDate dueBy = late.lateFrom(claim);
         long periods = Math.max(0, ChronoUnit.DAYS.between(dueBy, late.today())) / 30;
         RoundingMode rounding = late.rounding(claim.getRoundDate());
