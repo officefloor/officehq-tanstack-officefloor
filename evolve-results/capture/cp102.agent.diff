@@ -1,0 +1,402 @@
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index c0acb1148..61022a1d1 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -27,7 +27,7 @@ export const isBound = (c: Claim) => c.stated && c.statedDue !== null && c.statu
+  *  grade in force on that date (the grade's own, else the sheet's). `log` is its status log, oldest
+  *  first: `<STATUS> by <user> on <date> due=<due>`, the sheet's today and its due at each change.
+  *  `deferredUntil` is the date it was last deferred until (null: never), and `deferred` whether it is
+- *  deferred on the sheet's today (OPEN and deferred until a later date): a deferred claim counts in no
++ *  deferred on the sheet's today (OPEN, or VOID voided while deferred, and deferred until a later date): a deferred claim counts in no
+  *  total, is not overdue, cannot be settled and is left unbound by a statement. `proofs` is how many
+  *  proofs it has: one whose due is above the proof threshold in force on its date cannot be settled or
+  *  approved with none. */
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 55a00c93c..c88369665 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -16,7 +16,7 @@ import { BulkGrade } from './BulkGrade';
+ import { ExportPeople } from './ExportPeople';
+ import { QuickAdd } from './QuickAdd';
+ import { ShowRetired, useShowRetired } from './ShowRetired';
+-import { GRADES, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, peopleKey, retirePerson, takeStatement, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
++import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, peopleKey, retirePerson, takeStatement, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+ 
+ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '' };
+ 
+@@ -27,7 +27,8 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
+  *  they are retired and from when (with a date and a button that retires them), whether they have
+  *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
+  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
+- *  patrons (names sorted, with a picker that names one more) and backing (see `backing`), and
++ *  patrons (names sorted, with a picker that names one more), their aliases (sorted as names are
++ *  compared, with an entry and a button that adds one) and backing (see `backing`), and
+  *  their due-total for each period (see `personPeriodDue`), the due of their open claims by age (see `agedDues`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
+  *  with a checkbox that selects it for a button that opens the selected claims together.
+  *  Each person has a checkbox that selects them for a grade given to the selected people together.
+@@ -60,6 +61,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const [holdDates, setHoldDates] = useState<Record<number, { from: string; to: string }>>({});
+   // The patron picked on each person's row (blank: none picked).
+   const [patronPicks, setPatronPicks] = useState<Record<number, string>>({});
++  // The alias typed on each person's row.
++  const [aliasInputs, setAliasInputs] = useState<Record<number, string>>({});
+   // The people selected for a bulk grade.
+   const [selectedPeople, setSelectedPeople] = useState<ReadonlySet<number>>(new Set());
+   const selectPerson = (id: number, on: boolean) => setSelectedPeople((s) => {
+@@ -155,6 +158,15 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+     onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+   });
+ 
++  // The person whose last alias added was refused; cleared by the next action on the row.
++  const aliasing = useMutation({
++    mutationFn: (v: { id: number; alias: string }) => addAlias(sheetId, user, v.id, v.alias),
++    onSuccess: (_, v) => {
++      setAliasInputs((d) => ({ ...d, [v.id]: '' }));
++      return queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
++    },
++  });
++
+   // The person whose last watch was refused; cleared by the next action on the row.
+   const watching = useMutation({
+     mutationFn: (v: { id: number; on: boolean }) => watchPerson(sheetId, user, v.id, v.on),
+@@ -168,6 +180,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+     retirement.reset();
+     holding.reset();
+     patronage.reset();
++    aliasing.reset();
+   };
+ 
+   const state = (id: number) => {
+@@ -220,6 +233,14 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+     });
+   };
+ 
++  const alias = (id: number) => {
++    const typed = aliasInputs[id] ?? '';
++    stateOnce(() => {
++      resetRowActions();
++      return aliasing.mutateAsync({ id, alias: typed });
++    });
++  };
++
+   const change = (patch: Partial<PersonInput>) => {
+     setForm((f) => ({ ...f, ...patch }));
+     save.reset();
+@@ -402,6 +423,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   {holding.isError && holding.variables?.id === p.id && (
+                     <span data-testid="person-error">The person could not be held: the dates must be dates, the to-date not before the from-date.</span>
+                   )}
++                  {aliasing.isError && aliasing.variables?.id === p.id && (
++                    <span data-testid="person-error">The alias could not be added: it needs to be given, and not be a name or alias already in use.</span>
++                  )}
+                 </td>
+                 <td>
+                   Watched <span data-testid="person-watched">{watched.has(p.id) ? 'yes' : 'no'}</span>{' '}
+@@ -437,6 +461,18 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                     Hold
+                   </button>
+                 </td>
++                <td>
++                  Aliases <span data-testid="person-aliases">{p.aliases.join(', ')}</span>{' '}
++                  <input data-testid="person-alias-input" value={aliasInputs[p.id] ?? ''}
++                    onChange={(e) => {
++                      setAliasInputs((d) => ({ ...d, [p.id]: e.target.value }));
++                      aliasing.reset();
++                    }} />{' '}
++                  <button type="button" data-testid="person-alias-add" disabled={aliasing.isPending}
++                    onClick={() => alias(p.id)}>
++                    Add alias
++                  </button>
++                </td>
+                 <td>
+                   Patrons <span data-testid="person-patrons">
+                     {p.patronIds.map((id) => nameOf.get(id) ?? '').sort((x, y) => x.localeCompare(y)).join(', ')}
+diff --git a/src/main/frontend/features/people/api.ts b/src/main/frontend/features/people/api.ts
+index edacfb92d..81c768a3d 100644
+--- a/src/main/frontend/features/people/api.ts
++++ b/src/main/frontend/features/people/api.ts
+@@ -28,6 +28,8 @@ export type Person = {
+   terms: number | null;
+   /** Their contact, trimmed and lower-cased (null: none); no two people on a sheet share one. */
+   contact: string | null;
++  /** Their aliases, sorted as names are compared; the quick-add bar and the paste box find them by one. */
++  aliases: string[];
+ };
+ /** `gradeFrom` is the date an edit's grade applies from (blank: the sheet's today); `terms` their
+  *  own terms in whole days (blank: none); `contact` their contact (blank: none). */
+@@ -96,6 +98,12 @@ export function addPatron(sheetId: string, by: string, id: number, patronId: num
+   return postJson<Person>(`${base(sheetId)}/${id}/patrons?by=${encodeURIComponent(by)}`, { patronId });
+ }
+ 
++/** Give the person an alias; refused (rejects) when it is blank or equals, as names are compared,
++ *  any name or alias on the sheet. */
++export function addAlias(sheetId: string, by: string, id: number, alias: string): Promise<Person> {
++  return postJson<Person>(`${base(sheetId)}/${id}/aliases?by=${encodeURIComponent(by)}`, { alias });
++}
++
+ export type QuickAddInput = { name: string; amount: string };
+ 
+ /** Add a DRAFT claim of `amount` (the sheet's today, empty note) to the named person, adding them
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index af8fd05b9..f422e0934 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -120,7 +120,8 @@ public class Claim {
+     /** The date it was last deferred until (yyyy-MM-dd; none: never deferred). */
+     public String getDeferredUntil() { return deferredUntil; }
+ 
+-    /** Whether it is deferred on the sheet's today: OPEN and deferred until a later date. A deferred
++    /** Whether it is deferred on the sheet's today: OPEN (or VOID, voided while deferred) and deferred
++     *  until a later date. A deferred
+      *  claim counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
+     public boolean isDeferred() { return deferred; }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 10a4935d5..c9fbe572b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -18,8 +18,9 @@ import org.springframework.stereotype.Repository;
+ public class ClaimRepository {
+ 
+     private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, void_reason, edited_by, settle_batch, "
+-            // Deferred now: OPEN and deferred until a date after the sheet's today.
+-            + "(status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > "
++            // Deferred now: OPEN (or VOID, voided while deferred: it keeps showing the deferral) and
++            // deferred until a date after the sheet's today.
++            + "(status IN ('OPEN', 'VOID') AND deferred_until IS NOT NULL AND deferred_until > "
+             + "(SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred, "
+             // The date it rounds by: a correction's is the date of the claim it corrects.
+             + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = claim.sheet_id AND k.number = claim.corrects), "
+diff --git a/src/main/java/net/officefloor/hq/app/person/AddAlias.java b/src/main/java/net/officefloor/hq/app/person/AddAlias.java
+new file mode 100644
+index 000000000..63a2d9dbf
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AddAlias.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Gives the person the alias: refused (nothing written) when it equals, as names are compared,
++ *  any name or alias on the sheet. */
++public class AddAlias {
++    public void add(@RequestParam(name = "by", required = false) String by,
++            @Val AliasRequest request, @Val Person person, PersonRepository people,
++            Out<Alias> added) throws InvalidPersonException {
++        if (people.nameTaken(person.getSheetId(), request.alias(), null)) {
++            throw new InvalidPersonException("The alias is already in use");
++        }
++        people.addAlias(person, request.alias(), by == null ? "" : by);
++        added.set(new Alias(request.alias()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Alias.java b/src/main/java/net/officefloor/hq/app/person/Alias.java
+new file mode 100644
+index 000000000..8cb5729ce
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/Alias.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** The alias just given to a person, for the audit line. */
++public record Alias(String alias) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/AliasRequest.java b/src/main/java/net/officefloor/hq/app/person/AliasRequest.java
+new file mode 100644
+index 000000000..8d02f5485
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AliasRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** Body of an alias added: the alias, trimmed by the validation. */
++public record AliasRequest(String alias) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 9207b7396..d46115769 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -38,6 +38,8 @@ public class Person {
+     private java.time.LocalDate today;
+     /** The ids of the people they name as patrons, in the order named. */
+     private java.util.List<Long> patronIds = new java.util.ArrayList<>();
++    /** Their aliases, sorted as names are compared. */
++    private java.util.List<String> aliases = new java.util.ArrayList<>();
+     /** The date the statement this request took was taken as of (null: now), for its audit line. */
+     private String statedAsOf;
+     /** How many claims the statement this request took bound, for its audit line. */
+@@ -142,6 +144,8 @@ public class Person {
+     public void setHolds(java.util.List<Hold> holds) { this.holds = holds; }
+     public java.util.List<Long> getPatronIds() { return patronIds; }
+     public void setPatronIds(java.util.List<Long> patronIds) { this.patronIds = patronIds; }
++    public java.util.List<String> getAliases() { return aliases; }
++    public void setAliases(java.util.List<String> aliases) { this.aliases = aliases; }
+ 
+     /** Whether the claim counts in live totals: it counts by status, and is not an open (OPEN or
+      *  PENDING) claim dated within one of their holds, or of a person whose retirement date is reached,
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 168e97714..ab6e0227e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -42,6 +42,7 @@ public class PersonRepository {
+         people.forEach((p) -> byId.put(p.getId(), p));
+         withGrades(sheetId, people);
+         withHolds(sheetId, people);
++        withAliases(sheetId, people);
+         jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY added_at, patron_id",
+                 (rs) -> {
+                     Person p = byId.get(rs.getLong("person_id"));
+@@ -61,6 +62,7 @@ public class PersonRepository {
+                     Long.class, sheetId, id)));
+             withGrades(sheetId, List.of(person));
+             withHolds(sheetId, List.of(person));
++            withAliases(sheetId, List.of(person));
+         }
+         return person;
+     }
+@@ -132,6 +134,27 @@ public class PersonRepository {
+         people.forEach((p) -> p.setHolds(holds.getOrDefault(p.getId(), new ArrayList<>())));
+     }
+ 
++    /** Give each person their aliases, sorted as names are compared. */
++    private void withAliases(String sheetId, List<Person> people) {
++        if (people.isEmpty()) {
++            return;
++        }
++        Map<Long, List<String>> aliases = new HashMap<>();
++        jdbc.query("SELECT person_id, alias FROM person_alias WHERE sheet_id = ? ORDER BY person_id, alias_key",
++                (rs) -> {
++                    aliases.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(rs.getString("alias"));
++                }, sheetId);
++        people.forEach((p) -> p.setAliases(aliases.getOrDefault(p.getId(), new ArrayList<>())));
++    }
++
++    /** Give the person the alias (stored as given, trimmed). */
++    public void addAlias(Person person, String alias, String user) {
++        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, added_by) VALUES (?, ?, ?, ?)",
++                person.getSheetId(), person.getId(), alias, user);
++        person.getAliases().add(alias);
++        person.getAliases().sort(String.CASE_INSENSITIVE_ORDER);
++    }
++
+     /** Name the patron as one of the person's patrons. */
+     public void addPatron(Person person, Person patron, String user) {
+         jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, added_by) VALUES (?, ?, ?, ?)",
+@@ -139,18 +162,21 @@ public class PersonRepository {
+         person.getPatronIds().add(patron.getId());
+     }
+ 
+-    /** The person on the sheet with this name, compared ignoring case and surrounding spaces; null when none. */
++    /** The person on the sheet with this name or alias, compared ignoring case and surrounding spaces; null when none. */
+     public Person findByName(String sheetId, String name) {
+-        Person found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))",
+-                ROW, sheetId, name).stream().findFirst().orElse(null);
++        Person found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND (name_key = LOWER(TRIM(?)) "
++                + "OR id IN (SELECT person_id FROM person_alias WHERE sheet_id = ? AND alias_key = LOWER(TRIM(?))))",
++                ROW, sheetId, name, sheetId, name).stream().findFirst().orElse(null);
+         return found == null ? null : find(sheetId, found.getId());
+     }
+ 
+-    /** Whether another person on the sheet already has this name, compared ignoring case and surrounding spaces. */
++    /** Whether another person on the sheet (not {@code exceptId}) already has this name, or anyone
++     *  on the sheet has it as an alias, compared ignoring case and surrounding spaces. */
+     public boolean nameTaken(String sheetId, String name, Long exceptId) {
+         Integer n = jdbc.queryForObject(
+-                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?)) AND (? IS NULL OR id <> ?)",
+-                Integer.class, sheetId, name, exceptId, exceptId);
++                "SELECT (SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?)) AND (? IS NULL OR id <> ?)) "
++                        + "+ (SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND alias_key = LOWER(TRIM(?)))",
++                Integer.class, sheetId, name, exceptId, exceptId, sheetId, name);
+         return n != null && n > 0;
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordAliasAdded.java b/src/main/java/net/officefloor/hq/app/person/RecordAliasAdded.java
+new file mode 100644
+index 000000000..a1c0fafdf
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RecordAliasAdded.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Records the alias just given (PERSON_ALIAS_ADDED). */
++public class RecordAliasAdded {
++    public void record(@RequestParam(name = "by", required = false) String by,
++            @Val Person person, @Val Alias alias, Audit audit) {
++        audit.record("PERSON_ALIAS_ADDED sheet=" + person.getSheetId() + " by=" + (by == null ? "" : by)
++                + " name=" + person.getName() + " alias=" + alias.alias());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateAlias.java b/src/main/java/net/officefloor/hq/app/person/ValidateAlias.java
+new file mode 100644
+index 000000000..3b9bf497a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateAlias.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Binds the alias asked for, trimmed: refused when it is blank. */
++public class ValidateAlias {
++    public void validate(@RequestBody AliasRequest request, Out<AliasRequest> body)
++            throws InvalidPersonException {
++        String alias = request == null || request.alias() == null ? "" : request.alias().trim();
++        if (alias.isEmpty()) {
++            throw new InvalidPersonException("An alias is required");
++        }
++        body.set(new AliasRequest(alias));
++    }
++}
+diff --git a/src/main/resources/db/migration/V54__person_alias.sql b/src/main/resources/db/migration/V54__person_alias.sql
+new file mode 100644
+index 000000000..dfb88159a
+--- /dev/null
++++ b/src/main/resources/db/migration/V54__person_alias.sql
+@@ -0,0 +1,11 @@
++-- A person's aliases (stored trimmed). An alias is compared as names are, without regard to case,
++-- and shares the names' uniqueness on the sheet: no alias equals another, nor any person's name.
++CREATE TABLE person_alias (
++    id        BIGINT       GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
++    sheet_id  VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    person_id BIGINT       NOT NULL REFERENCES person (id),
++    alias     VARCHAR(200) NOT NULL,
++    alias_key VARCHAR(200) GENERATED ALWAYS AS (LOWER(alias)),
++    added_by  VARCHAR(200) NOT NULL
++);
++CREATE UNIQUE INDEX person_alias_sheet_key ON person_alias (sheet_id, alias_key);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/aliases.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/aliases.POST.yml
+new file mode 100644
+index 000000000..b9185d1d2
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/aliases.POST.yml
+@@ -0,0 +1,23 @@
++# POST /api/sheets/{sheetId}/people/{personId}/aliases — give the person an alias (trimmed); a blank
++# alias, or one equal (as names are compared) to any name or alias on the sheet, is refused.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
++validate:
++  class: net.officefloor.hq.app.person.ValidateAlias
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: add
++add:
++  class: net.officefloor.hq.app.person.AddAlias
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.RecordAliasAdded
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
