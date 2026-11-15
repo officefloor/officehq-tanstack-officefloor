@@ -56,7 +56,7 @@ export function rateByGrade(rates: Rate[] | undefined, date: string): Map<string
 }
 
 /** Two-decimal text (may be negative) as a whole number of hundredths. */
-function hundredths(text: string): bigint {
+export function hundredths(text: string): bigint {
   const t = text.trim();
   const negative = t.startsWith('-');
   const [whole, frac = ''] = (negative ? t.slice(1) : t).split('.');
@@ -193,7 +193,7 @@ export function trimmedSum(figures: Array<string | null>): string {
   return formatCents(kept.reduce((t, c) => t + c, 0n));
 }
 
-function formatCents(cents: bigint): string {
+export function formatCents(cents: bigint): string {
   const abs = cents < 0n ? -cents : cents;
   const frac = (abs % 100n).toString().padStart(2, '0');
   return `${cents < 0n ? '-' : ''}${abs / 100n}.${frac}`;

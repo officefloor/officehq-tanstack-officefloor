@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { postJson } from '../../api/http';
+import { getJson, postJson } from '../../api/http';
 
 /** `today` is the sheet's own date (yyyy-MM-dd): every date decision and default uses it.
  *  `archived`: a steward archived it; everything stays visible and every change is refused. */
@@ -36,4 +36,11 @@ export const sheetKey = (id: string) => ['sheet', id] as const;
 export function useSheetToday(id: string, by: string): string {
   const sheet = useQuery({ queryKey: sheetKey(id), queryFn: () => openSheet(id, by) });
   return sheet.data?.today ?? '';
+}
+
+export const descendantsKey = (id: string) => [...sheetKey(id), 'descendants'] as const;
+
+/** The ids of the sheet's descendants: its children (the sheets naming it as their parent), theirs, ... */
+export function listDescendants(id: string): Promise<string[]> {
+  return getJson<string[]>(`/api/sheets/${encodeURIComponent(id)}/descendants`);
 }

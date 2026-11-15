@@ -26,6 +26,21 @@ public class SheetRepository {
         return find(id);
     }
 
+    /** The sheet's descendants: the sheets naming it as their parent (its children), their children,
+     *  and so on, each once, nearest first. */
+    public java.util.List<String> descendants(String id) {
+        java.util.List<String> found = new java.util.ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>(java.util.List.of(id));
+        for (int i = -1; i < found.size(); i++) {
+            String at = i < 0 ? id : found.get(i);
+            for (String child : jdbc.queryForList("SELECT sheet_id FROM sheet_setting WHERE setting = 'parent' "
+                    + "AND val = ? ORDER BY sheet_id", String.class, at)) {
+                if (seen.add(child)) found.add(child);
+            }
+        }
+        return found;
+    }
+
     /** The sheet's today: the date every date decision and default on the sheet uses. */
     public LocalDate today(String id) {
         Sheet sheet = find(id);
