@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import { useNoteThreshold, useProofThreshold, type DatedOn } from '../settings/api';
-import { addClaim, addProof, claimsKey, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
+import { addClaim, addProof, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
 
@@ -36,6 +36,8 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  Its proofs count is shown and raised by one with a button beside it (a SETTLED or VOID claim, or one in a
  *  closed period, refused with an error on the claim); one with no proofs whose due is above the sheet's proof
  *  threshold in force on its date cannot be settled or approved.
+ *  A claim can be commented with text typed beside it (an empty comment refused with an error on the claim);
+ *  its comments are shown oldest first as `<user> on <date>: <text>`.
  *  A steward can re-date an OPEN or PENDING claim to a date typed beside it: its due-by and any bound figure
  *  stay, and so do its period and number (anyone else, any other status, a date after its person's retirement,
  *  or a claim in a closed period refused with an error on the claim).
@@ -138,6 +140,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reminder.reset();
       redating.reset();
       proof.reset();
+      commenting.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
@@ -159,6 +162,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reminder.reset();
       redating.reset();
       proof.reset();
+      commenting.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
@@ -184,6 +188,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reminder.reset();
       redating.reset();
       proof.reset();
+      commenting.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
@@ -212,6 +217,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reminder.reset();
       redating.reset();
       proof.reset();
+      commenting.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
@@ -240,6 +246,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reminder.reset();
       redating.reset();
       proof.reset();
+      commenting.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
@@ -261,11 +268,41 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reminder.reset();
       redating.reset();
       proof.reset();
+      commenting.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
       locking.reset();
       return proof.mutateAsync(id);
+    });
+  };
+
+  // The comment typed for each claim.
+  const [commentTexts, setCommentTexts] = useState<Record<number, string>>({});
+
+  const commenting = useMutation({
+    mutationFn: (v: { id: number; text: string }) => commentClaim(sheetId, user, v.id, v.text),
+    onSuccess: (_, v) => {
+      setCommentTexts((t) => ({ ...t, [v.id]: '' }));
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+
+  const comment = (id: number) => {
+    const text = (commentTexts[id] ?? '').trim();
+    actOnce(() => {
+      move.reset();
+      reassign.reset();
+      deferral.reset();
+      reminder.reset();
+      redating.reset();
+      proof.reset();
+      commenting.reset();
+      division.reset();
+      inline.reset();
+      setEditRefused(null);
+      locking.reset();
+      return commenting.mutateAsync({ id, text });
     });
   };
 
@@ -299,6 +336,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reminder.reset();
       redating.reset();
       proof.reset();
+      commenting.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
@@ -315,6 +353,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reminder.reset();
       redating.reset();
       proof.reset();
+      commenting.reset();
       division.reset();
       inline.reset();
       setEditRefused(null);
@@ -335,6 +374,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     reminder.reset();
     redating.reset();
     proof.reset();
+    commenting.reset();
     division.reset();
     inline.reset();
     locking.reset();
@@ -465,6 +505,18 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
               <td data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</td>
               <td>
                 {(c.log ?? []).map((line, i) => <div key={i} data-testid="claim-log-line">{line}</div>)}
+              </td>
+              <td>
+                {(c.comments ?? []).map((line, i) => <div key={i} data-testid="claim-comments-line">{line}</div>)}
+                <input data-testid="claim-comment-text" placeholder="Comment" value={commentTexts[c.id] ?? ''}
+                  onChange={(e) => {
+                    setCommentTexts((t) => ({ ...t, [c.id]: e.target.value }));
+                    if (commenting.variables?.id === c.id) commenting.reset();
+                  }} />{' '}
+                <button type="button" data-testid="claim-comment-add" disabled={commenting.isPending}
+                  onClick={() => comment(c.id)}>
+                  Comment
+                </button>
               </td>
               <td>
                 {(['open', 'settle', 'void', 'approve', 'resettle'] as const).map((a) => (
@@ -607,6 +659,11 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                   <span data-testid="claim-error">{proof.error instanceof HttpError && proof.error.status === 423
                     ? 'A claim due by a day inside a closed period cannot gain a proof.'
                     : `A ${c.status} claim cannot gain a proof.`}</span>
+                )}
+                {commenting.isError && commenting.variables?.id === c.id && (
+                  <span data-testid="claim-error">{commenting.error instanceof HttpError && commenting.error.status === 400
+                    ? 'A comment cannot be empty.'
+                    : 'Your role may not change anything on this sheet.'}</span>
                 )}
                 {inline.isError && inline.variables?.id === c.id && (
                   <span data-testid="claim-error">{inline.error instanceof HttpError && inline.error.status === 423

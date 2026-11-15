@@ -26,6 +26,7 @@ public class Claim {
     private String roundDate;
     private String dueBy;
     private List<String> log = List.of();
+    private List<String> comments = List.of();
     private String deferredUntil;
     private boolean deferred;
     private int proofs;
@@ -100,6 +101,10 @@ public class Claim {
     /** Its status log, oldest first (see {@link ClaimLogRepository}). */
     public List<String> getLog() { return log; }
     public void setLog(List<String> log) { this.log = log; }
+
+    /** Its comments, oldest first: {@code <user> on <date>: <text>} (see {@link ClaimCommentRepository}). */
+    public List<String> getComments() { return comments; }
+    public void setComments(List<String> comments) { this.comments = comments; }
 
     /** The date it was last deferred until (yyyy-MM-dd; none: never deferred). */
     public String getDeferredUntil() { return deferredUntil; }

@@ -36,6 +36,8 @@ export type Claim = {
   number: string | null; settledDue: string | null; openedBy: string | null;
   stated: boolean; statedDue: string | null; corrects: string | null; roundDate: string; dueBy: string;
   log: string[]; deferredUntil: string | null; deferred: boolean; proofs: number;
+  /** Its comments, oldest first: `<user> on <date>: <text>` (the sheet's today when written). */
+  comments: string[];
   /** The number of the claim it was split from (null: not split off a claim). */
   splitFrom: string | null;
   /** The user whose open editor locks it for everyone else (null: unlocked). */
@@ -146,6 +148,11 @@ export function splitClaim(sheetId: string, by: string, id: number, amount: stri
  *  in a closed period. */
 export function addProof(sheetId: string, by: string, id: number): Promise<Claim> {
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/proofs?by=${encodeURIComponent(by)}`, {});
+}
+
+/** Comment a claim, by the user on the sheet's today; refused (rejects) for an empty comment. */
+export function commentClaim(sheetId: string, by: string, id: number, text: string): Promise<Claim> {
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/comments?by=${encodeURIComponent(by)}&text=${encodeURIComponent(text)}`, {});
 }
 
 /** A steward moves a DRAFT, OPEN or PENDING claim to another person (`toPersonId`): it keeps its
