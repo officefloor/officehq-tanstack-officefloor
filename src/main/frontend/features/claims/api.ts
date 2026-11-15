@@ -69,6 +69,9 @@ export const showTags = (tags: string | null) => (tags ?? '').split(',').filter(
 /** A claim's tags as a list (empty: none). */
 export const tagsOf = (c: Pick<Claim, 'tags'>) => (c.tags ?? '').split(',').filter((t) => t !== '');
 
+/** Whether a claim corrects another (names the claim it corrects): left out of claimed. */
+export const correctsAnother = (c: Pick<Claim, 'corrects'>) => !!c.corrects?.trim();
+
 /** Whether a claim is a correction: its amount is negative. */
 export const isCorrection = (c: Pick<Claim, 'amount'>) => c.amount.trim().startsWith('-') && Number(c.amount) !== 0;
 

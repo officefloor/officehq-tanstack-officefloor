@@ -18,7 +18,8 @@ import net.officefloor.hq.app.setting.DatedSetting;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 
-/** The sheet's figures at one moment, as the screen shows them: each person's claimed and
+/** The sheet's figures at one moment, as the screen shows them: each person's claimed (corrections
+ *  left out) and
  *  due-total (null: n/a; else at most the sheet's cap) and overdue-total, in the order they were added, and the
  *  sheet's claimed-total, due-total and overdue-total (these two leave out the single highest and
  *  lowest person's figure when three or more people have one), with the sheet's alert threshold
@@ -57,7 +58,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             boolean kept = false;
             for (Claim c : all) {
                 if (c.getPersonId() != p.getId() || !p.countsLive(c)) continue;
-                claimed = claimed.add(new BigDecimal(c.getAmount()));
+                if (!corrects(c)) claimed = claimed.add(new BigDecimal(c.getAmount()));
                 String grade = p.gradeOn(c.getDate());
                 String pct = rateOn(sheetRates, grade, c.getDate());
                 String d = Dues.shown(c, pct == null ? null : Dues.of(c.getAmount(), pct, late.rounding(c.getRoundDate())), floor.on(c.getDate()), late);
@@ -113,6 +114,11 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
     /** Whether the person's due-total is above the alert threshold (none: not). */
     private boolean above(Figures figures) {
         return figures.dueTotal() != null && new BigDecimal(figures.dueTotal()).compareTo(alertThreshold) > 0;
+    }
+
+    /** Whether the claim corrects another: such a claim is left out of claimed. */
+    private static boolean corrects(Claim c) {
+        return c.getCorrects() != null && !c.getCorrects().isBlank();
     }
 
     /** The grade's rate in force on the date (yyyy-MM-dd), inherited up the parent chain; null when none. */
