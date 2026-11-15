@@ -1,0 +1,118 @@
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index 4a4a5223b..c4d3d164d 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -25,8 +25,8 @@ export const isBound = (c: Claim) => c.stated && c.statedDue !== null;
+  *  bound it, with the figure it bound (null when it had none): a bound claim shows and totals that.
+  *  A correction (a negative amount) has the number of the SETTLED claim it corrects (null otherwise).
+  *  `roundDate` is the date its live figures round by: its own, or a correction's claim's it corrects.
+- *  `dueBy` (yyyy-MM-dd) is fixed when it was added: its date then plus the terms of its person's
+- *  grade in force on that date (the grade's own, else the sheet's). `log` is its status log, oldest
++ *  `dueBy` (yyyy-MM-dd) is fixed when it was added: its date then plus the terms in force on the
++ *  sheet's today then (the person's own, else their grade's that day, else the sheet's). `log` is its status log, oldest
+  *  first: `<STATUS> by <user> on <date> due=<due>`, the sheet's today and its due at each change.
+  *  `deferredUntil` is the date it was last deferred until (null: never), and `deferred` whether it is
+  *  deferred on the sheet's today (OPEN, or VOID voided while deferred, and deferred until a later date): a deferred claim counts in no
+diff --git a/src/main/frontend/features/settings/api.ts b/src/main/frontend/features/settings/api.ts
+index d1970c780..81c03fe00 100644
+--- a/src/main/frontend/features/settings/api.ts
++++ b/src/main/frontend/features/settings/api.ts
+@@ -22,7 +22,7 @@ export type Role = { sheetId: string; user: string; role: string };
+  *  period numbering date (yyyy-MM-dd; blank means off: once the sheet's today is on or after it, a
+  *  claim opened is numbered within its period, <period>-<n>, or X-<n> in no period). A grade's own terms
+  *  (terms-<grade>; blank means the sheet's terms) fix the due-by of a claim added for a person of that
+- *  grade on its date: its date plus those terms, kept when the terms or its date change later. The proof
++ *  grade on the sheet's today then (those in force that day): its date plus those terms, kept when the terms or its date change later. The proof
+  *  threshold (two decimals; blank means none): a claim whose due is above the one in force on its date
+  *  cannot be settled or approved while it has no proofs. A grade's proof threshold (proof-threshold-<grade>,
+  *  two decimals; blank means none): a claim whose person's grade in force on its date has one in force on
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddClaim.java b/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
+index d100bdee8..41b908160 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
+@@ -21,11 +21,11 @@ public class AddClaim {
+         if (person.retiredBefore(date)) {
+             throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
+         }
+-        // The due-by is fixed now: the person's own terms, else their grade's, else the sheet's, as they stood on its date,
++        // The due-by is fixed now: the person's own terms, else their grade's, else the sheet's, as they stand on the sheet's today,
+         // counted in business days past the weekends and the sheet's holidays as they are now.
+         // The claim belongs to the period its due-by falls in.
+         LocalDate dueBy = holidays.dueBy(person.getSheetId(), date,
+-                settings.terms(person.getSheetId(), person, date.toString()));
++                settings.termsToday(person.getSheetId(), person));
+         periods.requireOpen(person.getSheetId(), dueBy.toString());
+         String corrects = Corrections.check(request, person.getSheetId(), person.getId(), claims);
+         claims.requireRefFree(person.getSheetId(), request.ref(), 0);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+index 51c40c38c..cecde0d38 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+@@ -53,7 +53,7 @@ public class SplitClaim {
+         String user = by == null ? "" : by;
+         LocalDate date = LocalDate.parse(claim.getDate());
+         Person person = people.find(sheetId, claim.getPersonId());
+-        LocalDate dueBy = holidays.dueBy(sheetId, date, settings.terms(sheetId, person, claim.getDate()));
++        LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsToday(sheetId, person));
+         Claim created = claims.add(sheetId, claim.getPersonId(), part.setScale(2), date, claim.getNote(),
+                 null, dueBy, user, null, claim.getTags());
+         if (periods.softClosedOn(sheetId, created.getDueBy())) claims.markLateEntry(created);
+diff --git a/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java b/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
+index 59fb98f7a..80cdaa610 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
++++ b/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
+@@ -80,9 +80,9 @@ public class PasteClaims {
+             if (person.retiredBefore(date)) {
+                 throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
+             }
+-            // The due-by is fixed now, by the terms of the grade in force on its date, as they stood on its date,
++            // The due-by is fixed now, by the terms in force on the sheet's today,
+             // counted in business days past the weekends and the sheet's holidays as they are now.
+-            LocalDate dueBy = holidays.dueBy(id, date, settings.terms(id, person, date.toString()));
++            LocalDate dueBy = holidays.dueBy(id, date, settings.termsToday(id, person));
+             periods.requireOpen(id, dueBy.toString());
+             String corrects = Corrections.check(request, id, person.getId(), claims);
+             // A reference is used once on the sheet: also once within the paste.
+diff --git a/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java b/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
+index b68f569a7..d0a56c5da 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
++++ b/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
+@@ -41,7 +41,7 @@ public class GeneratePlanClaims {
+             for (LocalDate date : plan.dates(last)) {
+                 if (done.contains(date) || person.retiredBefore(date)) continue;
+                 // The due-by is fixed now, as for a claim added on the form.
+-                LocalDate dueBy = holidays.dueBy(id, date, settings.terms(id, person, date.toString()));
++                LocalDate dueBy = holidays.dueBy(id, date, settings.termsToday(id, person));
+                 try {
+                     periods.requireOpen(id, dueBy.toString());
+                 } catch (PeriodClosedException e) {
+diff --git a/src/main/java/net/officefloor/hq/app/quick/FindOrAddPerson.java b/src/main/java/net/officefloor/hq/app/quick/FindOrAddPerson.java
+index 6a60c68bf..03ca32fec 100644
+--- a/src/main/java/net/officefloor/hq/app/quick/FindOrAddPerson.java
++++ b/src/main/java/net/officefloor/hq/app/quick/FindOrAddPerson.java
+@@ -39,7 +39,7 @@ public class FindOrAddPerson {
+         }
+         // The claim would be refused when its due-by (grade A's terms in business days after its date) falls in a closed period.
+         java.time.LocalDate date = settings.entryDate(id);
+-        periods.requireOpen(id, holidays.dueBy(id, date, settings.terms(id, "A", date.toString())).toString());
++        periods.requireOpen(id, holidays.dueBy(id, date, settings.terms(id, "A", sheets.today(id).toString())).toString());
+         sheets.open(id, user);
+         Person added = people.add(id, name.name(), "A", user);
+         audit.record("PERSON_ADDED sheet=" + id + " by=" + user + " name=" + added.getName()
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index c96d83931..495e6d776 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -269,6 +269,12 @@ public class SettingRepository {
+         return terms(sheetId, person == null ? null : person.gradeOn(date), date);
+     }
+ 
++    /** The terms (whole days) of a claim of the person created now: those in force on the sheet's today
++     *  (their own, else those of the grade they have that day, else the sheet's), whatever its date. */
++    public int termsToday(String sheetId, net.officefloor.hq.app.person.Person person) {
++        return terms(sheetId, person, sheets.today(sheetId).toString());
++    }
++
+     /** The sheet's late percent (two decimals) by date: a late charge goes by the one in force on each 30-day boundary. */
+     public DatedSetting latePct(String sheetId) {
+         return dated(sheetId, LATE_PCT, DEFAULT_LATE_PCT);
