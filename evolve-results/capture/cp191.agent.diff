@@ -1,0 +1,116 @@
+diff --git a/src/main/frontend/features/settings/Settings.tsx b/src/main/frontend/features/settings/Settings.tsx
+index b70a1b76e..ca849df54 100644
+--- a/src/main/frontend/features/settings/Settings.tsx
++++ b/src/main/frontend/features/settings/Settings.tsx
+@@ -76,11 +76,12 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+                 : key === 'fiscal-start-month' ? 'Fiscal year start month (1 to 12)'
+                 : key === 'default-grade' ? 'Default grade (A, B or C)'
+                 : key.startsWith('perm-') ? `Who may ${key.slice('perm-'.length)} (roles)`
++                : key.startsWith('clerk-limit-') ? `Clerk limit for grade ${key.slice('clerk-limit-'.length)}`
+                 : key.startsWith('proof-threshold-') ? `Proof threshold for grade ${key.slice('proof-threshold-'.length)}`
+                 : key.startsWith('grace-') ? `Grace days for grade ${key.slice('grace-'.length)}`
+                 : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (business days)` : 'Terms (business days)'}{' '}
+               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
+-                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' || key === 'review-threshold' || key === 'review-sla' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key === 'cap' ? 'No cap' : key === 'pot' || key === 'parent' || key === 'proof-kinds' ? 'None' : key === 'alert-threshold' ? 'Off' : key === 'rounding' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
++                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' || key === 'review-threshold' || key === 'review-sla' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key.startsWith('clerk-limit-') ? "Sheet's limit" : key === 'cap' ? 'No cap' : key === 'pot' || key === 'parent' || key === 'proof-kinds' ? 'None' : key === 'alert-threshold' ? 'Off' : key === 'rounding' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
+                   : key === 'period-numbering-from' || key === 'entry-date' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' || key === 'escalate-after' ? 'Off' : key.startsWith('grace-') ? 'None' : key.startsWith('terms-') ? "Sheet's terms"
+                   : key === 'default-grade' ? 'A'
+                   : key.startsWith('perm-') ? PERMISSION_STANDING[key.slice('perm-'.length)] : undefined}
+@@ -103,7 +104,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+         </button>
+         {save.isError && (
+           <span data-testid="settings-error">
+-            The clerk limit, the cap, the pot, the proof threshold, a grade's proof threshold, the note threshold and the review threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
++            The clerk limit, a grade's clerk limit, the cap, the pot, the proof threshold, a grade's proof threshold, the note threshold and the review threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
+             the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the rounding mode blank, half-up or half-even; the policy date, period numbering date and entry date blank or a date; the grace days, a grade's grace days and the review SLA blank or a whole number of days; a permission blank or a comma separated list of clerk and steward; the proof kinds blank or a comma separated list of receipt and photo; the parent sheet blank or a sheet that has been loaded, not this one nor one with this one above it; the fiscal year start month a whole number from 1 to 12; the default grade blank, A, B or C; a from-date blank or a date.
+           </span>
+         )}
+diff --git a/src/main/frontend/features/settings/api.ts b/src/main/frontend/features/settings/api.ts
+index 36616cd77..d5a7b376d 100644
+--- a/src/main/frontend/features/settings/api.ts
++++ b/src/main/frontend/features/settings/api.ts
+@@ -54,8 +54,10 @@ export type Role = { sheetId: string; user: string; role: string };
+  *  The review SLA (a number of days; blank means none; not dated): a REVIEW claim whose review day (the
+  *  sheet's today when it went to REVIEW) plus them is before the sheet's today is review-late (see `isReviewLate`).
+  *  The default grade (A, B or C; blank means A; not dated): the grade the quick-add bar gives a new person,
+- *  and an import line with a blank grade; changing it changes no one. */
+-export const SETTING_KEYS = ['clerk-limit', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'rounding',
++ *  and an import line with a blank grade; changing it changes no one.
++ *  A grade's clerk limit (clerk-limit-<grade>, two decimals; blank means none; dated): a claim whose person's
++ *  grade on the sheet's today has one in force then goes by it instead of the sheet's clerk limit. */
++export const SETTING_KEYS = ['clerk-limit', 'clerk-limit-A', 'clerk-limit-B', 'clerk-limit-C', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'rounding',
+   'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'] as const;
+ 
+ /** The roles that may take each action of the permission matrix while its entry is blank. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+index 2dbc1f0e3..682ad009a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ /** Settles a claim, fixing its due: its amount at its person's grade's rate in force on its date, rounded by the sheet's policy date to
+  *  two decimals (a claim bound by a statement: the figure it was bound to). With no rate the due is not
+  *  fixed and stays live. Its late charge on the sheet's today is added, then the sheet's floor applied last, and fixed with it. Refused for the user who opened it or last edited it (four eyes), and for a claim
+- *  that is not OPEN, and for a role the permission matrix does not let settle. Settled by a clerk when the due is above the sheet's clerk limit (a due that is n/a is within any limit; a steward settles
++ *  that is not OPEN, and for a role the permission matrix does not let settle. Settled by a clerk when the due is above the clerk limit in force (its person's grade's on the sheet's today when set, else the sheet's; a due that is n/a is within any limit; a steward settles
+  *  anything), it goes to PENDING instead (after the proof threshold: one above it with no proofs is refused), nothing fixed, until a steward approves or rejects it. */
+ public class SettleClaim {
+     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
+@@ -59,7 +59,8 @@ public class SettleClaim {
+         String due = dueOf(claim, person, rates, settings, sheets);
+         if (judged) requireProof(claim, person, due, settings);
+         if (due != null && Role.CLERK.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
+-            BigDecimal limit = settings.clerkLimit(claim.getSheetId());
++            BigDecimal limit = settings.clerkLimit(claim.getSheetId(),
++                    person == null ? null : person.gradeOn(sheets.today(claim.getSheetId()).toString()));
+             if (limit != null && new BigDecimal(due).compareTo(limit) > 0) {
+                 claim.setStatus(ClaimStatus.OPEN.moveTo(ClaimStatus.PENDING).name());
+                 return;
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 7a838538a..86ae73240 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -25,6 +25,10 @@ public class SettingRepository {
+     /** The clerk limit: the largest due a clerk may settle (two decimals; blank: no limit). */
+     public static final String CLERK_LIMIT = "clerk-limit";
+ 
++    /** A grade's clerk limit ({@code clerk-limit-<grade>}, dated; two decimals; blank: none): a claim
++     *  whose person's grade on the sheet's today has one in force then goes by it instead of the sheet's. */
++    public static final String CLERK_LIMIT_OF_GRADE = "clerk-limit-";
++
+     /** The proof threshold: a claim whose due is above the one in force on its date cannot be settled
+      *  or approved without a proof (two decimals; blank: none). */
+     public static final String PROOF_THRESHOLD = "proof-threshold";
+@@ -218,9 +222,14 @@ public class SettingRepository {
+         return value == null ? null : new BigDecimal(value);
+     }
+ 
+-    /** The sheet's clerk limit in force on its today; null when there is none. */
+-    public BigDecimal clerkLimit(String sheetId) {
+-        String value = dated(sheetId, CLERK_LIMIT, null).on(sheets.today(sheetId).toString());
++    /** The clerk limit of a grade in force on the sheet's today: its own when set, else the sheet's
++     *  (a null grade: the sheet's); null when there is none. */
++    public BigDecimal clerkLimit(String sheetId, String grade) {
++        String today = sheets.today(sheetId).toString();
++        String value = grade == null ? null : dated(sheetId, CLERK_LIMIT_OF_GRADE + grade, null).on(today);
++        if (value == null) {
++            value = dated(sheetId, CLERK_LIMIT, null).on(today);
++        }
+         return value == null ? null : new BigDecimal(value);
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 1c877b732..2c9fb33e9 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -42,6 +42,11 @@ public class ValidateSetting {
+             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
+                 throw new InvalidSettingException("The clerk limit is blank or 0.00 or more with up to two decimals");
+             }
++        } else if (key.startsWith(SettingRepository.CLERK_LIMIT_OF_GRADE)
++                && GRADES.contains(key.substring(SettingRepository.CLERK_LIMIT_OF_GRADE.length()))) {
++            if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
++                throw new InvalidSettingException("A grade's clerk limit is blank or 0.00 or more with up to two decimals");
++            }
+         } else if (SettingRepository.PROOF_THRESHOLD.equals(key)) {
+             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
+                 throw new InvalidSettingException("The proof threshold is blank or 0.00 or more with up to two decimals");
