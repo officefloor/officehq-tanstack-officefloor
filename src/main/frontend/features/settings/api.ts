@@ -41,8 +41,10 @@ export type Role = { sheetId: string; user: string; role: string };
  *  The fiscal year start month (1 to 12; 1 until set; not dated): a fiscal year runs twelve months from the
  *  first of it and is named FY<yyyy> by the calendar year its first day falls in (see `fiscalYearOf`).
  *  The alert threshold (two decimals; blank means off; not dated): a person whose due-total goes from at
- *  or below it to above it after a change is alerted (an ALERT audit line). */
-export const SETTING_KEYS = ['clerk-limit', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
+ *  or below it to above it after a change is alerted (an ALERT audit line).
+ *  The rounding mode (half-up or half-even; blank means none; dated): a claim whose round date has one in
+ *  force rounds its live figures by it instead of by the policy date. */
+export const SETTING_KEYS = ['clerk-limit', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'rounding',
   'period-numbering-from', 'entry-date', 'grace-days', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'] as const;
 
 /** The roles that may take each action of the permission matrix while its entry is blank. */
@@ -149,7 +151,8 @@ export function useLate(sheetId: string, today: string, live = false): Late {
     const from = new Date(Date.parse(`${dueBy(c)}T00:00:00Z`) + Number(grace) * 86_400_000);
     return from.toISOString().slice(0, 10);
   };
-  return { pct, today, policy, lateFrom };
+  const rounding = (date: string) => settingOn(settings.data, 'rounding', date) ?? '';
+  return { pct, today, policy, lateFrom, rounding };
 }
 
 /** A steward's delegation of the steward role to a user, from a date to a date (yyyy-MM-dd, inclusive):

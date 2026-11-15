@@ -86,12 +86,17 @@ export function dueOf(amount: string, pct: string | undefined, halfUp: boolean):
 /** What a claim's late charge goes by: the sheet's late percent by date (a charge goes by the one in force on each 30-day boundary) and its today (a claim's due-by is its own);
  *  the sheet's policy date (its today when blank), which decides how a claim's live figures round; and the date
  *  a claim's lateness counts from (`lateFrom`: its due-by plus the grace days of its person's grade in force on
- *  its date, as in force on that date). */
-export type Late = { pct: DatedOn; today: string; policy: string; lateFrom: (c: Claim) => string };
+ *  its date, as in force on that date); and the rounding mode by date (half-up or half-even; '': none). */
+export type Late = { pct: DatedOn; today: string; policy: string; lateFrom: (c: Claim) => string; rounding: DatedOn };
 
-/** Whether a claim's live figures round half up: its round date (its own, or for a correction the
- *  date of the claim it corrects) is before the policy date; else they round half to even. */
-export const roundsHalfUp = (c: Claim, late: Late) => (c.roundDate ?? c.date) < late.policy;
+/** Whether a claim's live figures round half up: by the rounding mode in force on its round date (its
+ *  own, or for a correction the date of the claim it corrects); with none, when that date is before the
+ *  policy date; else they round half to even. */
+export const roundsHalfUp = (c: Claim, late: Late) => {
+  const date = c.roundDate ?? c.date;
+  const mode = late.rounding(date);
+  return mode === 'half-up' ? true : mode === 'half-even' ? false : date < late.policy;
+};
 
 /** The late charge on an open (OPEN or PENDING) claim's `figure`, compounding: for each full 30 days it is past its
  *  due-by plus its grace days (`late.lateFrom`) on the sheet's today, the late percent in force on that boundary date

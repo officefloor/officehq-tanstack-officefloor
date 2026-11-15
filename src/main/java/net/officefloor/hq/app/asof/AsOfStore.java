@@ -109,6 +109,13 @@ public class AsOfStore {
                 ps.setString(1, sheetId);
                 ps.executeUpdate();
             }
+            // A SNAPSHOT is written when its day is left: as of that day (or before) it was not there yet.
+            try (PreparedStatement ps = c.prepareStatement(
+                    "DELETE FROM " + q(schema) + ".PERSON_SNAPSHOT WHERE SHEET_ID = ? AND DAY_LEFT >= ?")) {
+                ps.setString(1, sheetId);
+                ps.setObject(2, asOf);
+                ps.executeUpdate();
+            }
             try (PreparedStatement ps = c.prepareStatement(
                     "UPDATE " + q(schema) + ".SHEET SET TODAY = ? WHERE ID = ?")) {
                 ps.setObject(1, asOf);

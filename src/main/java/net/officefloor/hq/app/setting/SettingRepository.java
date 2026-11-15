@@ -65,6 +65,10 @@ public class SettingRepository {
      *  up, one on or after it half to even. */
     public static final String POLICY_DATE = "policy-date";
 
+    /** The rounding mode (dated; half-up or half-even; blank: none): a claim whose date has one in force
+     *  rounds its live figures by it instead of by the policy date. */
+    public static final String ROUNDING = "rounding";
+
     /** The period numbering date (yyyy-MM-dd; blank: off): once the sheet's today is on or after it,
      *  a claim opened is numbered within its period. */
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
@@ -160,7 +164,8 @@ public class SettingRepository {
         return new Dues.Late(datedAsOf(sheetId, LATE_PCT, DEFAULT_LATE_PCT, asOf), asOf,
                 policy == null ? asOf : LocalDate.parse(policy),
                 grace((grade) -> datedAsOf(sheetId, GRACE_OF_GRADE + grade, null, asOf),
-                        (id) -> people.findAsOf(sheetId, id, asOf)));
+                        (id) -> people.findAsOf(sheetId, id, asOf)),
+                datedAsOf(sheetId, ROUNDING, null, asOf));
     }
 
     /** An undated setting's value; null when blank or never set. */
@@ -261,7 +266,8 @@ public class SettingRepository {
     /** What a claim's late charge and rounding go by on the sheet now. */
     public Dues.Late late(String sheetId, LocalDate today) {
         return new Dues.Late(latePct(sheetId), today, policyDate(sheetId, today),
-                grace((grade) -> dated(sheetId, GRACE_OF_GRADE + grade, null), (id) -> people.find(sheetId, id)));
+                grace((grade) -> dated(sheetId, GRACE_OF_GRADE + grade, null), (id) -> people.find(sheetId, id)),
+                dated(sheetId, ROUNDING, null));
     }
 
     /** A claim's grace days: those of its person's grade in force on the claim's date, as in force on
