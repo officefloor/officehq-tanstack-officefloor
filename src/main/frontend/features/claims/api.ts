@@ -250,7 +250,7 @@ export const isOverdue = (c: Claim, today: string, lateFrom: string = dueBy(c)) 
 /** How many of the selected claims a bulk open opened, and how many it refused (left as they were). */
 export type BulkOpenResult = { opened: number; refused: number };
 
-/** Open the selected claims together, numbered in list order (people in added order, newest claim
+/** Open the selected claims together, numbered in list order (people in their list places, newest claim
  *  first within a person); each that cannot be opened is left as it is and counted as refused. */
 export function bulkOpenClaims(sheetId: string, by: string, claimIds: number[]): Promise<BulkOpenResult> {
   return postJson<BulkOpenResult>(`${sheetBase(sheetId)}/bulk-open?by=${encodeURIComponent(by)}`, { claimIds });
@@ -260,7 +260,7 @@ export function bulkOpenClaims(sheetId: string, by: string, claimIds: number[]):
  *  it refused (left as they were). */
 export type BulkSettleResult = { settled: number; refused: number };
 
-/** Settle the selected claims together in list order (people in added order, newest claim first
+/** Settle the selected claims together in list order (people in their list places, newest claim first
  *  within a person), each by the rules of settling one; each that cannot be settled is left as it is
  *  and counted as refused. */
 export function bulkSettleClaims(sheetId: string, by: string, claimIds: number[]): Promise<BulkSettleResult> {
@@ -305,7 +305,7 @@ export function addVoidReason(sheetId: string, by: string, reason: string): Prom
 /** How many of the selected claims a bulk reassign moved, and how many it refused (left as they were). */
 export type BulkReassignResult = { reassigned: number; refused: number };
 
-/** Move the selected claims to one person (`toPersonId`) together in list order (people in added order,
+/** Move the selected claims to one person (`toPersonId`) together in list order (people in their list places,
  *  newest claim first within a person), each by the rules of reassigning one; each that cannot be moved
  *  is left as it is and counted as refused. */
 export function bulkReassignClaims(sheetId: string, by: string, claimIds: number[], toPersonId: number): Promise<BulkReassignResult> {

@@ -52,7 +52,7 @@ const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/pe
 
 export const peopleKey = (sheetId: string) => [...sheetKey(sheetId), 'people'] as const;
 
-/** The sheet's people, in the order they were added. */
+/** The sheet's people, in list order (each one's place in the list; new people go to the end). */
 export function listPeople(sheetId: string, live = false): Promise<Person[]> {
   return getJson<Person[]>(base(sheetId), live);
 }
@@ -99,6 +99,12 @@ export function cancelStatement(sheetId: string, by: string, id: number): Promis
 /** Retire the person from `from` (blank: the sheet's today); refused (rejects) when it is not a date. */
 export function retirePerson(sheetId: string, by: string, id: number, from: string): Promise<Person> {
   return postJson<Person>(`${base(sheetId)}/${id}/retire?by=${encodeURIComponent(by)}`, { from });
+}
+
+/** Swap the person with the one above (`up`) or below (`down`) them in the list; refused (rejects)
+ *  for the first moving up or the last moving down. */
+export function movePerson(sheetId: string, by: string, id: number, direction: 'up' | 'down'): Promise<Person> {
+  return postJson<Person>(`${base(sheetId)}/${id}/move?by=${encodeURIComponent(by)}`, { direction });
 }
 
 /** Add a hold on the person from `from` (blank: the sheet's today) to `to` (blank: open-ended);

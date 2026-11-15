@@ -18,11 +18,12 @@ import { ExportPeople } from './ExportPeople';
 import { ImportPeople } from './ImportPeople';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
-import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, peopleKey, retirePerson, takeStatement, transferPerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, takeStatement, transferPerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '' };
 
-/** The people on the sheet: a form that adds a person or edits one, and the list in added order,
+/** The people on the sheet: a form that adds a person or edits one, and the list in list order (each with buttons that move
+ *  them up or down a place; new people go to the end),
  *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap, with the excess above it, and split into settled and open (see `splitDues`); n/a
  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
  *  their statements (a button that takes one, now or as of the date typed beside it, a button that cancels the last, the count, the last one's due-total and date), whether
@@ -201,6 +202,12 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     ]),
   });
 
+  // The person whose last move was refused; cleared by the next action on the row.
+  const moving = useMutation({
+    mutationFn: (v: { id: number; direction: 'up' | 'down' }) => movePerson(sheetId, user, v.id, v.direction),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+  });
+
   // The person whose last watch was refused; cleared by the next action on the row.
   const watching = useMutation({
     mutationFn: (v: { id: number; on: boolean }) => watchPerson(sheetId, user, v.id, v.on),
@@ -217,6 +224,14 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     aliasing.reset();
     merging.reset();
     transferring.reset();
+    moving.reset();
+  };
+
+  const move = (id: number, direction: 'up' | 'down') => {
+    stateOnce(() => {
+      resetRowActions();
+      return moving.mutateAsync({ id, direction });
+    });
   };
 
   const state = (id: number) => {
@@ -402,6 +417,16 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   <input type="checkbox" data-testid="person-select" checked={selectedPeople.has(p.id)}
                     onChange={(e) => selectPerson(p.id, e.target.checked)} />
                 </td>
+                <td>
+                  <button type="button" data-testid="person-move-up" disabled={moving.isPending}
+                    onClick={() => move(p.id, 'up')}>
+                    Up
+                  </button>{' '}
+                  <button type="button" data-testid="person-move-down" disabled={moving.isPending}
+                    onClick={() => move(p.id, 'down')}>
+                    Down
+                  </button>
+                </td>
                 <td data-testid="person-name">{p.name}</td>
                 <td data-testid="person-grade">{p.grade}</td>
                 <td>
@@ -481,6 +506,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   )}
                   {merging.isError && merging.variables?.id === p.id && (
                     <span data-testid="person-error">The person could not be merged: only a steward can, into someone else, neither of them retired.</span>
+                  )}
+                  {moving.isError && moving.variables?.id === p.id && (
+                    <span data-testid="person-error">The person could not be moved: the first cannot move up, nor the last down.</span>
                   )}
                   {transferring.isError && transferring.variables?.id === p.id && (
                     <span data-testid="person-error">The person could not be transferred: only a steward can, not a retired person, to another sheet with no one of the same name, alias or contact.</span>

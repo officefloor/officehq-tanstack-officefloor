@@ -17,7 +17,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** Gives the selected people the grade in list order (the order they were added), each as the
+/** Gives the selected people the grade in list order (by their places in the list), each as the
  *  person form would (see {@link ApplyPerson}: from the from-date, blank the sheet's today) and
  *  recorded as it would record it (its PERSON_EDITED line, then the rollup lines it moved). A
  *  selected id not on the sheet is skipped. A viewer may grade no one: none are given it. Refused on an

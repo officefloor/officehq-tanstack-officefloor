@@ -34,9 +34,12 @@ public class PersonRepository {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's people in the order they were added, each with their patrons. */
+    /** The end of a sheet's list: the place a person added or arriving there takes. */
+    private static final String NEXT_POS = "(SELECT COALESCE(MAX(q.list_pos), 0) + 1 FROM person q WHERE q.sheet_id = ?)";
+
+    /** The sheet's people in list order (by their place in it), each with their patrons. */
     public List<Person> list(String sheetId) {
-        List<Person> people = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY id",
+        List<Person> people = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY list_pos, id",
                 ROW, sheetId);
         Map<Long, Person> byId = new HashMap<>();
         people.forEach((p) -> byId.put(p.getId(), p));
@@ -259,8 +262,8 @@ public class PersonRepository {
         GeneratedKeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, created_by, terms, contact, added_on) "
-                            + "VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                    "INSERT INTO person (sheet_id, name, created_by, terms, contact, added_on, list_pos) "
+                            + "VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?), " + NEXT_POS + ")",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
@@ -268,6 +271,7 @@ public class PersonRepository {
             ps.setObject(4, terms);
             ps.setString(5, contact);
             ps.setString(6, sheetId);
+            ps.setString(7, sheetId);
             return ps;
         }, key);
         long id = key.getKey().longValue();
@@ -414,7 +418,15 @@ public class PersonRepository {
         for (String table : List.of("person_grade", "person_grade_history", "person_retired_history", "person_alias")) {
             jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, sheetId, id);
         }
-        jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL "
-                + "WHERE sheet_id = ? AND id = ?", to, sheetId, id);
+        jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL, "
+                + "list_pos = " + NEXT_POS + " WHERE sheet_id = ? AND id = ?", to, to, sheetId, id);
+    }
+
+    /** Swap the two people's places in their sheet's list. */
+    public void swap(String sheetId, long a, long b) {
+        Long posA = jdbc.queryForObject("SELECT list_pos FROM person WHERE sheet_id = ? AND id = ?", Long.class, sheetId, a);
+        Long posB = jdbc.queryForObject("SELECT list_pos FROM person WHERE sheet_id = ? AND id = ?", Long.class, sheetId, b);
+        jdbc.update("UPDATE person SET list_pos = ? WHERE sheet_id = ? AND id = ?", posB, sheetId, a);
+        jdbc.update("UPDATE person SET list_pos = ? WHERE sheet_id = ? AND id = ?", posA, sheetId, b);
     }
 }
