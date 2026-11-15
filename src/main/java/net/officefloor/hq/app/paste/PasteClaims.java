@@ -50,8 +50,8 @@ public class PasteClaims {
                 throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
             }
             // The due-by is fixed now, by the terms of the grade in force on its date, as they stood on its date,
-            // moved past the sheet's holidays as they are now.
-            LocalDate dueBy = holidays.dueBy(id, date.plusDays(settings.terms(id, person, date.toString())));
+            // counted in business days past the weekends and the sheet's holidays as they are now.
+            LocalDate dueBy = holidays.dueBy(id, date, settings.terms(id, person, date.toString()));
             periods.requireOpen(id, dueBy.toString());
             String corrects = Corrections.check(request, id, person.getId(), claims);
             pending.add(new Pending(person, request, date, dueBy, corrects));

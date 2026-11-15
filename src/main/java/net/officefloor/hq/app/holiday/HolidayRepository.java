@@ -38,13 +38,11 @@ public class HolidayRepository {
         return new Holiday(sheetId, date.toString(), by);
     }
 
-    /** The due-by a claim's date plus its terms gives, moved past the sheet's holidays as they are now:
-     *  the date itself, else the next day that is not a holiday. */
-    public LocalDate dueBy(String sheetId, LocalDate date) {
+    /** The due-by of a claim dated {@code date} with {@code terms} (whole business days), by the sheet's
+     *  holidays as they are now: see {@link BusinessDays#dueBy}. */
+    public LocalDate dueBy(String sheetId, LocalDate date, int terms) {
         Set<LocalDate> holidays = new HashSet<>(jdbc.queryForList(
-                "SELECT holiday FROM holiday WHERE sheet_id = ? AND holiday >= ?", LocalDate.class, sheetId, date));
-        LocalDate due = date;
-        while (holidays.contains(due)) due = due.plusDays(1);
-        return due;
+                "SELECT holiday FROM holiday WHERE sheet_id = ? AND holiday > ?", LocalDate.class, sheetId, date));
+        return BusinessDays.dueBy(date, terms, holidays);
     }
 }

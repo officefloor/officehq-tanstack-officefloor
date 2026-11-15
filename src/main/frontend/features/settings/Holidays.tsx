@@ -4,7 +4,7 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { addHoliday, holidaysKey, listHolidays } from './api';
 
 /** The sheet's holidays (by date) and a form to add one. A claim's due-by, fixed when it is created,
- *  that falls on a holiday moves to the next day that is not one. */
+ *  counts its terms in business days, skipping weekends and these holidays. */
 export function Holidays({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const holidays = useQuery({ queryKey: holidaysKey(sheetId), queryFn: () => listHolidays(sheetId) });

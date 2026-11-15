@@ -89,8 +89,8 @@ public class Claim {
     public String getRoundDate() { return roundDate == null ? date : roundDate; }
     public void setRoundDate(String roundDate) { this.roundDate = roundDate; }
 
-    /** Its due-by (yyyy-MM-dd), fixed when it was added: its date then plus the terms of its
-     *  person's grade in force on that date. */
+    /** Its due-by (yyyy-MM-dd), fixed when it was added: the terms-th business day after its date then, by
+     *  the terms in force on that date (skipping weekends and the sheet's holidays then). */
     public String getDueBy() { return dueBy; }
     public void setDueBy(String dueBy) { this.dueBy = dueBy; }
 

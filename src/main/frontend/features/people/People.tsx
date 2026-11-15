@@ -277,7 +277,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
         </label>{' '}
         <label>
           Terms{' '}
-          <input data-testid="person-form-terms" value={form.terms} placeholder="days"
+          <input data-testid="person-form-terms" value={form.terms} placeholder="business days"
             onChange={(e) => change({ terms: e.target.value })} />
         </label>{' '}
         <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>

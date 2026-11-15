@@ -30,7 +30,7 @@ public class SettingRepository {
     /** The floor: the least a claim's live due can be (two decimals). */
     public static final String FLOOR = "floor";
 
-    /** The terms: the number of days after its date by which a claim is due (a whole number). */
+    /** The terms: the number of business days after its date by which a claim is due (a whole number). */
     public static final String TERMS = "terms";
 
     /** A grade's own terms ({@code terms-<grade>}; blank: the sheet's terms). */

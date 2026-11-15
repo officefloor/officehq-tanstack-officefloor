@@ -22,10 +22,10 @@ public class AddClaim {
             throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
         }
         // The due-by is fixed now: the person's own terms, else their grade's, else the sheet's, as they stood on its date,
-        // moved past the sheet's holidays as they are now.
+        // counted in business days past the weekends and the sheet's holidays as they are now.
         // The claim belongs to the period its due-by falls in.
-        LocalDate dueBy = holidays.dueBy(person.getSheetId(),
-                date.plusDays(settings.terms(person.getSheetId(), person, date.toString())));
+        LocalDate dueBy = holidays.dueBy(person.getSheetId(), date,
+                settings.terms(person.getSheetId(), person, date.toString()));
         periods.requireOpen(person.getSheetId(), dueBy.toString());
         String corrects = Corrections.check(request, person.getSheetId(), person.getId(), claims);
         Claim added = claims.add(person.getSheetId(), person.getId(), request.amount(), date,

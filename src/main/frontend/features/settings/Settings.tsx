@@ -62,7 +62,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
                 : key === 'proof-threshold' ? 'Proof threshold'
                 : key === 'note-threshold' ? 'Note threshold'
                 : key.startsWith('perm-') ? `Who may ${key.slice('perm-'.length)} (roles)`
-                : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (days)` : 'Terms (days)'}{' '}
+                : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (business days)` : 'Terms (business days)'}{' '}
               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
                 placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' ? 'None' : key === 'cap' ? 'No cap' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
                   : key === 'period-numbering-from' || key === 'entry-date' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' ? 'Off' : key.startsWith('terms-') ? "Sheet's terms"
