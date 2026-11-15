@@ -1,0 +1,82 @@
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 935fc709d..fd4606004 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -77,6 +77,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const [mergePicks, setMergePicks] = useState<Record<number, string>>({});
+   // The sheet id typed on each person's row to transfer them to.
+   const [transferTos, setTransferTos] = useState<Record<number, string>>({});
++  // The grade picked on each person's row (absent: the grade they have).
++  const [gradePicks, setGradePicks] = useState<Record<number, string>>({});
+   // The alias typed on each person's row.
+   const [aliasInputs, setAliasInputs] = useState<Record<number, string>>({});
+   // The people selected for a bulk grade.
+@@ -224,6 +226,22 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+     ]),
+   });
+ 
++  // The person whose last inline grade was refused; cleared by the next action on the row. Saved as
++  // the person form would save the grade from the sheet's today, the rest of the person unchanged.
++  const grading = useMutation({
++    mutationFn: (v: { id: number; person: Person; grade: string }) => updatePerson(sheetId, user, v.id, v.person.version, {
++      name: v.person.name, grade: v.grade, gradeFrom: '', terms: v.person.terms === null ? '' : String(v.person.terms),
++      contact: v.person.contact ?? '', tags: showTags(v.person.tags),
++    }),
++    onSuccess: (_, v) => {
++      setGradePicks((d) => { const { [v.id]: _gone, ...rest } = d; return rest; });
++      return Promise.all([
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
++        queryClient.invalidateQueries({ queryKey: tagsKey(sheetId) }),
++      ]);
++    },
++  });
++
+   // The person whose last move was refused; cleared by the next action on the row.
+   const moving = useMutation({
+     mutationFn: (v: { id: number; direction: 'up' | 'down' }) => movePerson(sheetId, user, v.id, v.direction),
+@@ -248,6 +266,15 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+     merging.reset();
+     transferring.reset();
+     moving.reset();
++    grading.reset();
++  };
++
++  const grade = (p: Person) => {
++    const picked = gradePicks[p.id] ?? p.grade;
++    stateOnce(() => {
++      resetRowActions();
++      return grading.mutateAsync({ id: p.id, person: p, grade: picked });
++    });
+   };
+ 
+   const move = (id: number, direction: 'up' | 'down') => {
+@@ -470,6 +497,19 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                 </td>
+                 <td data-testid="person-name">{p.name}</td>
+                 <td data-testid="person-grade">{p.grade}</td>
++                <td>
++                  <select data-testid="person-inline-grade" value={gradePicks[p.id] ?? p.grade}
++                    onChange={(e) => {
++                      setGradePicks((d) => ({ ...d, [p.id]: e.target.value }));
++                      grading.reset();
++                    }}>
++                    {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
++                  </select>{' '}
++                  <button type="button" data-testid="person-inline-grade-save" disabled={grading.isPending}
++                    onClick={() => grade(p)}>
++                    Save grade
++                  </button>
++                </td>
+                 <td>
+                   Active <span data-testid="person-active">{isActive(live, today) ? 'yes' : 'no'}</span>
+                 </td>
+@@ -563,6 +603,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   {moving.isError && moving.variables?.id === p.id && (
+                     <span data-testid="person-error">The person could not be moved: the first cannot move up, nor the last down.</span>
+                   )}
++                  {grading.isError && grading.variables?.id === p.id && (
++                    <span data-testid="person-error">The grade could not be saved: refused as the person form would refuse it, or someone else saved the person meanwhile.</span>
++                  )}
+                   {transferring.isError && transferring.variables?.id === p.id && (
+                     <span data-testid="person-error">The person could not be transferred: only a steward can, not a retired person, to another sheet where their names match at most one person (not retired), and no one else has their contact.</span>
+                   )}
