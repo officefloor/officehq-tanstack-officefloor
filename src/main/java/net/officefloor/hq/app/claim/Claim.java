@@ -32,6 +32,7 @@ public class Claim {
     private String splitFrom;
     private boolean reversal;
     private String lockedBy;
+    private boolean lateEntry;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, String number, String settledDue, String openedBy) {
@@ -124,6 +125,10 @@ public class Claim {
     /** The user whose open editor locks it for everyone else (none: unlocked). */
     public String getLockedBy() { return lockedBy; }
     public void setLockedBy(String lockedBy) { this.lockedBy = lockedBy; }
+
+    /** Whether it was added while the period its date falls in was soft-closed. */
+    public boolean isLateEntry() { return lateEntry; }
+    public void setLateEntry(boolean lateEntry) { this.lateEntry = lateEntry; }
 
     public boolean isStated() { return stated; }
     public String getStatedDue() { return statedDue; }

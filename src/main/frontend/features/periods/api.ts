@@ -11,6 +11,8 @@ export type Period = {
   sheetId: string; name: string; from: string; to: string; closed: boolean; closedTotal: string | null;
   /** Once closed, each person's due-total for it fixed when it was closed, by person id. */
   personTotals: Record<string, string>;
+  /** Soft-closed: its figures are fixed as when closed, but claims dated in it can still be added and changed. */
+  soft: boolean;
 };
 export type PeriodInput = { name: string; from: string; to: string };
 
@@ -49,7 +51,13 @@ export function closePeriod(sheetId: string, by: string, name: string): Promise<
   return postJson<Period>(`${base(sheetId)}/${encodeURIComponent(name)}/close?by=${encodeURIComponent(by)}`, {});
 }
 
-/** Reopen a closed period, making its due-total live again; refused (rejects) for anyone but a
+/** Soft-close a period, fixing its due-total and everyone's figure for it; claims dated in it can still be
+ *  added and changed. Refused (rejects) when it is already closed or soft-closed. */
+export function softClosePeriod(sheetId: string, by: string, name: string): Promise<Period> {
+  return postJson<Period>(`${base(sheetId)}/${encodeURIComponent(name)}/soft-close?by=${encodeURIComponent(by)}`, {});
+}
+
+/** Reopen a closed or soft-closed period, making its due-total live again; refused (rejects) for anyone but a
  *  steward, and when it is not closed. */
 export function reopenPeriod(sheetId: string, by: string, name: string): Promise<Period> {
   return postJson<Period>(`${base(sheetId)}/${encodeURIComponent(name)}/reopen?by=${encodeURIComponent(by)}`, {});
@@ -74,13 +82,13 @@ export const countedOn = (c: Claim, date: string) => {
   return s === 'OPEN' || s === 'PENDING' || s === 'SETTLED';
 };
 
-/** A person's due-total for a period: once closed, the one fixed for them when it was closed (0.00
+/** A person's due-total for a period: once closed or soft-closed, the one fixed for them when it was closed (0.00
  *  for a person added later); else the due as shown now of their claims dated in it that counted by
  *  their status at the end of its last day (see `statusOn`), less those the live rules leave out
  *  (deferred, held; see `liveClaims`), n/a ones skipped. */
 export function personPeriodDue(p: Period, person: Person, claims: Claim[], people: Person[] | undefined,
   rates: Rate[] | undefined, floor: DatedOn, late: Late): string {
-  if (p.closed) return p.personTotals[String(person.id)] ?? '0.00';
+  if (p.closed || p.soft) return p.personTotals[String(person.id)] ?? '0.00';
   return sumDues(liveClaims(claims.filter((c) => c.personId === person.id), people).filter((c) => countedOn(c, p.to))
     .filter((c) => p.from <= c.date && c.date <= p.to)
     .map((c) => claimDue(c, rates, (d) => gradeOn(person, d), floor, late)));

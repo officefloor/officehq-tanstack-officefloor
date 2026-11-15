@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, "
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, "
             // Deferred now: OPEN and deferred until a date after the sheet's today.
             + "(status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > "
             + "(SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred, "
@@ -33,10 +33,11 @@ public class ClaimRepository {
                     : rs.getBigDecimal("stated_due").setScale(2).toPlainString()), rs.getString("corrects"),
             rs.getObject("round_date", LocalDate.class).toString(),
             rs.getObject("due_by", LocalDate.class).toString(),
-            rs.getObject("deferred_until", LocalDate.class), rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"), rs.getString("locked_by"));
+            rs.getObject("deferred_until", LocalDate.class), rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"), rs.getString("locked_by"), rs.getBoolean("late_entry"));
 
     private static Claim withCorrects(Claim claim, String corrects, String roundDate, String dueBy,
-            LocalDate deferredUntil, boolean deferred, int proofs, String splitFrom, String lockedBy) {
+            LocalDate deferredUntil, boolean deferred, int proofs, String splitFrom, String lockedBy, boolean lateEntry) {
+        claim.setLateEntry(lateEntry);
         claim.setLockedBy(lockedBy);
         claim.setSplitFrom(splitFrom);
         claim.setProofs(proofs);
@@ -178,6 +179,12 @@ public class ClaimRepository {
                 + "SET last_number = last_number + 1 WHERE sheet_id = ? AND period_key = ?)",
                 Long.class, sheetId, key);
         return (period == null ? "X" : period) + "-" + n;
+    }
+
+    /** Mark a claim as a late entry: added while the period its date falls in was soft-closed. */
+    public void markLateEntry(Claim claim) {
+        jdbc.update("UPDATE claim SET late_entry = TRUE WHERE sheet_id = ? AND id = ?", claim.getSheetId(), claim.getId());
+        claim.setLateEntry(true);
     }
 
     /** Lock a claim for the user opening its editor, releasing any other claim of the same person that

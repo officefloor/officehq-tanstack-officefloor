@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** Closes a period, fixing its due-total as it is now: the due, as the screen shows it now, of the claims
+/** Closes a period (a soft-closed one too, fixing its figures afresh), fixing its due-total as it is now: the due, as the screen shows it now, of the claims
  *  whose date falls in it that counted by their status at the end of its last day as their status log
  *  records it (n/a ones skipped, and those the live rules leave out: deferred, or OPEN ones dated within
  *  a hold of their person, unless bound).

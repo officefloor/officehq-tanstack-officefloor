@@ -56,9 +56,14 @@ public class PasteClaims {
             LocalDate dueBy = p.date().plusDays(settings.terms(id, p.person(), p.date().toString()));
             Claim claim = claims.add(id, p.person().getId(), p.claim().amount(), p.date(),
                     p.claim().note(), p.corrects(), dueBy, user);
+            if (periods.softClosedOn(id, claim.getDate())) claims.markLateEntry(claim);
             log.record(claim, user);
             audit.record("CLAIM_ADDED sheet=" + id + " by=" + user + " person=" + p.person().getName()
                     + " amount=" + claim.getAmount() + " date=" + claim.getDate());
+            if (claim.isLateEntry()) {
+                audit.record("LATE_ENTRY sheet=" + id + " by=" + user + " person=" + p.person().getName()
+                        + " amount=" + claim.getAmount() + " date=" + claim.getDate());
+            }
         }
         result.set(new PasteResult(pending.size()));
     }

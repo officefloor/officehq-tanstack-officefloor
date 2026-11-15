@@ -6,13 +6,15 @@ import { listPeople, peopleKey } from '../people/api';
 import { listRates, ratesKey } from '../rates/api';
 import { useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
-import { addPeriod, closePeriod, generatePeriods, listPeriods, periodDueTotal, periodsKey, reopenPeriod, type PeriodInput } from './api';
+import { addPeriod, closePeriod, generatePeriods, listPeriods, periodDueTotal, periodsKey, reopenPeriod, softClosePeriod, type PeriodInput } from './api';
+
+type PeriodAction = 'close' | 'soft-close' | 'reopen';
 
 const EMPTY: PeriodInput = { name: '', from: '', to: '' };
 
 /** The sheet's periods: a form that adds one, and each period by from-date with its due-total (the
  *  due of the claims that count whose date falls in it, n/a ones and OPEN unbound ones dated within their person's hold skipped; once closed, the one fixed
- *  when it was closed), whether it is closed, and buttons that close it and reopen it (each by the roles the permission matrix allows). */
+ *  when it was closed or soft-closed), whether it is closed (yes, soft or no), and buttons that close, soft-close and reopen it (each by the roles the permission matrix allows). */
 export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
@@ -48,12 +50,13 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
 
   // The period whose last close or reopen was refused; cleared by the next action.
   const act = useMutation({
-    mutationFn: ({ name, action }: { name: string; action: 'close' | 'reopen' }) =>
-      action === 'close' ? closePeriod(sheetId, user, name) : reopenPeriod(sheetId, user, name),
+    mutationFn: ({ name, action }: { name: string; action: PeriodAction }) =>
+      action === 'close' ? closePeriod(sheetId, user, name)
+        : action === 'soft-close' ? softClosePeriod(sheetId, user, name) : reopenPeriod(sheetId, user, name),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
   });
 
-  const actOne = (name: string, action: 'close' | 'reopen') => {
+  const actOne = (name: string, action: PeriodAction) => {
     actOnce(() => {
       act.reset();
       return act.mutateAsync({ name, action });
@@ -136,12 +139,16 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
                 Due <span data-testid="period-due-total">{periodDueTotal(p, claims.data ?? [], people.data, rates.data, floor, charges)}</span>
               </td>
               <td>
-                Closed <span data-testid="period-closed">{p.closed ? 'yes' : 'no'}</span>
+                Closed <span data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</span>
               </td>
               <td>
                 <button type="button" data-testid="period-close" disabled={act.isPending}
                   onClick={() => actOne(p.name, 'close')}>
                   Close
+                </button>{' '}
+                <button type="button" data-testid="period-soft-close" disabled={act.isPending}
+                  onClick={() => actOne(p.name, 'soft-close')}>
+                  Soft close
                 </button>{' '}
                 <button type="button" data-testid="period-reopen" disabled={act.isPending}
                   onClick={() => actOne(p.name, 'reopen')}>
@@ -150,7 +157,9 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
                 {act.isError && act.variables?.name === p.name && (
                   <span data-testid="period-error">{act.variables.action === 'close'
                     ? 'Your role may not close a period, or it is already closed.'
-                    : 'Your role may not reopen a period, or it is not closed.'}</span>
+                    : act.variables.action === 'soft-close'
+                      ? 'Your role may not close a period, or it is already closed or soft-closed.'
+                      : 'Your role may not reopen a period, or it is not closed.'}</span>
                 )}
               </td>
             </tr>

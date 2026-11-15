@@ -40,6 +40,8 @@ export type Claim = {
   splitFrom: string | null;
   /** The user whose open editor locks it for everyone else (null: unlocked). */
   lockedBy: string | null;
+  /** Whether it was added while the period its date falls in was soft-closed. */
+  lateEntry: boolean;
 };
 /** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects. */
 export type ClaimInput = { amount: string; date: string; note: string; corrects: string };

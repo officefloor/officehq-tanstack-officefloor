@@ -359,6 +359,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 </button>
               </td>
               <td>
+                Late entry <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
                 Split from <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
                 <input data-testid="claim-split-amount" placeholder="Split amount" value={splitAmounts[c.id] ?? ''}
                   onChange={(e) => {

@@ -28,6 +28,13 @@ public final class PeriodClosing {
     public static Period closeNow(Period found, String user, PeriodRepository periods, ClaimRepository claims,
             ClaimLogRepository log, PersonRepository people, RateRepository rates, SettingRepository settings,
             SheetRepository sheets) {
+        return fixNow(found, user, false, periods, claims, log, people, rates, settings, sheets);
+    }
+
+    /** Close or (soft) soft-close the period now, fixing its figures as they are now (no permission check). */
+    public static Period fixNow(Period found, String user, boolean soft, PeriodRepository periods, ClaimRepository claims,
+            ClaimLogRepository log, PersonRepository people, RateRepository rates, SettingRepository settings,
+            SheetRepository sheets) {
         String id = found.sheetId();
         DatedSetting floor = settings.floor(id);
         Dues.Late late = settings.late(id, sheets.today(id));
@@ -49,6 +56,6 @@ public final class PeriodClosing {
                 if (person != null) personTotals.merge(person.getId(), new BigDecimal(due), BigDecimal::add);
             }
         }
-        return periods.close(found, total, personTotals, user);
+        return periods.close(found, total, personTotals, user, soft);
     }
 }

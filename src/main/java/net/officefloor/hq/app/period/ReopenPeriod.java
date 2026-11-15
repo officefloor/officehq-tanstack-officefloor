@@ -7,7 +7,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** Reopens a closed period: its due-total is live again. Refused for a role the permission matrix does not let reopen (by default
+/** Reopens a closed or soft-closed period: its due-total is live again. Refused for a role the permission matrix does not let reopen (by default
  *  anyone but a steward), and when
  *  the period is not closed. */
 public class ReopenPeriod {
@@ -22,7 +22,7 @@ public class ReopenPeriod {
         if (!Permissions.allows(id, by, Permissions.REOPEN, roles, settings)) {
             throw new PeriodReopenException("Your role may not reopen a period");
         }
-        if (!found.closed()) {
+        if (!found.fixed()) {
             throw new PeriodReopenException("The period is not closed");
         }
         period.set(periods.reopen(found));
