@@ -20,6 +20,6 @@ public class AddPeriod {
             throw new InvalidPeriodException("The dates overlap another period");
         }
         sheets.open(id, user);
-        period.set(periods.add(id, request.name(), request.from(), request.to(), user));
+        period.set(periods.add(id, request.name(), request.from(), request.to(), user, request.cap()));
     }
 }

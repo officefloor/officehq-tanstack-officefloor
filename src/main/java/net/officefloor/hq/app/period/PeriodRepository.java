@@ -17,9 +17,9 @@ public class PeriodRepository {
             rs.getObject("to_date", LocalDate.class).toString(), rs.getBoolean("closed"),
             rs.getBigDecimal("closed_total") == null ? null
                     : rs.getBigDecimal("closed_total").setScale(2).toPlainString(), Map.of(),
-            rs.getBoolean("soft_closed"));
+            rs.getBoolean("soft_closed"), (Integer) rs.getObject("claim_cap", Integer.class));
 
-    private static final String COLUMNS = "SELECT sheet_id, name, from_date, to_date, closed, closed_total, soft_closed FROM period ";
+    private static final String COLUMNS = "SELECT sheet_id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap FROM period ";
 
     private final JdbcTemplate jdbc;
 
@@ -41,7 +41,7 @@ public class PeriodRepository {
                 + "WHERE p.sheet_id = ? AND p.name = ? ORDER BY t.person_id",
                 rs -> { totals.put(rs.getLong("person_id"), rs.getBigDecimal("total").setScale(2).toPlainString()); },
                 p.sheetId(), p.name());
-        return new Period(p.sheetId(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(), totals, p.soft());
+        return new Period(p.sheetId(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(), totals, p.soft(), p.cap());
     }
 
     /** The sheet's period with the name; null when there is none. */
@@ -86,7 +86,7 @@ public class PeriodRepository {
         Map<Long, String> shown = new LinkedHashMap<>();
         personTotals.forEach((id, t) -> shown.put(id, t.toPlainString()));
         return new Period(period.sheetId(), period.name(), period.from(), period.to(), !soft,
-                total.toPlainString(), shown, soft);
+                total.toPlainString(), shown, soft, period.cap());
     }
 
     /** Reopen the closed or soft-closed period: its due-total is live again. */
@@ -95,7 +95,7 @@ public class PeriodRepository {
                 + "(SELECT id FROM period WHERE sheet_id = ? AND name = ?)", period.sheetId(), period.name());
         jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL, closed_by = NULL, "
                 + "closed_at = NULL WHERE sheet_id = ? AND name = ?", period.sheetId(), period.name());
-        return new Period(period.sheetId(), period.name(), period.from(), period.to(), false, null, Map.of(), false);
+        return new Period(period.sheetId(), period.name(), period.from(), period.to(), false, null, Map.of(), false, period.cap());
     }
 
     /** Whether another period on the sheet has the name, compared without regard to case. */
@@ -113,9 +113,21 @@ public class PeriodRepository {
     }
 
     public Period add(String sheetId, String name, LocalDate from, LocalDate to, String user) {
-        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, created_by) VALUES (?, ?, ?, ?, ?)",
-                sheetId, name, from, to, user);
-        return new Period(sheetId, name, from.toString(), to.toString(), false, null, Map.of(), false);
+        return add(sheetId, name, from, to, user, null);
+    }
+
+    /** Add a period; cap: the most OPEN or PENDING claims a person may have in it, null for none. */
+    public Period add(String sheetId, String name, LocalDate from, LocalDate to, String user, Integer cap) {
+        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, created_by, claim_cap) "
+                + "VALUES (?, ?, ?, ?, ?, ?)", sheetId, name, from, to, user, cap);
+        return new Period(sheetId, name, from.toString(), to.toString(), false, null, Map.of(), false, cap);
+    }
+
+    /** The sheet's period whose dates contain the date (yyyy-MM-dd); null when there is none. */
+    public Period containing(String sheetId, String date) {
+        LocalDate d = LocalDate.parse(date);
+        return jdbc.query(COLUMNS + "WHERE sheet_id = ? AND from_date <= ? AND to_date >= ?", ROW, sheetId, d, d)
+                .stream().findFirst().orElse(null);
     }
 
     /** Move the person {@code fromId}'s fixed due-totals of closed periods to {@code intoId}, added

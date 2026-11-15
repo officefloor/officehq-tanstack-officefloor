@@ -13,8 +13,11 @@ export type Period = {
   personTotals: Record<string, string>;
   /** Soft-closed: its figures are fixed as when closed, but claims due by a day in it can still be added and changed. */
   soft: boolean;
+  /** The most OPEN or PENDING claims a person may have in it (claims due by a day in it); null for none. */
+  cap: number | null;
 };
-export type PeriodInput = { name: string; from: string; to: string };
+/** cap: a whole number above zero, blank for none. */
+export type PeriodInput = { name: string; from: string; to: string; cap: string };
 
 const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/periods`;
 
@@ -26,7 +29,8 @@ export function listPeriods(sheetId: string): Promise<Period[]> {
 }
 
 /** Add a period; refused (rejects) when the name is missing or already in use, a date is not a date,
- *  the from-date is after the to-date, or the dates overlap another period's. */
+ *  the from-date is after the to-date, the dates overlap another period's, or the cap is not a whole
+ *  number above zero. */
 export function addPeriod(sheetId: string, by: string, input: PeriodInput): Promise<Period> {
   return postJson<Period>(`${base(sheetId)}?by=${encodeURIComponent(by)}`, input);
 }

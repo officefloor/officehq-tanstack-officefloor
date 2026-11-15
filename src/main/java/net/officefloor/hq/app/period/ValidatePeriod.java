@@ -20,7 +20,16 @@ public class ValidatePeriod {
         if (from.isAfter(to)) {
             throw new InvalidPeriodException("The from-date must be on or before the to-date");
         }
-        body.set(new ValidPeriod(name, from, to));
+        body.set(new ValidPeriod(name, from, to, cap(request.cap())));
+    }
+
+    private static Integer cap(String text) throws InvalidPeriodException {
+        String t = text == null ? "" : text.trim();
+        if (t.isEmpty()) return null;
+        if (!t.matches("[0-9]{1,9}") || Integer.parseInt(t) < 1) {
+            throw new InvalidPeriodException("The cap must be a whole number above zero");
+        }
+        return Integer.parseInt(t);
     }
 
     private static LocalDate date(String text) throws InvalidPeriodException {

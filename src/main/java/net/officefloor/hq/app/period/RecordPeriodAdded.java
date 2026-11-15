@@ -9,6 +9,7 @@ public class RecordPeriodAdded {
     public void record(@RequestParam(name = "by", required = false) String by,
             @Val Period period, Audit audit) {
         audit.record("PERIOD_ADDED sheet=" + period.sheetId() + " by=" + (by == null ? "" : by)
-                + " period=" + period.name() + " from=" + period.from() + " to=" + period.to());
+                + " period=" + period.name() + " from=" + period.from() + " to=" + period.to()
+                + (period.cap() == null ? "" : " cap=" + period.cap()));
     }
 }

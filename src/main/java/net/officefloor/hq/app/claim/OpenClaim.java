@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodClosedException;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
@@ -29,9 +30,26 @@ public class OpenClaim {
         periods.requireOpen(claim.getSheetId(), claim.getDueBy());
         ClaimStatus opened = ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.OPEN);
         requireNote(claim, people, rates, settings, sheets);
+        requireUnderCap(claim, claims, periods);
         claim.setStatus(opened.name());
         claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
         claim.setOpenedBy(by == null ? "" : by);
+    }
+
+    /** Refuses opening a claim that belongs to a period with a cap (its due-by falls in it) when its
+     *  person already has that many OPEN or PENDING claims in the period; shared with {@link BulkOpenClaims}. */
+    static void requireUnderCap(Claim claim, ClaimRepository claims, PeriodRepository periods)
+            throws ClaimStatusException {
+        Period period = periods.containing(claim.getSheetId(), claim.getDueBy());
+        if (period == null || period.cap() == null) return;
+        long held = claims.list(claim.getSheetId()).stream()
+                .filter((c) -> c.getId() != claim.getId() && c.getPersonId() == claim.getPersonId()
+                        && ClaimStatus.isOpen(c.getStatus()) && period.contains(c.getDueBy()))
+                .count();
+        if (held >= period.cap()) {
+            throw new ClaimStatusException("The person already has " + period.cap()
+                    + " open claims in period " + period.name());
+        }
     }
 
     /** Refuses opening a claim with an empty note whose due (null: n/a, never above) is above the

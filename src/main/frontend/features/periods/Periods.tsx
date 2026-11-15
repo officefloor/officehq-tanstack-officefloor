@@ -10,11 +10,11 @@ import { addPeriod, closePeriod, generateFiscalYear, generatePeriods, listPeriod
 
 type PeriodAction = 'close' | 'soft-close' | 'reopen';
 
-const EMPTY: PeriodInput = { name: '', from: '', to: '' };
+const EMPTY: PeriodInput = { name: '', from: '', to: '', cap: '' };
 
 /** The sheet's periods: a form that adds one, and each period by from-date with its due-total (the
  *  due of the claims that count whose date falls in it, n/a ones and OPEN unbound ones dated within their person's hold skipped; once closed, the one fixed
- *  when it was closed or soft-closed), the fiscal year its from-date falls in, whether it is closed (yes, soft or no), and buttons that close, soft-close and reopen it (each by the roles the permission matrix allows). */
+ *  when it was closed or soft-closed), the fiscal year its from-date falls in, its cap on each person's open claims (blank for none), whether it is closed (yes, soft or no), and buttons that close, soft-close and reopen it (each by the roles the permission matrix allows). */
 export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
@@ -97,11 +97,16 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
           <input type="date" data-testid="period-form-to" value={form.to}
             onChange={(e) => change({ to: e.target.value })} />
         </label>{' '}
+        <label>
+          Cap{' '}
+          <input data-testid="period-form-cap" value={form.cap} inputMode="numeric"
+            onChange={(e) => change({ cap: e.target.value })} />
+        </label>{' '}
         <button type="submit" data-testid="period-form-submit" disabled={save.isPending}>
           Add period
         </button>
         {save.isError && (
-          <span data-testid="period-form-error">A period needs a name not already in use, and from and to dates, from on or before to, not overlapping another period.</span>
+          <span data-testid="period-form-error">A period needs a name not already in use, and from and to dates, from on or before to, not overlapping another period, and a cap (if any) that is a whole number above zero.</span>
         )}
       </form>
       <form
@@ -162,6 +167,9 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
               </td>
               <td>
                 <span data-testid="period-fy">{fiscalYearOf(p.from, fiscalStart)}</span>
+              </td>
+              <td>
+                Cap <span data-testid="period-cap">{p.cap ?? ''}</span>
               </td>
               <td>
                 Closed <span data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</span>
