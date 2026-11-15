@@ -1,17 +1,45 @@
 import { useQuery } from '@tanstack/react-query';
-import { claimsKey, listClaims } from '../claims/api';
-import { listPeople, peopleKey } from '../people/api';
+import { claimsKey, listClaims, liveClaims } from '../claims/api';
+import { gradeOn, listPeople, peopleKey, type Person } from '../people/api';
 import { useDueTotal } from '../rates/DueTotal';
+import { claimDue, listRates, overdue, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
+import { useCap, useFloor, useLate } from '../settings/api';
+import { useSheetToday } from '../sheet/api';
 import { useOverdue } from '../rates/Overdue';
 import { STATUSES, statusCount } from './Summary';
 
+/** Names as they are compared: trimmed and lower-cased. */
+const nameKey = (name: string) => name.trim().toLowerCase();
+
+/** The signed-in user's own figures: the due-total and overdue-total, as their row shows them, of the
+ *  person on the sheet whose name or an alias is the user's name (as names are compared); null when
+ *  there is no such person. */
+function useMyFigures(sheetId: string, user: string): { due: string; overdue: string } | null {
+  const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
+  const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
+  const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
+  const floor = useFloor(sheetId);
+  const today = useSheetToday(sheetId, user);
+  const cap = useCap(sheetId, today);
+  const charges = useLate(sheetId, today);
+  const me = nameKey(user);
+  const p = (people.data ?? []).find((q: Person) => [q.name, ...q.aliases].some((n) => nameKey(n) === me));
+  if (!p || !claims.data) return null;
+  const live = liveClaims(claims.data.filter((c) => c.personId === p.id), [p]);
+  const dueOfClaim = (c: (typeof live)[number]) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges);
+  const due = personDue(live, rates.data, (d) => gradeOn(p, d), rateByGrade(rates.data, today).get(p.grade), floor, charges, cap);
+  return { due: showDue(due), overdue: overdue(live, charges, dueOfClaim).total };
+}
+
 /** The sheet's header counters, shown at all times: everyone on the sheet (retired included), the
- *  claims per status (as the summary counts them), and the sheet's due- and overdue-totals. */
+ *  claims per status (as the summary counts them), the sheet's due- and overdue-totals, and the
+ *  signed-in user's own (blank when no one on the sheet has their name). */
 export function Header({ sheetId, user }: { sheetId: string; user: string }) {
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   const dueTotal = useDueTotal(sheetId, user);
   const late = useOverdue(sheetId, user);
+  const mine = useMyFigures(sheetId, user);
   return (
     <header>
       People <span data-testid="header-people-count">{(people.data ?? []).length}</span>
@@ -22,6 +50,8 @@ export function Header({ sheetId, user }: { sheetId: string; user: string }) {
       ))}
       {' · '}Due <span data-testid="header-due-total">{dueTotal}</span>
       {' · '}Overdue <span data-testid="header-overdue-total">{late.total}</span>
+      {' · '}My due <span data-testid="my-due-total">{mine?.due ?? ''}</span>
+      {' · '}My overdue <span data-testid="my-overdue-total">{mine?.overdue ?? ''}</span>
     </header>
   );
 }
