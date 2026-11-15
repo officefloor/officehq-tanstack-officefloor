@@ -1,0 +1,87 @@
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index 61022a1d1..12ffb22de 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -190,18 +190,44 @@ export function isActive(live: Claim[], today: string): boolean {
+   return live.some((c) => isOpen(c) && from <= c.date && c.date <= today);
+ }
+ 
+-/** A person's backing: the frozen settled figures of their patrons' SETTLED claims dated within the 90 days up to
+- *  and including the sheet's `today`, added up (0.00 with none). */
++/** A person's patrons' shares (in hundredths, of 100.00), in the order named: 100.00 split equally, each share
++ *  rounded half to even to two decimals, the remainder (100.00 less the shares added up) to the first-named. */
++export function patronShares(patronIds: number[]): Array<{ id: number; share: number }> {
++  const n = patronIds.length;
++  if (n === 0) return [];
++  const whole = Math.floor(10_000 / n);
++  const rest = 10_000 % n;
++  const each = 2 * rest > n || (2 * rest === n && whole % 2 === 1) ? whole + 1 : whole;
++  return patronIds.map((id, i) => ({ id, share: i === 0 ? 10_000 - each * (n - 1) : each }));
++}
++
++/** A person's backing: the sum over their patrons of the patron's figure (the frozen settled figures of their
++ *  SETTLED claims dated within the 90 days up to and including the sheet's `today`, added up) times their share
++ *  (see `patronShares`) divided by 100, rounded half to even (0.00 with none). */
+ export function backing(claims: Claim[], patronIds: number[], today: string): string {
+   if (today === '') return '0.00';
+   const since = new Date(`${today}T00:00:00Z`);
+   since.setUTCDate(since.getUTCDate() - 89);
+   const from = since.toISOString().slice(0, 10);
+-  const patrons = new Set(patronIds);
+-  const cents = claims
+-    .filter((c) => patrons.has(c.personId) && c.status === 'SETTLED' && c.settledDue !== null && from <= c.date && c.date <= today)
+-    .reduce((t, c) => t + Math.round(Number(c.settledDue) * 100), 0);
+-  return (cents / 100).toFixed(2);
++  const figures = new Map<number, bigint>(patronIds.map((id) => [id, 0n]));
++  for (const c of claims) {
++    const f = figures.get(c.personId);
++    if (f !== undefined && c.status === 'SETTLED' && c.settledDue !== null && from <= c.date && c.date <= today) {
++      figures.set(c.personId, f + BigInt(Math.round(Number(c.settledDue) * 100)));
++    }
++  }
++  // Cents times hundredths of a percent share: 1/10_000 of a cent.
++  const product = patronShares(patronIds).reduce((t, p) => t + (figures.get(p.id) ?? 0n) * BigInt(p.share), 0n);
++  const cents = halfEven(product < 0n ? -product : product);
++  const signed = product < 0n ? -cents : cents;
++  return (Number(signed) / 100).toFixed(2);
++}
++
++/** A non-negative amount in 1/10_000 of a cent to cents, half to even. */
++function halfEven(product: bigint): bigint {
++  const whole = product / 10_000n;
++  const rest = product % 10_000n;
++  return rest > 5_000n || (rest === 5_000n && whole % 2n === 1n) ? whole + 1n : whole;
+ }
+ 
+ /** Sum the amounts of the claims that count (see `counts`) exactly (in cents), shown with two decimals. */
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 21e1da9b5..7afffa432 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -7,7 +7,7 @@ import { PasteClaims } from '../claims/PasteClaims';
+ import { BulkSettle } from '../claims/BulkSettle';
+ import { BulkReassign } from '../claims/BulkReassign';
+ import { PersonClaims } from '../claims/PersonClaims';
+-import { backing, claimsKey, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
++import { backing, claimsKey, patronShares, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
+ import { listPeriods, periodsKey, personPeriodDue } from '../periods/api';
+ import { poolsKey } from '../pools/api';
+ import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
+@@ -28,7 +28,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
+  *  they are retired and from when (with a date and a button that retires them), whether they have
+  *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
+  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
+- *  patrons (names sorted, with a picker that names one more), their aliases (sorted as names are
++ *  patrons (each `<name> <share>`, sorted by name (see `patronShares`), with a picker that names one more), their aliases (sorted as names are
+  *  compared, with an entry and a button that adds one) and backing (see `backing`), and
+  *  their due-total for each period (see `personPeriodDue`), the due of their open claims by age (see `agedDues`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
+  *  with a checkbox that selects it for a button that opens the selected claims together.
+@@ -504,7 +504,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                 </td>
+                 <td>
+                   Patrons <span data-testid="person-patrons">
+-                    {p.patronIds.map((id) => nameOf.get(id) ?? '').sort((x, y) => x.localeCompare(y)).join(', ')}
++                    {patronShares(p.patronIds).map((s) => ({ name: nameOf.get(s.id) ?? '', share: s.share })).sort((x, y) => x.name.localeCompare(y.name)).map((s) => `${s.name} ${(s.share / 100).toFixed(2)}`).join(', ')}
+                   </span>{' '}
+                   backing <span data-testid="person-backing">{backing(claims.data ?? [], p.patronIds, today)}</span>{' '}
+                   <select data-testid="person-patron-select" value={patronPicks[p.id] ?? ''}
