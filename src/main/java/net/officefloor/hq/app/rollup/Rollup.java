@@ -29,7 +29,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
 
     /** A person's figures: their name, claimed, due-total (null: n/a) and overdue-total (the shown
      *  dues of their open claims past their due-by plus grace days on the sheet's today, n/a ones skipped) and
-     *  score (their settled claims' shown dues divided by 100, less 5 per overdue claim, rounded half to even;
+     *  score (their settled claims' shown dues, corrections left out, divided by 100, less 5 per overdue claim, rounded half to even;
      *  not part of {@link #sameAs}). */
     public record Figures(String name, String claimed, String dueTotal, String overdueTotal, String score) {
         public boolean sameAs(Figures other) {
@@ -71,7 +71,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 kept |= c.getSettledDue() != null || c.isBound()
                         || (pct != null && (!grade.equals(p.getGrade()) || c.getDate().compareTo(today) <= 0));
                 if (d != null) due = due.add(new BigDecimal(d));
-                if (d != null && ClaimStatus.SETTLED.name().equals(c.getStatus())) settled = settled.add(new BigDecimal(d));
+                if (d != null && !corrects(c) && ClaimStatus.SETTLED.name().equals(c.getStatus())) settled = settled.add(new BigDecimal(d));
                 if (ClaimStatus.isOpen(c.getStatus()) && late.lateFrom(c).isBefore(todayDate)) {
                     overdueCount++;
                     if (d != null) overdue = overdue.add(new BigDecimal(d));

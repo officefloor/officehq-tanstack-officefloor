@@ -49,7 +49,7 @@ function snapshotOn(p: Person, day: string): string {
  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
  *  patrons (each `<name> <share>`, sorted by name (see `patronShares`), with a picker that names one more), their plans (see `PersonPlans`), their aliases (sorted as names are
  *  compared, with an entry and a button that adds one) and backing (see `backing`), and
- *  their due-total and carried figure for each period (see `personPeriodDue`, `personPeriodCarried`), the due of their open claims by age (see `agedDues`), their overdue claims (OPEN ones past their due-by; the count and their due added up), their score (see `personScore`) and their claims, each
+ *  their due-total and carried figure for each period (see `personPeriodDue`, `personPeriodCarried`), the due of their open claims by age (see `agedDues`), their overdue claims (OPEN ones past their due-by; the count and their due added up), their score (see `personScore`; corrections left out of its settled figures) and their claims, each
  *  with a checkbox that selects it for a button that opens the selected claims together.
  *  Each person has a checkbox that selects them for a grade given to the selected people together.
  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
@@ -599,6 +599,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
             const late = overdue(live, charges, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
             const aged = agedDues(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
             const split = splitDues(live, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
+            const scored = splitDues(live.filter((c) => !correctsAnother(c)), (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
             return (
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
                 <td>
@@ -689,8 +690,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   {shows('overdue-total') && <>totalling <span data-testid="person-overdue-total"><Fig>{late.total}</Fig></span></>}
                 </td>
                 <td>
-                  Score <span data-testid="person-score">{personScore(split.settled, late.count)}</span>{' '}
-                  <span data-testid="person-band">{scoreBand(personScore(split.settled, late.count), scoreThresholds)}</span>
+                  Score <span data-testid="person-score">{personScore(scored.settled, late.count)}</span>{' '}
+                  <span data-testid="person-band">{scoreBand(personScore(scored.settled, late.count), scoreThresholds)}</span>
                 </td>
                 <td>
                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>

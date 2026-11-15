@@ -199,7 +199,7 @@ export function overdue(claims: Claim[], charges: Late, dueOfClaim: (c: Claim) =
   return { count: late.length, total: sumDues(late.map(dueOfClaim)) };
 }
 
-/** A person's score: their settled figures (`settled`, see `splitDues`) divided by 100, less 5 for each of
+/** A person's score: their settled figures (`settled`, see `splitDues`, corrections left out) divided by 100, less 5 for each of
  *  their overdue claims (`overdueCount`, see `overdue`), rounded half to even to a whole number. */
 export function personScore(settled: string, overdueCount: number): string {
   const scaled = hundredths(settled) - BigInt(overdueCount) * 50_000n; // in 1/10_000 of a point
