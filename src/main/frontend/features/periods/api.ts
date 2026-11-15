@@ -29,6 +29,15 @@ export function addPeriod(sheetId: string, by: string, input: PeriodInput): Prom
   return postJson<Period>(`${base(sheetId)}?by=${encodeURIComponent(by)}`, input);
 }
 
+/** Make one period per calendar month from the from-date's month to the to-date's month (a blank date
+ *  is the sheet's today), each from the first to the last day of its month and named yyyy-mm, leaving out
+ *  a month whose name is taken or whose days overlap a period; refused (rejects) when the to-date is
+ *  before the from-date. Resolves to how many were made. */
+export function generatePeriods(sheetId: string, by: string, from: string, to: string): Promise<{ made: number }> {
+  return postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/generate-periods?by=${encodeURIComponent(by)}`,
+    { from, to });
+}
+
 /** The period whose dates contain the date (yyyy-MM-dd), or undefined for none. */
 export function periodOf(periods: Period[] | undefined, date: string): Period | undefined {
   return (periods ?? []).find((p) => p.from <= date && date <= p.to);

@@ -6,7 +6,7 @@ import { listPeople, peopleKey } from '../people/api';
 import { listRates, ratesKey } from '../rates/api';
 import { useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
-import { addPeriod, closePeriod, listPeriods, periodDueTotal, periodsKey, reopenPeriod, type PeriodInput } from './api';
+import { addPeriod, closePeriod, generatePeriods, listPeriods, periodDueTotal, periodsKey, reopenPeriod, type PeriodInput } from './api';
 
 const EMPTY: PeriodInput = { name: '', from: '', to: '' };
 
@@ -30,6 +30,18 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
       return queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
     },
   });
+
+  // Generate monthly periods between two dates; the count shown is cleared while it runs.
+  const [range, setRange] = useState({ from: '', to: '' });
+  const generate = useMutation({
+    mutationFn: (r: { from: string; to: string }) => generatePeriods(sheetId, user, r.from, r.to),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
+  });
+  const generateOnce = useSubmitOnce();
+  const changeRange = (patch: Partial<{ from: string; to: string }>) => {
+    setRange((r) => ({ ...r, ...patch }));
+    generate.reset();
+  };
 
   const submitOnce = useSubmitOnce();
   const actOnce = useSubmitOnce();
@@ -84,6 +96,33 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="period-form-error">A period needs a name not already in use, and from and to dates, from on or before to, not overlapping another period.</span>
+        )}
+      </form>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          generateOnce(() => {
+            generate.reset();
+            return generate.mutateAsync(range);
+          });
+        }}
+      >
+        <label>
+          Generate monthly from{' '}
+          <input type="date" data-testid="period-generate-from" value={range.from}
+            onChange={(e) => changeRange({ from: e.target.value })} />
+        </label>{' '}
+        <label>
+          to{' '}
+          <input type="date" data-testid="period-generate-to" value={range.to}
+            onChange={(e) => changeRange({ to: e.target.value })} />
+        </label>{' '}
+        <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
+          Generate periods
+        </button>{' '}
+        {generate.isSuccess && <>Made <span data-testid="period-generated">{generate.data.made}</span></>}
+        {generate.isError && (
+          <span data-testid="period-generate-error">The to-date must be on or after the from-date.</span>
         )}
       </form>
       <table>
