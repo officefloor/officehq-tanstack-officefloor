@@ -1,19 +1,9 @@
 package net.officefloor.hq.app.period;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
-import net.officefloor.hq.app.claim.ClaimStatus;
-import net.officefloor.hq.app.claim.Dues;
-import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
-import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
-import net.officefloor.hq.app.setting.DatedSetting;
 import net.officefloor.hq.app.setting.Permissions;
 import net.officefloor.hq.app.setting.RoleRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
@@ -45,26 +35,6 @@ public class ClosePeriod {
         if (found.closed()) {
             throw new PeriodClosedException("The period is already closed");
         }
-        DatedSetting floor = settings.floor(id);
-        Dues.Late late = settings.late(id, sheets.today(id));
-        BigDecimal total = BigDecimal.ZERO.setScale(2);
-        Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
-        for (Person p : people.list(id)) personTotals.put(p.getId(), BigDecimal.ZERO.setScale(2));
-        Map<Long, String> atEnd = log.statusesOn(id, LocalDate.parse(found.to()));
-        for (Claim c : claims.list(id)) {
-            if (!found.contains(c.getDate())) continue;
-            String status = atEnd.containsKey(c.getId()) ? atEnd.get(c.getId()) : c.getStatus();
-            if (status == null || !(ClaimStatus.isOpen(status) || ClaimStatus.SETTLED.name().equals(status))) continue;
-            Person person = people.find(id, c.getPersonId());
-            if (person != null && person.leftOutLive(c)) continue;
-            Rate rate = person == null ? null
-                    : rates.find(id, person.gradeOn(c.getDate()), LocalDate.parse(c.getDate()));
-            String due = Dues.shown(c, rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor.on(c.getDate()), late.rounding(c.getRoundDate())), late);
-            if (due != null) {
-                total = total.add(new BigDecimal(due));
-                if (person != null) personTotals.merge(person.getId(), new BigDecimal(due), BigDecimal::add);
-            }
-        }
-        period.set(periods.close(found, total, personTotals, by == null ? "" : by));
+        period.set(PeriodClosing.closeNow(found, by == null ? "" : by, periods, claims, log, people, rates, settings, sheets));
     }
 }

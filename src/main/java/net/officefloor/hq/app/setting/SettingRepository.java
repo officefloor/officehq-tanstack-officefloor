@@ -44,6 +44,10 @@ public class SettingRepository {
      *  a claim opened is numbered within its period. */
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
 
+    /** The grace days (a whole number; blank: off): when the sheet's today changes, an open period
+     *  whose to-date plus them is before the new today is closed. */
+    public static final String GRACE_DAYS = "grace-days";
+
     /** The late percent until it is first set. */
     public static final String DEFAULT_LATE_PCT = "0.00";
 
@@ -54,9 +58,9 @@ public class SettingRepository {
     public static final String DEFAULT_FLOOR = "1.00";
 
     /** Whether a key is dated: every key that carries a figure (the policy date, the period
-     *  numbering date and the permission matrix are not). */
+     *  numbering date, the grace days and the permission matrix are not). */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !Permissions.isKey(key);
+        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !Permissions.isKey(key);
     }
 
     private final JdbcTemplate jdbc;

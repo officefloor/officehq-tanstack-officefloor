@@ -69,6 +69,12 @@ public class ValidateSetting {
             }
             body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), given));
             return;
+        } else if (SettingRepository.GRACE_DAYS.equals(key)) {
+            if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("The grace days are blank or a whole number of days, 0 or more");
+            }
+            body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null));
+            return;
         } else if (SettingRepository.POLICY_DATE.equals(key)
                 || SettingRepository.PERIOD_NUMBERING_FROM.equals(key)) {
             if (!value.isEmpty()) {
