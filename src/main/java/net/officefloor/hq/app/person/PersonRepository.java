@@ -168,7 +168,7 @@ public class PersonRepository {
             return;
         }
         Map<Long, List<String>> aliases = new HashMap<>();
-        jdbc.query("SELECT person_id, alias FROM person_alias WHERE sheet_id = ? ORDER BY person_id, alias_key",
+        jdbc.query("SELECT person_id, alias FROM person_alias WHERE sheet_id = ? ORDER BY person_id, alias_key, alias, id",
                 (rs) -> {
                     aliases.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(rs.getString("alias"));
                 }, sheetId);

@@ -147,8 +147,10 @@ export function mergePerson(sheetId: string, by: string, id: number, intoId: num
 }
 
 /** A steward transfers the person to another sheet by id (`to`): they arrive there with their grades,
- *  terms, contact, aliases and claims, and leave this sheet entirely; refused (rejects) for anyone else,
- *  a retired person, this sheet's own id, and a name, alias or contact already on the other sheet. */
+ *  terms, contact, aliases and claims, and leave this sheet entirely; someone there with their name or an
+ *  alias has them merged into them, as a merge does. Refused (rejects) for anyone else, a retired person,
+ *  this sheet's own id, names matching more than one person there or a retired one, and (when not
+ *  merged) a contact already on the other sheet. */
 export function transferPerson(sheetId: string, by: string, id: number, to: string): Promise<Person> {
   return postJson<Person>(`${base(sheetId)}/${id}/transfer?by=${encodeURIComponent(by)}`, { to });
 }

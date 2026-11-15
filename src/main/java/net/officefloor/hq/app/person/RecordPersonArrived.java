@@ -10,7 +10,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** Records the transfer just made on the sheet the person went to (PERSON_TRANSFERRED ... from=),
- *  then that sheet's ROLLUP/TOTALS lines. */
+ *  the merge into whoever there had their name or an alias (PERSON_MERGED), then that sheet's ROLLUP/TOTALS lines. */
 public class RecordPersonArrived {
     public void record(@RequestParam(name = "by", required = false) String by,
             @Val Transfer transfer, PersonRepository people, ClaimRepository claims, RateRepository rates,
@@ -19,6 +19,10 @@ public class RecordPersonArrived {
         String to = transfer.to();
         audit.record("PERSON_TRANSFERRED sheet=" + to + " by=" + user
                 + " name=" + transfer.person().getName() + " from=" + transfer.person().getSheetId());
+        if (transfer.into() != null) {
+            audit.record("PERSON_MERGED sheet=" + to + " by=" + user
+                    + " from=" + transfer.person().getName() + " into=" + transfer.into().getName());
+        }
         Rollup after = Rollup.of(to, people, claims, rates, sheets, settings);
         for (String line : after.changesSince(transfer.toBefore(), to, user)) {
             audit.record(line);

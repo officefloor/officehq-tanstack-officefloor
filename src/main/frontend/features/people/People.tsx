@@ -543,7 +543,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                     <span data-testid="person-error">The person could not be moved: the first cannot move up, nor the last down.</span>
                   )}
                   {transferring.isError && transferring.variables?.id === p.id && (
-                    <span data-testid="person-error">The person could not be transferred: only a steward can, not a retired person, to another sheet with no one of the same name, alias or contact.</span>
+                    <span data-testid="person-error">The person could not be transferred: only a steward can, not a retired person, to another sheet where their names match at most one person (not retired), and no one else has their contact.</span>
                   )}
                 </td>
                 <td>

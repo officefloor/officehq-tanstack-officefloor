@@ -14,15 +14,23 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
 /** A steward transfers the person to another sheet: they arrive with every grade given them (and its
  *  from-date), their terms, contact and aliases, and their claims with their status, dates, notes,
  *  tags, frozen figures, logs and comments; each claim that had a number gets the other sheet's next,
  *  in the order the claims were opened (by the sheet's today then, then the order they were added).
  *  Figures a statement bound are lost, their statement count starts at 0, and references, holds and
  *  settle batches are not carried. They leave this sheet entirely: patron links (either way), pool
- *  memberships, watches and closed periods' fixed totals are dropped. Refused (nothing written) for
- *  anyone but a steward, a retired person, this sheet's own id or an archived sheet, and when their
- *  name, an alias or their contact is already on the other sheet. */
+ *  memberships, watches and closed periods' fixed totals are dropped. When someone on the other sheet
+ *  already has their name or an alias (as names are compared), they are merged into that person
+ *  there, as a merge does (see MergePerson): their claims after theirs, their name and aliases joined
+ *  to theirs, the rest of them (contact included) dropped. Refused (nothing written) for anyone but a
+ *  steward, a retired person, this sheet's own id or an archived sheet, when their names match more
+ *  than one person there or a retired one, and (when not merged) when their contact is already there. */
 public class TransferPerson {
     public void transfer(@RequestParam(name = "by", required = false) String by,
             @Val TransferRequest request, @Val Person person, PersonRepository people,
@@ -44,10 +52,22 @@ public class TransferPerson {
         if (sheets.isArchived(to)) {
             throw new InvalidPersonException("The sheet is archived: " + to);
         }
-        if (people.nameTaken(to, person.getName(), null)
-                || person.getAliases().stream().anyMatch((a) -> people.nameTaken(to, a, null))
-                || (person.getContact() != null && people.contactTaken(to, person.getContact(), null))) {
-            throw new InvalidPersonException("The name, an alias or the contact is already on " + to);
+        Set<Long> matched = new LinkedHashSet<>();
+        for (String name : names(person)) {
+            Person match = people.findByName(to, name);
+            if (match != null) {
+                matched.add(match.getId());
+            }
+        }
+        if (matched.size() > 1) {
+            throw new InvalidPersonException("The name and aliases match more than one person on " + to);
+        }
+        Person into = matched.isEmpty() ? null : people.find(to, matched.iterator().next());
+        if (into != null && into.isRetired()) {
+            throw new InvalidPersonException("A retired person cannot be merged");
+        }
+        if (into == null && person.getContact() != null && people.contactTaken(to, person.getContact(), null)) {
+            throw new InvalidPersonException("The contact is already on " + to);
         }
         sheets.open(to, user);
         Rollup before = Rollup.of(to, people, claims, rates, sheets, settings);
@@ -56,6 +76,18 @@ public class TransferPerson {
             claims.renumber(claim, ClaimNumbers.next(claim, claims, periods, settings, sheets));
         }
         people.transfer(person, to);
-        transferred.set(new Transfer(person, to, before));
+        if (into != null) {
+            Person arrived = people.find(to, person.getId());
+            claims.moveAll(to, arrived.getId(), into.getId());
+            people.merge(arrived, into, user);
+        }
+        transferred.set(new Transfer(person, to, before, into));
+    }
+
+    private static List<String> names(Person person) {
+        List<String> names = new ArrayList<>();
+        names.add(person.getName());
+        names.addAll(person.getAliases());
+        return names;
     }
 }
