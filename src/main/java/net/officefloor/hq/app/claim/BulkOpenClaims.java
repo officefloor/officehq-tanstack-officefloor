@@ -63,6 +63,7 @@ public class BulkOpenClaims {
                 ClaimStatus status = OpenClaim.opensTo(claim, people, rates, settings, sheets);
                 OpenClaim.requireNote(claim, people, rates, settings, sheets);
                 OpenClaim.requireUnderCap(claim, claims, periods);
+                OpenClaim.requireUnderMaxOpen(claim, claims, settings);
                 claim.setStatus(status.name());
             } catch (ClaimStatusException | PeriodClosedException refused) {
                 continue;

@@ -34,6 +34,7 @@ public class OpenClaim {
         ClaimStatus opened = opensTo(claim, people, rates, settings, sheets);
         requireNote(claim, people, rates, settings, sheets);
         requireUnderCap(claim, claims, periods);
+        requireUnderMaxOpen(claim, claims, settings);
         claim.setStatus(opened.name());
         claim.setOpenedBy(by == null ? "" : by);
     }
@@ -93,6 +94,21 @@ public class OpenClaim {
         if (held >= period.cap()) {
             throw new ClaimStatusException("The person already has " + period.cap()
                     + " open claims in period " + period.name());
+        }
+    }
+
+    /** Refuses opening a claim when its person already has as many OPEN or PENDING claims as the
+     *  sheet's maximum of open claims (blank: none); shared with {@link BulkOpenClaims}. */
+    static void requireUnderMaxOpen(Claim claim, ClaimRepository claims, SettingRepository settings)
+            throws ClaimStatusException {
+        Integer max = settings.maxOpen(claim.getSheetId());
+        if (max == null) return;
+        long held = claims.list(claim.getSheetId()).stream()
+                .filter((c) -> c.getId() != claim.getId() && c.getPersonId() == claim.getPersonId()
+                        && ClaimStatus.isOpen(c.getStatus()))
+                .count();
+        if (held >= max) {
+            throw new ClaimStatusException("The person already has " + max + " open claims");
         }
     }
 

@@ -36,4 +36,10 @@ public final class OpenChecks {
             throws ClaimStatusException {
         OpenClaim.requireUnderCap(claim, claims, periods);
     }
+
+    /** See {@link OpenClaim#requireUnderMaxOpen}. */
+    public static void requireUnderMaxOpen(Claim claim, ClaimRepository claims, SettingRepository settings)
+            throws ClaimStatusException {
+        OpenClaim.requireUnderMaxOpen(claim, claims, settings);
+    }
 }

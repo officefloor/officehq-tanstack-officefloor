@@ -3,9 +3,11 @@ package net.officefloor.hq.app.paste;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
@@ -44,7 +46,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  used by no claim on the sheet nor an earlier line), then added (CLAIM_ADDED) and opened. Each claim is
  *  opened as {@link net.officefloor.hq.app.claim.OpenClaim} opens one — numbered in paste order, CLAIM_OPENED then the rollup lines it
  *  moved — and any refusal it would give refuses the whole paste: the transaction is rolled back and the
- *  audit lines, kept until every line went through, are never written. */
+ *  audit lines, kept until every line went through, are never written. A paste that would take a person
+ *  past the sheet's maximum of open claims is refused before anything is written. */
 public class PasteClaims {
     private record Pending(Person person, ValidClaim claim, LocalDate date, LocalDate dueBy, String corrects,
             Claim match) {
@@ -64,10 +67,21 @@ public class PasteClaims {
         }
         List<Pending> pending = new ArrayList<>();
         Set<String> refs = new HashSet<>();
+        Integer maxOpen = settings.maxOpen(id);
+        Map<Long, Long> opening = new HashMap<>();
         for (PasteLine line : lines.lines()) {
             Person person = people.findByName(id, line.name());
             if (person == null) {
                 throw new InvalidClaimException("Not on the sheet: " + line.name());
+            }
+            // The maximum of open claims is checked before anything is written: each line opens one more.
+            if (maxOpen != null) {
+                long held = opening.computeIfAbsent(person.getId(), (p) -> claims.listOf(id, p).stream()
+                        .filter((c) -> ClaimStatus.isOpen(c.getStatus())).count());
+                if (held >= maxOpen) {
+                    throw new ClaimStatusException("The person already has " + maxOpen + " open claims");
+                }
+                opening.put(person.getId(), held + 1);
             }
             ValidClaim request = line.claim();
             LocalDate date = request.date() != null ? request.date() : settings.entryDate(id);
@@ -138,6 +152,7 @@ public class PasteClaims {
             ClaimStatus opened = OpenChecks.opensTo(claim, people, rates, settings, sheets);
             OpenChecks.requireNote(claim, people, rates, settings, sheets);
             OpenChecks.requireUnderCap(claim, claims, periods);
+            OpenChecks.requireUnderMaxOpen(claim, claims, settings);
             claim.setStatus(opened.name());
             claim.setOpenedBy(user);
             claims.update(claim);

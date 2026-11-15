@@ -25,6 +25,7 @@ public class ReviewClaim {
         }
         periods.requireOpen(claim.getSheetId(), claim.getDueBy());
         OpenClaim.requireUnderCap(claim, claims, periods);
+        OpenClaim.requireUnderMaxOpen(claim, claims, settings);
         claim.setStatus(ClaimStatus.REVIEW.moveTo(ClaimStatus.OPEN).name());
     }
 }

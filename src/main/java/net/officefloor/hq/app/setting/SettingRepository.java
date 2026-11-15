@@ -101,6 +101,10 @@ public class SettingRepository {
      *  (the sheet's today when it went to REVIEW) plus them is before the sheet's today is late. */
     public static final String REVIEW_SLA = "review-sla";
 
+    /** The maximum of open claims per person (a whole number; blank: none; not dated): opening a claim
+     *  is refused when its person already has that many OPEN or PENDING claims. */
+    public static final String MAX_OPEN = "max-open";
+
     /** The mid score threshold (a whole number; blank: none; not dated): while both score thresholds are
      *  set, a person whose score is at or above it, and below the high one, is in the MID band. */
     public static final String SCORE_MID = "score-mid";
@@ -146,7 +150,7 @@ public class SettingRepository {
     /** Whether a key is dated: every key that carries a figure (the policy date, the period
      *  numbering date, the grace days, the pot, the proof kinds, the fiscal year start month and the permission matrix are not). */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !SCORE_LOG.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
+        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !MAX_OPEN.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !SCORE_LOG.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
                 && !ENTRY_DATE.equals(key) && !PROOF_KINDS.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !FISCAL_START_MONTH.equals(key) && !PARENT.equals(key) && !DEFAULT_GRADE.equals(key) && !Permissions.isKey(key);
     }
 
@@ -225,6 +229,12 @@ public class SettingRepository {
     public int fiscalStartMonth(String sheetId) {
         String value = find(sheetId, FISCAL_START_MONTH);
         return Integer.parseInt(value == null || value.isEmpty() ? DEFAULT_FISCAL_START_MONTH : value);
+    }
+
+    /** The sheet's maximum of open claims per person; null when there is none. */
+    public Integer maxOpen(String sheetId) {
+        String value = find(sheetId, MAX_OPEN);
+        return value == null || value.isEmpty() ? null : Integer.valueOf(value);
     }
 
     /** The sheet's pot; null when there is none. */
