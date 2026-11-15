@@ -35,7 +35,7 @@ public final class Dues {
     }
 
     /** A claim's rate figure: an amount times a percent, divided by 100, rounded ({@code rounding}) to
-     *  two decimals (no floor: that is applied last, by {@link #shown}). */
+     *  two decimals (no floor: that is applied by {@link #shown}, before the late charge). */
     public static String of(String amount, String pct, RoundingMode rounding) {
         return new BigDecimal(amount).multiply(new BigDecimal(pct))
                 .divide(BigDecimal.valueOf(100), 2, rounding).toPlainString();
@@ -67,16 +67,16 @@ public final class Dues {
     }
 
     /** The due a claim shows: the one fixed when settled, else the one a statement bound it to (its due as
-     *  shown then, late charge and floor included; null: none), else {@code live} (null: none) with its late
-     *  charge on the sheet's today added on top, and at least {@code floor}, the sheet's floor in force on the
-     *  claim's date (null: none), applied last (a correction has no floor). */
+     *  shown then, floor and late charge included; null: none), else {@code live} (null: none) raised to at
+     *  least {@code floor}, the sheet's floor in force on the claim's date (null: none; a correction has no
+     *  floor), with the late charge on that floored figure on the sheet's today added on top. */
     public static String shown(Claim claim, String live, String floor, Late late) {
         if (claim.getSettledDue() != null) return claim.getSettledDue();
         if (claim.isStated()) return claim.getStatedDue();
-        String figure = live;
-        if (figure == null) return null;
-        BigDecimal due = new BigDecimal(figure).add(charge(claim, figure, late));
-        if (floor != null && !isCorrection(claim.getAmount())) due = due.max(new BigDecimal(floor).setScale(2));
-        return due.toPlainString();
+        if (live == null) return null;
+        BigDecimal floored = new BigDecimal(live);
+        if (floor != null && !isCorrection(claim.getAmount())) floored = floored.max(new BigDecimal(floor).setScale(2));
+        String figure = floored.toPlainString();
+        return floored.add(charge(claim, figure, late)).toPlainString();
     }
 }

@@ -17,7 +17,7 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
 /** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
  *  with its status, its due (fixed when settled, else at the rate in force on the claim's date of the
  *  person's grade in force then (`gradeOn`), or bound by the person's last statement; none when
- *  there is no such rate; an overdue one gains its late charge on top, see `charges`; then at least the sheet's `floor`), its due-by (fixed when it was added) and whether it is
+ *  there is no such rate; at least the sheet's `floor`; then an overdue one gains its late charge on that floored figure on top, see `charges`), its due-by (fixed when it was added) and whether it is
  *  overdue (OPEN and due-by before the sheet's `today`), whether
  *  it is stated,
  *  the period its due-by falls in (none when no period contains it), its status log (oldest first), who opened it, and buttons that

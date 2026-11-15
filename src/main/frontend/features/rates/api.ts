@@ -90,7 +90,7 @@ export function hundredths(text: string): bigint {
 }
 
 /** A claim's rate figure: an amount times a percent, divided by 100, rounded to two decimals (half up
- *  when `halfUp`, else half to even; no floor: that is applied last, by `claimDue`);
+ *  when `halfUp`, else half to even; no floor: that is applied by `claimDue`, before the late charge);
  *  null (n/a) when there is no rate. Exact: worked in whole hundredths. */
 export function dueOf(amount: string, pct: string | undefined, halfUp: boolean): string | null {
   if (pct === undefined) return null;
@@ -135,16 +135,17 @@ export type GradeOn = (date: string) => string;
 
 /** A claim's due: the one fixed when it was settled (its late charge then frozen in), else the one bound by its
  *  person's last statement (its due as shown then, late charge and floor included; n/a when it bound none), else
- *  live at the rate in force on the claim's date of the grade in force then (`gradeOn`) with its late charge on the sheet's today on top, and
- *  at least the `floor` in force on its date, applied last (a correction, a negative amount, has no floor). */
+ *  live at the rate in force on the claim's date of the grade in force then (`gradeOn`), raised to at least the `floor`
+ *  in force on its date (a correction, a negative amount, has no floor), with the late charge on that floored figure
+ *  on the sheet's today on top. */
 export function claimDue(c: Claim, rates: Rate[] | undefined, gradeOn: GradeOn, floor: DatedOn, late: Late): string | null {
   if (c.settledDue !== null) return c.settledDue;
   if (c.stated) return c.statedDue;
   const figure = dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date, c.id), roundsHalfUp(c, late));
   if (figure === null) return null;
-  const due = hundredths(figure) + lateCharge(c, figure, late);
   const least = hundredths(floor(c.date));
-  return formatCents(!isCorrection(c) && due < least ? least : due);
+  const floored = !isCorrection(c) && hundredths(figure) < least ? least : hundredths(figure);
+  return formatCents(floored + lateCharge(c, formatCents(floored), late));
 }
 
 /** A product of hundredths and a percent's hundredths (in 1/1_000_000) to cents, half up (away
