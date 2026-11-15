@@ -80,9 +80,9 @@ public class PasteClaims {
             if (person.retiredBefore(date)) {
                 throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
             }
-            // The due-by is fixed now, by the terms of the grade in force on its date, as they stood on its date,
+            // The due-by is fixed now, by the terms in force on the sheet's today,
             // counted in business days past the weekends and the sheet's holidays as they are now.
-            LocalDate dueBy = holidays.dueBy(id, date, settings.terms(id, person, date.toString()));
+            LocalDate dueBy = holidays.dueBy(id, date, settings.termsToday(id, person));
             periods.requireOpen(id, dueBy.toString());
             String corrects = Corrections.check(request, id, person.getId(), claims);
             // A reference is used once on the sheet: also once within the paste.

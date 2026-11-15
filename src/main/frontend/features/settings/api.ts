@@ -22,7 +22,7 @@ export type Role = { sheetId: string; user: string; role: string };
  *  period numbering date (yyyy-MM-dd; blank means off: once the sheet's today is on or after it, a
  *  claim opened is numbered within its period, <period>-<n>, or X-<n> in no period). A grade's own terms
  *  (terms-<grade>; blank means the sheet's terms) fix the due-by of a claim added for a person of that
- *  grade on its date: its date plus those terms, kept when the terms or its date change later. The proof
+ *  grade on the sheet's today then (those in force that day): its date plus those terms, kept when the terms or its date change later. The proof
  *  threshold (two decimals; blank means none): a claim whose due is above the one in force on its date
  *  cannot be settled or approved while it has no proofs. A grade's proof threshold (proof-threshold-<grade>,
  *  two decimals; blank means none): a claim whose person's grade in force on its date has one in force on

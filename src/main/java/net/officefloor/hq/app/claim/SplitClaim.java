@@ -53,7 +53,7 @@ public class SplitClaim {
         String user = by == null ? "" : by;
         LocalDate date = LocalDate.parse(claim.getDate());
         Person person = people.find(sheetId, claim.getPersonId());
-        LocalDate dueBy = holidays.dueBy(sheetId, date, settings.terms(sheetId, person, claim.getDate()));
+        LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsToday(sheetId, person));
         Claim created = claims.add(sheetId, claim.getPersonId(), part.setScale(2), date, claim.getNote(),
                 null, dueBy, user, null, claim.getTags());
         if (periods.softClosedOn(sheetId, created.getDueBy())) claims.markLateEntry(created);

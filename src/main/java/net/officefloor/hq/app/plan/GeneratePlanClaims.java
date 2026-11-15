@@ -41,7 +41,7 @@ public class GeneratePlanClaims {
             for (LocalDate date : plan.dates(last)) {
                 if (done.contains(date) || person.retiredBefore(date)) continue;
                 // The due-by is fixed now, as for a claim added on the form.
-                LocalDate dueBy = holidays.dueBy(id, date, settings.terms(id, person, date.toString()));
+                LocalDate dueBy = holidays.dueBy(id, date, settings.termsToday(id, person));
                 try {
                     periods.requireOpen(id, dueBy.toString());
                 } catch (PeriodClosedException e) {

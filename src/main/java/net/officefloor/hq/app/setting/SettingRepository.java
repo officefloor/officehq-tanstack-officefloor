@@ -269,6 +269,12 @@ public class SettingRepository {
         return terms(sheetId, person == null ? null : person.gradeOn(date), date);
     }
 
+    /** The terms (whole days) of a claim of the person created now: those in force on the sheet's today
+     *  (their own, else those of the grade they have that day, else the sheet's), whatever its date. */
+    public int termsToday(String sheetId, net.officefloor.hq.app.person.Person person) {
+        return terms(sheetId, person, sheets.today(sheetId).toString());
+    }
+
     /** The sheet's late percent (two decimals) by date: a late charge goes by the one in force on each 30-day boundary. */
     public DatedSetting latePct(String sheetId) {
         return dated(sheetId, LATE_PCT, DEFAULT_LATE_PCT);

@@ -25,8 +25,8 @@ export const isBound = (c: Claim) => c.stated && c.statedDue !== null;
  *  bound it, with the figure it bound (null when it had none): a bound claim shows and totals that.
  *  A correction (a negative amount) has the number of the SETTLED claim it corrects (null otherwise).
  *  `roundDate` is the date its live figures round by: its own, or a correction's claim's it corrects.
- *  `dueBy` (yyyy-MM-dd) is fixed when it was added: its date then plus the terms of its person's
- *  grade in force on that date (the grade's own, else the sheet's). `log` is its status log, oldest
+ *  `dueBy` (yyyy-MM-dd) is fixed when it was added: its date then plus the terms in force on the
+ *  sheet's today then (the person's own, else their grade's that day, else the sheet's). `log` is its status log, oldest
  *  first: `<STATUS> by <user> on <date> due=<due>`, the sheet's today and its due at each change.
  *  `deferredUntil` is the date it was last deferred until (null: never), and `deferred` whether it is
  *  deferred on the sheet's today (OPEN, or VOID voided while deferred, and deferred until a later date): a deferred claim counts in no
