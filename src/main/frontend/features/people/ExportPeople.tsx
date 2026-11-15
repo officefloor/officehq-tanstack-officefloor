@@ -37,3 +37,15 @@ export function ExportClaims({ rows, loading }: { rows: () => string[][]; loadin
     </button>
   );
 }
+
+/** The person's "export statement" button: downloads `rows` (their claims bound by their last
+ *  statement, oldest first) as a CSV file under a header line, quoted, ended and disabled as the
+ *  people export. */
+export function ExportStatement({ name, rows, loading }: { name: string; rows: () => string[][]; loading: boolean }) {
+  const download = () => downloadCsv(`statement-${name}.csv`, [['number', 'date', 'amount', 'figure', 'status'], ...rows()]);
+  return (
+    <button type="button" data-testid="person-export-statement" disabled={loading} onClick={download}>
+      Export statement
+    </button>
+  );
+}
