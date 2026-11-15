@@ -1,0 +1,468 @@
+diff --git a/src/main/frontend/features/claims/PersonClaims.tsx b/src/main/frontend/features/claims/PersonClaims.tsx
+index c10fe1352..b2a0ffc5e 100644
+--- a/src/main/frontend/features/claims/PersonClaims.tsx
++++ b/src/main/frontend/features/claims/PersonClaims.tsx
+@@ -10,8 +10,8 @@ import { addClaim, addClaimLine, addProof, claimsKey, commentClaim, listVoidReas
+ 
+ const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
+ 
+-const LABELS: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void', approve: 'Approve', reject: 'Reject', resettle: 'Re-settle', delete: 'Delete', restore: 'Restore' };
+-const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided', approve: 'approved', reject: 'rejected', resettle: 're-settled', delete: 'deleted', restore: 'restored' };
++const LABELS: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void', approve: 'Approve', reject: 'Reject', resettle: 'Re-settle', delete: 'Delete', restore: 'Restore', review: 'Review' };
++const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided', approve: 'approved', reject: 'rejected', resettle: 're-settled', delete: 'deleted', restore: 'restored', review: 'reviewed' };
+ 
+ /** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
+  *  with its status, its due (fixed when settled, else at the rate in force on the claim's date of the
+@@ -22,7 +22,9 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
+  *  the period its due-by falls in (none when no period contains it), its status log (oldest first), who opened it, and buttons that
+  *  change its status (the user who opened a claim cannot settle it; a clerk settling one whose due is
+  *  above the sheet's clerk limit makes it PENDING, which a steward other than its opener approves,
+- *  or any steward rejects with a reason typed beside it), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
++ *  or any steward rejects with a reason typed beside it; opening one whose due is above the review threshold in
++ *  force on its date makes it REVIEW, unnumbered and counted nowhere, which only a steward's review button
++ *  opens), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
+  *  charge) the number of the SETTLED claim it corrects. A DRAFT can be deleted with a button beside it (any other
+  *  status, or one in a closed period, refused with an error on the claim): DELETED, it counts nowhere and cannot be
+  *  edited, opened or voided, and a restore button makes it a DRAFT again on the sheet's today it was deleted
+@@ -640,7 +642,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+                 </button>
+               </td>
+               <td>
+-                {(['open', 'settle', 'void', 'approve', 'resettle', 'delete', 'restore'] as const).map((a) => (
++                {(['open', 'settle', 'void', 'approve', 'review', 'resettle', 'delete', 'restore'] as const).map((a) => (
+                   <button key={a} type="button" data-testid={`claim-${a}`} disabled={move.isPending}
+                     onClick={() => act(c.id, a)}>
+                     {LABELS[a]}
+@@ -738,6 +740,10 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+                     ? 'The user who opened a claim cannot settle it, nor can a role the permissions do not allow to settle.'
+                     : c.status === 'PENDING' && move.variables.action === 'approve'
+                     ? 'Only a steward who did not open a claim can approve it.'
++                    : c.status === 'REVIEW' && move.variables.action === 'review'
++                    ? 'Only a steward can review a claim.'
++                    : c.status === 'REVIEW' && move.variables.action === 'open'
++                    ? 'A claim in REVIEW is opened by a steward reviewing it.'
+                     : c.status === 'PENDING' && move.variables.action === 'reject'
+                     ? 'Only a steward can reject a claim.'
+                     : c.status === 'SETTLED' && move.variables.action === 'resettle'
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index 0db8c0fd8..7f6cbebb7 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -4,10 +4,12 @@ import { sheetKey } from '../sheet/api';
+ /** A claim's status: DRAFT, opened to OPEN, settled to SETTLED (or, by a clerk above the clerk limit,
+  *  to PENDING, which a steward approves to SETTLED or rejects back to OPEN); a DRAFT, OPEN or PENDING
+  *  claim can be voided, and a SETTLED one by a steward within 7 days of its settlement. A DRAFT can be
+- *  deleted to DELETED (counted nowhere), and restored to DRAFT on the sheet's today it was deleted. */
+-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
++ *  deleted to DELETED (counted nowhere), and restored to DRAFT on the sheet's today it was deleted. A DRAFT
++ *  whose due is above the review threshold in force on its date opens to REVIEW instead (counted nowhere,
++ *  unnumbered), which a steward reviews to OPEN; a REVIEW claim can be voided. */
++export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED' | 'REVIEW';
+ /** A change of a claim's status. */
+-export type ClaimAction = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle' | 'delete' | 'restore';
++export type ClaimAction = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle' | 'delete' | 'restore' | 'review';
+ 
+ /** Whether a claim is open: OPEN, or PENDING a steward's approval. */
+ export const isOpen = (c: Pick<Claim, 'status'>) => c.status === 'OPEN' || c.status === 'PENDING';
+diff --git a/src/main/frontend/features/settings/Settings.tsx b/src/main/frontend/features/settings/Settings.tsx
+index 8482bfbc1..7ca366ebd 100644
+--- a/src/main/frontend/features/settings/Settings.tsx
++++ b/src/main/frontend/features/settings/Settings.tsx
+@@ -67,6 +67,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+                 : key === 'grace-days' ? 'Grace days'
+                 : key === 'proof-threshold' ? 'Proof threshold'
+                 : key === 'note-threshold' ? 'Note threshold'
++                : key === 'review-threshold' ? 'Review threshold'
+                 : key === 'parent' ? 'Parent sheet'
+                 : key === 'fiscal-start-month' ? 'Fiscal year start month (1 to 12)'
+                 : key.startsWith('perm-') ? `Who may ${key.slice('perm-'.length)} (roles)`
+@@ -74,7 +75,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+                 : key.startsWith('grace-') ? `Grace days for grade ${key.slice('grace-'.length)}`
+                 : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (business days)` : 'Terms (business days)'}{' '}
+               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
+-                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key === 'cap' ? 'No cap' : key === 'pot' || key === 'parent' ? 'None' : key === 'alert-threshold' ? 'Off' : key === 'rounding' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
++                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' || key === 'review-threshold' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key === 'cap' ? 'No cap' : key === 'pot' || key === 'parent' ? 'None' : key === 'alert-threshold' ? 'Off' : key === 'rounding' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
+                   : key === 'period-numbering-from' || key === 'entry-date' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' ? 'Off' : key.startsWith('grace-') ? 'None' : key.startsWith('terms-') ? "Sheet's terms"
+                   : key.startsWith('perm-') ? PERMISSION_STANDING[key.slice('perm-'.length)] : undefined}
+                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
+@@ -96,7 +97,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+         </button>
+         {save.isError && (
+           <span data-testid="settings-error">
+-            The clerk limit, the cap, the pot, the proof threshold, a grade's proof threshold and the note threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
++            The clerk limit, the cap, the pot, the proof threshold, a grade's proof threshold, the note threshold and the review threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
+             the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the rounding mode blank, half-up or half-even; the policy date, period numbering date and entry date blank or a date; the grace days and a grade's grace days blank or a whole number of days; a permission blank or a comma separated list of clerk and steward; the parent sheet blank or a sheet that has been loaded, not this one nor one with this one above it; the fiscal year start month a whole number from 1 to 12; a from-date blank or a date.
+           </span>
+         )}
+diff --git a/src/main/frontend/features/settings/api.ts b/src/main/frontend/features/settings/api.ts
+index 90f4bb220..f77b33c85 100644
+--- a/src/main/frontend/features/settings/api.ts
++++ b/src/main/frontend/features/settings/api.ts
+@@ -27,7 +27,9 @@ export type Role = { sheetId: string; user: string; role: string };
+  *  cannot be settled or approved while it has no proofs. A grade's proof threshold (proof-threshold-<grade>,
+  *  two decimals; blank means none): a claim whose person's grade in force on its date has one in force on
+  *  that date goes by it instead of the sheet's. The note threshold (two decimals; blank means none):
+- *  a claim whose due is above the one in force on its date cannot be opened with an empty note. The permission matrix (perm-<action>, a comma
++ *  a claim whose due is above the one in force on its date cannot be opened with an empty note. The review
++ *  threshold (two decimals; blank means none): a claim whose due is above the one in force on its date goes
++ *  to REVIEW when opened instead of OPEN, until a steward reviews it. The permission matrix (perm-<action>, a comma
+  *  separated list of roles; blank means the standing rule, PERMISSION_STANDING): who may take each action.
+  *  The entry date (yyyy-MM-dd; blank means off): while set, a new claim with a blank date (the claim form,
+  *  the quick-add bar, a pasted line, a correction) takes it instead of the sheet's today.
+@@ -45,7 +47,7 @@ export type Role = { sheetId: string; user: string; role: string };
+  *  The rounding mode (half-up or half-even; blank means none; dated): a claim whose round date has one in
+  *  force rounds its live figures by it instead of by the policy date. */
+ export const SETTING_KEYS = ['clerk-limit', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'rounding',
+-  'period-numbering-from', 'entry-date', 'grace-days', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'] as const;
++  'period-numbering-from', 'entry-date', 'grace-days', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'] as const;
+ 
+ /** The roles that may take each action of the permission matrix while its entry is blank. */
+ export const PERMISSION_STANDING: Record<string, string> = {
+diff --git a/src/main/frontend/features/summary/Summary.tsx b/src/main/frontend/features/summary/Summary.tsx
+index 84cc4e4e8..25cb80561 100644
+--- a/src/main/frontend/features/summary/Summary.tsx
++++ b/src/main/frontend/features/summary/Summary.tsx
+@@ -7,7 +7,7 @@ import { useCap, useFloor, useLate } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+ 
+ /** Every status a claim's count is shown for. */
+-export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
++export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'] as const;
+ 
+ /** How many of the sheet's claims have the status. */
+ export function statusCount(claims: Claim[] | undefined, status: (typeof STATUSES)[number]): number {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+index 276e0a14c..6ecb14741 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+@@ -22,7 +22,8 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** Opens the selected claims in list order (people in the order they were added, newest claim first
+  *  within a person), each numbered in turn as {@link OpenClaim} numbers one and recorded as it would
+- *  record it (its CLAIM_OPENED line, then the rollup lines it moved). A claim that cannot be opened
++ *  record it (its CLAIM_OPENED line, or CLAIM_REVIEW for one gone to REVIEW, which counts as opened,
++ *  then the rollup lines it moved). A claim that cannot be opened
+  *  (its status does not allow it, its date is in a closed period, it has an empty note and a due
+  *  above the note threshold, its period caps its person's open claims and they
+  *  already have that many, or it is not on the sheet) is left
+@@ -58,21 +59,23 @@ public class BulkOpenClaims {
+             if (!allowed) continue;
+             try {
+                 periods.requireOpen(id, claim.getDueBy());
+-                ClaimStatus status = ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.OPEN);
++                ClaimStatus status = OpenClaim.opensTo(claim, people, rates, settings, sheets);
+                 OpenClaim.requireNote(claim, people, rates, settings, sheets);
+                 OpenClaim.requireUnderCap(claim, claims, periods);
+                 claim.setStatus(status.name());
+             } catch (ClaimStatusException | PeriodClosedException refused) {
+                 continue;
+             }
+-            claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
++            if (ClaimStatus.OPEN.name().equals(claim.getStatus())) {
++                claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
++            }
+             claim.setOpenedBy(user);
+             claims.update(claim);
+             log.record(claim, user);
+             opened++;
+             Person person = everyone.stream().filter((p) -> p.getId() == claim.getPersonId())
+                     .findFirst().orElse(null);
+-            audit.record(ClaimStatus.OPEN.event() + " sheet=" + id + " by=" + user
++            audit.record(ClaimStatus.valueOf(claim.getStatus()).event() + " sheet=" + id + " by=" + user
+                     + " person=" + (person == null ? "" : person.getName())
+                     + " amount=" + claim.getAmount() + " date=" + claim.getDate()
+                     + claim.getAuditNumber());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+index 514062b76..70a55a753 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+@@ -6,15 +6,16 @@ package net.officefloor.hq.app.claim;
+  *  soon after its settlement (see {@link VoidClaim}). A DRAFT can be deleted to DELETED, which counts
+  *  nowhere, and restored to DRAFT on the sheet's today it was deleted (see {@link RestoreClaim}). */
+ public enum ClaimStatus {
+-    DRAFT, OPEN, PENDING, SETTLED, VOID, DELETED;
++    DRAFT, OPEN, PENDING, SETTLED, VOID, DELETED, REVIEW;
+ 
+     /** The status after moving to {@code to}; refused when this status does not allow it. */
+     public ClaimStatus moveTo(ClaimStatus to) throws ClaimStatusException {
+         boolean allowed = switch (to) {
+-            case OPEN -> this == DRAFT || this == PENDING;
++            case OPEN -> this == DRAFT || this == PENDING || this == REVIEW;
++            case REVIEW -> this == DRAFT;
+             case PENDING -> this == OPEN;
+             case SETTLED -> this == OPEN || this == PENDING;
+-            case VOID -> this == DRAFT || this == OPEN || this == PENDING;
++            case VOID -> this == DRAFT || this == OPEN || this == PENDING || this == REVIEW;
+             case DELETED -> this == DRAFT;
+             case DRAFT -> this == DELETED;
+         };
+@@ -38,6 +39,7 @@ public enum ClaimStatus {
+             case VOID -> "CLAIM_VOIDED";
+             case DELETED -> "CLAIM_DELETED";
+             case DRAFT -> "CLAIM_RESTORED";
++            case REVIEW -> "CLAIM_REVIEW";
+         };
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenChecks.java b/src/main/java/net/officefloor/hq/app/claim/OpenChecks.java
+index ddec23c6e..1a37ddf95 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenChecks.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenChecks.java
+@@ -12,6 +12,12 @@ public final class OpenChecks {
+     private OpenChecks() {
+     }
+ 
++    /** See {@link OpenClaim#opensTo}. */
++    public static ClaimStatus opensTo(Claim claim, PersonRepository people, RateRepository rates,
++            SettingRepository settings, SheetRepository sheets) throws ClaimStatusException {
++        return OpenClaim.opensTo(claim, people, rates, settings, sheets);
++    }
++
+     /** See {@link OpenClaim#requireNote}. */
+     public static void requireNote(Claim claim, PersonRepository people, RateRepository rates,
+             SettingRepository settings, SheetRepository sheets) throws ClaimStatusException {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java b/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
+index 7009fbfe3..ca877e1b3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
+@@ -16,8 +16,9 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** Opens a claim, giving it its number (see {@link ClaimNumbers}) and recording who opened it.
+- *  Refused for a role the permission matrix does not let open, and for a claim with an empty note
++/** Opens a claim, giving it its number (see {@link ClaimNumbers}) and recording who opened it; one
++ *  whose due is above the review threshold in force on its date goes to REVIEW instead, unnumbered
++ *  until a steward reviews it (see {@link ReviewClaim}). Refused for a REVIEW claim,  for a role the permission matrix does not let open, and for a claim with an empty note
+  *  whose due is above the note threshold in force on its date. */
+ public class OpenClaim {
+     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
+@@ -28,14 +29,46 @@ public class OpenClaim {
+             throw new ClaimStatusException("Your role may not open a claim");
+         }
+         periods.requireOpen(claim.getSheetId(), claim.getDueBy());
+-        ClaimStatus opened = ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.OPEN);
++        ClaimStatus opened = opensTo(claim, people, rates, settings, sheets);
+         requireNote(claim, people, rates, settings, sheets);
+         requireUnderCap(claim, claims, periods);
+         claim.setStatus(opened.name());
+-        claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
++        if (opened == ClaimStatus.OPEN) {
++            claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
++        }
+         claim.setOpenedBy(by == null ? "" : by);
+     }
+ 
++    /** The status opening the claim moves it to: REVIEW for a DRAFT whose due (null: n/a, never above)
++     *  is above the review threshold in force on its date, else OPEN; refused when its status allows
++     *  neither, and for a REVIEW claim (only a steward's review opens it); shared with
++     *  {@link BulkOpenClaims}. */
++    static ClaimStatus opensTo(Claim claim, PersonRepository people, RateRepository rates,
++            SettingRepository settings, SheetRepository sheets) throws ClaimStatusException {
++        ClaimStatus status = ClaimStatus.valueOf(claim.getStatus());
++        if (status == ClaimStatus.REVIEW) {
++            throw new ClaimStatusException("A REVIEW claim is opened by a steward's review");
++        }
++        ClaimStatus opened = status.moveTo(ClaimStatus.OPEN);
++        if (status != ClaimStatus.DRAFT) return opened;
++        BigDecimal threshold = settings.reviewThreshold(claim.getSheetId(), claim.getDate());
++        if (threshold == null) return opened;
++        String due = due(claim, people, rates, settings, sheets);
++        return due != null && new BigDecimal(due).compareTo(threshold) > 0 ? ClaimStatus.REVIEW : opened;
++    }
++
++    /** The due the claim shows (null: n/a): bound, settled, else live at the rate in force on its date
++     *  with its late charge on the sheet's today, at least the floor in force on its date. */
++    static String due(Claim claim, PersonRepository people, RateRepository rates, SettingRepository settings,
++            SheetRepository sheets) {
++        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++        Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),
++                LocalDate.parse(claim.getDate()));
++        Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
++        return Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
++                late.rounding(claim.getRoundDate())), settings.floor(claim.getSheetId()).on(claim.getDate()), late);
++    }
++
+     /** Refuses opening a claim that belongs to a period with a cap (its due-by falls in it) when its
+      *  person already has that many OPEN or PENDING claims in the period; shared with {@link BulkOpenClaims}. */
+     static void requireUnderCap(Claim claim, ClaimRepository claims, PeriodRepository periods)
+@@ -59,12 +92,7 @@ public class OpenClaim {
+         if (claim.getNote() != null && !claim.getNote().trim().isEmpty()) return;
+         BigDecimal threshold = settings.noteThreshold(claim.getSheetId(), claim.getDate());
+         if (threshold == null) return;
+-        Person person = people.find(claim.getSheetId(), claim.getPersonId());
+-        Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),
+-                LocalDate.parse(claim.getDate()));
+-        Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
+-        String due = Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
+-                late.rounding(claim.getRoundDate())), settings.floor(claim.getSheetId()).on(claim.getDate()), late);
++        String due = due(claim, people, rates, settings, sheets);
+         if (due != null && new BigDecimal(due).compareTo(threshold) > 0) {
+             throw new ClaimStatusException("A claim whose due is above the note threshold needs a note to be opened");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimReviewed.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimReviewed.java
+new file mode 100644
+index 000000000..26339be59
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimReviewed.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Last write step of a review: CLAIM_REVIEWED (without the number), then CLAIM_OPENED with the number
++ *  it was given. */
++public class RecordClaimReviewed {
++    public void record(@RequestParam(name = "by", required = false) String by,
++            @Val Claim claim, PersonRepository people, Audit audit) {
++        String opened = RecordClaimStatus.line(ClaimStatus.OPEN.event(), by, claim, people);
++        String reviewed = RecordClaimStatus.line("CLAIM_REVIEWED", by, claim, people);
++        audit.record(reviewed.substring(0, reviewed.length() - claim.getAuditNumber().length()));
++        audit.record(opened);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReviewClaim.java b/src/main/java/net/officefloor/hq/app/claim/ReviewClaim.java
+new file mode 100644
+index 000000000..09c08490a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ReviewClaim.java
+@@ -0,0 +1,31 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.period.PeriodClosedException;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.setting.Role;
++import net.officefloor.hq.app.setting.RoleRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Reviews a REVIEW claim: it becomes OPEN and gets its number (see {@link ClaimNumbers}); who opened it
++ *  stays as it was. Refused unless the user is a steward, when it is not REVIEW, for one due by a day
++ *  in a closed period, and when its period caps its person's open claims and they already have that many. */
++public class ReviewClaim {
++    public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
++            ClaimRepository claims, PeriodRepository periods, RoleRepository roles,
++            SettingRepository settings, SheetRepository sheets)
++            throws ClaimStatusException, PeriodClosedException {
++        if (!ClaimStatus.REVIEW.name().equals(claim.getStatus())) {
++            throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be reviewed");
++        }
++        if (!Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
++            throw new ClaimStatusException("Only a steward can review a claim");
++        }
++        periods.requireOpen(claim.getSheetId(), claim.getDueBy());
++        OpenClaim.requireUnderCap(claim, claims, periods);
++        claim.setStatus(ClaimStatus.REVIEW.moveTo(ClaimStatus.OPEN).name());
++        claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java b/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
+index 01ae3e7ab..3d5426d34 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
++++ b/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
+@@ -135,11 +135,13 @@ public class PasteClaims {
+ 
+             // Opened as the open button opens it.
+             periods.requireOpen(id, claim.getDueBy());
+-            ClaimStatus opened = ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.OPEN);
++            ClaimStatus opened = OpenChecks.opensTo(claim, people, rates, settings, sheets);
+             OpenChecks.requireNote(claim, people, rates, settings, sheets);
+             OpenChecks.requireUnderCap(claim, claims, periods);
+             claim.setStatus(opened.name());
+-            claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
++            if (opened == ClaimStatus.OPEN) {
++                claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
++            }
+             claim.setOpenedBy(user);
+             claims.update(claim);
+             log.record(claim, user);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 162c58594..9770dfdcb 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -38,6 +38,10 @@ public class SettingRepository {
+      *  with an empty note (two decimals; blank: none). */
+     public static final String NOTE_THRESHOLD = "note-threshold";
+ 
++    /** The review threshold: a claim whose due is above the one in force on its date goes to REVIEW
++     *  when opened instead of OPEN (two decimals; blank: none). */
++    public static final String REVIEW_THRESHOLD = "review-threshold";
++
+     /** The cap: the most a person's due-total can be (two decimals; blank: no cap). */
+     public static final String CAP = "cap";
+ 
+@@ -213,6 +217,12 @@ public class SettingRepository {
+         return value == null ? null : new BigDecimal(value);
+     }
+ 
++    /** The sheet's review threshold in force on a date (yyyy-MM-dd); null when there is none. */
++    public BigDecimal reviewThreshold(String sheetId, String date) {
++        String value = dated(sheetId, REVIEW_THRESHOLD, null).on(date);
++        return value == null ? null : new BigDecimal(value);
++    }
++
+     /** The sheet's cap in force on its today; null when there is none. */
+     public BigDecimal cap(String sheetId) {
+         String value = dated(sheetId, CAP, null).on(sheets.today(sheetId).toString());
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 78f372541..9d2c4c541 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -53,6 +53,10 @@ public class ValidateSetting {
+             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
+                 throw new InvalidSettingException("The note threshold is blank or 0.00 or more with up to two decimals");
+             }
++        } else if (SettingRepository.REVIEW_THRESHOLD.equals(key)) {
++            if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
++                throw new InvalidSettingException("The review threshold is blank or 0.00 or more with up to two decimals");
++            }
+         } else if (SettingRepository.CAP.equals(key)) {
+             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
+                 throw new InvalidSettingException("The cap is blank or 0.00 or more with up to two decimals");
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/review.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/review.POST.yml
+new file mode 100644
+index 000000000..b9ca7f271
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/review.POST.yml
+@@ -0,0 +1,36 @@
++# POST /api/sheets/{sheetId}/claims/{claimId}/review — a steward reviews a REVIEW claim: it becomes
++# OPEN with its number; refused (409) for anyone else, or when it is not REVIEW.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: move
++move:
++  class: net.officefloor.hq.app.claim.ReviewClaim
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveClaim
++  govern: [ transaction ]
++  next: log
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.RecordClaimReviewed
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
