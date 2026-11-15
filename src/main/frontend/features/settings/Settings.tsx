@@ -66,6 +66,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
                 : key === 'policy-date' ? 'Policy date' : key === 'rounding' ? 'Rounding mode (half-up or half-even)' : key === 'period-numbering-from' ? 'Period numbering from'
                 : key === 'entry-date' ? 'Entry date'
                 : key === 'grace-days' ? 'Grace days'
+                : key === 'escalate-after' ? 'Escalate after (days)'
                 : key === 'proof-threshold' ? 'Proof threshold'
                 : key === 'note-threshold' ? 'Note threshold'
                 : key === 'review-threshold' ? 'Review threshold'
@@ -77,7 +78,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
                 : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (business days)` : 'Terms (business days)'}{' '}
               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
                 placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' || key === 'review-threshold' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key === 'cap' ? 'No cap' : key === 'pot' || key === 'parent' ? 'None' : key === 'alert-threshold' ? 'Off' : key === 'rounding' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
-                  : key === 'period-numbering-from' || key === 'entry-date' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' ? 'Off' : key.startsWith('grace-') ? 'None' : key.startsWith('terms-') ? "Sheet's terms"
+                  : key === 'period-numbering-from' || key === 'entry-date' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' || key === 'escalate-after' ? 'Off' : key.startsWith('grace-') ? 'None' : key.startsWith('terms-') ? "Sheet's terms"
                   : key.startsWith('perm-') ? PERMISSION_STANDING[key.slice('perm-'.length)] : undefined}
                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
             </label>{' '}

@@ -160,6 +160,12 @@ public class Claim {
     public String getReminded() { return reminded; }
     public void setReminded(String reminded) { this.reminded = reminded; }
 
+    private boolean escalating;
+
+    /** Whether the reminder being taken escalates it (not stored: a claim's escalation is saved on its own). */
+    public boolean isEscalating() { return escalating; }
+    public void setEscalating(boolean escalating) { this.escalating = escalating; }
+
     /** Its external reference (none: no reference); used once per sheet, compared without regard to case. */
     public String getRef() { return ref; }
     public void setRef(String ref) { this.ref = ref; }

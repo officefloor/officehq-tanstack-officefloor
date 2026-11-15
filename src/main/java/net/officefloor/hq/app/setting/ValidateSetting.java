@@ -100,6 +100,12 @@ public class ValidateSetting {
             }
             body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), given));
             return;
+        } else if (SettingRepository.ESCALATE_AFTER.equals(key)) {
+            if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("The escalation gap is blank or a whole number of days, 0 or more");
+            }
+            body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null));
+            return;
         } else if (SettingRepository.GRACE_DAYS.equals(key)) {
             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
                 throw new InvalidSettingException("The grace days are blank or a whole number of days, 0 or more");

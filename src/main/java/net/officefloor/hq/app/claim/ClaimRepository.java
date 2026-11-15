@@ -337,6 +337,17 @@ public class ClaimRepository {
                 claim.getSheetId(), claim.getId());
     }
 
+    /** Whether a claim was ever escalated. */
+    public boolean isEscalated(String sheetId, long id) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT escalated FROM claim WHERE sheet_id = ? AND id = ?",
+                Boolean.class, sheetId, id));
+    }
+
+    /** Mark a claim escalated (once per claim, ever). */
+    public void markEscalated(Claim claim) {
+        jdbc.update("UPDATE claim SET escalated = TRUE WHERE sheet_id = ? AND id = ?", claim.getSheetId(), claim.getId());
+    }
+
     /** Save the number of the claim a claim was split from. */
     public void updateSplitFrom(Claim claim) {
         jdbc.update("UPDATE claim SET split_from = ? WHERE sheet_id = ? AND id = ?",
