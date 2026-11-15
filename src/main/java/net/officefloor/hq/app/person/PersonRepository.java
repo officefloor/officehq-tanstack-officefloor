@@ -338,4 +338,22 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, from.getId());
         withAliases(sheetId, List.of(into));
     }
+
+    /** Move the person to the sheet {@code to} with their grades (and grade history) and aliases, their
+     *  statements dropped (the count back to 0); their holds, watchers, patron links (either way), pool
+     *  memberships and closed periods' fixed totals are dropped. Their claims must have moved first. */
+    public void transfer(Person person, String to) {
+        String sheetId = person.getSheetId();
+        long id = person.getId();
+        jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, id, id);
+        for (String table : List.of("person_statement", "person_hold", "person_watch", "pool_member")) {
+            jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        }
+        jdbc.update("DELETE FROM period_person_total WHERE person_id = ?", id);
+        for (String table : List.of("person_grade", "person_grade_history", "person_retired_history", "person_alias")) {
+            jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, sheetId, id);
+        }
+        jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL "
+                + "WHERE sheet_id = ? AND id = ?", to, sheetId, id);
+    }
 }

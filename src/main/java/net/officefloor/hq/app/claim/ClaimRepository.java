@@ -217,6 +217,38 @@ public class ClaimRepository {
         }
     }
 
+    /** Move every claim of the person to the sheet {@code to}, with their logs, comments and history,
+     *  keeping their order in the list (each newer than the other sheet's): their status, dates, notes,
+     *  tags and frozen figures kept, any figure a statement bound, their reference, lock and settle
+     *  batch dropped, and their numbers taken away. The ids of those that had a number come back in
+     *  the order they were opened (by the sheet's today then, then the order they were added), for
+     *  {@link #renumber}. */
+    public List<Long> transferAll(String sheetId, long personId, String to) {
+        List<Long> numbered = jdbc.queryForList("SELECT c.id FROM claim c WHERE c.sheet_id = ? AND c.person_id = ? "
+                + "AND c.number IS NOT NULL ORDER BY COALESCE((SELECT MIN(l.on_date) FROM claim_log l WHERE "
+                + "l.claim_id = c.id AND l.status = 'OPEN'), (SELECT MIN(l.on_date) FROM claim_log l WHERE "
+                + "l.claim_id = c.id AND l.status <> 'DRAFT'), c.claim_date), c.id", Long.class, sheetId, personId);
+        long seq = jdbc.queryForObject("SELECT COALESCE(MAX(list_seq), 0) FROM claim WHERE sheet_id = ?", Long.class, to);
+        for (Long id : jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY list_seq, id",
+                Long.class, sheetId, personId)) {
+            jdbc.update("UPDATE claim SET sheet_id = ?, list_seq = ?, number = NULL, stated = FALSE, stated_due = NULL, "
+                    + "ref = NULL, ref_key = NULL, locked_by = NULL, settle_batch = NULL WHERE sheet_id = ? AND id = ?",
+                    to, ++seq, sheetId, id);
+            for (String table : List.of("claim_log", "claim_comment", "claim_history")) {
+                jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND claim_id = ?", to, sheetId, id);
+            }
+            snapshot(to, id);
+            useTags(to, jdbc.queryForObject("SELECT tags FROM claim WHERE id = ?", String.class, id));
+        }
+        return numbered;
+    }
+
+    /** Give a transferred claim its number on its new sheet. */
+    public void renumber(Claim claim, String number) {
+        jdbc.update("UPDATE claim SET number = ? WHERE sheet_id = ? AND id = ?", number, claim.getSheetId(), claim.getId());
+        claim.setNumber(number);
+    }
+
     /** Save a re-dated claim: its date (its due-by, period and number stay). */
     public void redate(Claim claim) {
         jdbc.update("UPDATE claim SET claim_date = ?, number = ? WHERE sheet_id = ? AND id = ?",

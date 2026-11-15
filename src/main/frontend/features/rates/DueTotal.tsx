@@ -2,19 +2,19 @@ import { useQuery } from '@tanstack/react-query';
 import { claimsKey, listClaims, liveClaims } from '../claims/api';
 import { gradeOn, listPeople, peopleKey } from '../people/api';
 import { useCap, useFloor, useLate } from '../settings/api';
-import { useSheetToday } from '../sheet/api';
+import { liveKey, useSheetToday } from '../sheet/api';
 import { claimDue, listRates, personDue, rateByGrade, ratesKey, splitDues, sumDues, trimmedSum } from './api';
 
 /** The sheet's due-total: everyone's due-total added up, skipping those shown n/a, less the single
- *  highest and lowest when three or more have one. */
-export function useDueTotal(sheetId: string, user: string): string {
-  const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
-  const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
-  const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
-  const floor = useFloor(sheetId);
-  const today = useSheetToday(sheetId, user);
-  const cap = useCap(sheetId, today);
-  const charges = useLate(sheetId, today);
+ *  highest and lowest when three or more have one (`current`: as it is now, even while shown as of a date). */
+export function useDueTotal(sheetId: string, user: string, current = false): string {
+  const people = useQuery({ queryKey: liveKey(peopleKey(sheetId), current), queryFn: () => listPeople(sheetId, current) });
+  const claims = useQuery({ queryKey: liveKey(claimsKey(sheetId), current), queryFn: () => listClaims(sheetId, current) });
+  const rates = useQuery({ queryKey: liveKey(ratesKey(sheetId), current), queryFn: () => listRates(sheetId, current) });
+  const floor = useFloor(sheetId, current);
+  const today = useSheetToday(sheetId, user, current);
+  const cap = useCap(sheetId, today, current);
+  const charges = useLate(sheetId, today, current);
   const byGrade = rateByGrade(rates.data, today);
   const live = liveClaims(claims.data ?? [], people.data);
   const dues = (people.data ?? []).map((p) =>

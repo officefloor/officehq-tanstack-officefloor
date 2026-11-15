@@ -6,10 +6,11 @@ import { getJson, postJson } from '../../api/http';
 export type Sheet = { id: string; createdBy: string; today: string; archived: boolean };
 
 /** Load a sheet by id; the server starts it empty the first time the id is used. */
-export function openSheet(id: string, by: string): Promise<Sheet> {
+export function openSheet(id: string, by: string, live = false): Promise<Sheet> {
   return postJson<Sheet>(
     `/api/sheets/${encodeURIComponent(id)}/open?by=${encodeURIComponent(by)}`,
     {},
+    live,
   );
 }
 
@@ -32,15 +33,20 @@ export function archiveSheet(id: string, by: string): Promise<Sheet> {
 /** Every query about a sheet lives under this key, so loading it again re-reads all of it. */
 export const sheetKey = (id: string) => ['sheet', id] as const;
 
+/** A query key about a sheet, for its live reads (`live`: as it is now, even while the screen shows it
+ *  as of a date) kept apart from the screen's; still under the sheet's key, so loading it re-reads them. */
+export const liveKey = <K extends readonly unknown[]>(key: K, live: boolean): readonly unknown[] =>
+  live ? [key[0], key[1], 'live', ...key.slice(2)] : key;
+
 /** The loaded sheet's today, read from the sheet query `ActiveSheet` keeps; '' until loaded. */
-export function useSheetToday(id: string, by: string): string {
-  const sheet = useQuery({ queryKey: sheetKey(id), queryFn: () => openSheet(id, by) });
+export function useSheetToday(id: string, by: string, live = false): string {
+  const sheet = useQuery({ queryKey: liveKey(sheetKey(id), live), queryFn: () => openSheet(id, by, live) });
   return sheet.data?.today ?? '';
 }
 
 export const descendantsKey = (id: string) => [...sheetKey(id), 'descendants'] as const;
 
 /** The ids of the sheet's descendants: its children (the sheets naming it as their parent), theirs, ... */
-export function listDescendants(id: string): Promise<string[]> {
-  return getJson<string[]>(`/api/sheets/${encodeURIComponent(id)}/descendants`);
+export function listDescendants(id: string, live = false): Promise<string[]> {
+  return getJson<string[]>(`/api/sheets/${encodeURIComponent(id)}/descendants`, live);
 }

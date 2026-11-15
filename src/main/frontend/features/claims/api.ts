@@ -82,8 +82,8 @@ export function listTags(sheetId: string): Promise<string[]> {
 }
 
 /** Every claim on the sheet, newest first. */
-export function listClaims(sheetId: string): Promise<Claim[]> {
-  return getJson<Claim[]>(`${sheetBase(sheetId)}/claims`);
+export function listClaims(sheetId: string, live = false): Promise<Claim[]> {
+  return getJson<Claim[]>(`${sheetBase(sheetId)}/claims`, live);
 }
 
 /** Add a claim to a person; refused (rejects) when the amount is missing or has more than two

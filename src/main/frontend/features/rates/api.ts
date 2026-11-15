@@ -17,8 +17,8 @@ export const ratesKey = (sheetId: string) => [...sheetKey(sheetId), 'rates'] as 
 
 /** The sheet's own rates, by grade, then by from-date (none first), then those it inherits from its
  *  parent chain, each at its level. */
-export function listRates(sheetId: string): Promise<Rate[]> {
-  return getJson<Rate[]>(base(sheetId));
+export function listRates(sheetId: string, live = false): Promise<Rate[]> {
+  return getJson<Rate[]>(base(sheetId), live);
 }
 
 /** Set a grade's rate from a from-date, replacing the one with the same grade and from-date;

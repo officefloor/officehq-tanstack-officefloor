@@ -17,7 +17,7 @@ import { BulkGrade } from './BulkGrade';
 import { ExportPeople } from './ExportPeople';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
-import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, peopleKey, retirePerson, takeStatement, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, peopleKey, retirePerson, takeStatement, transferPerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '' };
 
@@ -35,7 +35,8 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
  *  Each person has a checkbox that selects them for a grade given to the selected people together.
  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
  *  Whether each person is active (see `isActive`).
- *  A picker and a button merge the person into another (see `mergePerson`).
+ *  A picker and a button merge the person into another (see `mergePerson`), and an entry and a
+ *  button transfer them to another sheet by id (see `transferPerson`).
  *  Whether the signed-in user watches each person, with a button that starts or stops it.
  *  A button exports everyone, retired people included, as a CSV file. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
@@ -65,6 +66,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const [patronPicks, setPatronPicks] = useState<Record<number, string>>({});
   // The person picked on each person's row to merge them into (blank: none picked).
   const [mergePicks, setMergePicks] = useState<Record<number, string>>({});
+  // The sheet id typed on each person's row to transfer them to.
+  const [transferTos, setTransferTos] = useState<Record<number, string>>({});
   // The alias typed on each person's row.
   const [aliasInputs, setAliasInputs] = useState<Record<number, string>>({});
   // The people selected for a bulk grade.
@@ -184,6 +187,19 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     ]),
   });
 
+  // The person whose last transfer was refused; cleared by the next action on the row. A transfer
+  // drops the person's claims, pool memberships, period totals and watches, so these are read again.
+  const transferring = useMutation({
+    mutationFn: (v: { id: number; to: string }) => transferPerson(sheetId, user, v.id, v.to),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: watchesKey(sheetId, user) }),
+    ]),
+  });
+
   // The person whose last watch was refused; cleared by the next action on the row.
   const watching = useMutation({
     mutationFn: (v: { id: number; on: boolean }) => watchPerson(sheetId, user, v.id, v.on),
@@ -199,6 +215,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     patronage.reset();
     aliasing.reset();
     merging.reset();
+    transferring.reset();
   };
 
   const state = (id: number) => {
@@ -264,6 +281,14 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     stateOnce(() => {
       resetRowActions();
       return merging.mutateAsync({ id, intoId });
+    });
+  };
+
+  const transfer = (id: number) => {
+    const to = transferTos[id] ?? '';
+    stateOnce(() => {
+      resetRowActions();
+      return transferring.mutateAsync({ id, to });
     });
   };
 
@@ -455,6 +480,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   {merging.isError && merging.variables?.id === p.id && (
                     <span data-testid="person-error">The person could not be merged: only a steward can, into someone else, neither of them retired.</span>
                   )}
+                  {transferring.isError && transferring.variables?.id === p.id && (
+                    <span data-testid="person-error">The person could not be transferred: only a steward can, not a retired person, to another sheet with no one of the same name, alias or contact.</span>
+                  )}
                 </td>
                 <td>
                   Watched <span data-testid="person-watched">{watched.has(p.id) ? 'yes' : 'no'}</span>{' '}
@@ -543,6 +571,15 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   <button type="button" data-testid="person-merge" disabled={merging.isPending}
                     onClick={() => merge(p.id)}>
                     Merge
+                  </button>{' '}
+                  <input data-testid="person-transfer-to" placeholder="Sheet id" value={transferTos[p.id] ?? ''}
+                    onChange={(e) => {
+                      setTransferTos((d) => ({ ...d, [p.id]: e.target.value }));
+                      transferring.reset();
+                    }} />{' '}
+                  <button type="button" data-testid="person-transfer" disabled={transferring.isPending}
+                    onClick={() => transfer(p.id)}>
+                    Transfer
                   </button>
                 </td>
                 <td>

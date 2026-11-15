@@ -20,30 +20,31 @@ function asOf(): string {
 
 /** While the screen shows the sheet as of a date, every request about it says so: the server answers
  *  a read as the sheet stood then and refuses every change. */
-function withAsOf(path: string): string {
-  const date = asOf();
+function withAsOf(path: string, live: boolean): string {
+  const date = live ? '' : asOf();
   if (date === '' || !path.startsWith('/api/sheets/')) return path;
   return `${path}${path.includes('?') ? '&' : '?'}shown-asof=${encodeURIComponent(date)}`;
 }
 
-async function send<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(withAsOf(path), init);
+async function send<T>(path: string, init?: RequestInit, live = false): Promise<T> {
+  const res = await fetch(withAsOf(path, live), init);
   if (!res.ok) {
     throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
-export function getJson<T>(path: string): Promise<T> {
-  return send<T>(path);
+/** `live`: read the sheet as it is now, even while the screen shows it as of a date. */
+export function getJson<T>(path: string, live = false): Promise<T> {
+  return send<T>(path, undefined, live);
 }
 
-export function postJson<T>(path: string, body: unknown): Promise<T> {
+export function postJson<T>(path: string, body: unknown, live = false): Promise<T> {
   return send<T>(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  });
+  }, live);
 }
 
 export function putJson<T>(path: string, body: unknown): Promise<T> {

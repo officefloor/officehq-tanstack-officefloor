@@ -50,8 +50,8 @@ const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/pe
 export const peopleKey = (sheetId: string) => [...sheetKey(sheetId), 'people'] as const;
 
 /** The sheet's people, in the order they were added. */
-export function listPeople(sheetId: string): Promise<Person[]> {
-  return getJson<Person[]>(base(sheetId));
+export function listPeople(sheetId: string, live = false): Promise<Person[]> {
+  return getJson<Person[]>(base(sheetId), live);
 }
 
 /** Add a person; refused (rejects) when the name is empty or already in use on the sheet. */
@@ -109,6 +109,13 @@ export function addAlias(sheetId: string, by: string, id: number, alias: string)
  *  for the person themselves, and when either of them is retired. */
 export function mergePerson(sheetId: string, by: string, id: number, intoId: number): Promise<Person> {
   return postJson<Person>(`${base(sheetId)}/${id}/merge?by=${encodeURIComponent(by)}`, { intoId });
+}
+
+/** A steward transfers the person to another sheet by id (`to`): they arrive there with their grades,
+ *  terms, contact, aliases and claims, and leave this sheet entirely; refused (rejects) for anyone else,
+ *  a retired person, this sheet's own id, and a name, alias or contact already on the other sheet. */
+export function transferPerson(sheetId: string, by: string, id: number, to: string): Promise<Person> {
+  return postJson<Person>(`${base(sheetId)}/${id}/transfer?by=${encodeURIComponent(by)}`, { to });
 }
 
 export type QuickAddInput = { name: string; amount: string };

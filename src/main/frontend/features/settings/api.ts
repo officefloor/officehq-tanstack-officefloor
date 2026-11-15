@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
-import { sheetKey } from '../sheet/api';
+import { liveKey, sheetKey } from '../sheet/api';
 import type { Late } from '../rates/api';
 import { dueBy, type Claim } from '../claims/api';
 import { gradeOn, listPeople, peopleKey } from '../people/api';
@@ -73,8 +73,8 @@ const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}`;
 export const settingsKey = (sheetId: string) => [...sheetKey(sheetId), 'settings'] as const;
 export const rolesKey = (sheetId: string) => [...sheetKey(sheetId), 'roles'] as const;
 
-export function listSettings(sheetId: string): Promise<Setting[]> {
-  return getJson<Setting[]>(`${base(sheetId)}/settings`);
+export function listSettings(sheetId: string, live = false): Promise<Setting[]> {
+  return getJson<Setting[]>(`${base(sheetId)}/settings`, live);
 }
 
 /** Change a setting; refused (rejects) when the value is not valid for it. */
@@ -92,8 +92,8 @@ export function setRole(sheetId: string, by: string, user: string, role: string)
 }
 
 /** The sheet's floor by date: the least a claim's live due can be, the one in force on its date. */
-export function useFloor(sheetId: string): DatedOn {
-  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+export function useFloor(sheetId: string, live = false): DatedOn {
+  const settings = useQuery({ queryKey: liveKey(settingsKey(sheetId), live), queryFn: () => listSettings(sheetId, live) });
   return (date) => settingOn(settings.data, 'floor', date) || SETTING_DEFAULTS.floor;
 }
 
@@ -112,8 +112,8 @@ export function useNoteThreshold(sheetId: string): (date: string) => string | nu
 }
 
 /** The sheet's cap in force on its today: the most a person's due-total can be; null when there is none. */
-export function useCap(sheetId: string, today: string): string | null {
-  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+export function useCap(sheetId: string, today: string, live = false): string | null {
+  const settings = useQuery({ queryKey: liveKey(settingsKey(sheetId), live), queryFn: () => listSettings(sheetId, live) });
   return settingOn(settings.data, 'cap', today) || null;
 }
 
@@ -121,9 +121,9 @@ export function useCap(sheetId: string, today: string): string | null {
  *  by the one in force on each 30-day boundary), today and policy date (its today when blank), and the
  *  date a claim's lateness counts from: its due-by plus the grace days (grace-<grade>) of its person's
  *  grade in force on its date, as in force on that date (blank: none). */
-export function useLate(sheetId: string, today: string): Late {
-  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
-  const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
+export function useLate(sheetId: string, today: string, live = false): Late {
+  const settings = useQuery({ queryKey: liveKey(settingsKey(sheetId), live), queryFn: () => listSettings(sheetId, live) });
+  const people = useQuery({ queryKey: liveKey(peopleKey(sheetId), live), queryFn: () => listPeople(sheetId, live) });
   const pct = (date: string) => settingOn(settings.data, 'late-pct', date) || SETTING_DEFAULTS['late-pct'];
   const policy = settingOn(settings.data, 'policy-date', today) || today;
   const lateFrom = (c: Claim) => {
