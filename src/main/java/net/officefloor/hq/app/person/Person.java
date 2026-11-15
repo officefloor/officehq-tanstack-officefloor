@@ -210,6 +210,10 @@ public class Person {
     private String origin;
     public String getOrigin() { return origin; }
     public void setOrigin(String origin) { this.origin = origin; }
+    /** The sheet's today a transfer brought them here on (null: they did not arrive by transfer). */
+    private String arrivedOn;
+    public String getArrivedOn() { return arrivedOn; }
+    public void setArrivedOn(String arrivedOn) { this.arrivedOn = arrivedOn; }
     /** Whether their name or an alias is used, as a name or alias, on another sheet of the sheet's tree. */
     private boolean clashing;
     public boolean isClashing() { return clashing; }

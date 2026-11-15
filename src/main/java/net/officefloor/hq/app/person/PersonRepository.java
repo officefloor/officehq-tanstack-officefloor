@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, terms, contact, tags, origin";
+    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, terms, contact, tags, origin, arrived_on";
 
     private static final RowMapper<Person> ROW = (rs, n) -> {
         LocalDate stated = rs.getObject("statement_date", LocalDate.class);
@@ -27,6 +27,8 @@ public class PersonRepository {
         person.setContact(rs.getString("contact"));
         person.setTags(rs.getString("tags"));
         person.setOrigin(rs.getString("origin"));
+        LocalDate arrived = rs.getObject("arrived_on", LocalDate.class);
+        person.setArrivedOn(arrived == null ? null : arrived.toString());
         return person;
     };
 
@@ -571,8 +573,8 @@ public class PersonRepository {
      *  and crew memberships and closed periods' fixed totals are dropped (crews they lead stay, without a lead); they keep the sheet they came from as their
      *  origin. When {@code merging} (they are to be merged into someone there straight after) they keep
      *  their statements and arrive under a stand-in name, as theirs is taken there. Their claims must
-     *  have moved first. */
-    public void transfer(Person person, String to, boolean merging) {
+     *  have moved first. They are marked as arriving on {@code arrivedOn}, the sheet {@code to}'s today. */
+    public void transfer(Person person, String to, boolean merging, LocalDate arrivedOn) {
         String sheetId = person.getSheetId();
         long id = person.getId();
         jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, id, id);
@@ -581,9 +583,18 @@ public class PersonRepository {
         }
         // A crew they lead stays, without a lead.
         jdbc.update("UPDATE crew SET lead_id = NULL WHERE sheet_id = ? AND lead_id = ?", sheetId, id);
+        // Statements kept from leaving any sheet but the one they go to (an undo gives those back) go.
+        for (String table : List.of("person_left", "person_statement_left")) {
+            jdbc.update("DELETE FROM " + table + " WHERE person_id = ? AND (sheet_id <> ? OR ?)", id, to, merging);
+        }
         if (merging) {
             jdbc.update("UPDATE person_statement SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, sheetId, id);
         } else {
+            jdbc.update("INSERT INTO person_left (sheet_id, person_id, statement_count, stated_total, statement_date) "
+                    + "SELECT sheet_id, id, statement_count, stated_total, statement_date FROM person WHERE sheet_id = ? AND id = ?", sheetId, id);
+            jdbc.update("INSERT INTO person_statement_left (sheet_id, person_id, stated_total, statement_date, taken_at) "
+                    + "SELECT sheet_id, person_id, stated_total, statement_date, taken_at FROM person_statement "
+                    + "WHERE sheet_id = ? AND person_id = ? ORDER BY id", sheetId, id);
             jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
             jdbc.update("UPDATE person SET statement_count = 0, stated_total = NULL, statement_date = NULL "
                     + "WHERE sheet_id = ? AND id = ?", sheetId, id);
@@ -595,7 +606,22 @@ public class PersonRepository {
         }
         String name = merging ? "#merging-" + id : person.getName();
         jdbc.update("UPDATE person SET sheet_id = ?, name = ?, "
-                + "origin = ?, list_pos = " + NEXT_POS + " WHERE sheet_id = ? AND id = ?", to, name, sheetId, to, sheetId, id);
+                + "origin = ?, arrived_on = ?, list_pos = " + NEXT_POS + " WHERE sheet_id = ? AND id = ?",
+                to, name, sheetId, arrivedOn, to, sheetId, id);
+    }
+
+    /** Give the person, transferred back to the sheet they last left, the statements that transfer
+     *  dropped from them there. */
+    public void restoreStatements(String sheetId, long id) {
+        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, stated_total, statement_date, taken_at) "
+                + "SELECT sheet_id, person_id, stated_total, statement_date, taken_at FROM person_statement_left "
+                + "WHERE sheet_id = ? AND person_id = ? ORDER BY id", sheetId, id);
+        jdbc.update("UPDATE person p SET (statement_count, stated_total, statement_date) = "
+                + "(SELECT l.statement_count, l.stated_total, l.statement_date FROM person_left l WHERE l.sheet_id = p.sheet_id AND l.person_id = p.id) "
+                + "WHERE p.sheet_id = ? AND p.id = ? AND EXISTS (SELECT 1 FROM person_left l WHERE l.sheet_id = p.sheet_id AND l.person_id = p.id)", sheetId, id);
+        for (String table : List.of("person_left", "person_statement_left")) {
+            jdbc.update("DELETE FROM " + table + " WHERE person_id = ?", id);
+        }
     }
 
     /** Swap the two people's places in their sheet's list. */

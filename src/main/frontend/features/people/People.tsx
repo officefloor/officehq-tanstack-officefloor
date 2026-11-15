@@ -23,7 +23,7 @@ import { QuickAdd } from './QuickAdd';
 import { ColumnChooser, useColumns } from './Columns';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { SortBy, sortPeople, useSortBy } from './SortBy';
-import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, takeStatement, transferPerson, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, takeStatement, transferPerson, undoTransfer, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 import { Fig } from '../session/Fig';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFrom: '', contact: '', tags: '' };
@@ -231,6 +231,19 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     ]),
   });
 
+  // The person whose last transfer undo was refused; cleared by the next action on the row. The person
+  // leaves this sheet with their claims, so these are read again.
+  const untransferring = useMutation({
+    mutationFn: (v: { id: number }) => undoTransfer(sheetId, user, v.id),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: watchesKey(sheetId, user) }),
+    ]),
+  });
+
   // The person whose last inline grade was refused; cleared by the next action on the row. Saved as
   // the person form would save the grade from the sheet's today, the rest of the person unchanged.
   const grading = useMutation({
@@ -270,6 +283,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     aliasing.reset();
     merging.reset();
     transferring.reset();
+    untransferring.reset();
     moving.reset();
     grading.reset();
   };
@@ -367,6 +381,13 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     stateOnce(() => {
       resetRowActions();
       return transferring.mutateAsync({ id, to });
+    });
+  };
+
+  const undoTransferOf = (id: number) => {
+    stateOnce(() => {
+      resetRowActions();
+      return untransferring.mutateAsync({ id });
     });
   };
 
@@ -637,6 +658,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   {transferring.isError && transferring.variables?.id === p.id && (
                     <span data-testid="person-error">The person could not be transferred: only a steward can, not a retired person, to another sheet where their names match at most one person (not retired), and no one else has their contact.</span>
                   )}
+                  {untransferring.isError && untransferring.variables?.id === p.id && (
+                    <span data-testid="person-error">The transfer could not be undone: only a steward can, for a person a transfer brought here, on the sheet's today they arrived.</span>
+                  )}
                 </td>
                 <td>
                   Watched <span data-testid="person-watched">{watched.has(p.id) ? 'yes' : 'no'}</span>{' '}
@@ -754,6 +778,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   <button type="button" data-testid="person-transfer" disabled={transferring.isPending}
                     onClick={() => transfer(p.id)}>
                     Transfer
+                  </button>{' '}
+                  <button type="button" data-testid="person-transfer-undo" disabled={untransferring.isPending}
+                    onClick={() => undoTransferOf(p.id)}>
+                    Undo transfer
                   </button>
                 </td>
                 <td>

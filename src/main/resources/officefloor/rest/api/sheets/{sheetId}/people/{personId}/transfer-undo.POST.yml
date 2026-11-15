@@ -1,0 +1,51 @@
+# POST /api/sheets/{sheetId}/people/{personId}/transfer-undo — a steward undoes the transfer that
+# brought the person to this sheet, on the sheet's today they arrived (see ValidateTransferUndo): they
+# are transferred back to the sheet they came from by exactly the transfer's rules and lines (see
+# TransferPerson) and given back the statements it dropped from them there; then PERSON_TRANSFER_UNDONE
+# and this sheet's figures are recorded. Anyone else, a person who did not arrive by transfer, or any
+# later day, is refused.
+guard:
+  class: net.officefloor.hq.app.setting.RefuseViewer
+  next: before
+before:
+  class: net.officefloor.hq.app.rollup.TakeRollup
+  govern: [ transaction ]
+  next: load
+load:
+  class: net.officefloor.hq.app.person.LoadPerson
+  govern: [ transaction ]
+  next: validate
+validate:
+  class: net.officefloor.hq.app.person.ValidateTransferUndo
+  govern: [ transaction ]
+  next: transfer
+transfer:
+  class: net.officefloor.hq.app.person.TransferPerson
+  govern: [ transaction ]
+  next: restore
+restore:
+  class: net.officefloor.hq.app.person.RestoreStatements
+  govern: [ transaction ]
+  next: audit
+audit:
+  class: net.officefloor.hq.app.person.RecordPersonTransferred
+  govern: [ transaction ]
+  next: rollup
+rollup:
+  class: net.officefloor.hq.app.rollup.RecordRollup
+  govern: [ transaction ]
+  next: arrive
+arrive:
+  class: net.officefloor.hq.app.person.RecordPersonArrived
+  govern: [ transaction ]
+  next: undone
+undone:
+  class: net.officefloor.hq.app.person.RecordPersonTransferUndone
+  govern: [ transaction ]
+  next: totals
+totals:
+  class: net.officefloor.hq.app.rollup.RecordRollup
+  govern: [ transaction ]
+  next: respond
+respond:
+  class: net.officefloor.hq.app.person.RespondWithPerson

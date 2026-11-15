@@ -75,7 +75,7 @@ public class TransferPerson {
             Claim claim = claims.find(to, id);
             claims.renumber(claim, ClaimNumbers.next(claim, claims, periods, settings, sheets));
         }
-        people.transfer(person, to, into != null);
+        people.transfer(person, to, into != null, sheets.today(to));
         if (into != null) {
             Person arrived = people.find(to, person.getId());
             arrived.setName(person.getName()); // arrived under a stand-in, as the name is taken there

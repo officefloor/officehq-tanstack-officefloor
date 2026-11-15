@@ -53,6 +53,7 @@ export type Person = {
   tags: string | null;
   /** The sheet they were last transferred from (null: none). */
   origin: string | null;
+  arrivedOn: string | null;
   /** Their aliases, sorted as names are compared; the quick-add bar and the paste box find them by one. */
   aliases: string[];
   /** Whether their name or an alias is used on another sheet of the sheet's tree (its ancestors and
@@ -174,6 +175,13 @@ export function mergePerson(sheetId: string, by: string, id: number, intoId: num
  *  merged) a contact already on the other sheet. */
 export function transferPerson(sheetId: string, by: string, id: number, to: string): Promise<Person> {
   return postJson<Person>(`${base(sheetId)}/${id}/transfer?by=${encodeURIComponent(by)}`, { to });
+}
+
+/** A steward undoes the transfer that brought the person to this sheet, on the sheet's today they
+ *  arrived: they are transferred back to the sheet they came from, as a transfer does. Refused
+ *  (rejects) for anyone else, a person who did not arrive by transfer, and any later day. */
+export function undoTransfer(sheetId: string, by: string, id: number): Promise<Person> {
+  return postJson<Person>(`${base(sheetId)}/${id}/transfer-undo?by=${encodeURIComponent(by)}`, {});
 }
 
 export type QuickAddInput = { name: string; amount: string };

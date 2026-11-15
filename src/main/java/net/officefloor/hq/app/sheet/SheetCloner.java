@@ -51,6 +51,7 @@ public class SheetCloner {
         unstated.put("statement_count", 0);
         unstated.put("stated_total", null);
         unstated.put("statement_date", null);
+        unstated.put("arrived_on", null); // a clone did not arrive by transfer: nothing there to undo
         unstated.put("version", 0);
         Map<Long, Long> people = copy("person", from, to, Map.of(), unstated);
         Map<String, Map<Long, Long>> byPerson = Map.of("person_id", people);
