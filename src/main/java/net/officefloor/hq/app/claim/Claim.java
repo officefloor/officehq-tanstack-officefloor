@@ -43,6 +43,7 @@ public class Claim {
     private String voidReason;
     private String editedBy;
     private Integer settleBatch;
+    private String settledAsOf;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, String number, String settledDue, String openedBy) {
@@ -97,6 +98,10 @@ public class Claim {
     /** The number of the bulk settle batch that settled it (none: not settled by a bulk settle). */
     public Integer getSettleBatch() { return settleBatch; }
     public void setSettleBatch(Integer settleBatch) { this.settleBatch = settleBatch; }
+    /** The date a settle just now froze the claim's due as of (none: the sheet's today); not stored. */
+    @JsonIgnore
+    public String getSettledAsOf() { return settledAsOf; }
+    public void setSettledAsOf(String settledAsOf) { this.settledAsOf = settledAsOf; }
 
     public String getCorrects() { return corrects; }
     public void setCorrects(String corrects) { this.corrects = corrects; }

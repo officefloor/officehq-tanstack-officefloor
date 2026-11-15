@@ -2,6 +2,9 @@ package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.util.function.Supplier;
+import net.officefloor.hq.app.asof.AsOfStore;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
@@ -22,11 +25,38 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  that is not OPEN, and for a role the permission matrix does not let settle. Settled by a clerk when the due is above the clerk limit in force (its person's grade's on the sheet's today when set, else the sheet's; a due that is n/a is within any limit; a steward settles
  *  anything), it goes to PENDING instead (after the proof threshold: one above it with no proofs is refused), nothing fixed, until a steward approves or rejects it. */
 public class SettleClaim {
-    public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
+    /** Settled as of a date ({@code on}; blank: the sheet's today): the frozen due is the claim's due as it stood
+     *  at the end of that day, as the sheet shown as of it works it out. Refused for a date after the sheet's today,
+     *  and for a claim that did not exist then. */
+    public void move(@RequestParam(name = "by", required = false) String by,
+            @RequestParam(name = "on", required = false) String on, @Val Claim claim,
             PersonRepository people, RateRepository rates, PeriodRepository periods,
-            RoleRepository roles, SettingRepository settings, SheetRepository sheets)
+            RoleRepository roles, SettingRepository settings, SheetRepository sheets,
+            ClaimRepository claims, AsOfStore store)
             throws ClaimStatusException, PeriodClosedException {
-        settle(by, claim, people, rates, periods, roles, settings, sheets);
+        Supplier<String> asOfDue = null;
+        if (on != null && !on.isBlank()) {
+            LocalDate date;
+            try {
+                date = LocalDate.parse(on.trim());
+            } catch (DateTimeParseException e) {
+                throw new ClaimStatusException("Not a date: " + on);
+            }
+            if (date.isAfter(sheets.today(claim.getSheetId()))) {
+                throw new ClaimStatusException("A claim cannot be settled as of a date after the sheet's today");
+            }
+            String[] then = store.read(claim.getSheetId(), date, () -> {
+                Claim was = claims.find(claim.getSheetId(), claim.getId());
+                if (was == null) return null;
+                return new String[] { dueOf(was, people.find(was.getSheetId(), was.getPersonId()), rates, settings, sheets) };
+            });
+            if (then == null) {
+                throw new ClaimStatusException("The claim did not exist on " + date);
+            }
+            asOfDue = () -> then[0];
+            claim.setSettledAsOf(date.toString());
+        }
+        settle(by, claim, true, people, rates, periods, roles, settings, sheets, asOfDue);
         // Settled one at a time: in no batch.
         claim.setSettleBatch(null);
     }
@@ -43,6 +73,13 @@ public class SettleClaim {
     static void settle(String by, Claim claim, boolean judged, PersonRepository people, RateRepository rates,
             PeriodRepository periods, RoleRepository roles, SettingRepository settings, SheetRepository sheets)
             throws ClaimStatusException, PeriodClosedException {
+        settle(by, claim, judged, people, rates, periods, roles, settings, sheets, null);
+    }
+
+    /** As {@link #settle}, the due frozen being {@code asOfDue}'s when given (else the due now). */
+    static void settle(String by, Claim claim, boolean judged, PersonRepository people, RateRepository rates,
+            PeriodRepository periods, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
+            Supplier<String> asOfDue) throws ClaimStatusException, PeriodClosedException {
         if (!Permissions.allows(claim.getSheetId(), by, Permissions.SETTLE, roles, settings)) {
             throw new ClaimStatusException("Your role may not settle a claim");
         }
@@ -56,7 +93,7 @@ public class SettleClaim {
         ClaimStatus settled = ClaimStatus.OPEN.moveTo(ClaimStatus.SETTLED);
         if (judged) requireFourEyes(by, claim);
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
-        String due = dueOf(claim, person, rates, settings, sheets);
+        String due = asOfDue != null ? asOfDue.get() : dueOf(claim, person, rates, settings, sheets);
         if (judged) requireProof(claim, person, due, settings);
         if (due != null && Role.CLERK.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
             BigDecimal limit = settings.clerkLimit(claim.getSheetId(),

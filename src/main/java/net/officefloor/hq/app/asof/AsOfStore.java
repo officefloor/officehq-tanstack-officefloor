@@ -179,6 +179,35 @@ public class AsOfStore {
         }
     }
 
+    /** Works something out from the sheet as of the date, as a request shown as of it would: on a thread of
+     *  its own, so it reads the view on connections of its own, outside the caller's transaction. */
+    public <T> T read(String sheetId, LocalDate asOf, java.util.function.Supplier<T> work) {
+        String schema = view(sheetId, asOf);
+        try {
+            java.util.concurrent.FutureTask<T> task = new java.util.concurrent.FutureTask<>(() -> {
+                AsOfView.enter(schema);
+                try {
+                    return work.get();
+                } finally {
+                    AsOfView.leave();
+                }
+            });
+            Thread thread = new Thread(task, "as-of-" + schema);
+            thread.start();
+            try {
+                return task.get();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted reading the sheet as of " + asOf, e);
+            } catch (java.util.concurrent.ExecutionException e) {
+                if (e.getCause() instanceof RuntimeException r) throw r;
+                throw new IllegalStateException("Could not read the sheet as of " + asOf, e.getCause());
+            }
+        } finally {
+            drop(schema);
+        }
+    }
+
     /** Drop a view's schema once its request is done. */
     public synchronized void drop(String schema) {
         try (Connection c = dataSource.getConnection(); Statement s = c.createStatement()) {

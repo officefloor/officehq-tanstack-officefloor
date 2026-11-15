@@ -127,9 +127,12 @@ export function unlockClaim(sheetId: string, by: string, id: number): Promise<Cl
  *  or when a rejection has no `reason`, or a void none from the sheet's void reasons while it has any. A steward's `resettle` freezes a SETTLED claim again at the
  *  figure it would have today as an open claim bound by no statement. `delete` makes a DRAFT DELETED (refused for
  *  any other status or one due by a day in a closed period); `restore` makes a DELETED claim a DRAFT again,
- *  refused on a later sheet's today than the one it was deleted on. */
-export function moveClaim(sheetId: string, by: string, id: number, action: ClaimAction, reason = ''): Promise<Claim> {
-  const extra = action === 'reject' || action === 'void' ? `&reason=${encodeURIComponent(reason)}` : '';
+ *  refused on a later sheet's today than the one it was deleted on. A `settle` with a date `on` (blank: the
+ *  sheet's today) freezes the due as it stood at the end of that day; refused for a date after the sheet's
+ *  today or a claim that did not exist then. */
+export function moveClaim(sheetId: string, by: string, id: number, action: ClaimAction, reason = '', on = ''): Promise<Claim> {
+  const extra = action === 'reject' || action === 'void' ? `&reason=${encodeURIComponent(reason)}`
+    : action === 'settle' && on !== '' ? `&on=${encodeURIComponent(on)}` : '';
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/${action}?by=${encodeURIComponent(by)}${extra}`, {});
 }
 

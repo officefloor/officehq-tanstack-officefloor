@@ -14,7 +14,9 @@ public class RecordClaimStatus {
                 + (ClaimStatus.SETTLED.name().equals(claim.getStatus()) ? due(claim) : "")
                 + (claim.isReversal() ? reversed(claim) : "")
                 + (ClaimStatus.VOID.name().equals(claim.getStatus()) && claim.getVoidReason() != null
-                        ? " reason=" + claim.getVoidReason() : ""));
+                        ? " reason=" + claim.getVoidReason() : "")
+                + (ClaimStatus.SETTLED.name().equals(claim.getStatus()) && claim.getSettledAsOf() != null
+                        ? " on=" + claim.getSettledAsOf() : ""));
     }
 
     /** A claim line: the event, the sheet, the user, then the claim's person, amount, date and number. */

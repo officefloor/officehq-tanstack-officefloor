@@ -86,6 +86,8 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
   const [reasons, setReasons] = useState<Record<number, string>>({});
   // The void reason chosen for each claim (blank: none), from the sheet's list.
   const [voidReasons, setVoidReasons] = useState<Record<number, string>>({});
+  // The date typed for each claim to settle it as of (blank: the sheet's today).
+  const [settleDates, setSettleDates] = useState<Record<number, string>>({});
   const voidReasonList = useQuery({ queryKey: voidReasonsKey(sheetId), queryFn: () => listVoidReasons(sheetId) });
 
   const save = useMutation({
@@ -132,9 +134,11 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
   // The claim whose last status change was refused; cleared by the next action on any claim here.
   const move = useMutation({
     mutationFn: (v: { id: number; action: ClaimAction }) =>
-      moveClaim(sheetId, user, v.id, v.action, (v.action === 'void' ? voidReasons[v.id] : reasons[v.id]) ?? ''),
+      moveClaim(sheetId, user, v.id, v.action, (v.action === 'void' ? voidReasons[v.id] : reasons[v.id]) ?? '',
+        settleDates[v.id] ?? ''),
     onSuccess: (_, v) => {
       if (v.action === 'reject') setReasons((r) => ({ ...r, [v.id]: '' }));
+      if (v.action === 'settle') setSettleDates((d) => ({ ...d, [v.id]: '' }));
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
   });
@@ -836,6 +840,11 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     {LABELS[a]}
                   </button>
                 ))}{' '}
+                <input type="date" data-testid="claim-settle-date" title="Settle as of" value={settleDates[c.id] ?? ''}
+                  onChange={(e) => {
+                    setSettleDates((d) => ({ ...d, [c.id]: e.target.value }));
+                    if (move.variables?.id === c.id) move.reset();
+                  }} />{' '}
                 <select data-testid="claim-void-reason" value={voidReasons[c.id] ?? ''}
                   onChange={(e) => {
                     setVoidReasons((r) => ({ ...r, [c.id]: e.target.value }));
@@ -922,6 +931,8 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     ? `A claim whose due is above the proof threshold needs a proof${requiredKinds.length > 0 ? ` of each kind (${requiredKinds.join(', ')})` : ''} first.`
                     : move.variables.action === 'open' && c.status === 'DRAFT' && needsNote(c)
                     ? 'A claim whose due is above the note threshold needs a note before it is opened.'
+                    : move.variables.action === 'settle' && (settleDates[c.id] ?? '') !== ''
+                    ? 'A claim can be settled only as of a date on or before the sheet\'s today, on which it already existed.'
                     : c.deferred && move.variables.action === 'settle'
                     ? `A deferred claim cannot be settled until ${c.deferredUntil}.`
                     : c.status === 'OPEN' && move.variables.action === 'settle'
