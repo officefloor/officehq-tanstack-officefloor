@@ -1,0 +1,89 @@
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index e218cbd67..6e9c0f2b9 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -14,9 +14,8 @@ export type ClaimAction = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'r
+ /** Whether a claim is open: OPEN, or PENDING a steward's approval. */
+ export const isOpen = (c: Pick<Claim, 'status'>) => c.status === 'OPEN' || c.status === 'PENDING';
+ 
+-/** Whether a statement's figure binds a claim now: it was bound to one and is not PENDING (a PENDING
+- *  claim shows and totals its live figure until it is rejected). */
+-export const isBound = (c: Claim) => c.stated && c.statedDue !== null && c.status !== 'PENDING';
++/** Whether a statement's figure binds a claim now: it was bound to one (a PENDING claim too). */
++export const isBound = (c: Claim) => c.stated && c.statedDue !== null;
+ 
+ /** A claim: its amount as two-decimal text, its date (yyyy-MM-dd), its note, its status and its
+  *  number on the sheet (given when opened: the sheet-wide 1, 2, ... or, under period numbering,
+diff --git a/src/main/frontend/features/rates/api.ts b/src/main/frontend/features/rates/api.ts
+index 3da79a0d4..53849846d 100644
+--- a/src/main/frontend/features/rates/api.ts
++++ b/src/main/frontend/features/rates/api.ts
+@@ -134,12 +134,12 @@ export function lateCharge(c: Claim, figure: string, late: Late): bigint {
+ export type GradeOn = (date: string) => string;
+ 
+ /** A claim's due: the one fixed when it was settled (its late charge then frozen in), else its
+- *  figure — the one bound by its person's last statement (not while PENDING; n/a when it bound none), else live at the rate in force on the
++ *  figure — the one bound by its person's last statement (n/a when it bound none), else live at the rate in force on the
+  *  claim's date of the grade in force then (`gradeOn`) — with its late charge on the sheet's today on top, and
+  *  at least the `floor` in force on its date, applied last (a correction, a negative amount, has no floor). */
+ export function claimDue(c: Claim, rates: Rate[] | undefined, gradeOn: GradeOn, floor: DatedOn, late: Late): string | null {
+   if (c.settledDue !== null) return c.settledDue;
+-  const figure = c.stated && c.status !== 'PENDING' ? c.statedDue : dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date, c.id), roundsHalfUp(c, late));
++  const figure = c.stated ? c.statedDue : dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date, c.id), roundsHalfUp(c, late));
+   if (figure === null) return null;
+   const due = hundredths(figure) + lateCharge(c, figure, late);
+   const least = hundredths(floor(c.date));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
+index 3fcc0d926..f59f0cb5e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
+@@ -15,7 +15,7 @@ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** Approves a PENDING claim: it becomes SETTLED, its due fixed at the figure it shows at that moment
+- *  (its live figure, a statement does not bind a PENDING claim, with its late charge on the sheet's
++ *  (the figure a statement bound it to, else its live figure, with its late charge on the sheet's
+  *  today). Refused unless the user is a steward, and for the user who opened it or last edited it, and for one
+  *  with no proofs whose due is above the proof threshold in force on its date. */
+ public class ApproveClaim {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 3d693cd55..f93064a6a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -205,18 +205,17 @@ public class Claim {
+         return ClaimStatus.isOpen(status) || ClaimStatus.SETTLED.name().equals(status);
+     }
+ 
+-    /** Whether a statement's figure binds it now: it was bound to one and is not PENDING (a PENDING
+-     *  claim keeps its binding, but shows and totals its live figure until it is rejected). */
++    /** Whether a statement's figure binds it now: it was bound to one (a PENDING claim too). */
+     @JsonIgnore
+     public boolean isBound() {
+-        return stated && statedDue != null && !ClaimStatus.PENDING.name().equals(status);
++        return stated && statedDue != null;
+     }
+ 
+-    /** The due it shows: the one fixed when settled, else the one bound by a statement (not while
+-     *  PENDING), else {@code live} (the amount at the rate in force on its date; null: none). */
++    /** The due it shows: the one fixed when settled, else the one bound by a statement, else
++     *  {@code live} (the amount at the rate in force on its date; null: none). */
+     public String due(String live) {
+         if (settledDue != null) return settledDue;
+-        return stated && !ClaimStatus.PENDING.name().equals(status) ? statedDue : live;
++        return stated ? statedDue : live;
+     }
+ 
+     /** The audit suffix: {@code " number=<n>"} for a claim that has a number. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RejectClaim.java b/src/main/java/net/officefloor/hq/app/claim/RejectClaim.java
+index a5f1f8d05..82a7baddd 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RejectClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RejectClaim.java
+@@ -7,7 +7,7 @@ import net.officefloor.hq.app.setting.RoleRepository;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** Rejects a PENDING claim with a reason: it goes back to OPEN, bound again by its person's last
++/** Rejects a PENDING claim with a reason: it goes back to OPEN, still bound by its person's last
+  *  statement when that statement bound it. Refused unless the user is a steward, and without a reason. */
+ public class RejectClaim {
+     public void move(@RequestParam(name = "by", required = false) String by,
