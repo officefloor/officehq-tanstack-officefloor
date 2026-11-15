@@ -7,6 +7,7 @@ import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/
 import { useNoteThreshold, useProofThreshold, type DatedOn } from '../settings/api';
 import { claimFromTemplate, listTemplates, templatesKey } from '../templates/api';
 import { addClaim, addClaimLine, addProof, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
+import { Fig } from '../session/Fig';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
 
@@ -560,13 +561,13 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                   onChange={(e) => onSelect(c.id, e.target.checked)} />
               </td>
               <td data-testid="claim-number">{c.number ?? ''}</td>
-              <td data-testid="claim-amount">{Number(c.amount).toFixed(2)}</td>
+              <td data-testid="claim-amount"><Fig>{Number(c.amount).toFixed(2)}</Fig></td>
               <td data-testid="claim-date">{c.date}</td>
               <td data-testid="claim-note">{c.note}</td>
               <td data-testid="claim-corrects">{c.corrects ?? ''}</td>
               <td data-testid="claim-ref">{c.ref ?? ''}</td>
               <td data-testid="claim-tags">{showTags(c.tags)}</td>
-              <td data-testid="claim-due">{showDue(claimDue(c, rates, gradeOn, floor, charges))}</td>
+              <td data-testid="claim-due"><Fig>{showDue(claimDue(c, rates, gradeOn, floor, charges))}</Fig></td>
               <td>
                 Due by <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
                 overdue <span data-testid="claim-overdue">{isOverdue(c, today, charges.lateFrom(c)) ? 'yes' : 'no'}</span>

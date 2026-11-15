@@ -4,6 +4,7 @@ import { gradeOn, listPeople, peopleKey } from '../people/api';
 import { useCap, useFloor, useLate } from '../settings/api';
 import { liveKey, useSheetToday } from '../sheet/api';
 import { claimDue, listRates, personDue, rateByGrade, ratesKey, splitDues, sumDues, trimmedSum } from './api';
+import { Fig } from '../session/Fig';
 
 /** The sheet's due-total: everyone's due-total added up, skipping those shown n/a, less the single
  *  highest and lowest when three or more have one (`current`: as it is now, even while shown as of a date). */
@@ -42,9 +43,9 @@ export function DueTotal({ sheetId, user }: { sheetId: string; user: string }) {
   const split = useSplitTotals(sheetId, user);
   return (
     <p>
-      Due total <span data-testid="rollup-due-total">{useDueTotal(sheetId, user)}</span>{' '}
-      settled <span data-testid="rollup-settled-total">{split.settled}</span>{' '}
-      open <span data-testid="rollup-open-total">{split.open}</span>
+      Due total <span data-testid="rollup-due-total"><Fig>{useDueTotal(sheetId, user)}</Fig></span>{' '}
+      settled <span data-testid="rollup-settled-total"><Fig>{split.settled}</Fig></span>{' '}
+      open <span data-testid="rollup-open-total"><Fig>{split.open}</Fig></span>
     </p>
   );
 }

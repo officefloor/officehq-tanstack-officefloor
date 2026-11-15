@@ -23,6 +23,7 @@ import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { SortBy, sortPeople, useSortBy } from './SortBy';
 import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, takeStatement, transferPerson, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+import { Fig } from '../session/Fig';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '', tags: '' };
 
@@ -528,33 +529,33 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   From <span data-testid="person-origin">{p.origin ?? ''}</span>
                 </td>
                 <td>
-                  Claimed <span data-testid="person-claimed">{claimed}</span>
+                  Claimed <span data-testid="person-claimed"><Fig>{claimed}</Fig></span>
                 </td>
                 <td>
-                  Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap))}</span>{' '}
-                  excess <span data-testid="person-excess">{excessOf(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap)}</span>
+                  Due <span data-testid="person-due-total"><Fig>{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap))}</Fig></span>{' '}
+                  excess <span data-testid="person-excess"><Fig>{excessOf(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap)}</Fig></span>
                 </td>
                 <td>
-                  Cut <span data-testid="person-cut-total">{personCutTotal(pools.data ?? [], p.id)}</span>
+                  Cut <span data-testid="person-cut-total"><Fig>{personCutTotal(pools.data ?? [], p.id)}</Fig></span>
                 </td>
                 <td>
-                  Settled <span data-testid="person-settled-total">{split.settled}</span>{' '}
-                  open <span data-testid="person-open-total">{split.open}</span>
+                  Settled <span data-testid="person-settled-total"><Fig>{split.settled}</Fig></span>{' '}
+                  open <span data-testid="person-open-total"><Fig>{split.open}</Fig></span>
                 </td>
                 {(periods.data ?? []).map((q) => (
                   <td key={q.name}>
                     {q.name} <span data-testid={`person-period-${q.name}-due-total`}>
-                      {personPeriodDue(q, p, claims.data ?? [], people.data, rates.data, floor, charges)}</span>
+                      <Fig>{personPeriodDue(q, p, claims.data ?? [], people.data, rates.data, floor, charges)}</Fig></span>
                   </td>
                 ))}
                 <td>
-                  Aged 0-30 <span data-testid="person-aged-0-30">{aged.upTo30}</span>{' '}
-                  31-60 <span data-testid="person-aged-31-60">{aged.upTo60}</span>{' '}
-                  61+ <span data-testid="person-aged-61">{aged.over60}</span>
+                  Aged 0-30 <span data-testid="person-aged-0-30"><Fig>{aged.upTo30}</Fig></span>{' '}
+                  31-60 <span data-testid="person-aged-31-60"><Fig>{aged.upTo60}</Fig></span>{' '}
+                  61+ <span data-testid="person-aged-61"><Fig>{aged.over60}</Fig></span>
                 </td>
                 <td>
                   Overdue <span data-testid="person-overdue-count">{late.count}</span>{' '}
-                  totalling <span data-testid="person-overdue-total">{late.total}</span>
+                  totalling <span data-testid="person-overdue-total"><Fig>{late.total}</Fig></span>
                 </td>
                 <td>
                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
@@ -576,7 +577,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                     Cancel statement
                   </button>{' '}
                   Statements <span data-testid="person-statement-count">{p.statementCount}</span>{' '}
-                  last <span data-testid="person-stated-total">{p.statedTotal ?? ''}</span>{' '}
+                  last <span data-testid="person-stated-total"><Fig>{p.statedTotal ?? ''}</Fig></span>{' '}
                   on <span data-testid="person-statement-date">{p.statementDate ?? ''}</span>
                   {statement.isError && statement.variables?.id === p.id && (
                     <span data-testid="person-error">The statement could not be taken.</span>
@@ -676,7 +677,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   Patrons <span data-testid="person-patrons">
                     {patronShares(p.patronIds).map((s) => ({ name: nameOf.get(s.id) ?? '', share: s.share })).sort((x, y) => x.name.localeCompare(y.name)).map((s) => `${s.name} ${(s.share / 100).toFixed(2)}`).join(', ')}
                   </span>{' '}
-                  backing <span data-testid="person-backing">{backing(claims.data ?? [], p.patronIds, today)}</span>{' '}
+                  backing <span data-testid="person-backing"><Fig>{backing(claims.data ?? [], p.patronIds, today)}</Fig></span>{' '}
                   <select data-testid="person-patron-select" value={patronPicks[p.id] ?? ''}
                     onChange={(e) => {
                       setPatronPicks((d) => ({ ...d, [p.id]: e.target.value }));

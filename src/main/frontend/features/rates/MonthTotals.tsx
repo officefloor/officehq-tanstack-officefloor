@@ -4,6 +4,7 @@ import { gradeOn, listPeople, peopleKey } from '../people/api';
 import { useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { claimDue, listRates, ratesKey, sumDues } from './api';
+import { Fig } from '../session/Fig';
 
 /** Per calendar month (yyyy-mm) any claim on the sheet is dated in, the due of the claims dated in it
  *  that count (live ones only, see `liveClaims`), n/a ones skipped; earliest month first. */
@@ -27,7 +28,7 @@ export function MonthTotals({ sheetId, user }: { sheetId: string; user: string }
       <h3>Monthly due</h3>
       <ul>
         {months.map((m) => (
-          <li key={m}>{m} <span data-testid={`month-${m}-due-total`}>{dueIn(m)}</span></li>
+          <li key={m}>{m} <span data-testid={`month-${m}-due-total`}><Fig>{dueIn(m)}</Fig></span></li>
         ))}
       </ul>
     </section>

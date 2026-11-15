@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { addPlan, listPlans, plansKey, type PlanInput } from './api';
+import { Fig } from '../session/Fig';
 
 const EMPTY: PlanInput = { amount: '', start: '', every: '', day: '', end: '' };
 
@@ -33,7 +34,7 @@ export function PersonPlans({ sheetId, user, personId }: { sheetId: string; user
         <tbody>
           {(plans.data ?? []).filter((pl) => pl.personId === personId).map((pl) => (
             <tr key={pl.id} data-testid={`plan-row-${pl.id}`}>
-              <td data-testid="plan-amount-shown">{Number(pl.amount).toFixed(2)}</td>
+              <td data-testid="plan-amount-shown"><Fig>{Number(pl.amount).toFixed(2)}</Fig></td>
               <td data-testid="plan-start">{pl.start}</td>
               {pl.day != null
                 ? <td>monthly on day <span data-testid="plan-day">{pl.day}</span></td>

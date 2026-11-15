@@ -5,6 +5,7 @@ import { listPeriods, periodDueTotal, periodsKey } from '../periods/api';
 import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
 import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
+import { Fig } from '../session/Fig';
 
 /** Every status a claim's count is shown for. */
 export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'] as const;
@@ -53,7 +54,7 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
               <tr key={g}>
                 <td>Grade {g}</td>
                 <td>People <span data-testid={`summary-grade-${g}-count`}>{on.length}</span></td>
-                <td>Due <span data-testid={`summary-grade-${g}-due-total`}>{sumDues(on.map(dueOf))}</span></td>
+                <td>Due <span data-testid={`summary-grade-${g}-due-total`}><Fig>{sumDues(on.map(dueOf))}</Fig></span></td>
                 <td>Active <span data-testid={`summary-grade-${g}-active`}>{on.filter((p) => isActive(liveOf(p), today)).length}</span></td>
               </tr>
             );
@@ -62,9 +63,9 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
             <tr key={p.name}>
               <td>Period {p.name}</td>
               <td />
-              <td>Due <span data-testid={`summary-period-${p.name}-due-total`}>{periodDues[i]}</span></td>
+              <td>Due <span data-testid={`summary-period-${p.name}-due-total`}><Fig>{periodDues[i]}</Fig></span></td>
               <td>Change <span data-testid={`summary-period-${p.name}-change`}>
-                {i === 0 ? '' : dueChange(periodDues[i - 1], periodDues[i])}</span></td>
+                <Fig>{i === 0 ? '' : dueChange(periodDues[i - 1], periodDues[i])}</Fig></span></td>
             </tr>
           ))}
           {STATUSES.map((s) => (

@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useUser } from '../features/session/session';
 import { SignIn } from '../features/session/SignIn';
 import { CurrentUser } from '../features/session/CurrentUser';
+import { UserLocaleSelect } from '../features/session/UserLocaleSelect';
 import { SheetPicker } from '../features/sheet/SheetPicker';
 import { ActiveSheet } from '../features/sheet/ActiveSheet';
 
@@ -16,6 +17,7 @@ function Home() {
   return (
     <>
       <CurrentUser />
+      <UserLocaleSelect />
       <SheetPicker />
       <ActiveSheet />
     </>

@@ -5,6 +5,7 @@ import { useSheetToday } from '../sheet/api';
 import { poolsKey } from '../pools/api';
 import { ratesKey } from '../rates/api';
 import { changeSetting, listSettings, PERMISSION_STANDING, settingOn, settingsKey, SETTING_KEYS, UNDATED_KEYS } from './api';
+import { Fig } from '../session/Fig';
 
 /** The sheet's settings: each one's value in force on the sheet's today and a form that changes them.
  *  A field shows the value in force until it is edited; saving saves the fields entered (every field
@@ -89,7 +90,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
                 </label>{' '}
               </>
             )}
-            Now: <span data-testid={`setting-${key}-current`}>{current(key)}</span>
+            Now: <span data-testid={`setting-${key}-current`}><Fig>{current(key)}</Fig></span>
           </div>
         ))}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>

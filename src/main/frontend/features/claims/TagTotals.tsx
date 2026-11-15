@@ -4,6 +4,7 @@ import { claimDue, listRates, ratesKey, sumDues } from '../rates/api';
 import { useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { claimsKey, counts, listClaims, listTags, liveClaims, tagsKey, tagsOf, type Claim } from './api';
+import { Fig } from '../session/Fig';
 
 /** For every tag ever used on the sheet, its due-total: the due figures of the claims that count (the
  *  live ones, OPEN, PENDING or SETTLED) carrying it, added up (n/a ones skipped); a claim with two tags
@@ -31,7 +32,7 @@ export function TagTotals({ sheetId, user }: { sheetId: string; user: string }) 
       Due by tag{' '}
       {tags.map((t) => (
         <span key={t}>
-          {t} <span data-testid={`tag-${t}-due-total`}>{dueOf(t)}</span>{' '}
+          {t} <span data-testid={`tag-${t}-due-total`}><Fig>{dueOf(t)}</Fig></span>{' '}
         </span>
       ))}
     </p>

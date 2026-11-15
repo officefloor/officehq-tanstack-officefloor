@@ -6,6 +6,7 @@ import type { Person } from '../people/api';
 import { downloadCsv } from '../people/ExportPeople';
 import { addPool, addPoolMember, listPools, poolsKey } from './api';
 import type { MemberRef, Pool } from './api';
+import { Fig } from '../session/Fig';
 
 /** The sheet's pools and a form to add one (name trimmed; a blank or repeated one refused). Each pool
  *  lists its members with their shares, its total share (a retired member's counting as given) and
@@ -108,15 +109,15 @@ function PoolRow({ sheetId, user, pool, people, pools }: { sheetId: string; user
   return (
     <li data-testid={`pool-row-${pool.name}`}>
       <strong>{pool.name}</strong>{' '}
-      total <span data-testid="pool-total-share">{pool.totalShare}</span>{' '}
+      total <span data-testid="pool-total-share"><Fig>{pool.totalShare}</Fig></span>{' '}
       balanced <span data-testid="pool-balanced">{pool.balanced ? 'yes' : 'no'}</span>
       <ul>
         {pool.members.map((m) => (
           <li key={m.poolId !== null ? `pool-${m.poolId}` : m.personId}
             data-testid={`pool-member-${pool.name}-${m.poolId !== null ? `pool-${m.name}` : m.personId}`}>
-            {m.poolId !== null ? `pool:${m.name}` : m.name}{m.retired ? ' (retired)' : ''} share <span data-testid="pool-share">{m.share}</span>{' '}
+            {m.poolId !== null ? `pool:${m.name}` : m.name}{m.retired ? ' (retired)' : ''} share <span data-testid="pool-share"><Fig>{m.share}</Fig></span>{' '}
             {m.from || m.to ? `${m.from ?? '…'} to ${m.to ?? '…'}${m.current ? '' : ' (not current)'} ` : ''}
-            cut <span data-testid="pool-cut">{m.cut}</span>
+            cut <span data-testid="pool-cut"><Fig>{m.cut}</Fig></span>
           </li>
         ))}
       </ul>

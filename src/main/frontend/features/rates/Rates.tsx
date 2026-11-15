@@ -5,6 +5,7 @@ import { GRADES } from '../people/api';
 import { useSheetToday } from '../sheet/api';
 import { ImportRates } from './ImportRates';
 import { listRates, previewRate, rateByGrade, ratesKey, setRate, type RateInput } from './api';
+import { Fig } from '../session/Fig';
 
 const EMPTY: RateInput = { grade: 'A', pct: '', from: '', to: '' };
 
@@ -111,7 +112,7 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
         {preview.data && (
           <span>
             {' '}<span data-testid="rate-preview-count">{preview.data.count}</span> claims would change by{' '}
-            <span data-testid="rate-preview-diff">{preview.data.diff}</span>
+            <span data-testid="rate-preview-diff"><Fig>{preview.data.diff}</Fig></span>
           </span>
         )}
         {preview.isError && (
@@ -125,7 +126,7 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
             <tr key={g}>
               <td>{g}</td>
               <td data-testid={`rate-current-${g}`}>
-                {byGrade.has(g) ? <span data-testid="rate-pct">{byGrade.get(g)}</span> : 'n/a'}
+                {byGrade.has(g) ? <span data-testid="rate-pct"><Fig>{byGrade.get(g)}</Fig></span> : 'n/a'}
               </td>
             </tr>
           ))}
@@ -141,7 +142,7 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
                 {r.to !== null && 'to '}<span data-testid="rate-to">{r.to ?? ''}</span>
               </td>
               <td>
-                <span data-testid="rate-pct">{r.pct}</span>
+                <span data-testid="rate-pct"><Fig>{r.pct}</Fig></span>
               </td>
               <td>
                 v<span data-testid="rate-version">{r.version}</span>

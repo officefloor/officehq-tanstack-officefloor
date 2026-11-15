@@ -6,6 +6,7 @@ import { useOverdue } from '../rates/Overdue';
 import { formatCents, hundredths } from '../rates/api';
 import { useAsOf } from '../sheet/AsOf';
 import { descendantsKey, listDescendants, liveKey } from '../sheet/api';
+import { Fig } from '../session/Fig';
 
 /** A sheet's own figures, as that sheet shows them in its header. */
 type Figures = { people: number; due: string; overdue: string };
@@ -43,8 +44,8 @@ export function Consolidated({ sheetId, user }: { sheetId: string; user: string 
     <p>
       {ids.map((id) => <Descendant key={id} sheetId={id} user={user} live={live} report={report} />)}
       Consolidated: people <span data-testid="consolidated-people-count">{ready ? all.reduce((t, f) => t + f.people, 0) : ''}</span>
-      {' · '}due <span data-testid="consolidated-due-total">{ready ? sum((f) => f.due) : ''}</span>
-      {' · '}overdue <span data-testid="consolidated-overdue-total">{ready ? sum((f) => f.overdue) : ''}</span>
+      {' · '}due <span data-testid="consolidated-due-total"><Fig>{ready ? sum((f) => f.due) : ''}</Fig></span>
+      {' · '}overdue <span data-testid="consolidated-overdue-total"><Fig>{ready ? sum((f) => f.overdue) : ''}</Fig></span>
     </p>
   );
 }

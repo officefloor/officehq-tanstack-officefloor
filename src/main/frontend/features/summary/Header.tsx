@@ -7,6 +7,7 @@ import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { useOverdue } from '../rates/Overdue';
 import { STATUSES, statusCount } from './Summary';
+import { Fig } from '../session/Fig';
 
 /** Names as they are compared: trimmed and lower-cased. */
 const nameKey = (name: string) => name.trim().toLowerCase();
@@ -48,10 +49,10 @@ export function Header({ sheetId, user }: { sheetId: string; user: string }) {
           {' · '}{s} <span data-testid={`header-claims-${s}-count`}>{statusCount(claims.data, s)}</span>
         </span>
       ))}
-      {' · '}Due <span data-testid="header-due-total">{dueTotal}</span>
-      {' · '}Overdue <span data-testid="header-overdue-total">{late.total}</span>
-      {' · '}My due <span data-testid="my-due-total">{mine?.due ?? ''}</span>
-      {' · '}My overdue <span data-testid="my-overdue-total">{mine?.overdue ?? ''}</span>
+      {' · '}Due <span data-testid="header-due-total"><Fig>{dueTotal}</Fig></span>
+      {' · '}Overdue <span data-testid="header-overdue-total"><Fig>{late.total}</Fig></span>
+      {' · '}My due <span data-testid="my-due-total"><Fig>{mine?.due ?? ''}</Fig></span>
+      {' · '}My overdue <span data-testid="my-overdue-total"><Fig>{mine?.overdue ?? ''}</Fig></span>
     </header>
   );
 }

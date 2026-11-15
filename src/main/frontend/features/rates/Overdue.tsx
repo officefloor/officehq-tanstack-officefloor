@@ -4,6 +4,7 @@ import { gradeOn, listPeople, peopleKey, type Person } from '../people/api';
 import { useFloor, useLate } from '../settings/api';
 import { liveKey, useSheetToday } from '../sheet/api';
 import { claimDue, listRates, overdue, ratesKey, trimmedSum } from './api';
+import { Fig } from '../session/Fig';
 
 /** The sheet's overdue claims: how many of the claims that count are OPEN past their due-by, and
  *  their due (with its late charge) added up per person, the sheet's total leaving out the single
@@ -28,7 +29,7 @@ export function Overdue({ sheetId, user }: { sheetId: string; user: string }) {
   return (
     <p>
       Overdue <span data-testid="rollup-overdue-count">{late.count}</span>{' '}
-      totalling <span data-testid="rollup-overdue-total">{late.total}</span>
+      totalling <span data-testid="rollup-overdue-total"><Fig>{late.total}</Fig></span>
     </p>
   );
 }

@@ -5,6 +5,7 @@ import { classicPeriodDueTotal, listPeriods, periodsKey } from '../periods/api';
 import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
 import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
+import { Fig } from '../session/Fig';
 
 /** The classic summary, shown beside the summary: per period by from-date, its due-total counting each claim by
  *  its status now (see `classicPeriodDueTotal`); and the sheet's due-total, everyone's due-total added up with
@@ -34,12 +35,12 @@ export function Classic({ sheetId, user }: { sheetId: string; user: string }) {
             <tr key={p.name}>
               <td>Period {p.name}</td>
               <td>Due <span data-testid={`classic-period-${p.name}-due-total`}>
-                {classicPeriodDueTotal(p, all, people.data, rates.data, floor, charges)}</span></td>
+                <Fig>{classicPeriodDueTotal(p, all, people.data, rates.data, floor, charges)}</Fig></span></td>
             </tr>
           ))}
           <tr>
             <td>Sheet</td>
-            <td>Due <span data-testid="classic-due-total">{dueTotal}</span></td>
+            <td>Due <span data-testid="classic-due-total"><Fig>{dueTotal}</Fig></span></td>
           </tr>
         </tbody>
       </table>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listTemplates, saveTemplate, templatesKey, type TemplateInput } from './api';
+import { Fig } from '../session/Fig';
 
 const EMPTY: TemplateInput = { name: '', amount: '', note: '' };
 
@@ -59,7 +60,7 @@ export function Templates({ sheetId, user }: { sheetId: string; user: string }) 
           {(templates.data ?? []).map((t) => (
             <tr key={t.name} data-testid={`template-row-${t.name}`}>
               <td data-testid="template-name">{t.name}</td>
-              <td data-testid="template-amount">{Number(t.amount).toFixed(2)}</td>
+              <td data-testid="template-amount"><Fig>{Number(t.amount).toFixed(2)}</Fig></td>
               <td data-testid="template-note">{t.note}</td>
             </tr>
           ))}

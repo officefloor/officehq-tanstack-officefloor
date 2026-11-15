@@ -7,6 +7,7 @@ import { listRates, ratesKey } from '../rates/api';
 import { fiscalYearOf, useFiscalStartMonth, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { addPeriod, closePeriod, generateFiscalYear, generatePeriods, listPeriods, periodDueTotal, periodsKey, reopenPeriod, softClosePeriod, type PeriodInput } from './api';
+import { Fig } from '../session/Fig';
 
 type PeriodAction = 'close' | 'soft-close' | 'reopen';
 
@@ -163,13 +164,13 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
               <td>
-                Due <span data-testid="period-due-total">{periodDueTotal(p, claims.data ?? [], people.data, rates.data, floor, charges)}</span>
+                Due <span data-testid="period-due-total"><Fig>{periodDueTotal(p, claims.data ?? [], people.data, rates.data, floor, charges)}</Fig></span>
               </td>
               <td>
                 <span data-testid="period-fy">{fiscalYearOf(p.from, fiscalStart)}</span>
               </td>
               <td>
-                Cap <span data-testid="period-cap">{p.cap ?? ''}</span>
+                Cap <span data-testid="period-cap"><Fig>{p.cap ?? ''}</Fig></span>
               </td>
               <td>
                 Closed <span data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</span>
