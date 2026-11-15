@@ -1,0 +1,708 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index 589e24288..fa667ef12 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -20,30 +20,31 @@ function asOf(): string {
+ 
+ /** While the screen shows the sheet as of a date, every request about it says so: the server answers
+  *  a read as the sheet stood then and refuses every change. */
+-function withAsOf(path: string): string {
+-  const date = asOf();
++function withAsOf(path: string, live: boolean): string {
++  const date = live ? '' : asOf();
+   if (date === '' || !path.startsWith('/api/sheets/')) return path;
+   return `${path}${path.includes('?') ? '&' : '?'}shown-asof=${encodeURIComponent(date)}`;
+ }
+ 
+-async function send<T>(path: string, init?: RequestInit): Promise<T> {
+-  const res = await fetch(withAsOf(path), init);
++async function send<T>(path: string, init?: RequestInit, live = false): Promise<T> {
++  const res = await fetch(withAsOf(path, live), init);
+   if (!res.ok) {
+     throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);
+   }
+   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+ }
+ 
+-export function getJson<T>(path: string): Promise<T> {
+-  return send<T>(path);
++/** `live`: read the sheet as it is now, even while the screen shows it as of a date. */
++export function getJson<T>(path: string, live = false): Promise<T> {
++  return send<T>(path, undefined, live);
+ }
+ 
+-export function postJson<T>(path: string, body: unknown): Promise<T> {
++export function postJson<T>(path: string, body: unknown, live = false): Promise<T> {
+   return send<T>(path, {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify(body),
+-  });
++  }, live);
+ }
+ 
+ export function putJson<T>(path: string, body: unknown): Promise<T> {
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index 12ffb22de..5a5fad3de 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -82,8 +82,8 @@ export function listTags(sheetId: string): Promise<string[]> {
+ }
+ 
+ /** Every claim on the sheet, newest first. */
+-export function listClaims(sheetId: string): Promise<Claim[]> {
+-  return getJson<Claim[]>(`${sheetBase(sheetId)}/claims`);
++export function listClaims(sheetId: string, live = false): Promise<Claim[]> {
++  return getJson<Claim[]>(`${sheetBase(sheetId)}/claims`, live);
+ }
+ 
+ /** Add a claim to a person; refused (rejects) when the amount is missing or has more than two
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 7afffa432..1204ac7be 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -17,7 +17,7 @@ import { BulkGrade } from './BulkGrade';
+ import { ExportPeople } from './ExportPeople';
+ import { QuickAdd } from './QuickAdd';
+ import { ShowRetired, useShowRetired } from './ShowRetired';
+-import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, peopleKey, retirePerson, takeStatement, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
++import { GRADES, addAlias, addPatron, addPerson, cancelStatement, gradeOn, holdPerson, listPeople, listWatches, mergePerson, peopleKey, retirePerson, takeStatement, transferPerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+ 
+ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '' };
+ 
+@@ -35,7 +35,8 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
+  *  Each person has a checkbox that selects them for a grade given to the selected people together.
+  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
+  *  Whether each person is active (see `isActive`).
+- *  A picker and a button merge the person into another (see `mergePerson`).
++ *  A picker and a button merge the person into another (see `mergePerson`), and an entry and a
++ *  button transfer them to another sheet by id (see `transferPerson`).
+  *  Whether the signed-in user watches each person, with a button that starts or stops it.
+  *  A button exports everyone, retired people included, as a CSV file. */
+ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+@@ -65,6 +66,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const [patronPicks, setPatronPicks] = useState<Record<number, string>>({});
+   // The person picked on each person's row to merge them into (blank: none picked).
+   const [mergePicks, setMergePicks] = useState<Record<number, string>>({});
++  // The sheet id typed on each person's row to transfer them to.
++  const [transferTos, setTransferTos] = useState<Record<number, string>>({});
+   // The alias typed on each person's row.
+   const [aliasInputs, setAliasInputs] = useState<Record<number, string>>({});
+   // The people selected for a bulk grade.
+@@ -184,6 +187,19 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+     ]),
+   });
+ 
++  // The person whose last transfer was refused; cleared by the next action on the row. A transfer
++  // drops the person's claims, pool memberships, period totals and watches, so these are read again.
++  const transferring = useMutation({
++    mutationFn: (v: { id: number; to: string }) => transferPerson(sheetId, user, v.id, v.to),
++    onSuccess: () => Promise.all([
++      queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
++      queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++      queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
++      queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
++      queryClient.invalidateQueries({ queryKey: watchesKey(sheetId, user) }),
++    ]),
++  });
++
+   // The person whose last watch was refused; cleared by the next action on the row.
+   const watching = useMutation({
+     mutationFn: (v: { id: number; on: boolean }) => watchPerson(sheetId, user, v.id, v.on),
+@@ -199,6 +215,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+     patronage.reset();
+     aliasing.reset();
+     merging.reset();
++    transferring.reset();
+   };
+ 
+   const state = (id: number) => {
+@@ -267,6 +284,14 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+     });
+   };
+ 
++  const transfer = (id: number) => {
++    const to = transferTos[id] ?? '';
++    stateOnce(() => {
++      resetRowActions();
++      return transferring.mutateAsync({ id, to });
++    });
++  };
++
+   const change = (patch: Partial<PersonInput>) => {
+     setForm((f) => ({ ...f, ...patch }));
+     save.reset();
+@@ -455,6 +480,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   {merging.isError && merging.variables?.id === p.id && (
+                     <span data-testid="person-error">The person could not be merged: only a steward can, into someone else, neither of them retired.</span>
+                   )}
++                  {transferring.isError && transferring.variables?.id === p.id && (
++                    <span data-testid="person-error">The person could not be transferred: only a steward can, not a retired person, to another sheet with no one of the same name, alias or contact.</span>
++                  )}
+                 </td>
+                 <td>
+                   Watched <span data-testid="person-watched">{watched.has(p.id) ? 'yes' : 'no'}</span>{' '}
+@@ -543,6 +571,15 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   <button type="button" data-testid="person-merge" disabled={merging.isPending}
+                     onClick={() => merge(p.id)}>
+                     Merge
++                  </button>{' '}
++                  <input data-testid="person-transfer-to" placeholder="Sheet id" value={transferTos[p.id] ?? ''}
++                    onChange={(e) => {
++                      setTransferTos((d) => ({ ...d, [p.id]: e.target.value }));
++                      transferring.reset();
++                    }} />{' '}
++                  <button type="button" data-testid="person-transfer" disabled={transferring.isPending}
++                    onClick={() => transfer(p.id)}>
++                    Transfer
+                   </button>
+                 </td>
+                 <td>
+diff --git a/src/main/frontend/features/people/api.ts b/src/main/frontend/features/people/api.ts
+index fd1bf9464..2fea3100b 100644
+--- a/src/main/frontend/features/people/api.ts
++++ b/src/main/frontend/features/people/api.ts
+@@ -50,8 +50,8 @@ const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/pe
+ export const peopleKey = (sheetId: string) => [...sheetKey(sheetId), 'people'] as const;
+ 
+ /** The sheet's people, in the order they were added. */
+-export function listPeople(sheetId: string): Promise<Person[]> {
+-  return getJson<Person[]>(base(sheetId));
++export function listPeople(sheetId: string, live = false): Promise<Person[]> {
++  return getJson<Person[]>(base(sheetId), live);
+ }
+ 
+ /** Add a person; refused (rejects) when the name is empty or already in use on the sheet. */
+@@ -111,6 +111,13 @@ export function mergePerson(sheetId: string, by: string, id: number, intoId: num
+   return postJson<Person>(`${base(sheetId)}/${id}/merge?by=${encodeURIComponent(by)}`, { intoId });
+ }
+ 
++/** A steward transfers the person to another sheet by id (`to`): they arrive there with their grades,
++ *  terms, contact, aliases and claims, and leave this sheet entirely; refused (rejects) for anyone else,
++ *  a retired person, this sheet's own id, and a name, alias or contact already on the other sheet. */
++export function transferPerson(sheetId: string, by: string, id: number, to: string): Promise<Person> {
++  return postJson<Person>(`${base(sheetId)}/${id}/transfer?by=${encodeURIComponent(by)}`, { to });
++}
++
+ export type QuickAddInput = { name: string; amount: string };
+ 
+ /** Add a DRAFT claim of `amount` (the sheet's today, empty note) to the named person, adding them
+diff --git a/src/main/frontend/features/rates/DueTotal.tsx b/src/main/frontend/features/rates/DueTotal.tsx
+index dc996d372..970a3684a 100644
+--- a/src/main/frontend/features/rates/DueTotal.tsx
++++ b/src/main/frontend/features/rates/DueTotal.tsx
+@@ -2,19 +2,19 @@ import { useQuery } from '@tanstack/react-query';
+ import { claimsKey, listClaims, liveClaims } from '../claims/api';
+ import { gradeOn, listPeople, peopleKey } from '../people/api';
+ import { useCap, useFloor, useLate } from '../settings/api';
+-import { useSheetToday } from '../sheet/api';
++import { liveKey, useSheetToday } from '../sheet/api';
+ import { claimDue, listRates, personDue, rateByGrade, ratesKey, splitDues, sumDues, trimmedSum } from './api';
+ 
+ /** The sheet's due-total: everyone's due-total added up, skipping those shown n/a, less the single
+- *  highest and lowest when three or more have one. */
+-export function useDueTotal(sheetId: string, user: string): string {
+-  const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
+-  const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
+-  const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
+-  const floor = useFloor(sheetId);
+-  const today = useSheetToday(sheetId, user);
+-  const cap = useCap(sheetId, today);
+-  const charges = useLate(sheetId, today);
++ *  highest and lowest when three or more have one (`current`: as it is now, even while shown as of a date). */
++export function useDueTotal(sheetId: string, user: string, current = false): string {
++  const people = useQuery({ queryKey: liveKey(peopleKey(sheetId), current), queryFn: () => listPeople(sheetId, current) });
++  const claims = useQuery({ queryKey: liveKey(claimsKey(sheetId), current), queryFn: () => listClaims(sheetId, current) });
++  const rates = useQuery({ queryKey: liveKey(ratesKey(sheetId), current), queryFn: () => listRates(sheetId, current) });
++  const floor = useFloor(sheetId, current);
++  const today = useSheetToday(sheetId, user, current);
++  const cap = useCap(sheetId, today, current);
++  const charges = useLate(sheetId, today, current);
+   const byGrade = rateByGrade(rates.data, today);
+   const live = liveClaims(claims.data ?? [], people.data);
+   const dues = (people.data ?? []).map((p) =>
+diff --git a/src/main/frontend/features/rates/Overdue.tsx b/src/main/frontend/features/rates/Overdue.tsx
+index 8cdbc12ae..f0635e8c9 100644
+--- a/src/main/frontend/features/rates/Overdue.tsx
++++ b/src/main/frontend/features/rates/Overdue.tsx
+@@ -2,19 +2,20 @@ import { useQuery } from '@tanstack/react-query';
+ import { claimsKey, listClaims, liveClaims } from '../claims/api';
+ import { gradeOn, listPeople, peopleKey, type Person } from '../people/api';
+ import { useFloor, useLate } from '../settings/api';
+-import { useSheetToday } from '../sheet/api';
++import { liveKey, useSheetToday } from '../sheet/api';
+ import { claimDue, listRates, overdue, ratesKey, trimmedSum } from './api';
+ 
+ /** The sheet's overdue claims: how many of the claims that count are OPEN past their due-by, and
+  *  their due (with its late charge) added up per person, the sheet's total leaving out the single
+- *  highest and lowest person's when there are three or more people. */
+-export function useOverdue(sheetId: string, user: string): ReturnType<typeof overdue> {
+-  const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
+-  const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
+-  const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
+-  const floor = useFloor(sheetId);
+-  const today = useSheetToday(sheetId, user);
+-  const charges = useLate(sheetId, today);
++ *  highest and lowest person's when there are three or more people (`current`: as it is now, even while
++ *  shown as of a date). */
++export function useOverdue(sheetId: string, user: string, current = false): ReturnType<typeof overdue> {
++  const people = useQuery({ queryKey: liveKey(peopleKey(sheetId), current), queryFn: () => listPeople(sheetId, current) });
++  const claims = useQuery({ queryKey: liveKey(claimsKey(sheetId), current), queryFn: () => listClaims(sheetId, current) });
++  const rates = useQuery({ queryKey: liveKey(ratesKey(sheetId), current), queryFn: () => listRates(sheetId, current) });
++  const floor = useFloor(sheetId, current);
++  const today = useSheetToday(sheetId, user, current);
++  const charges = useLate(sheetId, today, current);
+   const byId = new Map<number, Person>((people.data ?? []).map((p) => [p.id, p]));
+   const live = liveClaims(claims.data ?? [], people.data).filter((c) => byId.has(c.personId));
+   const dueOf = (c: Parameters<typeof claimDue>[0]) => claimDue(c, rates.data, (d) => gradeOn(byId.get(c.personId)!, d), floor, charges);
+diff --git a/src/main/frontend/features/rates/api.ts b/src/main/frontend/features/rates/api.ts
+index 2e5f621f6..5a9cf611e 100644
+--- a/src/main/frontend/features/rates/api.ts
++++ b/src/main/frontend/features/rates/api.ts
+@@ -17,8 +17,8 @@ export const ratesKey = (sheetId: string) => [...sheetKey(sheetId), 'rates'] as
+ 
+ /** The sheet's own rates, by grade, then by from-date (none first), then those it inherits from its
+  *  parent chain, each at its level. */
+-export function listRates(sheetId: string): Promise<Rate[]> {
+-  return getJson<Rate[]>(base(sheetId));
++export function listRates(sheetId: string, live = false): Promise<Rate[]> {
++  return getJson<Rate[]>(base(sheetId), live);
+ }
+ 
+ /** Set a grade's rate from a from-date, replacing the one with the same grade and from-date;
+diff --git a/src/main/frontend/features/settings/api.ts b/src/main/frontend/features/settings/api.ts
+index dc12a2284..a498b6209 100644
+--- a/src/main/frontend/features/settings/api.ts
++++ b/src/main/frontend/features/settings/api.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson, postJson } from '../../api/http';
+-import { sheetKey } from '../sheet/api';
++import { liveKey, sheetKey } from '../sheet/api';
+ import type { Late } from '../rates/api';
+ import { dueBy, type Claim } from '../claims/api';
+ import { gradeOn, listPeople, peopleKey } from '../people/api';
+@@ -73,8 +73,8 @@ const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}`;
+ export const settingsKey = (sheetId: string) => [...sheetKey(sheetId), 'settings'] as const;
+ export const rolesKey = (sheetId: string) => [...sheetKey(sheetId), 'roles'] as const;
+ 
+-export function listSettings(sheetId: string): Promise<Setting[]> {
+-  return getJson<Setting[]>(`${base(sheetId)}/settings`);
++export function listSettings(sheetId: string, live = false): Promise<Setting[]> {
++  return getJson<Setting[]>(`${base(sheetId)}/settings`, live);
+ }
+ 
+ /** Change a setting; refused (rejects) when the value is not valid for it. */
+@@ -92,8 +92,8 @@ export function setRole(sheetId: string, by: string, user: string, role: string)
+ }
+ 
+ /** The sheet's floor by date: the least a claim's live due can be, the one in force on its date. */
+-export function useFloor(sheetId: string): DatedOn {
+-  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
++export function useFloor(sheetId: string, live = false): DatedOn {
++  const settings = useQuery({ queryKey: liveKey(settingsKey(sheetId), live), queryFn: () => listSettings(sheetId, live) });
+   return (date) => settingOn(settings.data, 'floor', date) || SETTING_DEFAULTS.floor;
+ }
+ 
+@@ -112,8 +112,8 @@ export function useNoteThreshold(sheetId: string): (date: string) => string | nu
+ }
+ 
+ /** The sheet's cap in force on its today: the most a person's due-total can be; null when there is none. */
+-export function useCap(sheetId: string, today: string): string | null {
+-  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
++export function useCap(sheetId: string, today: string, live = false): string | null {
++  const settings = useQuery({ queryKey: liveKey(settingsKey(sheetId), live), queryFn: () => listSettings(sheetId, live) });
+   return settingOn(settings.data, 'cap', today) || null;
+ }
+ 
+@@ -121,9 +121,9 @@ export function useCap(sheetId: string, today: string): string | null {
+  *  by the one in force on each 30-day boundary), today and policy date (its today when blank), and the
+  *  date a claim's lateness counts from: its due-by plus the grace days (grace-<grade>) of its person's
+  *  grade in force on its date, as in force on that date (blank: none). */
+-export function useLate(sheetId: string, today: string): Late {
+-  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+-  const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
++export function useLate(sheetId: string, today: string, live = false): Late {
++  const settings = useQuery({ queryKey: liveKey(settingsKey(sheetId), live), queryFn: () => listSettings(sheetId, live) });
++  const people = useQuery({ queryKey: liveKey(peopleKey(sheetId), live), queryFn: () => listPeople(sheetId, live) });
+   const pct = (date: string) => settingOn(settings.data, 'late-pct', date) || SETTING_DEFAULTS['late-pct'];
+   const policy = settingOn(settings.data, 'policy-date', today) || today;
+   const lateFrom = (c: Claim) => {
+diff --git a/src/main/frontend/features/sheet/api.ts b/src/main/frontend/features/sheet/api.ts
+index dfafad849..eb818e1d0 100644
+--- a/src/main/frontend/features/sheet/api.ts
++++ b/src/main/frontend/features/sheet/api.ts
+@@ -6,10 +6,11 @@ import { getJson, postJson } from '../../api/http';
+ export type Sheet = { id: string; createdBy: string; today: string; archived: boolean };
+ 
+ /** Load a sheet by id; the server starts it empty the first time the id is used. */
+-export function openSheet(id: string, by: string): Promise<Sheet> {
++export function openSheet(id: string, by: string, live = false): Promise<Sheet> {
+   return postJson<Sheet>(
+     `/api/sheets/${encodeURIComponent(id)}/open?by=${encodeURIComponent(by)}`,
+     {},
++    live,
+   );
+ }
+ 
+@@ -32,15 +33,20 @@ export function archiveSheet(id: string, by: string): Promise<Sheet> {
+ /** Every query about a sheet lives under this key, so loading it again re-reads all of it. */
+ export const sheetKey = (id: string) => ['sheet', id] as const;
+ 
++/** A query key about a sheet, for its live reads (`live`: as it is now, even while the screen shows it
++ *  as of a date) kept apart from the screen's; still under the sheet's key, so loading it re-reads them. */
++export const liveKey = <K extends readonly unknown[]>(key: K, live: boolean): readonly unknown[] =>
++  live ? [key[0], key[1], 'live', ...key.slice(2)] : key;
++
+ /** The loaded sheet's today, read from the sheet query `ActiveSheet` keeps; '' until loaded. */
+-export function useSheetToday(id: string, by: string): string {
+-  const sheet = useQuery({ queryKey: sheetKey(id), queryFn: () => openSheet(id, by) });
++export function useSheetToday(id: string, by: string, live = false): string {
++  const sheet = useQuery({ queryKey: liveKey(sheetKey(id), live), queryFn: () => openSheet(id, by, live) });
+   return sheet.data?.today ?? '';
+ }
+ 
+ export const descendantsKey = (id: string) => [...sheetKey(id), 'descendants'] as const;
+ 
+ /** The ids of the sheet's descendants: its children (the sheets naming it as their parent), theirs, ... */
+-export function listDescendants(id: string): Promise<string[]> {
+-  return getJson<string[]>(`/api/sheets/${encodeURIComponent(id)}/descendants`);
++export function listDescendants(id: string, live = false): Promise<string[]> {
++  return getJson<string[]>(`/api/sheets/${encodeURIComponent(id)}/descendants`, live);
+ }
+diff --git a/src/main/frontend/features/summary/Consolidated.tsx b/src/main/frontend/features/summary/Consolidated.tsx
+index 9c3860ff1..58280d5de 100644
+--- a/src/main/frontend/features/summary/Consolidated.tsx
++++ b/src/main/frontend/features/summary/Consolidated.tsx
+@@ -4,28 +4,33 @@ import { listPeople, peopleKey } from '../people/api';
+ import { useDueTotal } from '../rates/DueTotal';
+ import { useOverdue } from '../rates/Overdue';
+ import { formatCents, hundredths } from '../rates/api';
+-import { descendantsKey, listDescendants } from '../sheet/api';
++import { useAsOf } from '../sheet/AsOf';
++import { descendantsKey, listDescendants, liveKey } from '../sheet/api';
+ 
+ /** A sheet's own figures, as that sheet shows them in its header. */
+ type Figures = { people: number; due: string; overdue: string };
+ 
+-function useFigures(sheetId: string, user: string): Figures {
+-  const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
+-  return { people: (people.data ?? []).length, due: useDueTotal(sheetId, user), overdue: useOverdue(sheetId, user).total };
++/** `live`: as the sheet is now, even while the screen shows it as of a date. */
++function useFigures(sheetId: string, user: string, live: boolean): Figures {
++  const people = useQuery({ queryKey: liveKey(peopleKey(sheetId), live), queryFn: () => listPeople(sheetId, live) });
++  return { people: (people.data ?? []).length, due: useDueTotal(sheetId, user, live), overdue: useOverdue(sheetId, user, live).total };
+ }
+ 
+ /** Works out one descendant sheet's own figures and hands them up; shows nothing. */
+-function Descendant({ sheetId, user, report }: { sheetId: string; user: string; report: (id: string, f: Figures) => void }) {
+-  const f = useFigures(sheetId, user);
++function Descendant({ sheetId, user, live, report }: { sheetId: string; user: string; live: boolean; report: (id: string, f: Figures) => void }) {
++  const f = useFigures(sheetId, user, live);
+   useEffect(() => report(sheetId, f), [sheetId, f.people, f.due, f.overdue]);
+   return null;
+ }
+ 
+ /** The consolidated figures over the sheet and all its descendants (its children, theirs, ...): the
+- *  number of people, and each sheet's due- and overdue-total as that sheet shows it, added up. */
++ *  number of people, and each sheet's due- and overdue-total as that sheet shows it, added up. They
++ *  are the sheets as they are now, also while the screen shows the sheet as of a date. */
+ export function Consolidated({ sheetId, user }: { sheetId: string; user: string }) {
+-  const own = useFigures(sheetId, user);
+-  const descendants = useQuery({ queryKey: descendantsKey(sheetId), queryFn: () => listDescendants(sheetId) });
++  const [asOf] = useAsOf();
++  const live = asOf !== '';
++  const own = useFigures(sheetId, user, live);
++  const descendants = useQuery({ queryKey: liveKey(descendantsKey(sheetId), live), queryFn: () => listDescendants(sheetId, live) });
+   const ids = descendants.data ?? [];
+   const [reported, setReported] = useState<Record<string, Figures>>({});
+   const report = (id: string, f: Figures) => setReported((r) => ({ ...r, [id]: f }));
+@@ -36,7 +41,7 @@ export function Consolidated({ sheetId, user }: { sheetId: string; user: string
+   const sum = (pick: (f: Figures) => string) => formatCents(all.reduce((t, f) => t + hundredths(pick(f)), 0n));
+   return (
+     <p>
+-      {ids.map((id) => <Descendant key={id} sheetId={id} user={user} report={report} />)}
++      {ids.map((id) => <Descendant key={id} sheetId={id} user={user} live={live} report={report} />)}
+       Consolidated: people <span data-testid="consolidated-people-count">{ready ? all.reduce((t, f) => t + f.people, 0) : ''}</span>
+       {' · '}due <span data-testid="consolidated-due-total">{ready ? sum((f) => f.due) : ''}</span>
+       {' · '}overdue <span data-testid="consolidated-overdue-total">{ready ? sum((f) => f.overdue) : ''}</span>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 7a499e958..e5e4628da 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -217,6 +217,38 @@ public class ClaimRepository {
+         }
+     }
+ 
++    /** Move every claim of the person to the sheet {@code to}, with their logs, comments and history,
++     *  keeping their order in the list (each newer than the other sheet's): their status, dates, notes,
++     *  tags and frozen figures kept, any figure a statement bound, their reference, lock and settle
++     *  batch dropped, and their numbers taken away. The ids of those that had a number come back in
++     *  the order they were opened (by the sheet's today then, then the order they were added), for
++     *  {@link #renumber}. */
++    public List<Long> transferAll(String sheetId, long personId, String to) {
++        List<Long> numbered = jdbc.queryForList("SELECT c.id FROM claim c WHERE c.sheet_id = ? AND c.person_id = ? "
++                + "AND c.number IS NOT NULL ORDER BY COALESCE((SELECT MIN(l.on_date) FROM claim_log l WHERE "
++                + "l.claim_id = c.id AND l.status = 'OPEN'), (SELECT MIN(l.on_date) FROM claim_log l WHERE "
++                + "l.claim_id = c.id AND l.status <> 'DRAFT'), c.claim_date), c.id", Long.class, sheetId, personId);
++        long seq = jdbc.queryForObject("SELECT COALESCE(MAX(list_seq), 0) FROM claim WHERE sheet_id = ?", Long.class, to);
++        for (Long id : jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY list_seq, id",
++                Long.class, sheetId, personId)) {
++            jdbc.update("UPDATE claim SET sheet_id = ?, list_seq = ?, number = NULL, stated = FALSE, stated_due = NULL, "
++                    + "ref = NULL, ref_key = NULL, locked_by = NULL, settle_batch = NULL WHERE sheet_id = ? AND id = ?",
++                    to, ++seq, sheetId, id);
++            for (String table : List.of("claim_log", "claim_comment", "claim_history")) {
++                jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND claim_id = ?", to, sheetId, id);
++            }
++            snapshot(to, id);
++            useTags(to, jdbc.queryForObject("SELECT tags FROM claim WHERE id = ?", String.class, id));
++        }
++        return numbered;
++    }
++
++    /** Give a transferred claim its number on its new sheet. */
++    public void renumber(Claim claim, String number) {
++        jdbc.update("UPDATE claim SET number = ? WHERE sheet_id = ? AND id = ?", number, claim.getSheetId(), claim.getId());
++        claim.setNumber(number);
++    }
++
+     /** Save a re-dated claim: its date (its due-by, period and number stay). */
+     public void redate(Claim claim) {
+         jdbc.update("UPDATE claim SET claim_date = ?, number = ? WHERE sheet_id = ? AND id = ?",
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index e43f5f481..fa769e2d8 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -338,4 +338,22 @@ public class PersonRepository {
+         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, from.getId());
+         withAliases(sheetId, List.of(into));
+     }
++
++    /** Move the person to the sheet {@code to} with their grades (and grade history) and aliases, their
++     *  statements dropped (the count back to 0); their holds, watchers, patron links (either way), pool
++     *  memberships and closed periods' fixed totals are dropped. Their claims must have moved first. */
++    public void transfer(Person person, String to) {
++        String sheetId = person.getSheetId();
++        long id = person.getId();
++        jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, id, id);
++        for (String table : List.of("person_statement", "person_hold", "person_watch", "pool_member")) {
++            jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, id);
++        }
++        jdbc.update("DELETE FROM period_person_total WHERE person_id = ?", id);
++        for (String table : List.of("person_grade", "person_grade_history", "person_retired_history", "person_alias")) {
++            jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, sheetId, id);
++        }
++        jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL "
++                + "WHERE sheet_id = ? AND id = ?", to, sheetId, id);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordPersonArrived.java b/src/main/java/net/officefloor/hq/app/person/RecordPersonArrived.java
+new file mode 100644
+index 000000000..048044d32
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RecordPersonArrived.java
+@@ -0,0 +1,27 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Records the transfer just made on the sheet the person went to (PERSON_TRANSFERRED ... from=),
++ *  then that sheet's ROLLUP/TOTALS lines. */
++public class RecordPersonArrived {
++    public void record(@RequestParam(name = "by", required = false) String by,
++            @Val Transfer transfer, PersonRepository people, ClaimRepository claims, RateRepository rates,
++            SheetRepository sheets, SettingRepository settings, Audit audit) {
++        String user = by == null ? "" : by;
++        String to = transfer.to();
++        audit.record("PERSON_TRANSFERRED sheet=" + to + " by=" + user
++                + " name=" + transfer.person().getName() + " from=" + transfer.person().getSheetId());
++        Rollup after = Rollup.of(to, people, claims, rates, sheets, settings);
++        for (String line : after.changesSince(transfer.toBefore(), to, user)) {
++            audit.record(line);
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordPersonTransferred.java b/src/main/java/net/officefloor/hq/app/person/RecordPersonTransferred.java
+new file mode 100644
+index 000000000..924d8f0a4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RecordPersonTransferred.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Records the transfer just made on the sheet the person left (PERSON_TRANSFERRED ... to=). */
++public class RecordPersonTransferred {
++    public void record(@RequestParam(name = "by", required = false) String by,
++            @Val Transfer transfer, Audit audit) {
++        audit.record("PERSON_TRANSFERRED sheet=" + transfer.person().getSheetId() + " by=" + (by == null ? "" : by)
++                + " name=" + transfer.person().getName() + " to=" + transfer.to());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Transfer.java b/src/main/java/net/officefloor/hq/app/person/Transfer.java
+new file mode 100644
+index 000000000..34a3a92f3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/Transfer.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.rollup.Rollup;
++
++/** A transfer just made: the person as they stood on the sheet they left, the sheet they went to,
++ *  and that sheet's figures before they arrived, for its audit lines. */
++public record Transfer(Person person, String to, Rollup toBefore) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+new file mode 100644
+index 000000000..66183ee92
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+@@ -0,0 +1,61 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimNumbers;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.setting.Role;
++import net.officefloor.hq.app.setting.RoleRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** A steward transfers the person to another sheet: they arrive with every grade given them (and its
++ *  from-date), their terms, contact and aliases, and their claims with their status, dates, notes,
++ *  tags, frozen figures, logs and comments; each claim that had a number gets the other sheet's next,
++ *  in the order the claims were opened (by the sheet's today then, then the order they were added).
++ *  Figures a statement bound are lost, their statement count starts at 0, and references, holds and
++ *  settle batches are not carried. They leave this sheet entirely: patron links (either way), pool
++ *  memberships, watches and closed periods' fixed totals are dropped. Refused (nothing written) for
++ *  anyone but a steward, a retired person, this sheet's own id or an archived sheet, and when their
++ *  name, an alias or their contact is already on the other sheet. */
++public class TransferPerson {
++    public void transfer(@RequestParam(name = "by", required = false) String by,
++            @Val TransferRequest request, @Val Person person, PersonRepository people,
++            ClaimRepository claims, PeriodRepository periods, RateRepository rates,
++            SettingRepository settings, SheetRepository sheets, RoleRepository roles,
++            Out<Transfer> transferred) throws InvalidPersonException {
++        String user = by == null ? "" : by;
++        String sheetId = person.getSheetId();
++        String to = request.to();
++        if (!Role.STEWARD.equals(roles.roleOf(sheetId, user))) {
++            throw new InvalidPersonException("Only a steward can transfer people");
++        }
++        if (to.equals(sheetId)) {
++            throw new InvalidPersonException("A person cannot be transferred to their own sheet");
++        }
++        if (person.isRetired()) {
++            throw new InvalidPersonException("A retired person cannot be transferred");
++        }
++        if (sheets.isArchived(to)) {
++            throw new InvalidPersonException("The sheet is archived: " + to);
++        }
++        if (people.nameTaken(to, person.getName(), null)
++                || person.getAliases().stream().anyMatch((a) -> people.nameTaken(to, a, null))
++                || (person.getContact() != null && people.contactTaken(to, person.getContact(), null))) {
++            throw new InvalidPersonException("The name, an alias or the contact is already on " + to);
++        }
++        sheets.open(to, user);
++        Rollup before = Rollup.of(to, people, claims, rates, sheets, settings);
++        for (long id : claims.transferAll(sheetId, person.getId(), to)) {
++            Claim claim = claims.find(to, id);
++            claims.renumber(claim, ClaimNumbers.next(claim, claims, periods, settings, sheets));
++        }
++        people.transfer(person, to);
++        transferred.set(new Transfer(person, to, before));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferRequest.java b/src/main/java/net/officefloor/hq/app/person/TransferRequest.java
+new file mode 100644
+index 000000000..e26343f89
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/TransferRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** Body of a transfer: the id of the sheet the person is transferred to. */
++public record TransferRequest(String to) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateTransfer.java b/src/main/java/net/officefloor/hq/app/person/ValidateTransfer.java
+new file mode 100644
+index 000000000..643818a61
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateTransfer.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Binds the sheet to transfer to (trimmed): refused when none is named. */
++public class ValidateTransfer {
++    public void validate(@RequestBody TransferRequest request, Out<TransferRequest> body)
++            throws InvalidPersonException {
++        String to = request == null || request.to() == null ? "" : request.to().trim();
++        if (to.isEmpty()) {
++            throw new InvalidPersonException("No sheet to transfer to");
++        }
++        body.set(new TransferRequest(to));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml
+new file mode 100644
+index 000000000..d3c62094f
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml
+@@ -0,0 +1,37 @@
++# POST /api/sheets/{sheetId}/people/{personId}/transfer — a steward transfers the person to another
++# sheet by id (to): they arrive there with their grades, terms, contact, aliases and claims (renumbered
++# on the other sheet) and leave this one entirely (see TransferPerson). Anyone else, a retired person,
++# this sheet's own id, or a name, alias or contact already on the other sheet, is refused.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
++validate:
++  class: net.officefloor.hq.app.person.ValidateTransfer
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: transfer
++transfer:
++  class: net.officefloor.hq.app.person.TransferPerson
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.RecordPersonTransferred
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
++  next: arrive
++arrive:
++  class: net.officefloor.hq.app.person.RecordPersonArrived
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
