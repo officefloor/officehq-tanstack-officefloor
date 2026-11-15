@@ -1,0 +1,141 @@
+diff --git a/src/main/frontend/features/audit/api.ts b/src/main/frontend/features/audit/api.ts
+index fa5740476..d99390044 100644
+--- a/src/main/frontend/features/audit/api.ts
++++ b/src/main/frontend/features/audit/api.ts
+@@ -1,7 +1,8 @@
+ import { getJson } from '../../api/http';
+ 
+ /** The sheet's audit lines exactly as the audit file holds them, newest first; with a name (case and
+- *  surrounding spaces ignored; blank: all), only those carrying name=<it> or person=<it>. */
++ *  surrounding spaces ignored; blank: all), only those carrying name=<it> or person=<it>, followed, when that
++ *  person was transferred here, by the lines about them from the sheet they came from, newest first. */
+ export function listAudit(sheetId: string, name: string): Promise<string[]> {
+   return getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/audit?name=${encodeURIComponent(name)}`);
+ }
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 40724f5bc..a0256fa60 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -440,6 +440,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                 <td>
+                   Contact <span data-testid="person-contact">{p.contact ?? ''}</span>
+                 </td>
++                <td>
++                  From <span data-testid="person-origin">{p.origin ?? ''}</span>
++                </td>
+                 <td>
+                   Claimed <span data-testid="person-claimed">{claimed}</span>
+                 </td>
+diff --git a/src/main/frontend/features/people/api.ts b/src/main/frontend/features/people/api.ts
+index 6416af9e4..3bd5de9f5 100644
+--- a/src/main/frontend/features/people/api.ts
++++ b/src/main/frontend/features/people/api.ts
+@@ -28,6 +28,8 @@ export type Person = {
+   terms: number | null;
+   /** Their contact, trimmed and lower-cased (null: none); no two people on a sheet share one. */
+   contact: string | null;
++  /** The sheet they were last transferred from (null: none). */
++  origin: string | null;
+   /** Their aliases, sorted as names are compared; the quick-add bar and the paste box find them by one. */
+   aliases: string[];
+   /** Whether their name or an alias is used on another sheet of the sheet's tree (its ancestors and
+diff --git a/src/main/java/net/officefloor/hq/app/audit/ListAudit.java b/src/main/java/net/officefloor/hq/app/audit/ListAudit.java
+index 7a8a9039e..d5e7f3391 100644
+--- a/src/main/java/net/officefloor/hq/app/audit/ListAudit.java
++++ b/src/main/java/net/officefloor/hq/app/audit/ListAudit.java
+@@ -1,17 +1,29 @@
+ package net.officefloor.hq.app.audit;
+ 
++import java.util.ArrayList;
+ import java.util.List;
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** The sheet's audit lines as the audit file holds them, newest first; with a name, only those about
+- *  that person (name=/person= it, compared as names are). */
++ *  that person (name=/person= it, compared as names are), and when that person on this sheet was
++ *  transferred here, after them the lines about them from the sheet they came from, newest first. */
+ public class ListAudit {
+     public void list(@PathVariable("sheetId") String sheetId,
+             @RequestParam(name = "name", required = false) String name, Audit audit,
+-            ObjectResponse<List<String>> response) {
+-        response.send(audit.lines(sheetId.trim(), name));
++            PersonRepository people, ObjectResponse<List<String>> response) {
++        String sheet = sheetId.trim();
++        List<String> lines = new ArrayList<>(audit.lines(sheet, name));
++        if (name != null && !name.isBlank()) {
++            Person person = people.findByName(sheet, name);
++            if (person != null && person.getOrigin() != null && !person.getOrigin().equals(sheet)) {
++                lines.addAll(audit.lines(person.getOrigin(), name));
++            }
++        }
++        response.send(lines);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 8770a8056..de1c6ad0e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -146,6 +146,10 @@ public class Person {
+     public void setPatronIds(java.util.List<Long> patronIds) { this.patronIds = patronIds; }
+     public java.util.List<String> getAliases() { return aliases; }
+     public void setAliases(java.util.List<String> aliases) { this.aliases = aliases; }
++    /** The sheet they were last transferred from (null: none). */
++    private String origin;
++    public String getOrigin() { return origin; }
++    public void setOrigin(String origin) { this.origin = origin; }
+     /** Whether their name or an alias is used, as a name or alias, on another sheet of the sheet's tree. */
+     private boolean clashing;
+     public boolean isClashing() { return clashing; }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 6fc7edbfe..857ac018e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class PersonRepository {
+ 
+-    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, terms, contact";
++    private static final String COLUMNS = "id, sheet_id, name, version, statement_count, stated_total, statement_date, retired_from, terms, contact, origin";
+ 
+     private static final RowMapper<Person> ROW = (rs, n) -> {
+         LocalDate stated = rs.getObject("statement_date", LocalDate.class);
+@@ -25,6 +25,7 @@ public class PersonRepository {
+         person.setRetiredFrom(retired == null ? null : retired.toString());
+         person.setTerms(rs.getObject("terms", Integer.class));
+         person.setContact(rs.getString("contact"));
++        person.setOrigin(rs.getString("origin"));
+         return person;
+     };
+ 
+@@ -406,7 +407,8 @@ public class PersonRepository {
+ 
+     /** Move the person to the sheet {@code to} with their grades (and grade history) and aliases, their
+      *  statements dropped (the count back to 0); their holds, watchers, patron links (either way), pool
+-     *  memberships and closed periods' fixed totals are dropped. Their claims must have moved first. */
++     *  memberships and closed periods' fixed totals are dropped; they keep the sheet they came from as their
++     *  origin. Their claims must have moved first. */
+     public void transfer(Person person, String to) {
+         String sheetId = person.getSheetId();
+         long id = person.getId();
+@@ -419,7 +421,7 @@ public class PersonRepository {
+             jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, sheetId, id);
+         }
+         jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL, "
+-                + "list_pos = " + NEXT_POS + " WHERE sheet_id = ? AND id = ?", to, to, sheetId, id);
++                + "origin = ?, list_pos = " + NEXT_POS + " WHERE sheet_id = ? AND id = ?", to, sheetId, to, sheetId, id);
+     }
+ 
+     /** Swap the two people's places in their sheet's list. */
+diff --git a/src/main/resources/db/migration/V59__person_origin.sql b/src/main/resources/db/migration/V59__person_origin.sql
+new file mode 100644
+index 000000000..0986178ea
+--- /dev/null
++++ b/src/main/resources/db/migration/V59__person_origin.sql
+@@ -0,0 +1,2 @@
++-- The sheet a person was last transferred from (NULL: they were never transferred).
++ALTER TABLE person ADD COLUMN origin VARCHAR(255);
