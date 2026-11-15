@@ -10,7 +10,8 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** Edits a claim: only a DRAFT can be edited (to change an open claim, void it and add a new one),
- *  and not to a date after its person's retirement date; a correction as when added. Refused while
+ *  and not to a date after its person's retirement date; a correction as when added. Its due-by (and so
+ *  its period) stays as fixed when it was added; refused when that falls in a closed period. Refused while
  *  another user's open editor locks it. */
 public class ApplyClaim {
     public void apply(@RequestParam(name = "by", required = false) String by, @Val ValidClaim request,
@@ -20,7 +21,7 @@ public class ApplyClaim {
         if (!ClaimStatus.DRAFT.name().equals(claim.getStatus())) {
             throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be edited");
         }
-        periods.requireOpen(claim.getSheetId(), claim.getDate());
+        periods.requireOpen(claim.getSheetId(), claim.getDueBy());
         if (claim.getLockedBy() != null && !claim.getLockedBy().equals(by == null ? "" : by)) {
             throw new ClaimLockedException("The claim is being edited by " + claim.getLockedBy());
         }
@@ -35,6 +36,5 @@ public class ApplyClaim {
         claim.setRoundDate(corrects == null ? null : claims.findByNumber(claim.getSheetId(), corrects).getDate());
         claim.setDate(date.toString());
         claim.setNote(request.note());
-        periods.requireOpen(claim.getSheetId(), claim.getDate());
     }
 }

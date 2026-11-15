@@ -23,7 +23,7 @@ public class ApproveClaim {
             PersonRepository people, RateRepository rates, PeriodRepository periods,
             RoleRepository roles, SettingRepository settings, SheetRepository sheets)
             throws ClaimStatusException, PeriodClosedException {
-        periods.requireOpen(claim.getSheetId(), claim.getDate());
+        periods.requireOpen(claim.getSheetId(), claim.getDueBy());
         String user = by == null ? "" : by;
         if (!ClaimStatus.PENDING.name().equals(claim.getStatus())) {
             throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be approved");

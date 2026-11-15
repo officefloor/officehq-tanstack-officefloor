@@ -24,7 +24,7 @@ public class ResettleClaim {
             PersonRepository people, RateRepository rates, PeriodRepository periods,
             RoleRepository roles, SettingRepository settings, SheetRepository sheets,
             Out<Resettlement> resettlement) throws ClaimStatusException, PeriodClosedException {
-        periods.requireOpen(claim.getSheetId(), claim.getDate());
+        periods.requireOpen(claim.getSheetId(), claim.getDueBy());
         if (!ClaimStatus.SETTLED.name().equals(claim.getStatus())) {
             throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be re-settled");
         }

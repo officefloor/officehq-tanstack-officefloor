@@ -50,13 +50,14 @@ public class PeriodRepository {
                 .stream().findFirst().map(this::withPersonTotals).orElse(null);
     }
 
-    /** Refuse a change to a claim dated (yyyy-MM-dd) inside one of the sheet's closed periods. */
-    public void requireOpen(String sheetId, String date) throws PeriodClosedException {
+    /** Refuse a change to a claim whose due-by (yyyy-MM-dd) is inside one of the sheet's closed periods:
+     *  a claim belongs to the period its due-by falls in. */
+    public void requireOpen(String sheetId, String dueBy) throws PeriodClosedException {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM period WHERE sheet_id = ? AND closed "
                 + "AND from_date <= ? AND to_date >= ?", Integer.class, sheetId,
-                LocalDate.parse(date), LocalDate.parse(date));
+                LocalDate.parse(dueBy), LocalDate.parse(dueBy));
         if (n != null && n > 0) {
-            throw new PeriodClosedException("The claim's date is inside a closed period");
+            throw new PeriodClosedException("The claim's due-by is inside a closed period");
         }
     }
 
@@ -69,7 +70,7 @@ public class PeriodRepository {
     }
 
     /** Close the period, fixing its due-total and each person's due-total for it (afresh when it was
-     *  soft-closed); soft: soft-close it instead, claims dated in it can still be added and changed. */
+     *  soft-closed); soft: soft-close it instead, claims in it can still be added and changed. */
     public Period close(Period period, BigDecimal total, Map<Long, BigDecimal> personTotals, String user,
             boolean soft) {
         jdbc.update("DELETE FROM period_person_total WHERE period_id IN "

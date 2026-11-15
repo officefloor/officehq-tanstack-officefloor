@@ -18,12 +18,12 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  there is no such rate; an overdue one gains its late charge on top, see `charges`; then at least the sheet's `floor`), its due-by (fixed when it was added) and whether it is
  *  overdue (OPEN and due-by before the sheet's `today`), whether
  *  it is stated,
- *  the period its date falls in (none when no period contains it), its status log (oldest first), who opened it, and buttons that
+ *  the period its due-by falls in (none when no period contains it), its status log (oldest first), who opened it, and buttons that
  *  change its status (the user who opened a claim cannot settle it; a clerk settling one whose due is
  *  above the sheet's clerk limit makes it PENDING, which a steward other than its opener approves,
  *  or any steward rejects with a reason typed beside it), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
  *  charge) the number of the SETTLED claim it corrects. Only a DRAFT can be edited:
- *  editing any other claim, or one in a closed period, is refused with an error on the claim. Opening a
+ *  editing any other claim, or one due by a day in a closed period, is refused with an error on the claim. Opening a
  *  claim's editor locks it for other users until it is saved or cancelled or the sheet's today changes:
  *  another user's edit button on it is refused likewise, and the editor of a claim the user holds is
  *  open again when the sheet is re-loaded. A role the permission matrix allows (by default a steward) can move a DRAFT, OPEN or
@@ -35,8 +35,8 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  closed period, refused with an error on the claim); one with no proofs whose due is above the sheet's proof
  *  threshold in force on its date cannot be settled or approved.
  *  A steward can re-date an OPEN or PENDING claim to a date typed beside it: its due-by and any bound figure
- *  stay, its period follows the new date (anyone else, any other status, a date after its person's retirement,
- *  or a claim in a closed period or a new date inside one refused with an error on the claim).
+ *  stay, and so do its period and number (anyone else, any other status, a date after its person's retirement,
+ *  or a claim in a closed period refused with an error on the claim).
  *  An OPEN claim can be split by an amount typed beside it (more than 0.00, less than its own): it keeps the
  *  rest and is unbound, and a new OPEN claim of that amount, opened by the user, shows its number as split-from
  *  (a PENDING, deferred or settled claim, one in a closed period, or a role that may not open a claim refused
@@ -272,8 +272,8 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       setEditRefused({ id: c.id, message: `A ${c.status} claim cannot be edited. To change it, void it and add a new one.` });
       return;
     }
-    if (periodOf(periods.data, c.date)?.closed) {
-      setEditRefused({ id: c.id, message: 'A claim dated inside a closed period cannot be edited.' });
+    if (periodOf(periods.data, c.dueBy)?.closed) {
+      setEditRefused({ id: c.id, message: 'A claim due by a day inside a closed period cannot be edited.' });
       return;
     }
     if (c.lockedBy !== null && c.lockedBy !== undefined && c.lockedBy !== user) {
@@ -322,7 +322,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
         </button>
         {save.isError && (
           <span data-testid="claim-form-error">{save.error instanceof HttpError && save.error.status === 423
-            ? 'A claim dated inside a closed period cannot be added or edited.'
+            ? 'A claim due by a day inside a closed period cannot be added or edited.'
             : save.error instanceof HttpError && save.error.status === 409
             ? 'Only a DRAFT claim can be edited.'
             : save.error instanceof HttpError && save.error.status === 412
@@ -379,7 +379,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                   Split
                 </button>
               </td>
-              <td data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</td>
+              <td data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</td>
               <td>
                 {(c.log ?? []).map((line, i) => <div key={i} data-testid="claim-log-line">{line}</div>)}
               </td>
@@ -443,14 +443,14 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                   <span data-testid="claim-error">{locking.error instanceof HttpError && locking.error.status === 412
                     ? 'Another user is editing this claim; it cannot be edited until they save or cancel.'
                     : locking.error instanceof HttpError && locking.error.status === 423
-                    ? 'A claim dated inside a closed period cannot be edited.'
+                    ? 'A claim due by a day inside a closed period cannot be edited.'
                     : locking.error instanceof HttpError && locking.error.status === 409
                     ? `A ${c.status} claim cannot be edited. To change it, void it and add a new one.`
                     : 'Your role may not edit a claim.'}</span>
                 )}
                 {move.isError && move.variables?.id === c.id && (
                   <span data-testid="claim-error">{move.error instanceof HttpError && move.error.status === 423
-                    ? 'A claim dated inside a closed period cannot be changed.'
+                    ? 'A claim due by a day inside a closed period cannot be changed.'
                     : move.error instanceof HttpError && move.error.status === 400
                     ? 'A rejection needs a reason.'
                     : (move.variables.action === 'settle' || move.variables.action === 'approve') && needsProof(c)
@@ -471,14 +471,14 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 )}
                 {deferral.isError && deferral.variables?.id === c.id && (
                   <span data-testid="claim-error">{deferral.error instanceof HttpError && deferral.error.status === 423
-                    ? 'A claim dated inside a closed period cannot be deferred.'
+                    ? 'A claim due by a day inside a closed period cannot be deferred.'
                     : deferral.error instanceof HttpError && deferral.error.status === 400
                     ? 'A claim can only be deferred to a date after the sheet\'s today.'
                     : `A ${c.status} claim cannot be deferred.`}</span>
                 )}
                 {redating.isError && redating.variables?.id === c.id && (
                   <span data-testid="claim-error">{redating.error instanceof HttpError && redating.error.status === 423
-                    ? 'A claim dated inside a closed period, or a new date inside one, cannot be re-dated.'
+                    ? 'A claim due by a day inside a closed period cannot be re-dated.'
                     : redating.error instanceof HttpError && redating.error.status === 400
                     ? 'A claim needs a date on or before its person\'s retirement.'
                     : c.status === 'OPEN' || c.status === 'PENDING'
@@ -487,7 +487,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 )}
                 {division.isError && division.variables?.id === c.id && (
                   <span data-testid="claim-error">{division.error instanceof HttpError && division.error.status === 423
-                    ? 'A claim dated inside a closed period cannot be split.'
+                    ? 'A claim due by a day inside a closed period cannot be split.'
                     : division.error instanceof HttpError && division.error.status === 400
                     ? `A split needs an amount more than 0.00 and less than ${Number(c.amount).toFixed(2)}.`
                     : c.status === 'OPEN' && !c.deferred
@@ -496,12 +496,12 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 )}
                 {proof.isError && proof.variables === c.id && (
                   <span data-testid="claim-error">{proof.error instanceof HttpError && proof.error.status === 423
-                    ? 'A claim dated inside a closed period cannot gain a proof.'
+                    ? 'A claim due by a day inside a closed period cannot gain a proof.'
                     : `A ${c.status} claim cannot gain a proof.`}</span>
                 )}
                 {reassign.isError && reassign.variables?.id === c.id && (
                   <span data-testid="claim-error">{reassign.error instanceof HttpError && reassign.error.status === 423
-                    ? 'A claim dated inside a closed period cannot be reassigned.'
+                    ? 'A claim due by a day inside a closed period cannot be reassigned.'
                     : c.status === 'SETTLED' || c.status === 'VOID'
                     ? `A ${c.status} claim cannot be reassigned.`
                     : 'Only a role the permissions allow can reassign a claim, and only to another person.'}</span>

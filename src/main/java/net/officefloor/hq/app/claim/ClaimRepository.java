@@ -120,7 +120,7 @@ public class ClaimRepository {
         snapshot(claim.getSheetId(), claim.getId());
     }
 
-    /** Save a re-dated claim: its date and its number (a new one when its period changed). */
+    /** Save a re-dated claim: its date (its due-by, period and number stay). */
     public void redate(Claim claim) {
         jdbc.update("UPDATE claim SET claim_date = ?, number = ? WHERE sheet_id = ? AND id = ?",
                 LocalDate.parse(claim.getDate()), claim.getNumber(), claim.getSheetId(), claim.getId());
@@ -224,7 +224,7 @@ public class ClaimRepository {
         return (period == null ? "X" : period) + "-" + n;
     }
 
-    /** Mark a claim as a late entry: added while the period its date falls in was soft-closed. */
+    /** Mark a claim as a late entry: added while the period its due-by falls in was soft-closed. */
     public void markLateEntry(Claim claim) {
         jdbc.update("UPDATE claim SET late_entry = TRUE WHERE sheet_id = ? AND id = ?", claim.getSheetId(), claim.getId());
         claim.setLateEntry(true);

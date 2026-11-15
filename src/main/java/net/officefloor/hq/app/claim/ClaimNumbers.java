@@ -8,7 +8,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 
 /** The number a claim gets when opened: while the sheet's period numbering is in force (its
  *  period-numbering-from is a date on or before the sheet's today) the next in the sequence of the
- *  period its date falls in ({@code <period>-<n>}; {@code X-<n>} in no period), else the sheet's next. */
+ *  period its due-by falls in ({@code <period>-<n>}; {@code X-<n>} in no period), else the sheet's next. */
 public final class ClaimNumbers {
     private ClaimNumbers() {
     }
@@ -20,7 +20,7 @@ public final class ClaimNumbers {
         if (from == null || sheets.today(sheetId).isBefore(from)) {
             return claims.nextNumber(sheetId);
         }
-        String period = periods.list(sheetId).stream().filter((p) -> p.contains(claim.getDate()))
+        String period = periods.list(sheetId).stream().filter((p) -> p.contains(claim.getDueBy()))
                 .map(Period::name).findFirst().orElse(null);
         return claims.nextPeriodNumber(sheetId, period);
     }

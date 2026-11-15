@@ -11,7 +11,7 @@ export type Period = {
   sheetId: string; name: string; from: string; to: string; closed: boolean; closedTotal: string | null;
   /** Once closed, each person's due-total for it fixed when it was closed, by person id. */
   personTotals: Record<string, string>;
-  /** Soft-closed: its figures are fixed as when closed, but claims dated in it can still be added and changed. */
+  /** Soft-closed: its figures are fixed as when closed, but claims due by a day in it can still be added and changed. */
   soft: boolean;
 };
 export type PeriodInput = { name: string; from: string; to: string };
@@ -40,18 +40,19 @@ export function generatePeriods(sheetId: string, by: string, from: string, to: s
     { from, to });
 }
 
-/** The period whose dates contain the date (yyyy-MM-dd), or undefined for none. */
+/** The period whose dates contain the date (yyyy-MM-dd), or undefined for none. A claim belongs to the
+ *  period its due-by falls in. */
 export function periodOf(periods: Period[] | undefined, date: string): Period | undefined {
   return (periods ?? []).find((p) => p.from <= date && date <= p.to);
 }
 
-/** Close a period, fixing its due-total; refused (rejects) when it is already closed. No claim dated
+/** Close a period, fixing its due-total; refused (rejects) when it is already closed. No claim due by a day
  *  inside a closed period can then be added, edited, opened, settled or voided. */
 export function closePeriod(sheetId: string, by: string, name: string): Promise<Period> {
   return postJson<Period>(`${base(sheetId)}/${encodeURIComponent(name)}/close?by=${encodeURIComponent(by)}`, {});
 }
 
-/** Soft-close a period, fixing its due-total and everyone's figure for it; claims dated in it can still be
+/** Soft-close a period, fixing its due-total and everyone's figure for it; claims due by a day in it can still be
  *  added and changed. Refused (rejects) when it is already closed or soft-closed. */
 export function softClosePeriod(sheetId: string, by: string, name: string): Promise<Period> {
   return postJson<Period>(`${base(sheetId)}/${encodeURIComponent(name)}/soft-close?by=${encodeURIComponent(by)}`, {});
@@ -83,14 +84,14 @@ export const countedOn = (c: Claim, date: string) => {
 };
 
 /** A person's due-total for a period: once closed or soft-closed, the one fixed for them when it was closed (0.00
- *  for a person added later); else the due as shown now of their claims dated in it that counted by
+ *  for a person added later); else the due as shown now of their claims due by a day in it that counted by
  *  their status at the end of its last day (see `statusOn`), less those the live rules leave out
  *  (deferred, held; see `liveClaims`), n/a ones skipped. */
 export function personPeriodDue(p: Period, person: Person, claims: Claim[], people: Person[] | undefined,
   rates: Rate[] | undefined, floor: DatedOn, late: Late): string {
   if (p.closed || p.soft) return p.personTotals[String(person.id)] ?? '0.00';
   return sumDues(liveClaims(claims.filter((c) => c.personId === person.id), people).filter((c) => countedOn(c, p.to))
-    .filter((c) => p.from <= c.date && c.date <= p.to)
+    .filter((c) => p.from <= c.dueBy && c.dueBy <= p.to)
     .map((c) => claimDue(c, rates, (d) => gradeOn(person, d), floor, late)));
 }
 

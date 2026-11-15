@@ -26,7 +26,7 @@ public class OpenClaim {
         if (!Permissions.allows(claim.getSheetId(), by, Permissions.OPEN, roles, settings)) {
             throw new ClaimStatusException("Your role may not open a claim");
         }
-        periods.requireOpen(claim.getSheetId(), claim.getDate());
+        periods.requireOpen(claim.getSheetId(), claim.getDueBy());
         ClaimStatus opened = ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.OPEN);
         requireNote(claim, people, rates, settings, sheets);
         claim.setStatus(opened.name());

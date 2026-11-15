@@ -56,7 +56,7 @@ public class BulkOpenClaims {
         for (Claim claim : ordered) {
             if (!allowed) continue;
             try {
-                periods.requireOpen(id, claim.getDate());
+                periods.requireOpen(id, claim.getDueBy());
                 ClaimStatus status = ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.OPEN);
                 OpenClaim.requireNote(claim, people, rates, settings, sheets);
                 claim.setStatus(status.name());

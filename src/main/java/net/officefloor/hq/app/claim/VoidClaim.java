@@ -29,7 +29,7 @@ public class VoidClaim {
         if (!Permissions.allows(claim.getSheetId(), by, Permissions.VOID, roles, settings)) {
             throw new ClaimStatusException("Your role may not void a claim");
         }
-        periods.requireOpen(claim.getSheetId(), claim.getDate());
+        periods.requireOpen(claim.getSheetId(), claim.getDueBy());
         claim.setStatus(ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.VOID).name());
     }
 
@@ -38,7 +38,7 @@ public class VoidClaim {
         if (!Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
             throw new ClaimStatusException("Only a steward can void a SETTLED claim");
         }
-        periods.requireOpen(claim.getSheetId(), claim.getDate());
+        periods.requireOpen(claim.getSheetId(), claim.getDueBy());
         LocalDate settledOn = log.settledOn(claim.getSheetId(), claim.getId());
         if (settledOn == null || sheets.today(claim.getSheetId()).isAfter(settledOn.plusDays(SETTLED_DAYS))) {
             throw new ClaimStatusException("A SETTLED claim can be voided only within " + SETTLED_DAYS

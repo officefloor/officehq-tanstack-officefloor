@@ -40,7 +40,7 @@ export type Claim = {
   splitFrom: string | null;
   /** The user whose open editor locks it for everyone else (null: unlocked). */
   lockedBy: string | null;
-  /** Whether it was added while the period its date falls in was soft-closed. */
+  /** Whether it was added while the period its due-by falls in was soft-closed. */
   lateEntry: boolean;
 };
 /** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects. */
@@ -72,7 +72,7 @@ export function updateClaim(sheetId: string, by: string, id: number, input: Clai
 
 /** Open a claim's editor, locking it for other users until it is saved or cancelled or the sheet's
  *  today changes (and releasing any other claim of its person the user held); refused (rejects) with
- *  409 when it is not a DRAFT, 423 when dated in a closed period, 412 while another user holds it. */
+ *  409 when it is not a DRAFT, 423 when due by a day in a closed period, 412 while another user holds it. */
 export function lockClaim(sheetId: string, by: string, id: number): Promise<Claim> {
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/lock?by=${encodeURIComponent(by)}`, {});
 }
@@ -92,22 +92,21 @@ export function moveClaim(sheetId: string, by: string, id: number, action: Claim
 }
 
 /** Defer an OPEN claim until a date after the sheet's today; refused (rejects) when it is not OPEN,
- *  the date is not after today, or it is dated in a closed period. */
+ *  the date is not after today, or it is due by a day in a closed period. */
 export function deferClaim(sheetId: string, by: string, id: number, until: string): Promise<Claim> {
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/defer?by=${encodeURIComponent(by)}&until=${encodeURIComponent(until)}`, {});
 }
 
-/** A steward re-dates an OPEN or PENDING claim to `date`: its due-by and any bound figure stay, its
- *  period follows the new date (under period numbering, a new period gives it that period's next
- *  number). Refused (rejects) for anyone else, any other status, a date after its person's
- *  retirement, or a claim dated in a closed period or a new date inside one. */
+/** A steward re-dates an OPEN or PENDING claim to `date`: its due-by and any bound figure stay, and
+ *  so do its period (the one its due-by falls in) and its number. Refused (rejects) for anyone else, any other status, a date after its person's
+ *  retirement, or a claim due by a day in a closed period. */
 export function redateClaim(sheetId: string, by: string, id: number, date: string): Promise<Claim> {
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/redate?by=${encodeURIComponent(by)}&date=${encodeURIComponent(date)}`, {});
 }
 
 /** Split an OPEN claim: it keeps the rest of its amount and loses any figure a statement bound it to;
  *  a new OPEN claim of `amount` (more than 0.00, less than the claim's), opened by the user, is split
- *  from its number. Refused (rejects) for a PENDING, deferred or settled claim, one dated in a closed
+ *  from its number. Refused (rejects) for a PENDING, deferred or settled claim, one due by a day in a closed
  *  period, an amount out of range, or a role that may not open a claim. */
 export function splitClaim(sheetId: string, by: string, id: number, amount: string): Promise<Claim> {
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/split?by=${encodeURIComponent(by)}&amount=${encodeURIComponent(amount)}`, {});
@@ -121,7 +120,7 @@ export function addProof(sheetId: string, by: string, id: number): Promise<Claim
 
 /** A steward moves a DRAFT, OPEN or PENDING claim to another person (`toPersonId`): it keeps its
  *  number and date, loses any figure a statement bound it to, and is listed as that person's newest
- *  claim. Refused (rejects) for anyone else, for a SETTLED or VOID claim, or one dated in a closed period. */
+ *  claim. Refused (rejects) for anyone else, for a SETTLED or VOID claim, or one due by a day in a closed period. */
 export function reassignClaim(sheetId: string, by: string, id: number, toPersonId: number): Promise<Claim> {
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/reassign?by=${encodeURIComponent(by)}&to=${toPersonId}`, {});
 }

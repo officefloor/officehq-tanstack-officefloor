@@ -36,7 +36,7 @@ public class SettleClaim {
         if (!Permissions.allows(claim.getSheetId(), by, Permissions.SETTLE, roles, settings)) {
             throw new ClaimStatusException("Your role may not settle a claim");
         }
-        periods.requireOpen(claim.getSheetId(), claim.getDate());
+        periods.requireOpen(claim.getSheetId(), claim.getDueBy());
         if (!ClaimStatus.OPEN.name().equals(claim.getStatus())) {
             throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be settled");
         }

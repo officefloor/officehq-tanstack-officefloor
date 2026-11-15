@@ -43,7 +43,7 @@ public final class PeriodClosing {
         for (Person p : people.list(id)) personTotals.put(p.getId(), BigDecimal.ZERO.setScale(2));
         Map<Long, String> atEnd = log.statusesOn(id, LocalDate.parse(found.to()));
         for (Claim c : claims.list(id)) {
-            if (!found.contains(c.getDate())) continue;
+            if (!found.contains(c.getDueBy())) continue;
             String status = atEnd.containsKey(c.getId()) ? atEnd.get(c.getId()) : c.getStatus();
             if (status == null || !(ClaimStatus.isOpen(status) || ClaimStatus.SETTLED.name().equals(status))) continue;
             Person person = people.find(id, c.getPersonId());

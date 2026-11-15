@@ -19,13 +19,14 @@ public class AddClaim {
         if (person.retiredBefore(date)) {
             throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
         }
-        periods.requireOpen(person.getSheetId(), date.toString());
-        String corrects = Corrections.check(request, person.getSheetId(), person.getId(), claims);
         // The due-by is fixed now: the person's own terms, else their grade's, else the sheet's, as they stood on its date.
+        // The claim belongs to the period its due-by falls in.
         LocalDate dueBy = date.plusDays(settings.terms(person.getSheetId(), person, date.toString()));
+        periods.requireOpen(person.getSheetId(), dueBy.toString());
+        String corrects = Corrections.check(request, person.getSheetId(), person.getId(), claims);
         Claim added = claims.add(person.getSheetId(), person.getId(), request.amount(), date,
                 request.note(), corrects, dueBy, user);
-        if (periods.softClosedOn(person.getSheetId(), date.toString())) claims.markLateEntry(added);
+        if (periods.softClosedOn(person.getSheetId(), dueBy.toString())) claims.markLateEntry(added);
         claim.set(added);
     }
 }

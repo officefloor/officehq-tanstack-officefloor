@@ -32,7 +32,9 @@ public class FindOrAddPerson {
             person.set(found);
             return;
         }
-        periods.requireOpen(id, sheets.today(id).toString());
+        // The claim would be refused when its due-by (its date plus grade A's terms) falls in a closed period.
+        java.time.LocalDate date = settings.entryDate(id);
+        periods.requireOpen(id, date.plusDays(settings.terms(id, "A", date.toString())).toString());
         sheets.open(id, user);
         Person added = people.add(id, name.name(), "A", user);
         audit.record("PERSON_ADDED sheet=" + id + " by=" + user + " name=" + added.getName()

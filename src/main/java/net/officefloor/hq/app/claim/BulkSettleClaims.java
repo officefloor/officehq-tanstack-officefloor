@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  within a person), each by exactly the rules of {@link SettleClaim} and recorded as it would record
  *  it (its status log line, its CLAIM_SETTLED or CLAIM_PENDING line, a settled one's NOTIFY lines, then the rollup lines it moved).
  *  A claim gone to PENDING counts as settled. A claim that cannot be settled (its status does not
- *  allow it, the user opened it, its date is in a closed period, or it is not on the sheet) is left as
+ *  allow it, the user opened it, its due-by is in a closed period, or it is not on the sheet) is left as
  *  it is and counted as refused; every one is on an archived sheet. */
 public class BulkSettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId,

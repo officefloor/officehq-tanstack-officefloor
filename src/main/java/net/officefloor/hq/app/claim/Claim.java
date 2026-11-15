@@ -126,7 +126,7 @@ public class Claim {
     public String getLockedBy() { return lockedBy; }
     public void setLockedBy(String lockedBy) { this.lockedBy = lockedBy; }
 
-    /** Whether it was added while the period its date falls in was soft-closed. */
+    /** Whether it was added while the period its due-by falls in was soft-closed. */
     public boolean isLateEntry() { return lateEntry; }
     public void setLateEntry(boolean lateEntry) { this.lateEntry = lateEntry; }
 

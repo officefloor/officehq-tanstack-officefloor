@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** Soft-closes a period: its due-total and each person's due-total for it are fixed now, as a close
- *  fixes them, but claims dated in it can still be added, edited, opened, settled and voided (a claim
+ *  fixes them, but claims due by a day in it can still be added, edited, opened, settled and voided (a claim
  *  added then is a late entry). Refused when it is already closed or soft-closed, and for a role the
  *  permission matrix does not let close. */
 public class SoftClosePeriod {

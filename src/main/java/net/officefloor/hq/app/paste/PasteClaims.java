@@ -23,10 +23,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /** Adds a DRAFT claim per pasted line, in order, to the person it names (compared as names are).
  *  Every line is first checked as {@link net.officefloor.hq.app.claim.AddClaim} checks a claim (its
- *  person on the sheet, not retired before its date, its date outside a closed period), so a refused
+ *  person on the sheet, not retired before its date, its due-by outside a closed period), so a refused
  *  line adds nothing; then each is added, logged and recorded as CLAIM_ADDED. */
 public class PasteClaims {
-    private record Pending(Person person, ValidClaim claim, LocalDate date, String corrects) {
+    private record Pending(Person person, ValidClaim claim, LocalDate date, LocalDate dueBy, String corrects) {
     }
 
     public void paste(@PathVariable("sheetId") String sheetId,
@@ -47,16 +47,16 @@ public class PasteClaims {
             if (person.retiredBefore(date)) {
                 throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
             }
-            periods.requireOpen(id, date.toString());
+            // The due-by is fixed now, by the terms of the grade in force on its date, as they stood on its date.
+            LocalDate dueBy = date.plusDays(settings.terms(id, person, date.toString()));
+            periods.requireOpen(id, dueBy.toString());
             String corrects = Corrections.check(request, id, person.getId(), claims);
-            pending.add(new Pending(person, request, date, corrects));
+            pending.add(new Pending(person, request, date, dueBy, corrects));
         }
         for (Pending p : pending) {
-            // The due-by is fixed now, by the terms of the grade in force on its date, as they stood on its date.
-            LocalDate dueBy = p.date().plusDays(settings.terms(id, p.person(), p.date().toString()));
             Claim claim = claims.add(id, p.person().getId(), p.claim().amount(), p.date(),
-                    p.claim().note(), p.corrects(), dueBy, user);
-            if (periods.softClosedOn(id, claim.getDate())) claims.markLateEntry(claim);
+                    p.claim().note(), p.corrects(), p.dueBy(), user);
+            if (periods.softClosedOn(id, claim.getDueBy())) claims.markLateEntry(claim);
             log.record(claim, user);
             audit.record("CLAIM_ADDED sheet=" + id + " by=" + user + " person=" + p.person().getName()
                     + " amount=" + claim.getAmount() + " date=" + claim.getDate());

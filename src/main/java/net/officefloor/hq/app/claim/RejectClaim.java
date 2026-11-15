@@ -14,7 +14,7 @@ public class RejectClaim {
             @RequestParam(name = "reason", required = false) String reason, @Val Claim claim,
             PeriodRepository periods, RoleRepository roles)
             throws ClaimStatusException, InvalidClaimException, PeriodClosedException {
-        periods.requireOpen(claim.getSheetId(), claim.getDate());
+        periods.requireOpen(claim.getSheetId(), claim.getDueBy());
         if (!ClaimStatus.PENDING.name().equals(claim.getStatus())) {
             throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be rejected");
         }
