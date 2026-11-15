@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import { useProofThreshold, type DatedOn } from '../settings/api';
-import { addClaim, addProof, claimsKey, deferClaim, dueBy, isOverdue, moveClaim, reassignClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
+import { addClaim, addProof, claimsKey, deferClaim, dueBy, isOverdue, moveClaim, reassignClaim, splitClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
 
@@ -30,7 +30,11 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  or a claim in a closed period refused with an error on the claim); whether it is deferred, and until when, is shown.
  *  Its proofs count is shown and raised by one with a button beside it (a SETTLED or VOID claim, or one in a
  *  closed period, refused with an error on the claim); one with no proofs whose due is above the sheet's proof
- *  threshold in force on its date cannot be settled or approved. */
+ *  threshold in force on its date cannot be settled or approved.
+ *  An OPEN claim can be split by an amount typed beside it (more than 0.00, less than its own): it keeps the
+ *  rest and is unbound, and a new OPEN claim of that amount, opened by the user, shows its number as split-from
+ *  (a PENDING, deferred or settled claim, one in a closed period, or a role that may not open a claim refused
+ *  with an error on the claim). */
 export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, today, charges, selected, onSelect, people }: {
   sheetId: string; user: string; personId: number; claims: Claim[]; gradeOn: GradeOn; rates: Rate[] | undefined;
   floor: DatedOn; today: string; charges: Late;
@@ -90,8 +94,33 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reassign.reset();
       deferral.reset();
       proof.reset();
+      division.reset();
       setEditRefused(null);
       return deferral.mutateAsync({ id, until });
+    });
+  };
+
+  // The amount typed for each claim to split off it.
+  const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
+
+  const division = useMutation({
+    mutationFn: (v: { id: number; amount: string }) => splitClaim(sheetId, user, v.id, v.amount),
+    onSuccess: (_, v) => {
+      setSplitAmounts((a) => ({ ...a, [v.id]: '' }));
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+
+  const split = (id: number) => {
+    const amount = (splitAmounts[id] ?? '').trim();
+    actOnce(() => {
+      move.reset();
+      reassign.reset();
+      deferral.reset();
+      proof.reset();
+      division.reset();
+      setEditRefused(null);
+      return division.mutateAsync({ id, amount });
     });
   };
 
@@ -106,6 +135,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reassign.reset();
       deferral.reset();
       proof.reset();
+      division.reset();
       setEditRefused(null);
       return proof.mutateAsync(id);
     });
@@ -131,6 +161,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reassign.reset();
       deferral.reset();
       proof.reset();
+      division.reset();
       setEditRefused(null);
       return reassign.mutateAsync({ id, to });
     });
@@ -142,6 +173,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       reassign.reset();
       deferral.reset();
       proof.reset();
+      division.reset();
       setEditRefused(null);
       return move.mutateAsync({ id, action });
     });
@@ -157,6 +189,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     reassign.reset();
     deferral.reset();
     proof.reset();
+    division.reset();
     if (c.status !== 'DRAFT') {
       setEditRefused(c.id);
       return;
@@ -238,6 +271,18 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                   Add proof
                 </button>
               </td>
+              <td>
+                Split from <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
+                <input data-testid="claim-split-amount" placeholder="Split amount" value={splitAmounts[c.id] ?? ''}
+                  onChange={(e) => {
+                    setSplitAmounts((a) => ({ ...a, [c.id]: e.target.value }));
+                    if (division.variables?.id === c.id) division.reset();
+                  }} />{' '}
+                <button type="button" data-testid="claim-split" disabled={division.isPending}
+                  onClick={() => split(c.id)}>
+                  Split
+                </button>
+              </td>
               <td data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</td>
               <td>
                 {(c.log ?? []).map((line, i) => <div key={i} data-testid="claim-log-line">{line}</div>)}
@@ -316,6 +361,15 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     : deferral.error instanceof HttpError && deferral.error.status === 400
                     ? 'A claim can only be deferred to a date after the sheet\'s today.'
                     : `A ${c.status} claim cannot be deferred.`}</span>
+                )}
+                {division.isError && division.variables?.id === c.id && (
+                  <span data-testid="claim-error">{division.error instanceof HttpError && division.error.status === 423
+                    ? 'A claim dated inside a closed period cannot be split.'
+                    : division.error instanceof HttpError && division.error.status === 400
+                    ? `A split needs an amount more than 0.00 and less than ${Number(c.amount).toFixed(2)}.`
+                    : c.status === 'OPEN' && !c.deferred
+                    ? 'Your role may not open a claim, so it cannot split one.'
+                    : `A ${c.deferred ? 'deferred' : c.status} claim cannot be split.`}</span>
                 )}
                 {proof.isError && proof.variables === c.id && (
                   <span data-testid="claim-error">{proof.error instanceof HttpError && proof.error.status === 423

@@ -36,6 +36,8 @@ export type Claim = {
   number: string | null; settledDue: string | null; openedBy: string | null;
   stated: boolean; statedDue: string | null; corrects: string | null; roundDate: string; dueBy: string;
   log: string[]; deferredUntil: string | null; deferred: boolean; proofs: number;
+  /** The number of the claim it was split from (null: not split off a claim). */
+  splitFrom: string | null;
 };
 /** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects. */
 export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
@@ -77,6 +79,14 @@ export function moveClaim(sheetId: string, by: string, id: number, action: Claim
  *  the date is not after today, or it is dated in a closed period. */
 export function deferClaim(sheetId: string, by: string, id: number, until: string): Promise<Claim> {
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/defer?by=${encodeURIComponent(by)}&until=${encodeURIComponent(until)}`, {});
+}
+
+/** Split an OPEN claim: it keeps the rest of its amount and loses any figure a statement bound it to;
+ *  a new OPEN claim of `amount` (more than 0.00, less than the claim's), opened by the user, is split
+ *  from its number. Refused (rejects) for a PENDING, deferred or settled claim, one dated in a closed
+ *  period, an amount out of range, or a role that may not open a claim. */
+export function splitClaim(sheetId: string, by: string, id: number, amount: string): Promise<Claim> {
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/split?by=${encodeURIComponent(by)}&amount=${encodeURIComponent(amount)}`, {});
 }
 
 /** Raise a claim's proofs count by one; refused (rejects) for a SETTLED or VOID claim, or one dated

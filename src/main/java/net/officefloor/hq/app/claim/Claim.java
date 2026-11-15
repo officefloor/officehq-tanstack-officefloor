@@ -29,6 +29,7 @@ public class Claim {
     private String deferredUntil;
     private boolean deferred;
     private int proofs;
+    private String splitFrom;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, String number, String settledDue, String openedBy) {
@@ -109,6 +110,10 @@ public class Claim {
     /** How many proofs it has (0 until one is added). */
     public int getProofs() { return proofs; }
     public void setProofs(int proofs) { this.proofs = proofs; }
+
+    /** The number of the claim it was split from (none: not split off a claim). */
+    public String getSplitFrom() { return splitFrom; }
+    public void setSplitFrom(String splitFrom) { this.splitFrom = splitFrom; }
 
     public boolean isStated() { return stated; }
     public String getStatedDue() { return statedDue; }
