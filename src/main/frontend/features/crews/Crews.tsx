@@ -12,7 +12,7 @@ import type { Crew } from './api';
 import { Fig } from '../session/Fig';
 
 /** Everyone's due-total as their row shows it (null: n/a), by id. */
-function useDueOf(sheetId: string, user: string): Map<number, string | null> {
+export function useDueOf(sheetId: string, user: string): Map<number, string | null> {
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
