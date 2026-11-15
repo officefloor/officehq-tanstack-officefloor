@@ -1,0 +1,184 @@
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 9715e65b7..531f4bca8 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -33,7 +33,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
+  *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap, with the excess above it, and split into settled and open (see `splitDues`); n/a
+  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
+  *  their statements (a button that takes one, now or as of the date typed beside it, a button that cancels the last, the count, the last one's due-total and date), whether
+- *  they are retired and from when (with a date and a button that retires them, a button that unretires them, and their past retirements, each `<from> to <to>`), their snapshot lines (one per SNAPSHOT written for them, oldest first, each `<the day being left> <due-total>`), whether they have
++ *  they are retired and from when (with a date and a button that retires them, a button that unretires them, and their past retirements, each `<from> to <to>`), their snapshot lines (one per SNAPSHOT written for them, oldest first, each `<the day being left> <due-total>`), their statement lines (one per statement still standing, oldest first, each `<statement date> <due-total>`), whether they have
+  *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
+  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
+  *  patrons (each `<name> <share>`, sorted by name (see `patronShares`), with a picker that names one more), their plans (see `PersonPlans`), their aliases (sorted as names are
+@@ -663,6 +663,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   {p.snapshots.map((s, i) => (
+                     <Fragment key={i}><span data-testid="person-snapshot-line">{s.day} {s.dueTotal}</span>; </Fragment>
+                   ))}
++                  Statements{' '}
++                  {p.statements.map((s, i) => (
++                    <Fragment key={i}><span data-testid="person-statement-line-line">{s.date} {s.dueTotal}</span>; </Fragment>
++                  ))}
+                 </td>
+                 <td>
+                   {shows('hold') && <>On hold <span data-testid="person-hold">{p.held ? 'yes' : 'no'}</span>{' '}</>}
+diff --git a/src/main/frontend/features/people/api.ts b/src/main/frontend/features/people/api.ts
+index 7cc8bf2e6..e9f922885 100644
+--- a/src/main/frontend/features/people/api.ts
++++ b/src/main/frontend/features/people/api.ts
+@@ -25,6 +25,9 @@ export type Retirement = { from: string; to: string };
+ 
+ export type Snapshot = { day: string; dueTotal: string };
+ 
++/** A statement still standing: its date (yyyy-MM-dd) and the due-total it recorded (or n/a). */
++export type StatementLine = { date: string; dueTotal: string };
++
+ export type Person = {
+   id: number; sheetId: string; name: string; grade: Grade; grades: GradeFrom[]; version: number;
+   statementCount: number; statedTotal: string | null; statementDate: string | null;
+@@ -33,6 +36,8 @@ export type Person = {
+   retirements: Retirement[];
+   /** The SNAPSHOTs written for them, oldest first: the day being left and their due-total on it (or n/a). */
+   snapshots: Snapshot[];
++  /** Their statements still standing (a cancelled one is gone), oldest first: by date, then as taken. */
++  statements: StatementLine[];
+   held: boolean; holds: Hold[]; patronIds: number[];
+   /** Their own terms in whole days (null: none): a claim's due-by goes by them before their grade's or the sheet's. */
+   terms: number | null;
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java b/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java
+index 0091efa83..fbf33b3d4 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java
+@@ -14,6 +14,7 @@ import java.util.Map;
+ import java.util.Set;
+ import java.util.concurrent.atomic.AtomicLong;
+ import javax.sql.DataSource;
++import net.officefloor.hq.app.rate.RateRepository;
+ import org.springframework.stereotype.Component;
+ 
+ /**
+@@ -121,6 +122,24 @@ public class AsOfStore {
+                 ps.setString(1, sheetId);
+                 ps.executeUpdate();
+             }
++            // A grade without a rate of its own goes by its ancestors' (as they are now, like the link):
++            // their rates and parent links come along, up as far as rates are looked.
++            Set<String> chain = new HashSet<>(Set.of(sheetId));
++            for (String at = liveParent(c, sheetId); at != null && chain.size() <= RateRepository.LEVELS
++                    && chain.add(at); at = liveParent(c, at)) {
++                for (String table : List.of("RATE", "RATE_VERSION", "RATE_HISTORY")) {
++                    try (PreparedStatement ps = c.prepareStatement("INSERT INTO " + q(schema) + "." + q(table)
++                            + " SELECT * FROM PUBLIC." + q(table) + " WHERE SHEET_ID = ?")) {
++                        ps.setString(1, at);
++                        ps.executeUpdate();
++                    }
++                }
++                try (PreparedStatement ps = c.prepareStatement("INSERT INTO " + q(schema) + ".SHEET_SETTING SELECT * FROM "
++                        + "PUBLIC.SHEET_SETTING WHERE SHEET_ID = ? AND SETTING = 'parent'")) {
++                    ps.setString(1, at);
++                    ps.executeUpdate();
++                }
++            }
+             // A SNAPSHOT is written when its day is left: as of that day (or before) it was not there yet.
+             try (PreparedStatement ps = c.prepareStatement(
+                     "DELETE FROM " + q(schema) + ".PERSON_SNAPSHOT WHERE SHEET_ID = ? AND DAY_LEFT >= ?")) {
+@@ -161,6 +180,21 @@ public class AsOfStore {
+         }
+     }
+ 
++    /** The sheet's parent as the live store names it now; null when it has none. */
++    private static String liveParent(Connection c, String sheetId) throws SQLException {
++        try (PreparedStatement ps = c.prepareStatement(
++                "SELECT val FROM PUBLIC.SHEET_SETTING WHERE SHEET_ID = ? AND SETTING = 'parent'")) {
++            ps.setString(1, sheetId);
++            try (ResultSet rs = ps.executeQuery()) {
++                while (rs.next()) {
++                    String v = rs.getString(1);
++                    if (v != null && !v.isEmpty()) return v;
++                }
++                return null;
++            }
++        }
++    }
++
+     /** Copy the sheet's rows of every table from {@code source} (null: none) into a new schema. */
+     private void copy(Connection c, String source, String target, String sheetId) throws SQLException {
+         if (liveTables == null) liveTables = tables(c, LIVE);
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 9c6e8c43d..8fefaa6b1 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -38,6 +38,8 @@ public class Person {
+     private java.util.List<Retirement> retirements = new java.util.ArrayList<>();
+     /** The SNAPSHOTs written for them, oldest first. */
+     private java.util.List<Snapshot> snapshots = new java.util.ArrayList<>();
++    /** Their statements still standing, oldest first (by date, then as taken). */
++    private java.util.List<StatementLine> statements = new java.util.ArrayList<>();
+     /** Their holds, in the order they were added. */
+     private java.util.List<Hold> holds = new java.util.ArrayList<>();
+     /** The sheet's today (null: not known). */
+@@ -147,6 +149,8 @@ public class Person {
+     public void setRetirements(java.util.List<Retirement> retirements) { this.retirements = retirements; }
+     public java.util.List<Snapshot> getSnapshots() { return snapshots; }
+     public void setSnapshots(java.util.List<Snapshot> snapshots) { this.snapshots = snapshots; }
++    public java.util.List<StatementLine> getStatements() { return statements; }
++    public void setStatements(java.util.List<StatementLine> statements) { this.statements = statements; }
+ 
+     /** Unretire them on the date: no longer retired, the retirement kept as a past one up to it. */
+     public void unretire(String on) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 2bf8c96f5..0b9c8cfef 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -51,6 +51,7 @@ public class PersonRepository {
+         withClashing(sheetId, people);
+         withRetirements(sheetId, people);
+         withSnapshots(sheetId, people);
++        withStatements(sheetId, people);
+         jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY added_at, patron_id",
+                 (rs) -> {
+                     Person p = byId.get(rs.getLong("person_id"));
+@@ -74,6 +75,7 @@ public class PersonRepository {
+             withClashing(sheetId, List.of(person));
+             withRetirements(sheetId, List.of(person));
+             withSnapshots(sheetId, List.of(person));
++            withStatements(sheetId, List.of(person));
+         }
+         return person;
+     }
+@@ -179,6 +181,24 @@ public class PersonRepository {
+         people.forEach((p) -> p.setSnapshots(snapshots.getOrDefault(p.getId(), new ArrayList<>())));
+     }
+ 
++    /** Give each person their statements still standing, oldest first: by date, then in the order taken
++     *  (those a merge or transfer brought over among them by their date). */
++    private void withStatements(String sheetId, List<Person> people) {
++        if (people.isEmpty()) {
++            return;
++        }
++        Map<Long, List<StatementLine>> statements = new HashMap<>();
++        jdbc.query("SELECT person_id, stated_total, statement_date FROM person_statement WHERE sheet_id = ? "
++                + "ORDER BY person_id, statement_date, taken_at, id",
++                (rs) -> {
++                    String total = rs.getString("stated_total");
++                    statements.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())
++                            .add(new StatementLine(rs.getObject("statement_date", LocalDate.class).toString(),
++                                    total == null ? "n/a" : total));
++                }, sheetId);
++        people.forEach((p) -> p.setStatements(statements.getOrDefault(p.getId(), new ArrayList<>())));
++    }
++
+     /** Keep a SNAPSHOT written for the person: the day being left and their due-total on it (or n/a). */
+     public void addSnapshot(String sheetId, long personId, LocalDate dayLeft, String dueTotal) {
+         jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, day_left, due_total) VALUES (?, ?, ?, ?)",
+diff --git a/src/main/java/net/officefloor/hq/app/person/StatementLine.java b/src/main/java/net/officefloor/hq/app/person/StatementLine.java
+new file mode 100644
+index 000000000..418fcceae
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/StatementLine.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A statement of a person still standing: its date (yyyy-MM-dd) and the due-total it recorded (or n/a). */
++public record StatementLine(String date, String dueTotal) {
++}
