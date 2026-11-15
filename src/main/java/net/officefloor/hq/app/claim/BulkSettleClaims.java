@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -12,6 +13,7 @@ import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.person.WatchRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.setting.Role;
 import net.officefloor.hq.app.setting.RoleRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
@@ -23,10 +25,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** Settles the selected claims in list order (people in the order they were added, newest claim first
  *  within a person), each by exactly the rules of {@link SettleClaim} and recorded as it would record
  *  it (its status log line, its CLAIM_SETTLED or CLAIM_PENDING line, a settled one's NOTIFY lines, then the rollup lines it moved).
- *  A claim gone to PENDING counts as settled. A claim that cannot be settled (its status does not
- *  allow it, the user opened it, its due-by is in a closed period, or it is not on the sheet) is left as
- *  it is and counted as refused; every one is on an archived sheet. One that settles at least one claim is
- *  the sheet's next batch, and each claim it settled keeps that batch number. */
+ *  A claim gone to PENDING counts as settled. All or nothing: if any selected claim cannot be settled
+ *  (its status does not allow it, the user opened it, its due-by is in a closed period, it is not on the
+ *  sheet, or the sheet is archived) none is settled, every one counts as refused and nothing is written.
+ *  Otherwise the bulk settle is the sheet's next batch, each claim keeps that batch number, and after the
+ *  claims' own lines one BATCH_SETTLED line gives the batch, its count and the SETTLED ones' frozen dues added up. */
 public class BulkSettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by,
@@ -49,25 +52,34 @@ public class BulkSettleClaims {
             }
         }
 
-        boolean archived = sheets.isArchived(id);
-        int settled = 0;
-        Integer batch = null;
-        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
+        // All or nothing: every selected claim must settle by the rules of settling one (going to PENDING
+        // is not a refusal), or none is settled and every one counts as refused.
+        boolean refused = sheets.isArchived(id) || ordered.size() != selected.size()
+                || Role.VIEWER.equals(roles.roleOf(id, user));
         for (Claim claim : ordered) {
-            if (archived) continue;
+            if (refused) break;
             try {
                 SettleClaim.settle(user, claim, people, rates, periods, roles, settings, sheets);
-            } catch (ClaimStatusException | PeriodClosedException refused) {
-                continue;
+            } catch (ClaimStatusException | PeriodClosedException e) {
+                refused = true;
             }
-            if (batch == null) batch = sheets.nextSettleBatch(id);
+        }
+        if (refused || ordered.isEmpty()) {
+            result.set(new BulkSettleResult(0, selected.size()));
+            return;
+        }
+
+        int batch = sheets.nextSettleBatch(id);
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
+        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
+        for (Claim claim : ordered) {
             claim.setSettleBatch(batch);
             claims.update(claim);
             log.record(claim, user);
-            settled++;
             audit.record(RecordClaimStatus.line(ClaimStatus.valueOf(claim.getStatus()).event(), user, claim, people)
                     + (ClaimStatus.SETTLED.name().equals(claim.getStatus()) ? RecordClaimStatus.due(claim) : ""));
             if (ClaimStatus.SETTLED.name().equals(claim.getStatus())) {
+                if (claim.getSettledDue() != null) total = total.add(new BigDecimal(claim.getSettledDue()));
                 Notify.watchers(user, claim, people, watches, audit);
             }
             Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
@@ -76,6 +88,8 @@ public class BulkSettleClaims {
             }
             before = after;
         }
-        result.set(new BulkSettleResult(settled, selected.size() - settled));
+        audit.record("BATCH_SETTLED sheet=" + id + " by=" + user + " batch=" + batch
+                + " count=" + ordered.size() + " total=" + total.toPlainString());
+        result.set(new BulkSettleResult(ordered.size(), 0));
     }
 }
