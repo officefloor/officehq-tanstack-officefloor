@@ -11,7 +11,10 @@ import net.officefloor.hq.app.period.PeriodClosedException;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.setting.Role;
+import net.officefloor.hq.app.setting.RoleRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
+import net.officefloor.hq.app.sheet.SheetArchivedException;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,15 +25,23 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  and the sheet's today that the plan has made none for yet. Each is checked as
  *  {@link net.officefloor.hq.app.claim.AddClaim} checks a claim (its person not retired before its date,
  *  its due-by outside a closed period): a date that is refused is skipped, to be tried again next time.
- *  Each claim made is logged and recorded as CLAIM_ADDED. */
+ *  Each claim made is logged and recorded as CLAIM_ADDED. Refused on an archived sheet; a viewer may
+ *  make none: for a viewer nothing is written and none are counted. */
 public class GeneratePlanClaims {
     public void generate(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by, PlanRepository plans,
             PersonRepository people, SheetRepository sheets, ClaimRepository claims, PeriodRepository periods,
             SettingRepository settings, HolidayRepository holidays, ClaimLogRepository log, Audit audit,
-            Out<GenerateResult> result) {
+            RoleRepository roles, Out<GenerateResult> result) throws SheetArchivedException {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
+        if (sheets.isArchived(id)) {
+            throw new SheetArchivedException("The sheet is archived");
+        }
+        if (Role.VIEWER.equals(roles.roleOf(id, user))) {
+            result.set(new GenerateResult(0));
+            return;
+        }
         LocalDate today = sheets.today(id);
         int made = 0;
         for (Plan plan : plans.list(id)) {

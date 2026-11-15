@@ -7,3 +7,9 @@ import { getJson } from '../../api/http';
 export function listAudit(sheetId: string, name: string): Promise<string[]> {
   return getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/audit?name=${encodeURIComponent(name)}`);
 }
+
+/** The sheet's activity: one line `<user> <EVENT> <count>` per user and event in its audit lines,
+ *  sorted by user then event. */
+export function listActivity(sheetId: string): Promise<string[]> {
+  return getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/activity`);
+}
