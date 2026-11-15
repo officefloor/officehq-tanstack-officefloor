@@ -6,7 +6,7 @@ import { listPeople, peopleKey } from '../people/api';
 import { listRates, ratesKey } from '../rates/api';
 import { fiscalYearOf, useFiscalStartMonth, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
-import { addPeriod, closePeriod, generateFiscalYear, generatePeriods, listPeriods, lockPeriod, periodDueTotal, periodsKey, reopenPeriod, softClosePeriod, type PeriodInput } from './api';
+import { addPeriod, closePeriod, generateFiscalYear, generatePeriods, generateQuarters, listPeriods, lockPeriod, periodDueTotal, periodsKey, reopenPeriod, softClosePeriod, type PeriodInput } from './api';
 import { Fig } from '../session/Fig';
 import { ImportOpenings } from './ImportOpenings';
 
@@ -36,12 +36,15 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
     },
   });
 
-  // Generate monthly periods between two dates, or a fiscal year's; the one count shown is cleared while it runs.
+  // Generate monthly periods between two dates, a fiscal year's or a year's quarters; the one count shown
+  // is cleared while it runs.
   const [range, setRange] = useState({ from: '', to: '' });
   const [fyYear, setFyYear] = useState('');
+  const [quarterYear, setQuarterYear] = useState('');
   const generate = useMutation({
-    mutationFn: (r: { from: string; to: string } | { year: string }) => 'year' in r
-      ? generateFiscalYear(sheetId, user, r.year) : generatePeriods(sheetId, user, r.from, r.to),
+    mutationFn: (r: { from: string; to: string } | { year: string } | { quarters: string }) => 'quarters' in r
+      ? generateQuarters(sheetId, user, r.quarters)
+      : 'year' in r ? generateFiscalYear(sheetId, user, r.year) : generatePeriods(sheetId, user, r.from, r.to),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
   });
   const generateOnce = useSubmitOnce();
@@ -137,8 +140,10 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
         </button>{' '}
         {generate.isSuccess && <>Made <span data-testid="period-generated">{generate.data.made}</span></>}
         {generate.isError && (
-          <span data-testid="period-generate-error">{generate.variables && 'year' in generate.variables
-            ? 'The fiscal year must be a year (yyyy).' : 'The to-date must be on or after the from-date.'}</span>
+          <span data-testid="period-generate-error">{generate.variables && 'quarters' in generate.variables
+            ? 'The quarters\' year must be a year (yyyy).'
+            : generate.variables && 'year' in generate.variables
+              ? 'The fiscal year must be a year (yyyy).' : 'The to-date must be on or after the from-date.'}</span>
         )}
       </form>
       <form
@@ -157,6 +162,24 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
         </label>{' '}
         <button type="submit" data-testid="period-generate-fy" disabled={generate.isPending}>
           Generate fiscal year
+        </button>
+      </form>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          generateOnce(() => {
+            generate.reset();
+            return generate.mutateAsync({ quarters: quarterYear });
+          });
+        }}
+      >
+        <label>
+          Generate quarters of{' '}
+          <input data-testid="period-generate-quarters-year" value={quarterYear} placeholder="yyyy"
+            onChange={(e) => { setQuarterYear(e.target.value); generate.reset(); }} />
+        </label>{' '}
+        <button type="submit" data-testid="period-generate-quarters" disabled={generate.isPending}>
+          Generate quarters
         </button>
       </form>
       <ImportOpenings sheetId={sheetId} user={user} />

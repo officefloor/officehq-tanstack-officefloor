@@ -67,6 +67,14 @@ export function generateFiscalYear(sheetId: string, by: string, year: string): P
     { year });
 }
 
+/** Make the four calendar quarters of the year as periods named <year>-Q1 to <year>-Q4, each as adding a
+ *  period would, leaving out a quarter whose name is taken or whose days overlap a period; refused
+ *  (rejects) when the year is not yyyy. Resolves to how many were made. */
+export function generateQuarters(sheetId: string, by: string, year: string): Promise<{ made: number }> {
+  return postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/generate-quarters?by=${encodeURIComponent(by)}`,
+    { year });
+}
+
 /** The period whose dates contain the date (yyyy-MM-dd), or undefined for none. A claim belongs to the
  *  period its due-by falls in. */
 export function periodOf(periods: Period[] | undefined, date: string): Period | undefined {
