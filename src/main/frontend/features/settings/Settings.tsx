@@ -69,6 +69,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
                 : key === 'escalate-after' ? 'Escalate after (days)'
                 : key === 'review-sla' ? 'Review SLA (days)'
                 : key === 'proof-threshold' ? 'Proof threshold'
+                : key === 'proof-kinds' ? 'Proof kinds (receipt, photo)'
                 : key === 'note-threshold' ? 'Note threshold'
                 : key === 'review-threshold' ? 'Review threshold'
                 : key === 'parent' ? 'Parent sheet'
@@ -78,7 +79,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
                 : key.startsWith('grace-') ? `Grace days for grade ${key.slice('grace-'.length)}`
                 : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (business days)` : 'Terms (business days)'}{' '}
               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
-                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' || key === 'review-threshold' || key === 'review-sla' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key === 'cap' ? 'No cap' : key === 'pot' || key === 'parent' ? 'None' : key === 'alert-threshold' ? 'Off' : key === 'rounding' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
+                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' || key === 'review-threshold' || key === 'review-sla' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key === 'cap' ? 'No cap' : key === 'pot' || key === 'parent' || key === 'proof-kinds' ? 'None' : key === 'alert-threshold' ? 'Off' : key === 'rounding' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
                   : key === 'period-numbering-from' || key === 'entry-date' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' || key === 'escalate-after' ? 'Off' : key.startsWith('grace-') ? 'None' : key.startsWith('terms-') ? "Sheet's terms"
                   : key.startsWith('perm-') ? PERMISSION_STANDING[key.slice('perm-'.length)] : undefined}
                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
@@ -101,7 +102,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {save.isError && (
           <span data-testid="settings-error">
             The clerk limit, the cap, the pot, the proof threshold, a grade's proof threshold, the note threshold and the review threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
-            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the rounding mode blank, half-up or half-even; the policy date, period numbering date and entry date blank or a date; the grace days, a grade's grace days and the review SLA blank or a whole number of days; a permission blank or a comma separated list of clerk and steward; the parent sheet blank or a sheet that has been loaded, not this one nor one with this one above it; the fiscal year start month a whole number from 1 to 12; a from-date blank or a date.
+            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the rounding mode blank, half-up or half-even; the policy date, period numbering date and entry date blank or a date; the grace days, a grade's grace days and the review SLA blank or a whole number of days; a permission blank or a comma separated list of clerk and steward; the proof kinds blank or a comma separated list of receipt and photo; the parent sheet blank or a sheet that has been loaded, not this one nor one with this one above it; the fiscal year start month a whole number from 1 to 12; a from-date blank or a date.
           </span>
         )}
       </form>

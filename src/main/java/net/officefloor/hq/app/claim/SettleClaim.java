@@ -72,15 +72,19 @@ public class SettleClaim {
         claim.setSettledDue(due);
     }
 
-    /** Refuses settling or approving a claim with no proofs whose due (null: n/a, never above) is above
+    /** Refuses settling or approving a claim with no proofs (while the sheet's proof kinds are set: with
+     *  none of one of them) whose due (null: n/a, never above) is above
      *  the proof threshold in force on the claim's date: its person's grade's (the grade in force on that
      *  date) when one is set, else the sheet's. */
     static void requireProof(Claim claim, Person person, String due, SettingRepository settings) throws ClaimStatusException {
-        if (due == null || claim.getProofs() > 0) return;
+        if (due == null) return;
+        java.util.List<String> kinds = settings.proofKinds(claim.getSheetId());
+        if (claim.getProofs() > 0 && kinds.stream().allMatch((kind) -> claim.proofsOf(kind) > 0)) return;
         BigDecimal threshold = settings.proofThreshold(claim.getSheetId(),
                 person == null ? null : person.gradeOn(claim.getDate()), claim.getDate());
         if (threshold != null && new BigDecimal(due).compareTo(threshold) > 0) {
-            throw new ClaimStatusException("A claim whose due is above the proof threshold needs a proof");
+            throw new ClaimStatusException("A claim whose due is above the proof threshold needs a proof"
+                    + (kinds.isEmpty() ? "" : " of each kind: " + String.join(",", kinds)));
         }
     }
 }

@@ -34,6 +34,10 @@ public class SettingRepository {
      *  instead of the sheet's. */
     public static final String PROOF_THRESHOLD_OF_GRADE = "proof-threshold-";
 
+    /** The proof kinds (a comma separated list of receipt and photo; blank: none; not dated): while set, a
+     *  claim above the proof threshold needs at least one proof of each before it is settled or approved. */
+    public static final String PROOF_KINDS = "proof-kinds";
+
     /** The note threshold: a claim whose due is above the one in force on its date cannot be opened
      *  with an empty note (two decimals; blank: none). */
     public static final String NOTE_THRESHOLD = "note-threshold";
@@ -119,10 +123,10 @@ public class SettingRepository {
     public static final String DEFAULT_FLOOR = "1.00";
 
     /** Whether a key is dated: every key that carries a figure (the policy date, the period
-     *  numbering date, the grace days, the pot, the fiscal year start month and the permission matrix are not). */
+     *  numbering date, the grace days, the pot, the proof kinds, the fiscal year start month and the permission matrix are not). */
     public static boolean isDated(String key) {
         return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
-                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !FISCAL_START_MONTH.equals(key) && !PARENT.equals(key) && !Permissions.isKey(key);
+                && !ENTRY_DATE.equals(key) && !PROOF_KINDS.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !FISCAL_START_MONTH.equals(key) && !PARENT.equals(key) && !Permissions.isKey(key);
     }
 
     private final JdbcTemplate jdbc;
@@ -217,6 +221,12 @@ public class SettingRepository {
             value = dated(sheetId, PROOF_THRESHOLD, null).on(date);
         }
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The sheet's proof kinds (none: not set). */
+    public List<String> proofKinds(String sheetId) {
+        String value = find(sheetId, PROOF_KINDS);
+        return value == null || value.isBlank() ? List.of() : List.of(value.split(","));
     }
 
     /** The sheet's note threshold in force on a date (yyyy-MM-dd); null when there is none. */

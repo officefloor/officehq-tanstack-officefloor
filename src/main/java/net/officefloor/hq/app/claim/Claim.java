@@ -32,6 +32,7 @@ public class Claim {
     private String deferredUntil;
     private boolean deferred;
     private int proofs;
+    private int photoProofs;
     private String splitFrom;
     private boolean reversal;
     private String lockedBy;
@@ -144,6 +145,18 @@ public class Claim {
     /** How many proofs it has (0 until one is added). */
     public int getProofs() { return proofs; }
     public void setProofs(int proofs) { this.proofs = proofs; }
+
+    /** How many of its proofs are photos (the rest are receipts). */
+    public int getPhotoProofs() { return photoProofs; }
+    public void setPhotoProofs(int photoProofs) { this.photoProofs = photoProofs; }
+
+    /** How many of its proofs are receipts. */
+    public int getReceiptProofs() { return proofs - photoProofs; }
+
+    /** How many of its proofs are of a kind ({@code receipt} or {@code photo}). */
+    public int proofsOf(String kind) {
+        return ProofKind.PHOTO.equals(kind) ? photoProofs : ProofKind.RECEIPT.equals(kind) ? getReceiptProofs() : 0;
+    }
 
     /** The number of the claim it was split from (none: not split off a claim). */
     public String getSplitFrom() { return splitFrom; }

@@ -31,13 +31,14 @@ export const isBound = (c: Claim) => c.stated && c.statedDue !== null;
  *  `deferredUntil` is the date it was last deferred until (null: never), and `deferred` whether it is
  *  deferred on the sheet's today (OPEN, or VOID voided while deferred, and deferred until a later date): a deferred claim counts in no
  *  total, is not overdue, cannot be settled and is left unbound by a statement. `proofs` is how many
- *  proofs it has: one whose due is above the proof threshold in force on its date cannot be settled or
- *  approved with none. */
+ *  proofs it has, `photoProofs` how many of them are photos (the rest are receipts): one whose due is
+ *  above the proof threshold in force on its date cannot be settled or approved with none (while the
+ *  sheet's proof kinds are set: with none of one of them). */
 export type Claim = {
   id: number; sheetId: string; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null;
   stated: boolean; statedDue: string | null; corrects: string | null; roundDate: string; dueBy: string;
-  log: string[]; deferredUntil: string | null; deferred: boolean; proofs: number;
+  log: string[]; deferredUntil: string | null; deferred: boolean; proofs: number; photoProofs: number;
   /** Its comments, oldest first: `<user> on <date>: <text>` (the sheet's today when written). */
   comments: string[];
   /** Its lines, in the order they were added: `<label> <qty> x <unit>`; with lines, its amount is their total. */
@@ -169,10 +170,21 @@ export function splitClaim(sheetId: string, by: string, id: number, amount: stri
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/split?by=${encodeURIComponent(by)}&amount=${encodeURIComponent(amount)}`, {});
 }
 
-/** Raise a claim's proofs count by one; refused (rejects) for a SETTLED or VOID claim, or one dated
+/** The kinds a proof may be (none chosen: a receipt). */
+export const PROOF_KINDS = ['receipt', 'photo'] as const;
+export type ProofKind = typeof PROOF_KINDS[number];
+
+/** How many of a claim's proofs are of a kind. */
+export function proofsOf(c: Pick<Claim, 'proofs' | 'photoProofs'>, kind: string): number {
+  const photos = c.photoProofs ?? 0;
+  return kind === 'photo' ? photos : kind === 'receipt' ? (c.proofs ?? 0) - photos : 0;
+}
+
+/** Raise a claim's proofs count by one, of the kind chosen ('': none, a receipt); refused (rejects) for a SETTLED or VOID claim, or one dated
  *  in a closed period. */
-export function addProof(sheetId: string, by: string, id: number): Promise<Claim> {
-  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/proofs?by=${encodeURIComponent(by)}`, {});
+export function addProof(sheetId: string, by: string, id: number, kind: ProofKind | ''): Promise<Claim> {
+  const ofKind = kind ? `&kind=${encodeURIComponent(kind)}` : '';
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/proofs?by=${encodeURIComponent(by)}${ofKind}`, {});
 }
 
 /** Comment a claim, by the user on the sheet's today; refused (rejects) for an empty comment. */

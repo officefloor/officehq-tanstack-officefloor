@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, void_reason, edited_by, settle_batch, waived_on, "
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, photo_proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, void_reason, edited_by, settle_batch, waived_on, "
             // Deferred now: OPEN (or VOID, voided while deferred: it keeps showing the deferral) and
             // deferred until a date after the sheet's today.
             + "(status IN ('OPEN', 'VOID') AND deferred_until IS NOT NULL AND deferred_until > "
@@ -38,7 +38,7 @@ public class ClaimRepository {
                     : rs.getBigDecimal("stated_due").setScale(2).toPlainString()), rs.getString("corrects"),
             rs.getObject("round_date", LocalDate.class).toString(),
             rs.getObject("due_by", LocalDate.class).toString(),
-            rs.getObject("deferred_until", LocalDate.class), rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"), rs.getString("locked_by"), rs.getBoolean("late_entry")),
+            rs.getObject("deferred_until", LocalDate.class), rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getInt("photo_proofs"), rs.getString("split_from"), rs.getString("locked_by"), rs.getBoolean("late_entry")),
             rs.getObject("reminded_on", LocalDate.class)), rs.getString("ref")), rs.getString("tags")), rs.getString("void_reason")), rs.getString("edited_by")), rs.getObject("settle_batch", Integer.class)), rs.getObject("waived_on", LocalDate.class));
 
     private static Claim withWaived(Claim claim, LocalDate waivedOn) {
@@ -77,11 +77,12 @@ public class ClaimRepository {
     }
 
     private static Claim withCorrects(Claim claim, String corrects, String roundDate, String dueBy,
-            LocalDate deferredUntil, boolean deferred, int proofs, String splitFrom, String lockedBy, boolean lateEntry) {
+            LocalDate deferredUntil, boolean deferred, int proofs, int photoProofs, String splitFrom, String lockedBy, boolean lateEntry) {
         claim.setLateEntry(lateEntry);
         claim.setLockedBy(lockedBy);
         claim.setSplitFrom(splitFrom);
         claim.setProofs(proofs);
+        claim.setPhotoProofs(photoProofs);
         claim.setCorrects(corrects);
         claim.setDeferral(deferredUntil == null ? null : deferredUntil.toString(), deferred);
         claim.setDueBy(dueBy);
@@ -325,7 +326,7 @@ public class ClaimRepository {
                             rs.getObject("round_date", LocalDate.class).toString(),
                             rs.getObject("due_by", LocalDate.class).toString(), until,
                             ClaimStatus.OPEN.name().equals(status) && until != null && until.isAfter(asOf),
-                            0, null, null, false);
+                            0, 0, null, null, false);
                 }, sheetId, personId, asOf);
     }
 
@@ -368,10 +369,10 @@ public class ClaimRepository {
                 claim.getSplitFrom(), claim.getSheetId(), claim.getId());
     }
 
-    /** Save a claim's proofs count. */
+    /** Save a claim's proofs count and how many of them are photos. */
     public void updateProofs(Claim claim) {
-        jdbc.update("UPDATE claim SET proofs = ? WHERE sheet_id = ? AND id = ?",
-                claim.getProofs(), claim.getSheetId(), claim.getId());
+        jdbc.update("UPDATE claim SET proofs = ?, photo_proofs = ? WHERE sheet_id = ? AND id = ?",
+                claim.getProofs(), claim.getPhotoProofs(), claim.getSheetId(), claim.getId());
     }
 
     /** Save a claim's binding by its person's last statement. */

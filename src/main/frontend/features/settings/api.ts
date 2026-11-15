@@ -26,7 +26,9 @@ export type Role = { sheetId: string; user: string; role: string };
  *  threshold (two decimals; blank means none): a claim whose due is above the one in force on its date
  *  cannot be settled or approved while it has no proofs. A grade's proof threshold (proof-threshold-<grade>,
  *  two decimals; blank means none): a claim whose person's grade in force on its date has one in force on
- *  that date goes by it instead of the sheet's. The note threshold (two decimals; blank means none):
+ *  that date goes by it instead of the sheet's. The proof kinds (a comma separated list of receipt and photo;
+ *  blank means none; not dated): while set, a claim above the proof threshold needs at least one proof of
+ *  each before it can be settled or approved. The note threshold (two decimals; blank means none):
  *  a claim whose due is above the one in force on its date cannot be opened with an empty note. The review
  *  threshold (two decimals; blank means none): a claim whose due is above the one in force on its date goes
  *  to REVIEW when opened instead of OPEN, until a steward reviews it. The permission matrix (perm-<action>, a comma
@@ -52,7 +54,7 @@ export type Role = { sheetId: string; user: string; role: string };
  *  The review SLA (a number of days; blank means none; not dated): a REVIEW claim whose review day (the
  *  sheet's today when it went to REVIEW) plus them is before the sheet's today is review-late (see `isReviewLate`). */
 export const SETTING_KEYS = ['clerk-limit', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'rounding',
-  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'] as const;
+  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'] as const;
 
 /** The roles that may take each action of the permission matrix while its entry is blank. */
 export const PERMISSION_STANDING: Record<string, string> = {
@@ -64,7 +66,7 @@ export const PERMISSION_STANDING: Record<string, string> = {
 export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00', 'fiscal-start-month': '1' };
 
 /** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
-export const UNDATED_KEYS: readonly string[] = ['pot', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'perm-open', 'perm-settle', 'perm-void',
+export const UNDATED_KEYS: readonly string[] = ['pot', 'proof-kinds', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'perm-open', 'perm-settle', 'perm-void',
   'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'];
 
 /** The fiscal year a date (yyyy-MM-dd) falls in, FY<yyyy>, for a fiscal year start month (1 to 12). */
@@ -128,6 +130,13 @@ export function useProofThreshold(sheetId: string): (grade: string, date: string
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
   return (grade, date) => (grade ? settingOn(settings.data, `proof-threshold-${grade}`, date) : '')
     || settingOn(settings.data, 'proof-threshold', date) || null;
+}
+
+/** The sheet's proof kinds: those a claim above the proof threshold needs a proof of each of (none: not set). */
+export function useProofKinds(sheetId: string): string[] {
+  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+  const value = settingOn(settings.data, 'proof-kinds', '9999-12-31') ?? '';
+  return value ? value.split(',') : [];
 }
 
 /** The sheet's note threshold by date (null: none in force on that date). */

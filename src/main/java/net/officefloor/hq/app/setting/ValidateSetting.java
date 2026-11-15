@@ -3,9 +3,11 @@ package net.officefloor.hq.app.setting;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.claim.ProofKind;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -49,6 +51,14 @@ public class ValidateSetting {
             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("A grade's proof threshold is blank or 0.00 or more with up to two decimals");
             }
+        } else if (SettingRepository.PROOF_KINDS.equals(key)) {
+            List<String> kinds = value.isEmpty() ? List.of()
+                    : Arrays.stream(value.split(",")).map(String::trim).distinct().toList();
+            if (!kinds.stream().allMatch(ProofKind.ALL::contains)) {
+                throw new InvalidSettingException("The proof kinds are blank or a comma separated list of receipt and photo");
+            }
+            body.set(new SettingRequest(key, kinds.isEmpty() ? null : String.join(",", kinds), null));
+            return;
         } else if (SettingRepository.NOTE_THRESHOLD.equals(key)) {
             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("The note threshold is blank or 0.00 or more with up to two decimals");

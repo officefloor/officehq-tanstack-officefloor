@@ -4,9 +4,9 @@ import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
-import { isReviewLate, useNoteThreshold, useProofThreshold, useReviewSla, type DatedOn } from '../settings/api';
+import { isReviewLate, useNoteThreshold, useProofKinds, useProofThreshold, useReviewSla, type DatedOn } from '../settings/api';
 import { claimFromTemplate, listTemplates, templatesKey } from '../templates/api';
-import { addClaim, addClaimLine, claimTimeline, addProof, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, waiveClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
+import { addClaim, addClaimLine, claimTimeline, addProof, PROOF_KINDS, proofsOf, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, waiveClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ProofKind, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
 import { Fig } from '../session/Fig';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
@@ -42,9 +42,10 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  status, or a claim already waived refused with an error on the claim); whether it is waived is shown.
  *  An OPEN claim can be deferred until a date typed beside it, after the sheet's today (any other claim, date,
  *  or a claim in a closed period refused with an error on the claim); whether it is deferred, and until when, is shown.
- *  Its proofs count is shown and raised by one with a button beside it (a SETTLED or VOID claim, or one in a
- *  closed period, refused with an error on the claim); one with no proofs whose due is above the sheet's proof
- *  threshold in force on its date cannot be settled or approved.
+ *  Its proofs count is shown, with how many are of each kind, and raised by one with a button beside it, of the
+ *  kind chosen beside it (none: a receipt; a SETTLED or VOID claim, or one in a closed period, refused with an
+ *  error on the claim); one with no proofs (while the sheet's proof kinds are set: none of one of them) whose
+ *  due is above the sheet's proof threshold in force on its date cannot be settled or approved.
  *  A claim can be commented with text typed beside it (an empty comment refused with an error on the claim);
  *  its comments are shown oldest first as `<user> on <date>: <text>`.
  *  A DRAFT can gain a line (a label, a whole quantity of at least 1 and a unit amount of two decimals) typed
@@ -310,9 +311,15 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     });
   };
 
+  // The proof kind chosen for each claim ('': none, a receipt).
+  const [proofKinds, setProofKinds] = useState<Record<number, ProofKind | ''>>({});
+
   const proof = useMutation({
-    mutationFn: (id: number) => addProof(sheetId, user, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    mutationFn: (id: number) => addProof(sheetId, user, id, proofKinds[id] ?? ''),
+    onSuccess: (_, id) => {
+      setProofKinds((k) => ({ ...k, [id]: '' }));
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
   });
 
   const prove = (id: number) => {
@@ -398,11 +405,14 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
   };
 
   const proofThreshold = useProofThreshold(sheetId);
-  // Whether a claim needs a proof before it is settled or approved: none yet, and its due above the threshold.
+  // Whether a claim needs a proof before it is settled or approved: none yet (or none of one of the sheet's
+  // proof kinds), and its due above the threshold.
+  const requiredKinds = useProofKinds(sheetId);
   const needsProof = (c: Claim) => {
     const threshold = proofThreshold(gradeOn(c.date), c.date);
     const due = claimDue(c, rates, gradeOn, floor, charges);
-    return c.proofs === 0 && threshold !== null && due !== null && Number(due) > Number(threshold);
+    const missing = c.proofs === 0 || requiredKinds.some((kind) => proofsOf(c, kind) === 0);
+    return missing && threshold !== null && due !== null && Number(due) > Number(threshold);
   };
 
   const noteThreshold = useNoteThreshold(sheetId);
@@ -646,6 +656,17 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
               </td>
               <td>
                 Proofs <span data-testid="claim-proofs">{c.proofs ?? 0}</span>{' '}
+                ({PROOF_KINDS.map((kind, i) => (
+                  <span key={kind}>{i > 0 && ', '}{kind} <span data-testid={`claim-proofs-${kind}`}>{proofsOf(c, kind)}</span></span>
+                ))}){' '}
+                <select data-testid="claim-proof-kind" value={proofKinds[c.id] ?? ''}
+                  onChange={(e) => {
+                    setProofKinds((k) => ({ ...k, [c.id]: e.target.value as ProofKind | '' }));
+                    if (proof.variables === c.id) proof.reset();
+                  }}>
+                  <option value="">Kind (receipt)</option>
+                  {PROOF_KINDS.map((kind) => <option key={kind} value={kind}>{kind}</option>)}
+                </select>{' '}
                 <button type="button" data-testid="claim-proof" disabled={proof.isPending}
                   onClick={() => prove(c.id)}>
                   Add proof
@@ -791,7 +812,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     : move.error instanceof HttpError && move.error.status === 400
                     ? 'A rejection needs a reason.'
                     : (move.variables.action === 'settle' || move.variables.action === 'approve') && needsProof(c)
-                    ? 'A claim whose due is above the proof threshold needs a proof first.'
+                    ? `A claim whose due is above the proof threshold needs a proof${requiredKinds.length > 0 ? ` of each kind (${requiredKinds.join(', ')})` : ''} first.`
                     : move.variables.action === 'open' && c.status === 'DRAFT' && needsNote(c)
                     ? 'A claim whose due is above the note threshold needs a note before it is opened.'
                     : c.deferred && move.variables.action === 'settle'
@@ -856,6 +877,8 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 {proof.isError && proof.variables === c.id && (
                   <span data-testid="claim-error">{proof.error instanceof HttpError && proof.error.status === 423
                     ? 'A claim due by a day inside a closed period cannot gain a proof.'
+                    : proof.error instanceof HttpError && proof.error.status === 400
+                    ? 'A proof is a receipt or a photo.'
                     : `A ${c.status} claim cannot gain a proof.`}</span>
                 )}
                 {commenting.isError && commenting.variables?.id === c.id && (
