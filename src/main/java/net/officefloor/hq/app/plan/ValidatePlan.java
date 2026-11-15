@@ -10,8 +10,9 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Refused for an amount the claim form would refuse (a plan makes no corrections, so not negative), a
- *  start or end that is not a date, an interval that is not a whole number of at least 1, and an end
- *  before the start. */
+ *  start or end that is not a date, an interval that is not a whole number of at least 1, a day of the
+ *  month that is not a whole number from 1 to 31, both or neither of the two given, and an end before
+ *  the start. */
 public class ValidatePlan {
     public void validate(@RequestBody PlanRequest request, Out<ValidPlan> body) throws InvalidPlanException {
         if (request == null) throw new InvalidPlanException("A plan is required");
@@ -25,11 +26,19 @@ public class ValidatePlan {
         LocalDate start = date(request.start());
         LocalDate end = date(request.end());
         String every = request.every() == null ? "" : request.every().trim();
-        if (!every.matches("\\d{1,9}") || Integer.parseInt(every) < 1) {
+        String day = request.day() == null ? "" : request.day().trim();
+        if (every.isEmpty() == day.isEmpty()) {
+            throw new InvalidPlanException("A plan runs either every N days or on a day of the month");
+        }
+        if (!every.isEmpty() && (!every.matches("\\d{1,9}") || Integer.parseInt(every) < 1)) {
             throw new InvalidPlanException("Every N days needs a whole number of at least 1");
         }
+        if (!day.isEmpty() && (!day.matches("\\d{1,2}") || Integer.parseInt(day) < 1 || Integer.parseInt(day) > 31)) {
+            throw new InvalidPlanException("The day of the month is a whole number from 1 to 31");
+        }
         if (end.isBefore(start)) throw new InvalidPlanException("The end is before the start");
-        body.set(new ValidPlan(amount.amount(), start, Integer.parseInt(every), end));
+        body.set(new ValidPlan(amount.amount(), start, every.isEmpty() ? null : Integer.parseInt(every),
+                day.isEmpty() ? null : Integer.parseInt(day), end));
     }
 
     private static LocalDate date(String text) throws InvalidPlanException {

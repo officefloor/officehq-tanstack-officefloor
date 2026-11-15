@@ -1,11 +1,11 @@
 import { getJson, postJson } from '../../api/http';
 import { sheetKey } from '../sheet/api';
 
-/** A person's plan: an amount, a start date, every N days and an end date, and how many claims it has
- *  made so far. */
-export type Plan = { id: number; sheetId: string; personId: number; amount: string; start: string; every: number; end: string; by: string; generated: number };
+/** A person's plan: an amount, a start date, every N days or else a day of the month (1 to 31), an end
+ *  date, and how many claims it has made so far. */
+export type Plan = { id: number; sheetId: string; personId: number; amount: string; start: string; every: number | null; day: number | null; end: string; by: string; generated: number };
 
-export type PlanInput = { amount: string; start: string; every: string; end: string };
+export type PlanInput = { amount: string; start: string; every: string; day: string; end: string };
 
 export type GenerateResult = { made: number };
 
@@ -19,7 +19,7 @@ export function listPlans(sheetId: string): Promise<Plan[]> {
 }
 
 /** Give the person a plan; refused (rejects) for an amount the claim form would refuse, an interval that is
- *  not a whole number of at least 1, or an end before the start. */
+ *  not a whole number of at least 1, a day of the month not 1 to 31 (or both or neither given), or an end before the start. */
 export function addPlan(sheetId: string, by: string, personId: number, input: PlanInput): Promise<Plan> {
   return postJson<Plan>(`${sheetBase(sheetId)}/people/${personId}/plans?by=${encodeURIComponent(by)}`, input);
 }

@@ -2,6 +2,7 @@ package net.officefloor.hq.app.plan;
 
 import java.sql.Date;
 import java.sql.PreparedStatement;
+import java.sql.Types;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
@@ -14,12 +15,13 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PlanRepository {
 
-    private static final String SELECT = "SELECT p.id, p.sheet_id, p.person_id, p.amount, p.start_date, p.every_days, "
+    private static final String SELECT = "SELECT p.id, p.sheet_id, p.person_id, p.amount, p.start_date, p.every_days, p.month_day, "
             + "p.end_date, p.added_by, (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS made FROM plan p ";
 
     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount").setScale(2), rs.getDate("start_date").toLocalDate(),
-            rs.getInt("every_days"), rs.getDate("end_date").toLocalDate(), rs.getString("added_by"), rs.getInt("made"));
+            rs.getObject("every_days", Integer.class), rs.getObject("month_day", Integer.class),
+            rs.getDate("end_date").toLocalDate(), rs.getString("added_by"), rs.getInt("made"));
 
     private final JdbcTemplate jdbc;
 
@@ -42,16 +44,17 @@ public class PlanRepository {
         GeneratedKeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, end_date, added_by) "
-                            + "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, month_day, end_date, added_by) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
             ps.setBigDecimal(3, plan.amount());
             ps.setDate(4, Date.valueOf(plan.start()));
-            ps.setInt(5, plan.every());
-            ps.setDate(6, Date.valueOf(plan.end()));
-            ps.setString(7, by);
+            ps.setObject(5, plan.every(), Types.INTEGER);
+            ps.setObject(6, plan.day(), Types.INTEGER);
+            ps.setDate(7, Date.valueOf(plan.end()));
+            ps.setString(8, by);
             return ps;
         }, key);
         return find(key.getKey().longValue());

@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** For every plan on the sheet, in the order they were added, adds a DRAFT claim of the plan's amount,
- *  dated that day with an empty note, for every plan date (the start, then every N days) up to the end
+ *  dated that day with an empty note, for every plan date (the start, then every N days; or the day of the month in every month) up to the end
  *  and the sheet's today that the plan has made none for yet. Each is checked as
  *  {@link net.officefloor.hq.app.claim.AddClaim} checks a claim (its person not retired before its date,
  *  its due-by outside a closed period): a date that is refused is skipped, to be tried again next time.
@@ -38,7 +38,7 @@ public class GeneratePlanClaims {
             if (person == null) continue;
             Set<LocalDate> done = plans.made(plan.id());
             LocalDate last = plan.end().isBefore(today) ? plan.end() : today;
-            for (LocalDate date = plan.start(); !date.isAfter(last); date = date.plusDays(plan.every())) {
+            for (LocalDate date : plan.dates(last)) {
                 if (done.contains(date) || person.retiredBefore(date)) continue;
                 // The due-by is fixed now, as for a claim added on the form.
                 LocalDate dueBy = holidays.dueBy(id, date, settings.terms(id, person, date.toString()));
