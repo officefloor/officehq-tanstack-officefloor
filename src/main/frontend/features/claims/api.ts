@@ -132,6 +132,20 @@ export function isActive(live: Claim[], today: string): boolean {
   return live.some((c) => isOpen(c) && from <= c.date && c.date <= today);
 }
 
+/** A person's backing: the frozen settled figures of their patrons' SETTLED claims dated within the 90 days up to
+ *  and including the sheet's `today`, added up (0.00 with none). */
+export function backing(claims: Claim[], patronIds: number[], today: string): string {
+  if (today === '') return '0.00';
+  const since = new Date(`${today}T00:00:00Z`);
+  since.setUTCDate(since.getUTCDate() - 89);
+  const from = since.toISOString().slice(0, 10);
+  const patrons = new Set(patronIds);
+  const cents = claims
+    .filter((c) => patrons.has(c.personId) && c.status === 'SETTLED' && c.settledDue !== null && from <= c.date && c.date <= today)
+    .reduce((t, c) => t + Math.round(Number(c.settledDue) * 100), 0);
+  return (cents / 100).toFixed(2);
+}
+
 /** Sum the amounts of the claims that count (see `counts`) exactly (in cents), shown with two decimals. */
 export function sumAmounts(claims: Claim[]): string {
   const cents = claims.filter(counts).reduce((t, c) => t + Math.round(Number(c.amount) * 100), 0);

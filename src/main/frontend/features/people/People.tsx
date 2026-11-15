@@ -6,9 +6,9 @@ import { BulkOpen } from '../claims/BulkOpen';
 import { PasteClaims } from '../claims/PasteClaims';
 import { BulkSettle } from '../claims/BulkSettle';
 import { PersonClaims } from '../claims/PersonClaims';
-import { claimsKey, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
+import { backing, claimsKey, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
 import { listPeriods, periodsKey, personPeriodDue } from '../periods/api';
-import { claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, sumDues } from '../rates/api';
+import { claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
 import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { ExportPeople } from './ExportPeople';
@@ -25,8 +25,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '' };
  *  they are retired and from when (with a date and a button that retires them), whether they have
  *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
- *  patrons (names sorted, with a picker that names one more) and backing (their patrons' due-totals
- *  added up, skipping n/a), and
+ *  patrons (names sorted, with a picker that names one more) and backing (see `backing`), and
  *  their due-total for each period (see `personPeriodDue`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
  *  with a checkbox that selects it for a button that opens the selected claims together.
  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
@@ -368,7 +367,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   Patrons <span data-testid="person-patrons">
                     {p.patronIds.map((id) => nameOf.get(id) ?? '').sort((x, y) => x.localeCompare(y)).join(', ')}
                   </span>{' '}
-                  backing <span data-testid="person-backing">{sumDues(p.patronIds.map((id) => dueOf.get(id) ?? null))}</span>{' '}
+                  backing <span data-testid="person-backing">{backing(claims.data ?? [], p.patronIds, today)}</span>{' '}
                   <select data-testid="person-patron-select" value={patronPicks[p.id] ?? ''}
                     onChange={(e) => {
                       setPatronPicks((d) => ({ ...d, [p.id]: e.target.value }));
