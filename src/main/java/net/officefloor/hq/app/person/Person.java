@@ -9,7 +9,7 @@ import net.officefloor.hq.app.claim.ClaimStatus;
  *  their statements: how many have been taken, and the last one's due-total and date (none until the
  *  first), and the date they are retired from (null: not retired; set at all, they count as retired),
  *  and their holds, by when they were added (their OPEN claims dated within one, and not bound by a
- *  statement, count in no live total). */
+ *  statement, count in no live total; nor, from their retirement date on, do any of their open ones). */
 public class Person {
     private final long id;
     private final String sheetId;
@@ -30,6 +30,8 @@ public class Person {
     private String retiredFrom;
     /** Their holds, in the order they were added. */
     private java.util.List<Hold> holds = new java.util.ArrayList<>();
+    /** The sheet's today (null: not known). */
+    private java.time.LocalDate today;
     /** The ids of the people they name as patrons, in the order named. */
     private java.util.List<Long> patronIds = new java.util.ArrayList<>();
     /** How many claims the statement this request took bound, for its audit line. */
@@ -64,6 +66,7 @@ public class Person {
     public void setGrades(java.util.List<GradeFrom> grades, java.time.LocalDate today) {
         this.grades = grades;
         this.grade = gradeOn(today.toString());
+        this.today = today;
     }
 
     /** The grade in force on the date (yyyy-MM-dd): the one with the latest from-date on or before
@@ -110,6 +113,11 @@ public class Person {
     public String getRetiredFrom() { return retiredFrom; }
     public void setRetiredFrom(String retiredFrom) { this.retiredFrom = retiredFrom; }
     public boolean isRetired() { return retiredFrom != null; }
+    /** Whether the sheet's today is on or after their retirement date: their open claims no statement
+     *  bound then count in no live total. */
+    public boolean isRetiredReached() {
+        return retiredFrom != null && today != null && !today.isBefore(java.time.LocalDate.parse(retiredFrom));
+    }
     /** Whether they have any hold. */
     public boolean isHeld() { return !holds.isEmpty(); }
     public java.util.List<Hold> getHolds() { return holds; }
@@ -118,17 +126,19 @@ public class Person {
     public void setPatronIds(java.util.List<Long> patronIds) { this.patronIds = patronIds; }
 
     /** Whether the claim counts in live totals: it counts by status, and is not an open (OPEN or
-     *  PENDING) claim dated within one of their holds that no statement bound, nor a deferred one. */
+     *  PENDING) claim dated within one of their holds, or of a person whose retirement date is reached,
+     *  that no statement bound, nor a deferred one. */
     public boolean countsLive(Claim claim) {
         return claim.isCounting() && !leftOutLive(claim);
     }
 
     /** Whether the live rules leave the claim out whatever its status counts: it is deferred, or an
-     *  open (OPEN or PENDING) claim dated within one of their holds that no statement bound. */
+     *  open (OPEN or PENDING) claim that no statement bound, dated within one of their holds or of a
+     *  person whose retirement date the sheet's today has reached. */
     public boolean leftOutLive(Claim claim) {
         return claim.isDeferred()
                 || (ClaimStatus.isOpen(claim.getStatus()) && !claim.isStated()
-                        && holds.stream().anyMatch((h) -> h.covers(claim.getDate())));
+                        && (isRetiredReached() || holds.stream().anyMatch((h) -> h.covers(claim.getDate()))));
     }
 
     /** Whether a claim on this date is refused: the person is retired from a date before it. */

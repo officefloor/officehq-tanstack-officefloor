@@ -15,14 +15,15 @@ export type Hold = { from: string; to: string | null };
  *  `version` is raised by every saved edit; an edit sends the version its form loaded. Their
  *  statements: how many were taken, and the last one's due-total and date (null until the first).
  *  `retiredFrom` is the date they are retired from (null: not retired); with it set at all they
- *  are `retired`, whatever the date. `holds` are their holds in the order added, and `held` whether
+ *  are `retired`, whatever the date; `retiredReached` once the sheet's today is on or after it (their
+ *  open claims not bound by a statement then count in no live total). `holds` are their holds in the order added, and `held` whether
  *  they have any: their OPEN claims dated within a hold, and not bound by a statement, count in no
  *  live total. `patronIds` are the people they name
  *  as patrons, in the order named. */
 export type Person = {
   id: number; sheetId: string; name: string; grade: Grade; grades: GradeFrom[]; version: number;
   statementCount: number; statedTotal: string | null; statementDate: string | null;
-  retired: boolean; retiredFrom: string | null; held: boolean; holds: Hold[]; patronIds: number[];
+  retired: boolean; retiredFrom: string | null; retiredReached: boolean; held: boolean; holds: Hold[]; patronIds: number[];
   /** Their own terms in whole days (null: none): a claim's due-by goes by them before their grade's or the sheet's. */
   terms: number | null;
 };

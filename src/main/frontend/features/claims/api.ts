@@ -129,12 +129,16 @@ export function reassignClaim(sheetId: string, by: string, id: number, toPersonI
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED do. */
 export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
 
-/** The claims that count in live totals: all but the deferred claims and the open claims dated within one of their
- *  person's holds (`to` null: open-ended) that no statement bound (SETTLED and bound claims still count). */
+/** The claims that count in live totals: all but the deferred claims and the open claims that no statement bound,
+ *  dated within one of their person's holds (`to` null: open-ended) or of a person whose retirement date the sheet's
+ *  today has reached (`retiredReached`) (SETTLED and bound claims still count). */
 export function liveClaims(claims: Claim[],
-  people: Array<{ id: number; holds: Array<{ from: string; to: string | null }> }> | undefined): Claim[] {
-  const holds = new Map((people ?? []).map((p) => [p.id, p.holds]));
-  const held = (c: Claim) => (holds.get(c.personId) ?? []).some((h) => h.from <= c.date && (h.to === null || c.date <= h.to));
+  people: Array<{ id: number; holds: Array<{ from: string; to: string | null }>; retiredReached?: boolean }> | undefined): Claim[] {
+  const byId = new Map((people ?? []).map((p) => [p.id, p]));
+  const held = (c: Claim) => {
+    const p = byId.get(c.personId);
+    return !!p && (!!p.retiredReached || p.holds.some((h) => h.from <= c.date && (h.to === null || c.date <= h.to)));
+  };
   return claims.filter((c) => !c.deferred && !(isOpen(c) && !c.stated && held(c)));
 }
 
