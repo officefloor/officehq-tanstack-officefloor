@@ -1,5 +1,5 @@
 import { getJson, postJson } from '../../api/http';
-import { liveClaims, type Claim, type ClaimStatus } from '../claims/api';
+import { counts, liveClaims, type Claim, type ClaimStatus } from '../claims/api';
 import { gradeOn, type Person } from '../people/api';
 import { claimDue, sumDues, type Late, type Rate } from '../rates/api';
 import type { DatedOn } from '../settings/api';
@@ -111,4 +111,18 @@ export function personPeriodDue(p: Period, person: Person, claims: Claim[], peop
 export function periodDueTotal(p: Period, claims: Claim[], people: Person[] | undefined, rates: Rate[] | undefined,
   floor: DatedOn, late: Late): string {
   return sumDues((people ?? []).map((q) => personPeriodDue(p, q, claims, people, rates, floor, late)));
+}
+
+/** A period's classic due-total: once closed or soft-closed, the one fixed when it was closed; else the due as
+ *  shown now of everyone's claims due by a day in it whose status now is OPEN, PENDING or SETTLED, less those the
+ *  live rules leave out (see `liveClaims`), n/a ones skipped. */
+export function classicPeriodDueTotal(p: Period, claims: Claim[], people: Person[] | undefined, rates: Rate[] | undefined,
+  floor: DatedOn, late: Late): string {
+  if (p.closed || p.soft) return sumDues((people ?? []).map((q) => p.personTotals[String(q.id)] ?? '0.00'));
+  const byId = new Map((people ?? []).map((q) => [q.id, q]));
+  return sumDues(liveClaims(claims, people).filter(counts).filter((c) => p.from <= c.dueBy && c.dueBy <= p.to)
+    .map((c) => {
+      const person = byId.get(c.personId);
+      return person ? claimDue(c, rates, (d) => gradeOn(person, d), floor, late) : null;
+    }));
 }
