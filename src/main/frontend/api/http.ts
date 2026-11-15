@@ -7,8 +7,27 @@ export class HttpError extends Error {
   }
 }
 
+/** The date the screen shows the sheet as of ('': as it is now), from the URL (`asof`). */
+function asOf(): string {
+  const raw = new URLSearchParams(window.location.search).get('asof') ?? '';
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === 'string' ? parsed : raw;
+  } catch {
+    return raw;
+  }
+}
+
+/** While the screen shows the sheet as of a date, every request about it says so: the server answers
+ *  a read as the sheet stood then and refuses every change. */
+function withAsOf(path: string): string {
+  const date = asOf();
+  if (date === '' || !path.startsWith('/api/sheets/')) return path;
+  return `${path}${path.includes('?') ? '&' : '?'}shown-asof=${encodeURIComponent(date)}`;
+}
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init);
+  const res = await fetch(withAsOf(path), init);
   if (!res.ok) {
     throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);
   }

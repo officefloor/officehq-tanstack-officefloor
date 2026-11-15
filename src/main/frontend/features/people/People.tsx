@@ -103,7 +103,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   // the statement date typed.
   const statement = useMutation({
     mutationFn: (v: { id: number; asof: string }) => takeStatement(sheetId, user, v.id, v.asof),
-    // The date typed goes once the statement is taken, so the next one is taken now unless dated again.
+    // The date typed goes once the statement is taken or refused, so the next one is taken now unless
+    // dated again.
+    onError: (_, v) => setAsOfDates((d) => ({ ...d, [v.id]: '' })),
     onSuccess: (_, v) => {
       setAsOfDates((d) => ({ ...d, [v.id]: '' }));
       return Promise.all([
