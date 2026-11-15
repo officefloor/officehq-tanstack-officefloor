@@ -1,0 +1,241 @@
+diff --git a/src/main/frontend/features/settings/Settings.tsx b/src/main/frontend/features/settings/Settings.tsx
+index 78b8936b9..85c1e731a 100644
+--- a/src/main/frontend/features/settings/Settings.tsx
++++ b/src/main/frontend/features/settings/Settings.tsx
+@@ -68,6 +68,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+                 : key === 'grace-days' ? 'Grace days'
+                 : key === 'escalate-after' ? 'Escalate after (days)'
+                 : key === 'review-sla' ? 'Review SLA (days)'
++                : key === 'max-open' ? 'Most open claims per person'
+                 : key === 'score-mid' ? 'Score mid threshold'
+                 : key === 'score-high' ? 'Score high threshold'
+                 : key === 'score-log' ? 'Score log (on)'
+@@ -84,7 +85,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+                 : key.startsWith('grace-') ? `Grace days for grade ${key.slice('grace-'.length)}`
+                 : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (business days)` : 'Terms (business days)'}{' '}
+               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
+-                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' || key === 'review-threshold' || key === 'review-sla' || key === 'score-mid' || key === 'score-high' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key.startsWith('clerk-limit-') ? "Sheet's limit" : key === 'cap' ? 'No cap' : key === 'pot' || key === 'parent' || key === 'proof-kinds' ? 'None' : key === 'alert-threshold' ? 'Off' : key === 'rounding' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
++                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' || key === 'review-threshold' || key === 'review-sla' || key === 'max-open' || key === 'score-mid' || key === 'score-high' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key.startsWith('clerk-limit-') ? "Sheet's limit" : key === 'cap' ? 'No cap' : key === 'pot' || key === 'parent' || key === 'proof-kinds' ? 'None' : key === 'alert-threshold' ? 'Off' : key === 'rounding' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
+                   : key === 'period-numbering-from' || key === 'entry-date' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' || key === 'escalate-after' || key === 'score-log' ? 'Off' : key.startsWith('grace-') ? 'None' : key.startsWith('terms-') ? "Sheet's terms"
+                   : key === 'default-grade' ? 'A'
+                   : key.startsWith('perm-') ? PERMISSION_STANDING[key.slice('perm-'.length)] : undefined}
+@@ -108,7 +109,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+         {save.isError && (
+           <span data-testid="settings-error">
+             The clerk limit, a grade's clerk limit, the cap, the pot, the proof threshold, a grade's proof threshold, the note threshold and the review threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
+-            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the rounding mode blank, half-up or half-even; the policy date, period numbering date and entry date blank or a date; the grace days, a grade's grace days and the review SLA blank or a whole number of days; a score threshold blank or a whole number; the score log blank or on; a permission blank or a comma separated list of clerk and steward; the proof kinds blank or a comma separated list of receipt and photo; the parent sheet blank or a sheet that has been loaded, not this one nor one with this one above it; the fiscal year start month a whole number from 1 to 12; the default grade blank, A, B or C; a from-date blank or a date.
++            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the rounding mode blank, half-up or half-even; the policy date, period numbering date and entry date blank or a date; the grace days, a grade's grace days and the review SLA blank or a whole number of days; the most open claims per person blank or a whole number, 0 or more; a score threshold blank or a whole number; the score log blank or on; a permission blank or a comma separated list of clerk and steward; the proof kinds blank or a comma separated list of receipt and photo; the parent sheet blank or a sheet that has been loaded, not this one nor one with this one above it; the fiscal year start month a whole number from 1 to 12; the default grade blank, A, B or C; a from-date blank or a date.
+           </span>
+         )}
+       </form>
+diff --git a/src/main/frontend/features/settings/api.ts b/src/main/frontend/features/settings/api.ts
+index e5b670e4f..920a7e291 100644
+--- a/src/main/frontend/features/settings/api.ts
++++ b/src/main/frontend/features/settings/api.ts
+@@ -59,10 +59,12 @@ export type Role = { sheetId: string; user: string; role: string };
+  *  person with their score on the day being left, before the SNAPSHOT lines.
+  *  The default grade (A, B or C; blank means A; not dated): the grade the quick-add bar gives a new person,
+  *  and an import line with a blank grade; changing it changes no one.
++ *  The maximum of open claims per person (a whole number; blank means none; not dated): opening a claim is
++ *  refused when its person already has that many OPEN or PENDING claims.
+  *  A grade's clerk limit (clerk-limit-<grade>, two decimals; blank means none; dated): a claim whose person's
+  *  grade on the sheet's today has one in force then goes by it instead of the sheet's clerk limit. */
+ export const SETTING_KEYS = ['clerk-limit', 'clerk-limit-A', 'clerk-limit-B', 'clerk-limit-C', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'rounding',
+-  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'score-mid', 'score-high', 'score-log', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'] as const;
++  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'max-open', 'score-mid', 'score-high', 'score-log', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'] as const;
+ 
+ /** The roles that may take each action of the permission matrix while its entry is blank. */
+ export const PERMISSION_STANDING: Record<string, string> = {
+@@ -74,7 +76,7 @@ export const PERMISSION_STANDING: Record<string, string> = {
+ export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00', 'fiscal-start-month': '1' };
+ 
+ /** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
+-export const UNDATED_KEYS: readonly string[] = ['pot', 'proof-kinds', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'score-mid', 'score-high', 'score-log', 'perm-open', 'perm-settle', 'perm-void',
++export const UNDATED_KEYS: readonly string[] = ['pot', 'proof-kinds', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'max-open', 'score-mid', 'score-high', 'score-log', 'perm-open', 'perm-settle', 'perm-void',
+   'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'];
+ 
+ /** The fiscal year a date (yyyy-MM-dd) falls in, FY<yyyy>, for a fiscal year start month (1 to 12). */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+index 9fbde356b..af4fd01fe 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+@@ -63,6 +63,7 @@ public class BulkOpenClaims {
+                 ClaimStatus status = OpenClaim.opensTo(claim, people, rates, settings, sheets);
+                 OpenClaim.requireNote(claim, people, rates, settings, sheets);
+                 OpenClaim.requireUnderCap(claim, claims, periods);
++                OpenClaim.requireUnderMaxOpen(claim, claims, settings);
+                 claim.setStatus(status.name());
+             } catch (ClaimStatusException | PeriodClosedException refused) {
+                 continue;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenChecks.java b/src/main/java/net/officefloor/hq/app/claim/OpenChecks.java
+index 42fc12b0b..b2aae3728 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenChecks.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenChecks.java
+@@ -36,4 +36,10 @@ public final class OpenChecks {
+             throws ClaimStatusException {
+         OpenClaim.requireUnderCap(claim, claims, periods);
+     }
++
++    /** See {@link OpenClaim#requireUnderMaxOpen}. */
++    public static void requireUnderMaxOpen(Claim claim, ClaimRepository claims, SettingRepository settings)
++            throws ClaimStatusException {
++        OpenClaim.requireUnderMaxOpen(claim, claims, settings);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java b/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
+index 5adfb71c8..ce1bb3e11 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
+@@ -34,6 +34,7 @@ public class OpenClaim {
+         ClaimStatus opened = opensTo(claim, people, rates, settings, sheets);
+         requireNote(claim, people, rates, settings, sheets);
+         requireUnderCap(claim, claims, periods);
++        requireUnderMaxOpen(claim, claims, settings);
+         claim.setStatus(opened.name());
+         claim.setOpenedBy(by == null ? "" : by);
+     }
+@@ -96,6 +97,21 @@ public class OpenClaim {
+         }
+     }
+ 
++    /** Refuses opening a claim when its person already has as many OPEN or PENDING claims as the
++     *  sheet's maximum of open claims (blank: none); shared with {@link BulkOpenClaims}. */
++    static void requireUnderMaxOpen(Claim claim, ClaimRepository claims, SettingRepository settings)
++            throws ClaimStatusException {
++        Integer max = settings.maxOpen(claim.getSheetId());
++        if (max == null) return;
++        long held = claims.list(claim.getSheetId()).stream()
++                .filter((c) -> c.getId() != claim.getId() && c.getPersonId() == claim.getPersonId()
++                        && ClaimStatus.isOpen(c.getStatus()))
++                .count();
++        if (held >= max) {
++            throw new ClaimStatusException("The person already has " + max + " open claims");
++        }
++    }
++
+     /** Refuses opening a claim with an empty note whose due (null: n/a, never above) is above the
+      *  sheet's note threshold in force on the claim's date; shared with {@link BulkOpenClaims}. */
+     static void requireNote(Claim claim, PersonRepository people, RateRepository rates,
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReviewClaim.java b/src/main/java/net/officefloor/hq/app/claim/ReviewClaim.java
+index 1630f4d49..0a69d820e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ReviewClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ReviewClaim.java
+@@ -25,6 +25,7 @@ public class ReviewClaim {
+         }
+         periods.requireOpen(claim.getSheetId(), claim.getDueBy());
+         OpenClaim.requireUnderCap(claim, claims, periods);
++        OpenClaim.requireUnderMaxOpen(claim, claims, settings);
+         claim.setStatus(ClaimStatus.REVIEW.moveTo(ClaimStatus.OPEN).name());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java b/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
+index 8398d4c8d..57a03effb 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
++++ b/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
+@@ -3,9 +3,11 @@ package net.officefloor.hq.app.paste;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.util.ArrayList;
++import java.util.HashMap;
+ import java.util.HashSet;
+ import java.util.List;
+ import java.util.Locale;
++import java.util.Map;
+ import java.util.Set;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.claim.Claim;
+@@ -44,7 +46,8 @@ import org.springframework.web.bind.annotation.RequestParam;
+  *  used by no claim on the sheet nor an earlier line), then added (CLAIM_ADDED) and opened. Each claim is
+  *  opened as {@link net.officefloor.hq.app.claim.OpenClaim} opens one — numbered in paste order, CLAIM_OPENED then the rollup lines it
+  *  moved — and any refusal it would give refuses the whole paste: the transaction is rolled back and the
+- *  audit lines, kept until every line went through, are never written. */
++ *  audit lines, kept until every line went through, are never written. A paste that would take a person
++ *  past the sheet's maximum of open claims is refused before anything is written. */
+ public class PasteClaims {
+     private record Pending(Person person, ValidClaim claim, LocalDate date, LocalDate dueBy, String corrects,
+             Claim match) {
+@@ -64,11 +67,22 @@ public class PasteClaims {
+         }
+         List<Pending> pending = new ArrayList<>();
+         Set<String> refs = new HashSet<>();
++        Integer maxOpen = settings.maxOpen(id);
++        Map<Long, Long> opening = new HashMap<>();
+         for (PasteLine line : lines.lines()) {
+             Person person = people.findByName(id, line.name());
+             if (person == null) {
+                 throw new InvalidClaimException("Not on the sheet: " + line.name());
+             }
++            // The maximum of open claims is checked before anything is written: each line opens one more.
++            if (maxOpen != null) {
++                long held = opening.computeIfAbsent(person.getId(), (p) -> claims.listOf(id, p).stream()
++                        .filter((c) -> ClaimStatus.isOpen(c.getStatus())).count());
++                if (held >= maxOpen) {
++                    throw new ClaimStatusException("The person already has " + maxOpen + " open claims");
++                }
++                opening.put(person.getId(), held + 1);
++            }
+             ValidClaim request = line.claim();
+             LocalDate date = request.date() != null ? request.date() : settings.entryDate(id);
+             Claim match = match(claims.listOf(id, person.getId()), date, request.note());
+@@ -138,6 +152,7 @@ public class PasteClaims {
+             ClaimStatus opened = OpenChecks.opensTo(claim, people, rates, settings, sheets);
+             OpenChecks.requireNote(claim, people, rates, settings, sheets);
+             OpenChecks.requireUnderCap(claim, claims, periods);
++            OpenChecks.requireUnderMaxOpen(claim, claims, settings);
+             claim.setStatus(opened.name());
+             claim.setOpenedBy(user);
+             claims.update(claim);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 7053fd54b..d449f5b33 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -101,6 +101,10 @@ public class SettingRepository {
+      *  (the sheet's today when it went to REVIEW) plus them is before the sheet's today is late. */
+     public static final String REVIEW_SLA = "review-sla";
+ 
++    /** The maximum of open claims per person (a whole number; blank: none; not dated): opening a claim
++     *  is refused when its person already has that many OPEN or PENDING claims. */
++    public static final String MAX_OPEN = "max-open";
++
+     /** The mid score threshold (a whole number; blank: none; not dated): while both score thresholds are
+      *  set, a person whose score is at or above it, and below the high one, is in the MID band. */
+     public static final String SCORE_MID = "score-mid";
+@@ -146,7 +150,7 @@ public class SettingRepository {
+     /** Whether a key is dated: every key that carries a figure (the policy date, the period
+      *  numbering date, the grace days, the pot, the proof kinds, the fiscal year start month and the permission matrix are not). */
+     public static boolean isDated(String key) {
+-        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !SCORE_LOG.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
++        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !MAX_OPEN.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !SCORE_LOG.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
+                 && !ENTRY_DATE.equals(key) && !PROOF_KINDS.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !FISCAL_START_MONTH.equals(key) && !PARENT.equals(key) && !DEFAULT_GRADE.equals(key) && !Permissions.isKey(key);
+     }
+ 
+@@ -227,6 +231,12 @@ public class SettingRepository {
+         return Integer.parseInt(value == null || value.isEmpty() ? DEFAULT_FISCAL_START_MONTH : value);
+     }
+ 
++    /** The sheet's maximum of open claims per person; null when there is none. */
++    public Integer maxOpen(String sheetId) {
++        String value = find(sheetId, MAX_OPEN);
++        return value == null || value.isEmpty() ? null : Integer.valueOf(value);
++    }
++
+     /** The sheet's pot; null when there is none. */
+     public BigDecimal pot(String sheetId) {
+         String value = find(sheetId, POT);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 6b5b1b145..6bf2f5b38 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -130,6 +130,12 @@ public class ValidateSetting {
+             }
+             body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null));
+             return;
++        } else if (SettingRepository.MAX_OPEN.equals(key)) {
++            if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
++                throw new InvalidSettingException("The maximum of open claims is blank or a whole number, 0 or more");
++            }
++            body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null));
++            return;
+         } else if (SettingRepository.SCORE_MID.equals(key) || SettingRepository.SCORE_HIGH.equals(key)) {
+             if (!value.isEmpty() && !WHOLE.matcher(value).matches()) {
+                 throw new InvalidSettingException("A score threshold is blank or a whole number");
