@@ -130,3 +130,19 @@ export function listDelegations(sheetId: string): Promise<Delegation[]> {
 export function delegate(sheetId: string, by: string, user: string, from: string, to: string): Promise<Delegation> {
   return postJson<Delegation>(`${base(sheetId)}/delegations?by=${encodeURIComponent(by)}`, { user, from, to });
 }
+
+/** A holiday on the sheet (yyyy-MM-dd): a claim's due-by, fixed when it is created, that falls on one
+ *  moves to the next day that is not one. */
+export type Holiday = { sheetId: string; date: string; by: string };
+
+export const holidaysKey = (sheetId: string) => [...sheetKey(sheetId), 'holidays'] as const;
+
+/** The sheet's holidays, by date. */
+export function listHolidays(sheetId: string): Promise<Holiday[]> {
+  return getJson<Holiday[]>(`${base(sheetId)}/holidays`);
+}
+
+/** Add a holiday; refused (rejects) for a date that is not one, or one already on the list. */
+export function addHoliday(sheetId: string, by: string, date: string): Promise<Holiday> {
+  return postJson<Holiday>(`${base(sheetId)}/holidays?by=${encodeURIComponent(by)}`, { date });
+}

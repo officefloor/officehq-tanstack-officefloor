@@ -10,6 +10,7 @@ import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.Corrections;
 import net.officefloor.hq.app.claim.InvalidClaimException;
 import net.officefloor.hq.app.claim.ValidClaim;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.PeriodClosedException;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
@@ -33,6 +34,7 @@ public class PasteClaims {
             @RequestParam(name = "by", required = false) String by, @Val PasteLines lines,
             PersonRepository people, SheetRepository sheets, ClaimRepository claims,
             PeriodRepository periods, SettingRepository settings, ClaimLogRepository log, Audit audit,
+            HolidayRepository holidays,
             Out<PasteResult> result) throws PeriodClosedException, InvalidClaimException {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
@@ -47,8 +49,9 @@ public class PasteClaims {
             if (person.retiredBefore(date)) {
                 throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
             }
-            // The due-by is fixed now, by the terms of the grade in force on its date, as they stood on its date.
-            LocalDate dueBy = date.plusDays(settings.terms(id, person, date.toString()));
+            // The due-by is fixed now, by the terms of the grade in force on its date, as they stood on its date,
+            // moved past the sheet's holidays as they are now.
+            LocalDate dueBy = holidays.dueBy(id, date.plusDays(settings.terms(id, person, date.toString())));
             periods.requireOpen(id, dueBy.toString());
             String corrects = Corrections.check(request, id, person.getId(), claims);
             pending.add(new Pending(person, request, date, dueBy, corrects));
