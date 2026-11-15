@@ -14,7 +14,8 @@ import { Fig } from '../session/Fig';
  *  the pool's pot (blank when unbalanced or no pot), and adds a member — a person or another pool, listed
  *  as pool:<name> — from its row, with optional from/to dates (a member whose dates leave out the sheet's
  *  today counts for nothing and has no cut). A pool that is a member of another cuts its cut there. Each
- *  crew is a pool too, listed after the others, its members the crew's (no member form). */
+ *  crew is a pool too, listed after the others, its members the crew's (no member form). Each member also
+ *  shows their cut at the end of every period whose to-date is on or before the sheet's today. */
 export function Pools({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const pools = useQuery({ queryKey: poolsKey(sheetId), queryFn: () => listPools(sheetId) });
@@ -119,6 +120,9 @@ function PoolRow({ sheetId, user, pool, people, pools }: { sheetId: string; user
             {m.poolId !== null ? `pool:${m.name}` : m.name}{m.retired ? ' (retired)' : ''} share <span data-testid="pool-share"><Fig>{m.share}</Fig></span>{' '}
             {m.from || m.to ? `${m.from ?? '…'} to ${m.to ?? '…'}${m.current ? '' : ' (not current)'} ` : ''}
             cut <span data-testid="pool-cut"><Fig>{m.cut}</Fig></span>
+            {Object.entries(m.periodCuts).map(([period, cut]) => (
+              <span key={period}>{' '}{period} <span data-testid={`pool-cut-${period}`}><Fig>{cut}</Fig></span></span>
+            ))}
           </li>
         ))}
       </ul>

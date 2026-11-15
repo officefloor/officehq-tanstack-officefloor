@@ -7,9 +7,11 @@ import { sheetKey } from '../sheet/api';
  *  today 0.00, their share spread over the others in proportion; the remainder going to the smallest non-zero cut, the latest added on a tie, or to the last member with a share when no cut is non-zero), "" when every current member is retired or the pool is unbalanced or has no pot. A pool that is a member of none cuts the sheet's
  *  pot; a member pool cuts its own cut in the pool above. `from`/`to` are the dates the membership runs
  *  (null: no bound); a member that is not `current` (its dates leave out the sheet's today) is left out of
- *  the total share and has no cut (""). */
+ *  the total share and has no cut (""). `periodCuts`: by period name (by from-date), for every period whose
+ *  to-date is on or before the sheet's today, the member's cut as it stood at the end of it — the pool, its
+ *  members, the pot and the holds as they were then, with that day as the sheet's today ("" when none). */
 export type PoolMember = { personId: number | null; poolId: number | null; name: string; share: string; retired: boolean;
-  from: string | null; to: string | null; current: boolean; cut: string };
+  from: string | null; to: string | null; current: boolean; cut: string; periodCuts: Record<string, string> };
 
 /** A pool on the sheet: its members in the order added, the total of their shares and whether that
  *  total is exactly 100.00 (`balanced`). A `crew` pool is a crew's, after the others: its lead and members

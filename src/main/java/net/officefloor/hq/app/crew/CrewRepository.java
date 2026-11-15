@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.crew;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,18 +19,25 @@ public class CrewRepository {
 
     /** The sheet's crews in the order they were added, each with its members in the order they were added. */
     public List<Crew> list(String sheetId) {
+        return list(sheetId, null);
+    }
+
+    /** The sheet's crews as of the date (null: as they now stand): those, and those members, added while the
+     *  sheet's today was on or before it (or before that was kept). */
+    public List<Crew> list(String sheetId, LocalDate asOf) {
+        java.sql.Date on = java.sql.Date.valueOf(asOf == null ? LocalDate.of(9999, 12, 31) : asOf);
         Map<Long, Object[]> crews = new LinkedHashMap<>();
         Map<Long, List<CrewMember>> members = new LinkedHashMap<>();
         jdbc.query("SELECT c.id, c.name, c.lead_id, p.name AS lead FROM crew c LEFT JOIN person p ON p.id = c.lead_id "
-                + "WHERE c.sheet_id = ? ORDER BY c.id", rs -> {
+                + "WHERE c.sheet_id = ? AND COALESCE(c.added_on, DATE '0001-01-01') <= ? ORDER BY c.id", rs -> {
                     crews.put(rs.getLong("id"), new Object[] { rs.getString("name"), rs.getObject("lead_id", Long.class), rs.getString("lead") == null ? "" : rs.getString("lead") });
                     members.put(rs.getLong("id"), new ArrayList<>());
-                }, sheetId);
+                }, sheetId, on);
         jdbc.query("SELECT m.crew_id, m.person_id, p.name FROM crew_member m JOIN person p ON p.id = m.person_id "
-                + "WHERE m.sheet_id = ? ORDER BY m.id", rs -> {
+                + "WHERE m.sheet_id = ? AND COALESCE(m.added_on, DATE '0001-01-01') <= ? ORDER BY m.id", rs -> {
                     List<CrewMember> of = members.get(rs.getLong("crew_id"));
                     if (of != null) of.add(new CrewMember(rs.getLong("person_id"), rs.getString("name")));
-                }, sheetId);
+                }, sheetId, on);
         List<Crew> list = new ArrayList<>();
         for (Map.Entry<Long, Object[]> crew : crews.entrySet()) {
             Object[] c = crew.getValue();
@@ -50,11 +58,12 @@ public class CrewRepository {
     }
 
     public void add(String sheetId, String name, long leadId, String by) {
-        jdbc.update("INSERT INTO crew (sheet_id, name, lead_id, added_by) VALUES (?, ?, ?, ?)", sheetId, name, leadId, by);
+        jdbc.update("INSERT INTO crew (sheet_id, name, lead_id, added_by, added_on) VALUES (?, ?, ?, ?, "
+                + "(SELECT today FROM sheet WHERE id = ?))", sheetId, name, leadId, by, sheetId);
     }
 
     public void addMember(String sheetId, long crewId, long personId, String by) {
-        jdbc.update("INSERT INTO crew_member (sheet_id, crew_id, person_id, added_by) VALUES (?, ?, ?, ?)",
-                sheetId, crewId, personId, by);
+        jdbc.update("INSERT INTO crew_member (sheet_id, crew_id, person_id, added_by, added_on) VALUES (?, ?, ?, ?, "
+                + "(SELECT today FROM sheet WHERE id = ?))", sheetId, crewId, personId, by, sheetId);
     }
 }
