@@ -17,7 +17,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** The person named (ignoring case and surrounding spaces), or a new one with grade A, recorded as
+/** The person named (ignoring case and surrounding spaces), or a new one with the sheet's default grade, recorded as
  *  the person form records an add. The claim's own rules are checked first, so a claim that would
  *  be refused adds no one. */
 public class FindOrAddPerson {
@@ -37,11 +37,12 @@ public class FindOrAddPerson {
         if (people.nameTakenInTree(id, name.name())) {
             throw new InvalidPersonException("The name is already in use on the sheet's tree");
         }
-        // The claim would be refused when its due-by (grade A's terms in business days after its date) falls in a closed period.
+        String grade = settings.defaultGrade(id);
+        // The claim would be refused when its due-by (the default grade's terms in business days after its date) falls in a closed period.
         java.time.LocalDate date = settings.entryDate(id);
-        periods.requireOpen(id, holidays.dueBy(id, date, settings.terms(id, "A", sheets.today(id).toString())).toString());
+        periods.requireOpen(id, holidays.dueBy(id, date, settings.terms(id, grade, sheets.today(id).toString())).toString());
         sheets.open(id, user);
-        Person added = people.add(id, name.name(), "A", user);
+        Person added = people.add(id, name.name(), grade, user);
         audit.record("PERSON_ADDED sheet=" + id + " by=" + user + " name=" + added.getName()
                 + " grade=" + added.getGrade());
         for (String line : Rollup.of(id, people, claims, rates, sheets, settings).changesSince(before, id, user)) {

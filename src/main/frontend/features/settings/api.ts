@@ -52,9 +52,11 @@ export type Role = { sheetId: string; user: string; role: string };
  *  reminder was at least that many days before the sheet's today escalates it (an ESCALATE audit line),
  *  once per claim ever.
  *  The review SLA (a number of days; blank means none; not dated): a REVIEW claim whose review day (the
- *  sheet's today when it went to REVIEW) plus them is before the sheet's today is review-late (see `isReviewLate`). */
+ *  sheet's today when it went to REVIEW) plus them is before the sheet's today is review-late (see `isReviewLate`).
+ *  The default grade (A, B or C; blank means A; not dated): the grade the quick-add bar gives a new person,
+ *  and an import line with a blank grade; changing it changes no one. */
 export const SETTING_KEYS = ['clerk-limit', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'rounding',
-  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'] as const;
+  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'] as const;
 
 /** The roles that may take each action of the permission matrix while its entry is blank. */
 export const PERMISSION_STANDING: Record<string, string> = {
@@ -67,7 +69,7 @@ export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: 
 
 /** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
 export const UNDATED_KEYS: readonly string[] = ['pot', 'proof-kinds', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'perm-open', 'perm-settle', 'perm-void',
-  'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'];
+  'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'];
 
 /** The fiscal year a date (yyyy-MM-dd) falls in, FY<yyyy>, for a fiscal year start month (1 to 12). */
 export function fiscalYearOf(date: string, startMonth: number): string {

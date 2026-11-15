@@ -154,6 +154,12 @@ public class ValidateSetting {
             }
             body.set(new SettingRequest(key, String.valueOf(month), null));
             return;
+        } else if (SettingRepository.DEFAULT_GRADE.equals(key)) {
+            if (!value.isEmpty() && !GRADES.contains(value)) {
+                throw new InvalidSettingException("The default grade is blank, A, B or C");
+            }
+            body.set(new SettingRequest(key, value.isEmpty() ? null : value, null));
+            return;
         } else if (SettingRepository.PARENT.equals(key)) {
             // Whether the sheet named exists and is not this one or below it is checked against the store.
             body.set(new SettingRequest(key, value.isEmpty() ? null : value, null));

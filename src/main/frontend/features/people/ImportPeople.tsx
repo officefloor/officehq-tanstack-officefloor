@@ -29,7 +29,7 @@ export function ImportPeople({ sheetId, user }: { sheetId: string; user: string 
       }}
     >
       <label>
-        Import people (name,grade,terms,contact per line; terms and contact may be left out){' '}
+        Import people (name,grade,terms,contact per line; terms and contact may be left out; a blank grade takes the default grade){' '}
         <textarea data-testid="import-people" rows={3} value={text}
           onChange={(e) => {
             setText(e.target.value);
