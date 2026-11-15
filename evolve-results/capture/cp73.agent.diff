@@ -1,0 +1,625 @@
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index dc75f2a9a..578c6a7a8 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -21,7 +21,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '' };
+ /** The people on the sheet: a form that adds a person or edits one, and the list in added order,
+  *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap, with the excess above it; n/a
+  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
+- *  their statements (a button that takes one, a button that cancels the last, the count, the last one's due-total and date), whether
++ *  their statements (a button that takes one, now or as of the date typed beside it, a button that cancels the last, the count, the last one's due-total and date), whether
+  *  they are retired and from when (with a date and a button that retires them), whether they have
+  *  any hold, their holds (each from a date to an optional date, with dates and a button that adds one;
+  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
+@@ -51,6 +51,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const [showRetired] = useShowRetired();
+   // The retirement date typed on each person's row (blank: the sheet's today).
+   const [retireDates, setRetireDates] = useState<Record<number, string>>({});
++  // The statement date typed on each person's row (blank: the statement is taken now).
++  const [asOfDates, setAsOfDates] = useState<Record<number, string>>({});
+   // The hold dates typed on each person's row (blank from: the sheet's today; blank to: open-ended).
+   const [holdDates, setHoldDates] = useState<Record<number, { from: string; to: string }>>({});
+   // The patron picked on each person's row (blank: none picked).
+@@ -97,13 +99,18 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const submitOnce = useSubmitOnce();
+   const stateOnce = useSubmitOnce();
+ 
+-  // The person whose last statement was refused; cleared by the next statement taken here.
++  // The person whose last statement was refused; cleared by the next statement taken here, or by
++  // the statement date typed.
+   const statement = useMutation({
+-    mutationFn: (id: number) => takeStatement(sheetId, user, id),
+-    onSuccess: () => Promise.all([
+-      queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+-      queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+-    ]),
++    mutationFn: (v: { id: number; asof: string }) => takeStatement(sheetId, user, v.id, v.asof),
++    // The date typed goes once the statement is taken, so the next one is taken now unless dated again.
++    onSuccess: (_, v) => {
++      setAsOfDates((d) => ({ ...d, [v.id]: '' }));
++      return Promise.all([
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
++        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++      ]);
++    },
+   });
+ 
+   // The person whose last statement cancel was refused; cleared by the next action on the row.
+@@ -154,7 +161,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const state = (id: number) => {
+     stateOnce(() => {
+       resetRowActions();
+-      return statement.mutateAsync(id);
++      return statement.mutateAsync({ id, asof: asOfDates[id] ?? '' });
+     });
+   };
+ 
+@@ -326,6 +333,11 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   </button>
+                 </td>
+                 <td>
++                  <input type="date" data-testid="person-statement-asof" value={asOfDates[p.id] ?? ''}
++                    onChange={(e) => {
++                      setAsOfDates((d) => ({ ...d, [p.id]: e.target.value }));
++                      statement.reset();
++                    }} />{' '}
+                   <button type="button" data-testid="person-statement" disabled={statement.isPending}
+                     onClick={() => state(p.id)}>
+                     Statement
+@@ -337,7 +349,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                   Statements <span data-testid="person-statement-count">{p.statementCount}</span>{' '}
+                   last <span data-testid="person-stated-total">{p.statedTotal ?? ''}</span>{' '}
+                   on <span data-testid="person-statement-date">{p.statementDate ?? ''}</span>
+-                  {statement.isError && statement.variables === p.id && (
++                  {statement.isError && statement.variables?.id === p.id && (
+                     <span data-testid="person-error">The statement could not be taken.</span>
+                   )}
+                   {unstatement.isError && unstatement.variables === p.id && (
+diff --git a/src/main/frontend/features/people/api.ts b/src/main/frontend/features/people/api.ts
+index 2d9ecbfef..efa342b84 100644
+--- a/src/main/frontend/features/people/api.ts
++++ b/src/main/frontend/features/people/api.ts
+@@ -62,9 +62,12 @@ export function updatePerson(sheetId: string, by: string, id: number, version: n
+ }
+ 
+ /** Take a statement of the person: records their due-total now and binds each of their counting
+- *  claims to the figure it shows now (unbinding the others). */
+-export function takeStatement(sheetId: string, by: string, id: number): Promise<Person> {
+-  return postJson<Person>(`${base(sheetId)}/${id}/statement?by=${encodeURIComponent(by)}`, {});
++ *  claims to the figure it shows now (unbinding the others). Taken as of a date (`asof`; blank: now),
++ *  it goes by everything as it stood at the end of that date, which stands in for the sheet's today;
++ *  refused (rejects) for a date after the sheet's today. */
++export function takeStatement(sheetId: string, by: string, id: number, asof = ''): Promise<Person> {
++  const on = asof === '' ? '' : `&asof=${encodeURIComponent(asof)}`;
++  return postJson<Person>(`${base(sheetId)}/${id}/statement?by=${encodeURIComponent(by)}${on}`, {});
+ }
+ 
+ /** A steward cancels the person's last statement: the claims it bound become live again and the
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index c49f8329b..54c54e982 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -95,6 +95,7 @@ public class ClaimRepository {
+         }, key);
+         long id = key.getKey().longValue();
+         jdbc.update("UPDATE claim SET list_seq = " + NEXT_SEQ + " WHERE sheet_id = ? AND id = ?", sheetId, sheetId, id);
++        snapshot(sheetId, id);
+         return find(sheetId, id);
+     }
+ 
+@@ -105,6 +106,7 @@ public class ClaimRepository {
+                 claim.getSettledDue() == null ? null : new BigDecimal(claim.getSettledDue()),
+                 claim.getOpenedBy(), claim.getCorrects(),
+                 claim.getSheetId(), claim.getId());
++        snapshot(claim.getSheetId(), claim.getId());
+     }
+ 
+     /** Save a claim moved to another person: its person, its binding (dropped), and its place in the
+@@ -115,12 +117,14 @@ public class ClaimRepository {
+                 claim.getPersonId(), claim.isStated(),
+                 claim.getStatedDue() == null ? null : new BigDecimal(claim.getStatedDue()),
+                 claim.getSheetId(), claim.getSheetId(), claim.getId());
++        snapshot(claim.getSheetId(), claim.getId());
+     }
+ 
+     /** Save a re-dated claim: its date and its number (a new one when its period changed). */
+     public void redate(Claim claim) {
+         jdbc.update("UPDATE claim SET claim_date = ?, number = ? WHERE sheet_id = ? AND id = ?",
+                 LocalDate.parse(claim.getDate()), claim.getNumber(), claim.getSheetId(), claim.getId());
++        snapshot(claim.getSheetId(), claim.getId());
+     }
+ 
+     /** The person's claims, newest first. */
+@@ -129,11 +133,49 @@ public class ClaimRepository {
+                 ROW, sheetId, personId);
+     }
+ 
++    /** Keep the claim as it stands now in its history, with the sheet's today. */
++    private void snapshot(String sheetId, long id) {
++        jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, on_date, person_id, amount, claim_date, status, "
++                + "settled_due, stated, stated_due, deferred_until, due_by) SELECT c.sheet_id, c.id, s.today, c.person_id, "
++                + "c.amount, c.claim_date, c.status, c.settled_due, c.stated, c.stated_due, c.deferred_until, c.due_by "
++                + "FROM claim c JOIN sheet s ON s.id = c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
++    }
++
++    /** The person's claims as they stood at the end of the date, newest first: each as its last change
++     *  made while the sheet's today was on or before the date left it (a claim of theirs then, and only
++     *  claims there were then), deferred when OPEN and deferred until after the date. */
++    public List<Claim> listOfAsOf(String sheetId, long personId, LocalDate asOf) {
++        return jdbc.query("SELECT h.claim_id, h.person_id, h.amount, h.claim_date, h.status, h.settled_due, h.stated, "
++                + "h.stated_due, h.deferred_until, h.due_by, c.note, c.number, c.opened_by, c.corrects, "
++                + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = c.sheet_id AND k.number = c.corrects), "
++                + "h.claim_date) AS round_date FROM claim_history h JOIN claim c ON c.id = h.claim_id "
++                + "WHERE h.sheet_id = ? AND h.person_id = ? AND h.id = (SELECT MAX(h2.id) FROM claim_history h2 "
++                + "WHERE h2.claim_id = h.claim_id AND (h2.on_date IS NULL OR h2.on_date <= ?)) "
++                + "ORDER BY c.list_seq DESC, c.id DESC", (rs, n) -> {
++                    BigDecimal settled = rs.getBigDecimal("settled_due");
++                    BigDecimal stated = rs.getBigDecimal("stated_due");
++                    LocalDate until = rs.getObject("deferred_until", LocalDate.class);
++                    String status = rs.getString("status");
++                    Claim claim = new Claim(rs.getLong("claim_id"), sheetId, rs.getLong("person_id"),
++                            rs.getBigDecimal("amount").setScale(2).toPlainString(),
++                            rs.getObject("claim_date", LocalDate.class).toString(), rs.getString("note"), status,
++                            rs.getString("number"), settled == null ? null : settled.setScale(2).toPlainString(),
++                            rs.getString("opened_by"), rs.getBoolean("stated"),
++                            stated == null ? null : stated.setScale(2).toPlainString());
++                    return withCorrects(claim, rs.getString("corrects"),
++                            rs.getObject("round_date", LocalDate.class).toString(),
++                            rs.getObject("due_by", LocalDate.class).toString(), until,
++                            ClaimStatus.OPEN.name().equals(status) && until != null && until.isAfter(asOf),
++                            0, null, null, false);
++                }, sheetId, personId, asOf);
++    }
++
+     /** Save the date a claim is deferred until. */
+     public void updateDeferral(Claim claim) {
+         jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ?",
+                 claim.getDeferredUntil() == null ? null : LocalDate.parse(claim.getDeferredUntil()),
+                 claim.getSheetId(), claim.getId());
++        snapshot(claim.getSheetId(), claim.getId());
+     }
+ 
+     /** Save the number of the claim a claim was split from. */
+@@ -153,6 +195,7 @@ public class ClaimRepository {
+         jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet_id = ? AND id = ?",
+                 claim.isStated(), claim.getStatedDue() == null ? null : new BigDecimal(claim.getStatedDue()),
+                 claim.getSheetId(), claim.getId());
++        snapshot(claim.getSheetId(), claim.getId());
+     }
+ 
+     /** The sheet's next claim number, taken in one atomic statement so two claims opened at the same
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index fa05c9297..4cf7721fe 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -34,6 +34,8 @@ public class Person {
+     private java.time.LocalDate today;
+     /** The ids of the people they name as patrons, in the order named. */
+     private java.util.List<Long> patronIds = new java.util.ArrayList<>();
++    /** The date the statement this request took was taken as of (null: now), for its audit line. */
++    private String statedAsOf;
+     /** How many claims the statement this request took bound, for its audit line. */
+     private int statedClaims;
+     /** The due-total of the statement this request cancelled, for its audit line. */
+@@ -168,4 +170,8 @@ public class Person {
+ 
+     @JsonIgnore
+     public int getStatedClaims() { return statedClaims; }
++
++    @JsonIgnore
++    public String getStatedAsOf() { return statedAsOf; }
++    public void setStatedAsOf(String statedAsOf) { this.statedAsOf = statedAsOf; }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 662b0a935..a20335403 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -64,6 +64,40 @@ public class PersonRepository {
+         return person;
+     }
+ 
++    /** Whether the person was added while the sheet's today was after the date: they were not on
++     *  the sheet then (one added before this was kept always was). */
++    public boolean addedAfter(String sheetId, long id, LocalDate date) {
++        return jdbc.queryForList("SELECT added_on FROM person WHERE sheet_id = ? AND id = ?", LocalDate.class, sheetId, id)
++                .stream().anyMatch((on) -> on != null && on.isAfter(date));
++    }
++
++    /** The person as they stood at the end of the date, the date standing in for the sheet's today:
++     *  the grades, holds and retirement date given them while the sheet's today was on or before it. */
++    public Person findAsOf(String sheetId, long id, LocalDate asOf) {
++        Person person = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ?",
++                ROW, sheetId, id).stream().findFirst().orElse(null);
++        if (person == null) {
++            return null;
++        }
++        List<GradeFrom> grades = jdbc.query("SELECT grade, from_date FROM person_grade_history h WHERE h.sheet_id = ? "
++                + "AND h.person_id = ? AND h.id = (SELECT MAX(h2.id) FROM person_grade_history h2 WHERE h2.person_id = h.person_id "
++                + "AND h2.from_key = h.from_key AND (h2.on_date IS NULL OR h2.on_date <= ?)) ORDER BY from_key",
++                (rs, n) -> {
++                    LocalDate from = rs.getObject("from_date", LocalDate.class);
++                    return new GradeFrom(rs.getString("grade"), from == null ? null : from.toString());
++                }, sheetId, id, asOf);
++        person.setGrades(new ArrayList<>(grades), asOf);
++        person.setHolds(new ArrayList<>(jdbc.query("SELECT from_date, to_date FROM person_hold WHERE sheet_id = ? "
++                + "AND person_id = ? AND (added_on IS NULL OR added_on <= ?) ORDER BY id", (rs, n) -> {
++                    LocalDate to = rs.getObject("to_date", LocalDate.class);
++                    return new Hold(rs.getObject("from_date", LocalDate.class).toString(), to == null ? null : to.toString());
++                }, sheetId, id, asOf)));
++        person.setRetiredFrom(jdbc.queryForList("SELECT retired_from FROM person_retired_history WHERE sheet_id = ? "
++                + "AND person_id = ? AND (on_date IS NULL OR on_date <= ?) ORDER BY id DESC LIMIT 1", LocalDate.class,
++                sheetId, id, asOf).stream().findFirst().map(LocalDate::toString).orElse(null));
++        return person;
++    }
++
+     /** Give each person their grades, by from-date (none first), and the one in force on the sheet's today. */
+     private void withGrades(String sheetId, List<Person> people) {
+         if (people.isEmpty()) {
+@@ -128,18 +162,21 @@ public class PersonRepository {
+         GeneratedKeyHolder key = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO person (sheet_id, name, created_by, terms) VALUES (?, ?, ?, ?)",
++                    "INSERT INTO person (sheet_id, name, created_by, terms, added_on) "
++                            + "VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                     new String[] { "id" });
+             ps.setString(1, sheetId);
+             ps.setString(2, name);
+             ps.setString(3, user);
+             ps.setObject(4, terms);
++            ps.setString(5, sheetId);
+             return ps;
+         }, key);
+         long id = key.getKey().longValue();
+         // The first grade a person is given applies from the beginning of time.
+         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date, set_by) VALUES (?, ?, ?, NULL, ?)",
+                 sheetId, id, grade, user);
++        gradeHistory(sheetId, id, grade, null);
+         Person person = new Person(id, sheetId, name, grade, 0);
+         person.getGrades().add(new GradeFrom(grade, null));
+         person.setTerms(terms);
+@@ -159,6 +196,13 @@ public class PersonRepository {
+         }
+         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date, set_by) VALUES (?, ?, ?, ?, ?)",
+                 person.getSheetId(), person.getId(), given.grade(), from, user);
++        gradeHistory(person.getSheetId(), person.getId(), given.grade(), from);
++    }
++
++    /** Keep a grade given in the person's history, with the sheet's today. */
++    private void gradeHistory(String sheetId, long personId, String grade, LocalDate from) {
++        jdbc.update("INSERT INTO person_grade_history (sheet_id, person_id, grade, from_date, on_date) "
++                + "VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", sheetId, personId, grade, from, sheetId);
+     }
+ 
+     /** Save the person over the version it was loaded at, raising the version; false (nothing
+@@ -209,13 +253,17 @@ public class PersonRepository {
+     public void updateRetired(Person person) {
+         jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?",
+                 LocalDate.parse(person.getRetiredFrom()), person.getSheetId(), person.getId());
++        jdbc.update("INSERT INTO person_retired_history (sheet_id, person_id, retired_from, on_date) "
++                + "VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", person.getSheetId(), person.getId(),
++                LocalDate.parse(person.getRetiredFrom()), person.getSheetId());
+     }
+ 
+     /** Add a hold on the person (not an edit: the version stays). */
+     public void addHold(Person person, Hold hold, String user) {
+-        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, held_by) VALUES (?, ?, ?, ?, ?)",
++        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, held_by, added_on) "
++                + "VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                 person.getSheetId(), person.getId(), LocalDate.parse(hold.from()),
+-                hold.to() == null ? null : LocalDate.parse(hold.to()), user);
++                hold.to() == null ? null : LocalDate.parse(hold.to()), user, person.getSheetId());
+         person.getHolds().add(hold);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordStatement.java b/src/main/java/net/officefloor/hq/app/person/RecordStatement.java
+index 7c8deaaa9..0d9b7b760 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RecordStatement.java
++++ b/src/main/java/net/officefloor/hq/app/person/RecordStatement.java
+@@ -10,6 +10,7 @@ public class RecordStatement {
+             @Val Person person, Audit audit) {
+         audit.record("STATEMENT sheet=" + person.getSheetId() + " by=" + (by == null ? "" : by)
+                 + " name=" + person.getName() + " due-total=" + person.getStatedTotal()
+-                + " claims=" + person.getStatedClaims());
++                + " claims=" + person.getStatedClaims()
++                + (person.getStatedAsOf() == null ? "" : " asof=" + person.getStatedAsOf()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/TakeStatement.java b/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
+index ef3a8fbf9..b97656485 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
+@@ -2,7 +2,10 @@ package net.officefloor.hq.app.person;
+ 
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import java.util.HashMap;
+ import java.util.List;
++import java.util.Map;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.claim.Dues;
+@@ -12,45 +15,82 @@ import net.officefloor.hq.app.setting.DatedSetting;
+ import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** Takes a statement of the person: records their due-total now (the sum of the due of their claims that
+  *  count live (open ones dated within a hold of theirs, and not bound, do not), n/a ones skipped, at most the sheet's cap; n/a when their grade has no rate on the sheet's today and none of
+  *  those claims keeps a settled or bound figure, or a live one at a grade no longer in force or dated on or before the sheet's today) on the sheet's today, and binds each counting claim
+  *  to its rate figure under the due it shows now (its late charge and the floor are never bound); a claim that does not
+- *  count live is unbound. */
++ *  count live is unbound.
++ *  <p>Taken as of a date ({@code asof}; blank: now) on or before the sheet's today, it goes by everything as it
++ *  stood at the end of that date (every change made while the sheet's today was on or before it counts, every
++ *  later one does not), that date standing in for the sheet's today: it records that day's due-total under that
++ *  date and binds the claims that counted then to their figures then. Refused for a date after the sheet's
++ *  today, or before the person was on the sheet. */
+ public class TakeStatement {
+-    public void take(@Val Person person, PersonRepository people, ClaimRepository claims, RateRepository rates,
+-            SheetRepository sheets, SettingRepository settings) {
++    public void take(@RequestParam(name = "asof", required = false) String asof, @Val Person person,
++            PersonRepository people, ClaimRepository claims, RateRepository rates, SheetRepository sheets,
++            SettingRepository settings) throws InvalidPersonException {
+         String sheetId = person.getSheetId();
+         LocalDate today = sheets.today(sheetId);
+-        DatedSetting floor = settings.floor(sheetId);
+-        Dues.Late late = settings.late(sheetId, today);
+-        List<Claim> own = claims.listOf(sheetId, person.getId());
++        LocalDate on = today;
++        Person then = person;
++        List<Claim> own;
++        List<Rate> sheetRates;
++        DatedSetting floor;
++        Dues.Late late;
++        BigDecimal cap;
++        if (asof == null || asof.isBlank()) {
++            own = claims.listOf(sheetId, person.getId());
++            sheetRates = rates.list(sheetId);
++            floor = settings.floor(sheetId);
++            late = settings.late(sheetId, today);
++            cap = settings.cap(sheetId);
++        } else {
++            try {
++                on = LocalDate.parse(asof.trim());
++            } catch (DateTimeParseException e) {
++                throw new InvalidPersonException("The statement date must be a date");
++            }
++            if (on.isAfter(today)) {
++                throw new InvalidPersonException("The statement date cannot be after the sheet's today");
++            }
++            if (people.addedAfter(sheetId, person.getId(), on)) {
++                throw new InvalidPersonException("The person was not on the sheet on the statement date");
++            }
++            then = people.findAsOf(sheetId, person.getId(), on);
++            own = claims.listOfAsOf(sheetId, person.getId(), on);
++            sheetRates = rates.listAsOf(sheetId, on);
++            floor = settings.datedAsOf(sheetId, SettingRepository.FLOOR, SettingRepository.DEFAULT_FLOOR, on);
++            late = settings.lateAsOf(sheetId, on);
++            cap = settings.capAsOf(sheetId, on);
++            person.setStatedAsOf(on.toString());
++        }
++        // The figure each counting claim is bound to, by claim id.
++        Map<Long, String> figures = new HashMap<>();
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+         boolean kept = false;
+-        int bound = 0;
+         for (Claim c : own) {
+-            if (!person.countsLive(c)) {
+-                c.bind(false, null);
+-            } else {
+-                String grade = person.gradeOn(c.getDate());
+-                Rate rate = rates.find(sheetId, grade, LocalDate.parse(c.getDate()));
+-                String live = rate == null ? null : Dues.of(c.getAmount(), rate.pct(), late.rounding(c.getRoundDate()));
+-                String shown = Dues.shown(c, live, floor.on(c.getDate()), late);
+-                kept |= c.getSettledDue() != null || c.isBound()
+-                        || (rate != null && (!grade.equals(person.getGrade())
+-                                || !LocalDate.parse(c.getDate()).isAfter(today)));
+-                if (shown != null) total = total.add(new BigDecimal(shown));
+-                // The rate figure under it is bound; its late charge and floor keep following the sheet's today.
+-                c.bind(true, c.due(live));
+-                bound++;
+-            }
++            if (!then.countsLive(c)) continue;
++            String grade = then.gradeOn(c.getDate());
++            Rate rate = RateRepository.inForce(sheetRates, grade, c.getDate());
++            String live = rate == null ? null : Dues.of(c.getAmount(), rate.pct(), late.rounding(c.getRoundDate()));
++            String shown = Dues.shown(c, live, floor.on(c.getDate()), late);
++            kept |= c.getSettledDue() != null || c.isBound()
++                    || (rate != null && (!grade.equals(then.getGrade())
++                            || !LocalDate.parse(c.getDate()).isAfter(on)));
++            if (shown != null) total = total.add(new BigDecimal(shown));
++            // The rate figure under it is bound; its late charge and floor keep following the sheet's today.
++            figures.put(c.getId(), c.due(live));
++        }
++        for (Claim c : claims.listOf(sheetId, person.getId())) {
++            if (figures.containsKey(c.getId())) c.bind(true, figures.get(c.getId()));
++            else c.bind(false, null);
+             claims.updateBinding(c);
+         }
+-        boolean na = rates.find(sheetId, person.getGrade(), today) == null && !kept;
+-        BigDecimal cap = settings.cap(sheetId);
++        boolean na = RateRepository.inForce(sheetRates, then.getGrade(), on.toString()) == null && !kept;
+         if (cap != null && total.compareTo(cap) > 0) total = cap.setScale(2);
+-        person.stated(na ? null : total.toPlainString(), today.toString(), bound);
++        person.stated(na ? null : total.toPlainString(), on.toString(), figures.size());
+         people.updateStatements(person);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index 62f817f18..b6f222ccd 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -39,6 +39,25 @@ public class RateRepository {
+                 .filter((r) -> !r.endedBefore(on.toString())).orElse(null);
+     }
+ 
++    /** The sheet's rates as they stood at the end of the date: each as the last rate set while the
++     *  sheet's today was on or before the date left it, by grade, then by from-date (none first). */
++    public List<Rate> listAsOf(String sheetId, LocalDate asOf) {
++        return jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date FROM rate_history h WHERE h.sheet_id = ? "
++                + "AND h.id = (SELECT MAX(h2.id) FROM rate_history h2 WHERE h2.sheet_id = h.sheet_id AND h2.grade = h.grade "
++                + "AND h2.from_key = h.from_key AND (h2.on_date IS NULL OR h2.on_date <= ?)) ORDER BY grade, from_key",
++                ROW, sheetId, asOf);
++    }
++
++    /** The grade's rate among {@code rates} in force on the date (yyyy-MM-dd), as {@link #find} finds it. */
++    public static Rate inForce(List<Rate> rates, String grade, String date) {
++        Rate found = null;
++        for (Rate r : rates) {
++            if (!r.grade().equals(grade) || (r.from() != null && r.from().compareTo(date) > 0)) continue;
++            if (found == null || (found.from() == null ? "" : found.from()).compareTo(r.from() == null ? "" : r.from()) < 0) found = r;
++        }
++        return found == null || found.endedBefore(date) ? null : found;
++    }
++
+     /** Set (or replace) the grade's rate from the from-date (null: from the beginning of time) through
+      *  the to-date (null: no end). */
+     public Rate set(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to, String user) {
+@@ -49,6 +68,8 @@ public class RateRepository {
+         }
+         jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, set_by, set_at) "
+                 + "VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)", sheetId, grade, pct, from, to, user);
++        jdbc.update("INSERT INTO rate_history (sheet_id, grade, pct, from_date, to_date, on_date) "
++                + "VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", sheetId, grade, pct, from, to, sheetId);
+         return new Rate(sheetId, grade, pct.toPlainString(), from == null ? null : from.toString(),
+                 to == null ? null : to.toString());
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index c8e978d92..60433bdab 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -89,6 +89,30 @@ public class SettingRepository {
+                 + "WHERE sheet_id = ? AND setting = ?", (rs, n) -> row(rs), sheetId, key), start);
+     }
+ 
++    /** The values recorded for a key as they stood at the end of the date (each as the last value
++     *  recorded while the sheet's today was on or before the date left it), with its value before
++     *  every from-date ({@code start}). */
++    public DatedSetting datedAsOf(String sheetId, String key, String start, LocalDate asOf) {
++        return new DatedSetting(jdbc.query("SELECT sheet_id, setting, val, from_date FROM setting_history h "
++                + "WHERE h.sheet_id = ? AND h.setting = ? AND h.id = (SELECT MAX(h2.id) FROM setting_history h2 "
++                + "WHERE h2.sheet_id = h.sheet_id AND h2.setting = h.setting AND h2.from_key = h.from_key "
++                + "AND (h2.on_date IS NULL OR h2.on_date <= ?))", (rs, n) -> row(rs), sheetId, key, asOf), start);
++    }
++
++    /** The sheet's cap in force on the date as it stood then; null when there was none. */
++    public BigDecimal capAsOf(String sheetId, LocalDate asOf) {
++        String value = datedAsOf(sheetId, CAP, null, asOf).on(asOf.toString());
++        return value == null ? null : new BigDecimal(value);
++    }
++
++    /** What a claim's late charge and rounding went by at the end of the date, the date standing in
++     *  for the sheet's today. */
++    public Dues.Late lateAsOf(String sheetId, LocalDate asOf) {
++        String policy = datedAsOf(sheetId, POLICY_DATE, null, asOf).on("9999-12-31");
++        return new Dues.Late(datedAsOf(sheetId, LATE_PCT, DEFAULT_LATE_PCT, asOf), asOf,
++                policy == null ? asOf : LocalDate.parse(policy));
++    }
++
+     /** An undated setting's value; null when blank or never set. */
+     public String find(String sheetId, String key) {
+         return dated(sheetId, key, null).on("9999-12-31");
+@@ -162,6 +186,8 @@ public class SettingRepository {
+                 sheetId, key, from == null ? LocalDate.of(1, 1, 1) : from);
+         jdbc.update("INSERT INTO sheet_setting (sheet_id, setting, val, from_date, set_by, set_at) "
+                 + "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)", sheetId, key, value, from, user);
++        jdbc.update("INSERT INTO setting_history (sheet_id, setting, val, from_date, on_date) "
++                + "VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", sheetId, key, value, from, sheetId);
+         return new Setting(sheetId, key, value == null ? "" : value, from == null ? null : from.toString());
+     }
+ }
+diff --git a/src/main/resources/db/migration/V41__statement_asof.sql b/src/main/resources/db/migration/V41__statement_asof.sql
+new file mode 100644
+index 000000000..483d8db82
+--- /dev/null
++++ b/src/main/resources/db/migration/V41__statement_asof.sql
+@@ -0,0 +1,86 @@
++-- What the sheet held as of a date, so a statement can be taken as of it: each change is kept with
++-- the sheet's today when it was made (on_date). A change made while the sheet's today was on or before
++-- a date counts as of it; a later one does not. Rows kept before this history have no on_date: they
++-- count as of every date.
++
++-- The sheet's today when the person was added (none: added before it was kept).
++ALTER TABLE person ADD COLUMN added_on DATE;
++-- The sheet's today when the hold was added (none: added before it was kept).
++ALTER TABLE person_hold ADD COLUMN added_on DATE;
++
++-- Each claim as it stood after every change to it, oldest first.
++CREATE TABLE claim_history (
++    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id       VARCHAR(200)   NOT NULL REFERENCES sheet (id),
++    claim_id       BIGINT         NOT NULL REFERENCES claim (id),
++    on_date        DATE,
++    person_id      BIGINT         NOT NULL,
++    amount         DECIMAL(19, 2) NOT NULL,
++    claim_date     DATE           NOT NULL,
++    status         VARCHAR(10)    NOT NULL,
++    settled_due    DECIMAL(19, 2),
++    stated         BOOLEAN        NOT NULL,
++    stated_due     DECIMAL(19, 2),
++    deferred_until DATE,
++    due_by         DATE           NOT NULL
++);
++CREATE INDEX claim_history_claim ON claim_history (sheet_id, claim_id, id);
++INSERT INTO claim_history (sheet_id, claim_id, on_date, person_id, amount, claim_date, status, settled_due,
++        stated, stated_due, deferred_until, due_by)
++    SELECT sheet_id, id, NULL, person_id, amount, claim_date, status, settled_due, stated, stated_due,
++        deferred_until, due_by FROM claim;
++
++-- Each rate set, oldest first (a later one with the same grade and from-date replaces it).
++CREATE TABLE rate_history (
++    id        BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id  VARCHAR(200)   NOT NULL,
++    grade     VARCHAR(10)    NOT NULL,
++    pct       DECIMAL(19, 2) NOT NULL,
++    from_date DATE,
++    to_date   DATE,
++    from_key  DATE GENERATED ALWAYS AS (COALESCE(from_date, DATE '0001-01-01')),
++    on_date   DATE
++);
++CREATE INDEX rate_history_sheet ON rate_history (sheet_id, grade, id);
++INSERT INTO rate_history (sheet_id, grade, pct, from_date, to_date, on_date)
++    SELECT sheet_id, grade, pct, from_date, to_date, NULL FROM rate;
++
++-- Each setting value recorded, oldest first (a later one with the same key and from-date replaces it).
++CREATE TABLE setting_history (
++    id        BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id  VARCHAR(200) NOT NULL,
++    setting   VARCHAR(200) NOT NULL,
++    val       VARCHAR(200),
++    from_date DATE,
++    from_key  DATE GENERATED ALWAYS AS (COALESCE(from_date, DATE '0001-01-01')),
++    on_date   DATE
++);
++CREATE INDEX setting_history_sheet ON setting_history (sheet_id, setting, id);
++INSERT INTO setting_history (sheet_id, setting, val, from_date, on_date)
++    SELECT sheet_id, setting, val, from_date, NULL FROM sheet_setting;
++
++-- Each grade a person was given, oldest first (a later one with the same from-date replaces it).
++CREATE TABLE person_grade_history (
++    id        BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id  VARCHAR(200) NOT NULL,
++    person_id BIGINT       NOT NULL,
++    grade     VARCHAR(10)  NOT NULL,
++    from_date DATE,
++    from_key  DATE GENERATED ALWAYS AS (COALESCE(from_date, DATE '0001-01-01')),
++    on_date   DATE
++);
++CREATE INDEX person_grade_history_person ON person_grade_history (sheet_id, person_id, id);
++INSERT INTO person_grade_history (sheet_id, person_id, grade, from_date, on_date)
++    SELECT sheet_id, person_id, grade, from_date, NULL FROM person_grade;
++
++-- Each retirement date a person was given, oldest first (the last one stands).
++CREATE TABLE person_retired_history (
++    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id     VARCHAR(200) NOT NULL,
++    person_id    BIGINT       NOT NULL,
++    retired_from DATE         NOT NULL,
++    on_date      DATE
++);
++CREATE INDEX person_retired_history_person ON person_retired_history (sheet_id, person_id, id);
++INSERT INTO person_retired_history (sheet_id, person_id, retired_from, on_date)
++    SELECT sheet_id, id, retired_from, NULL FROM person WHERE retired_from IS NOT NULL;
