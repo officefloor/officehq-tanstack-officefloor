@@ -24,7 +24,7 @@ import { QuickAdd } from './QuickAdd';
 import { ColumnChooser, useColumns } from './Columns';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { SortBy, sortPeople, useSortBy } from './SortBy';
-import { GRADES, addAlias, addPatron, addPerson, cancelStatement, flagPerson, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, takeStatement, transferPerson, undoTransfer, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+import { GRADES, addAlias, addPatron, addPerson, cancelStatement, flagPerson, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, shownName, takeStatement, transferPerson, undoTransfer, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 import { Fig } from '../session/Fig';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFrom: '', contact: '', tags: '' };
@@ -438,6 +438,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     liveClaims((claims.data ?? []).filter((c) => c.personId === q.id), [q]),
     rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges, cap)]));
   const nameOf = new Map(everyone.map((q) => [q.id, q.name]));
+  const shownOf = new Map(everyone.map((q) => [q.id, shownName(q)]));
   // The exports wait for every read in flight: after the as-of date changes the screen re-reads all.
   const reading = useIsFetching() > 0;
 
@@ -555,7 +556,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                     Down
                   </button>
                 </td>
-                <td data-testid="person-name">{p.name}</td>
+                <td data-testid="person-name">{shownName(p)}</td>
                 <td data-testid="person-grade">{p.grade}</td>
                 <td>
                   <select data-testid="person-inline-grade" value={gradePicks[p.id] ?? p.grade}
@@ -768,7 +769,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                 <td>
                   {shows('patrons') && (
                     <>Patrons <span data-testid="person-patrons">
-                      {patronShares(p.patronIds).map((s) => ({ name: nameOf.get(s.id) ?? '', share: s.share })).sort((x, y) => x.name.localeCompare(y.name)).map((s) => `${s.name} ${(s.share / 100).toFixed(2)}`).join(', ')}
+                      {patronShares(p.patronIds).map((s) => ({ name: nameOf.get(s.id) ?? '', shown: shownOf.get(s.id) ?? '', share: s.share })).sort((x, y) => x.name.localeCompare(y.name)).map((s) => `${s.shown} ${(s.share / 100).toFixed(2)}`).join(', ')}
                     </span>{' '}</>
                   )}
                   {shows('backing') && <>backing <span data-testid="person-backing"><Fig>{backing(claims.data ?? [], p.patronIds, today)}</Fig></span>{' '}</>}

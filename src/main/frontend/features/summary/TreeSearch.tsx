@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query';
 import { claimsKey, listClaims, liveClaims } from '../claims/api';
-import { gradeOn, listPeople, peopleKey } from '../people/api';
+import { gradeOn, listPeople, peopleKey, shownName } from '../people/api';
 import { listRates, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
 import { useCap, useFloor, useLate } from '../settings/api';
 import { listTree, sheetKey, treeKey, useSheetToday } from '../sheet/api';
 
 /** A person as the search finds them: their name, aliases and due-total as their row shows it. */
-type Found = { name: string; aliases: string[]; due: string };
+type Found = { name: string; shown: string; aliases: string[]; due: string };
 
 /** Everyone on a sheet in list order, with their due-total as that sheet's list shows it; undefined until read. */
 function useSheetPeople(sheetId: string, user: string): Found[] | undefined {
@@ -22,6 +22,7 @@ function useSheetPeople(sheetId: string, user: string): Found[] | undefined {
   const byGrade = rateByGrade(rates.data, today);
   return people.data.map((p) => ({
     name: p.name,
+    shown: shownName(p),
     aliases: p.aliases,
     due: showDue(personDue(liveClaims(claims.data.filter((c) => c.personId === p.id), [p]),
       rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap)),
@@ -39,7 +40,7 @@ function TreeSheet({ sheetId, user, report }: { sheetId: string; user: string; r
 }
 
 /** A search box and a button that list, over the sheet and every other sheet of its tree, everyone
- *  whose name or an alias contains the typed text (case ignored), one line each `<sheet id> <name>
+ *  whose name or an alias contains the typed text (case ignored), one line each `<sheet id> <name (grade)>
  *  <due-total>`: the sheet's own people first in list order, then the other sheets' by sheet id. The
  *  count is cleared while a search runs; every sheet is read afresh for it. */
 export function TreeSearch({ sheetId, user }: { sheetId: string; user: string }) {
@@ -86,7 +87,7 @@ export function TreeSearch({ sheetId, user }: { sheetId: string; user: string })
   const lines = ready
     ? ids.flatMap((id) => reported[id]
       .filter((f) => [f.name, ...f.aliases].some((s) => s.toLowerCase().includes(needle)))
-      .map((f) => `${id} ${f.name} ${f.due}`))
+      .map((f) => `${id} ${f.shown} ${f.due}`))
     : [];
 
   return (

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { claimsKey, listClaims, liveClaims } from '../claims/api';
-import { gradeOn, listPeople, peopleKey } from '../people/api';
+import { gradeOn, listPeople, peopleKey, shownName } from '../people/api';
 import type { Person } from '../people/api';
 import { listRates, personDue, rateByGrade, ratesKey } from '../rates/api';
 import { useCap, useFloor, useLate } from '../settings/api';
@@ -96,6 +96,12 @@ export function Crews({ sheetId, user }: { sheetId: string; user: string }) {
   );
 }
 
+/** A crew's lead as the screen shows a name (see `shownName`); '' once they left the sheet. */
+function leadShown(crew: Crew, people: Person[]): string {
+  const lead = people.find((p) => p.id === crew.leadId);
+  return lead === undefined ? crew.lead : shownName(lead);
+}
+
 function CrewRow({ sheetId, user, crew, people, dueTotal }: { sheetId: string; user: string; crew: Crew; people: Person[]; dueTotal: string }) {
   const queryClient = useQueryClient();
   const [member, setMember] = useState('');
@@ -114,7 +120,7 @@ function CrewRow({ sheetId, user, crew, people, dueTotal }: { sheetId: string; u
   return (
     <li data-testid={`crew-row-${crew.name}`}>
       <strong>{crew.name}</strong>{' '}
-      lead <span data-testid="crew-lead">{crew.lead}</span>{' '}
+      lead <span data-testid="crew-lead">{leadShown(crew, people)}</span>{' '}
       due-total <span data-testid="crew-due-total"><Fig>{dueTotal}</Fig></span>
       <ul>
         {crew.members.map((m) => (
