@@ -9,7 +9,7 @@ import { BulkReassign } from '../claims/BulkReassign';
 import { BulkRedate } from '../claims/BulkRedate';
 import { PersonClaims } from '../claims/PersonClaims';
 import { PersonPlans } from '../plans/PersonPlans';
-import { backing, claimsKey, patronShares, isActive, correctsAnother, listClaims, liveClaims, showTags, sumAmounts, tagsKey } from '../claims/api';
+import { backing, claimedClaims, claimsKey, patronShares, isActive, correctsAnother, listClaims, liveClaims, showTags, sumAmounts, tagsKey } from '../claims/api';
 import { listPeriods, periodOf, periodsKey, personPeriodCarried, personPeriodDue } from '../periods/api';
 import { listPools, personCutTotal, poolsKey } from '../pools/api';
 import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
@@ -532,7 +532,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
           {sortPeople((people.data ?? []).filter((p) => showRetired || !p.retired), sortBy, (p) => dueOf.get(p.id) ?? null).map((p) => {
             const own = (claims.data ?? []).filter((c) => c.personId === p.id);
             const live = liveClaims(own, [p]);
-            const claimed = sumAmounts(live.filter((c) => !correctsAnother(c)));
+            const claimed = sumAmounts(claimedClaims(own, [p]).filter((c) => !correctsAnother(c)));
             const pct = byGrade.get(p.grade);
             const late = overdue(live, charges, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
             const aged = agedDues(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));

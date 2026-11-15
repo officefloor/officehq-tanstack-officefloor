@@ -19,7 +19,7 @@ import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 
 /** The sheet's figures at one moment, as the screen shows them: each person's claimed (corrections
- *  left out) and
+ *  left out; a held claim counts, see {@link Person#countsClaimed}) and
  *  due-total (null: n/a; else at most the sheet's cap) and overdue-total, in the order they were added, and the
  *  sheet's claimed-total, due-total and overdue-total (these two leave out the single highest and
  *  lowest person's figure when three or more people have one), with the sheet's alert threshold
@@ -57,8 +57,9 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             BigDecimal overdue = zero();
             boolean kept = false;
             for (Claim c : all) {
-                if (c.getPersonId() != p.getId() || !p.countsLive(c)) continue;
-                if (!corrects(c)) claimed = claimed.add(new BigDecimal(c.getAmount()));
+                if (c.getPersonId() != p.getId()) continue;
+                if (!corrects(c) && p.countsClaimed(c)) claimed = claimed.add(new BigDecimal(c.getAmount()));
+                if (!p.countsLive(c)) continue;
                 String grade = p.gradeOn(c.getDate());
                 Rate rate = RateRepository.inForce(sheetRates, grade, c.getDate(), c.getId());
                 String pct = rate == null ? null : rate.pct();

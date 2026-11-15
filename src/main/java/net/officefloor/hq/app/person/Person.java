@@ -226,6 +226,13 @@ public class Person {
         return claim.isCounting() && !leftOutLive(claim);
     }
 
+    /** Whether the claim counts in claimed (and the claimed-total): as {@link #countsLive}, but a hold
+     *  (theirs or the claim's own) does not leave it out; only the due figures leave it out while held. */
+    public boolean countsClaimed(Claim claim) {
+        return claim.isCounting() && !claim.isDeferred()
+                && !(ClaimStatus.isOpen(claim.getStatus()) && !claim.isStated() && isRetiredReached());
+    }
+
     /** Whether the live rules leave the claim out whatever its status counts: it is deferred, or an
      *  open (OPEN or PENDING) claim that no statement bound, held itself, dated within one of their holds
      *  or of a person whose retirement date the sheet's today has reached. */
