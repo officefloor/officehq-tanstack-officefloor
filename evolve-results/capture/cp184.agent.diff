@@ -1,0 +1,130 @@
+diff --git a/src/main/frontend/features/claims/ClaimedTotal.tsx b/src/main/frontend/features/claims/ClaimedTotal.tsx
+index c5be57a77..c9159ee9a 100644
+--- a/src/main/frontend/features/claims/ClaimedTotal.tsx
++++ b/src/main/frontend/features/claims/ClaimedTotal.tsx
+@@ -1,16 +1,16 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { listPeople, peopleKey } from '../people/api';
+-import { claimsKey, correctsAnother, listClaims, liveClaims, sumAmounts } from './api';
++import { claimedClaims, claimsKey, correctsAnother, listClaims, sumAmounts } from './api';
+ import { Fig } from '../session/Fig';
+ 
+-/** The sheet's claimed-total: everyone's OPEN and SETTLED claims added up (but the OPEN claims dated
+- *  within a hold of their person, unless a statement bound them), leaving out claims that correct another. */
++/** The sheet's claimed-total: everyone's OPEN and SETTLED claims added up (held ones too; see
++ *  `claimedClaims`), leaving out claims that correct another. */
+ export function ClaimedTotal({ sheetId }: { sheetId: string; user: string }) {
+   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
+   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
+   return (
+     <p>
+-      Claimed total <span data-testid="rollup-claimed-total"><Fig>{sumAmounts(liveClaims(claims.data ?? [], people.data).filter((c) => !correctsAnother(c)))}</Fig></span>
++      Claimed total <span data-testid="rollup-claimed-total"><Fig>{sumAmounts(claimedClaims(claims.data ?? [], people.data).filter((c) => !correctsAnother(c)))}</Fig></span>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index e6c6bda47..99f2e306d 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -53,7 +53,7 @@ export type Claim = {
+   reminded: string | null;
+   /** Whether a steward waived its late charge: it bears none from then on, whatever its overdue state. */
+   waived: boolean;
+-  /** Whether it is held: while open (OPEN or PENDING) and bound by no statement, it counts in no live total. */
++  /** Whether it is held: while open (OPEN or PENDING) and bound by no statement, it counts in no due figure (it still counts in claimed). */
+   held: boolean;
+   /** Its external reference (null: none); used once per sheet, compared without regard to case. */
+   ref: string | null;
+@@ -234,6 +234,13 @@ export function liveClaims(claims: Claim[],
+   return claims.filter((c) => !c.deferred && !(isOpen(c) && !c.stated && held(c)));
+ }
+ 
++/** The claims that count in claimed and the claimed-total: as `liveClaims`, but a hold (the person's or the
++ *  claim's own) does not leave a claim out; only the due figures leave it out while held. */
++export function claimedClaims(claims: Claim[], people: Array<{ id: number; retiredReached?: boolean }> | undefined): Claim[] {
++  const byId = new Map((people ?? []).map((p) => [p.id, p]));
++  return claims.filter((c) => !c.deferred && !(isOpen(c) && !c.stated && !!byId.get(c.personId)?.retiredReached));
++}
++
+ /** Whether a person is active: one of their claims that count (`live`, see `liveClaims`) is open (OPEN or
+  *  PENDING) and dated within the 30 days up to and including the sheet's `today`. */
+ export function isActive(live: Claim[], today: string): boolean {
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index be75cf880..4d5cd91c0 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -9,7 +9,7 @@ import { BulkReassign } from '../claims/BulkReassign';
+ import { BulkRedate } from '../claims/BulkRedate';
+ import { PersonClaims } from '../claims/PersonClaims';
+ import { PersonPlans } from '../plans/PersonPlans';
+-import { backing, claimsKey, patronShares, isActive, correctsAnother, listClaims, liveClaims, showTags, sumAmounts, tagsKey } from '../claims/api';
++import { backing, claimedClaims, claimsKey, patronShares, isActive, correctsAnother, listClaims, liveClaims, showTags, sumAmounts, tagsKey } from '../claims/api';
+ import { listPeriods, periodOf, periodsKey, personPeriodCarried, personPeriodDue } from '../periods/api';
+ import { listPools, personCutTotal, poolsKey } from '../pools/api';
+ import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
+@@ -532,7 +532,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+           {sortPeople((people.data ?? []).filter((p) => showRetired || !p.retired), sortBy, (p) => dueOf.get(p.id) ?? null).map((p) => {
+             const own = (claims.data ?? []).filter((c) => c.personId === p.id);
+             const live = liveClaims(own, [p]);
+-            const claimed = sumAmounts(live.filter((c) => !correctsAnother(c)));
++            const claimed = sumAmounts(claimedClaims(own, [p]).filter((c) => !correctsAnother(c)));
+             const pct = byGrade.get(p.grade);
+             const late = overdue(live, charges, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
+             const aged = agedDues(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 151e8f793..d3064770e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -186,7 +186,7 @@ public class Claim {
+ 
+     private boolean held;
+ 
+-    /** Whether it is held: while open (OPEN or PENDING) and bound by no statement, it counts in no live total. */
++    /** Whether it is held: while open (OPEN or PENDING) and bound by no statement, it counts in no due figure (it still counts in claimed). */
+     public boolean isHeld() { return held; }
+     public void setHeld(boolean held) { this.held = held; }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index a006e33f6..1643418de 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -226,6 +226,13 @@ public class Person {
+         return claim.isCounting() && !leftOutLive(claim);
+     }
+ 
++    /** Whether the claim counts in claimed (and the claimed-total): as {@link #countsLive}, but a hold
++     *  (theirs or the claim's own) does not leave it out; only the due figures leave it out while held. */
++    public boolean countsClaimed(Claim claim) {
++        return claim.isCounting() && !claim.isDeferred()
++                && !(ClaimStatus.isOpen(claim.getStatus()) && !claim.isStated() && isRetiredReached());
++    }
++
+     /** Whether the live rules leave the claim out whatever its status counts: it is deferred, or an
+      *  open (OPEN or PENDING) claim that no statement bound, held itself, dated within one of their holds
+      *  or of a person whose retirement date the sheet's today has reached. */
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 542e9e313..b6a8be52a 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -19,7 +19,7 @@ import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ 
+ /** The sheet's figures at one moment, as the screen shows them: each person's claimed (corrections
+- *  left out) and
++ *  left out; a held claim counts, see {@link Person#countsClaimed}) and
+  *  due-total (null: n/a; else at most the sheet's cap) and overdue-total, in the order they were added, and the
+  *  sheet's claimed-total, due-total and overdue-total (these two leave out the single highest and
+  *  lowest person's figure when three or more people have one), with the sheet's alert threshold
+@@ -57,8 +57,9 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+             BigDecimal overdue = zero();
+             boolean kept = false;
+             for (Claim c : all) {
+-                if (c.getPersonId() != p.getId() || !p.countsLive(c)) continue;
+-                if (!corrects(c)) claimed = claimed.add(new BigDecimal(c.getAmount()));
++                if (c.getPersonId() != p.getId()) continue;
++                if (!corrects(c) && p.countsClaimed(c)) claimed = claimed.add(new BigDecimal(c.getAmount()));
++                if (!p.countsLive(c)) continue;
+                 String grade = p.gradeOn(c.getDate());
+                 Rate rate = RateRepository.inForce(sheetRates, grade, c.getDate(), c.getId());
+                 String pct = rate == null ? null : rate.pct();
