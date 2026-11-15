@@ -262,3 +262,13 @@ export function listVoidReasons(sheetId: string): Promise<VoidReason[]> {
 export function addVoidReason(sheetId: string, by: string, reason: string): Promise<VoidReason> {
   return postJson<VoidReason>(`${sheetBase(sheetId)}/void-reasons?by=${encodeURIComponent(by)}`, { reason });
 }
+
+/** How many of the selected claims a bulk reassign moved, and how many it refused (left as they were). */
+export type BulkReassignResult = { reassigned: number; refused: number };
+
+/** Move the selected claims to one person (`toPersonId`) together in list order (people in added order,
+ *  newest claim first within a person), each by the rules of reassigning one; each that cannot be moved
+ *  is left as it is and counted as refused. */
+export function bulkReassignClaims(sheetId: string, by: string, claimIds: number[], toPersonId: number): Promise<BulkReassignResult> {
+  return postJson<BulkReassignResult>(`${sheetBase(sheetId)}/bulk-reassign?by=${encodeURIComponent(by)}`, { claimIds, to: toPersonId });
+}

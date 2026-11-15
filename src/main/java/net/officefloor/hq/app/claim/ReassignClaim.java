@@ -14,13 +14,26 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** A role the permission matrix lets reassign (by default a steward) moves a DRAFT, OPEN or PENDING claim to another person on the sheet ({@code to}, their
  *  id): it keeps its number and date and loses any figure a statement bound it to (live again until
  *  its new person's next statement). Refused for anyone else, for a SETTLED or VOID claim, for a claim
- *  due by a day in a closed period, and when {@code to} is not another person on the sheet. */
+ *  due by a day in a closed period, for a claim dated after the new person's retirement, and when
+ *  {@code to} is not another person on the sheet. */
 public class ReassignClaim {
     public void move(@RequestParam(name = "by", required = false) String by,
             @RequestParam(name = "to", required = false) Long to, @Val Claim claim,
             PersonRepository people, RoleRepository roles, PeriodRepository periods,
             SettingRepository settings, Out<Reassignment> reassignment) throws ClaimStatusException, PeriodClosedException {
-        String user = by == null ? "" : by;
+        Person target = to == null ? null : people.find(claim.getSheetId(), to);
+        if (target != null && target.getId() == claim.getPersonId()) {
+            throw new ClaimStatusException("A claim can only be reassigned to another person on the sheet");
+        }
+        reassignment.set(reassign(by == null ? "" : by, claim, target, people, roles, periods, settings));
+    }
+
+    /** Move the claim to {@code target} by the rules of reassigning one (its person changed in place;
+     *  nothing is saved): refused for a role that may not reassign, a SETTLED or VOID claim, a claim
+     *  due by a day in a closed period, no target, or a target retired before the claim's date. */
+    static Reassignment reassign(String user, Claim claim, Person target, PersonRepository people,
+            RoleRepository roles, PeriodRepository periods, SettingRepository settings)
+            throws ClaimStatusException, PeriodClosedException {
         if (!Permissions.allows(claim.getSheetId(), user, Permissions.REASSIGN, roles, settings)) {
             throw new ClaimStatusException("Your role may not reassign a claim");
         }
@@ -29,13 +42,15 @@ public class ReassignClaim {
             throw new ClaimStatusException("A " + status + " claim cannot be reassigned");
         }
         periods.requireOpen(claim.getSheetId(), claim.getDueBy());
-        Person from = people.find(claim.getSheetId(), claim.getPersonId());
-        Person target = to == null ? null : people.find(claim.getSheetId(), to);
-        if (target == null || target.getId() == claim.getPersonId()) {
+        if (target == null) {
             throw new ClaimStatusException("A claim can only be reassigned to another person on the sheet");
         }
+        if (target.retiredBefore(java.time.LocalDate.parse(claim.getDate()))) {
+            throw new ClaimStatusException("A claim cannot be reassigned to a person retired before its date");
+        }
+        Person from = people.find(claim.getSheetId(), claim.getPersonId());
         claim.setPersonId(target.getId());
         claim.bind(false, null);
-        reassignment.set(new Reassignment(from == null ? "" : from.getName(), target.getName()));
+        return new Reassignment(from == null ? "" : from.getName(), target.getName());
     }
 }

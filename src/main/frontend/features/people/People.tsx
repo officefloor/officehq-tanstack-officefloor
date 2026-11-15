@@ -5,6 +5,7 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { BulkOpen } from '../claims/BulkOpen';
 import { PasteClaims } from '../claims/PasteClaims';
 import { BulkSettle } from '../claims/BulkSettle';
+import { BulkReassign } from '../claims/BulkReassign';
 import { PersonClaims } from '../claims/PersonClaims';
 import { backing, claimsKey, isActive, listClaims, liveClaims, sumAmounts } from '../claims/api';
 import { listPeriods, periodsKey, personPeriodDue } from '../periods/api';
@@ -303,6 +304,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       <BulkOpen sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
       <BulkGrade sheetId={sheetId} user={user} selected={[...selectedPeople]} onDone={() => setSelectedPeople(new Set())} />
       <BulkSettle sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
+      <BulkReassign sheetId={sheetId} user={user} selected={[...selected]} people={everyone}
+        onDone={() => setSelected(new Set())} />
       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
       <table>
         <tbody>
