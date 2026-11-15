@@ -3,7 +3,7 @@ import { claimsKey, isActive, listClaims, listVoidReasons, liveClaims, voidReaso
 import { GRADES, gradeOn, listPeople, peopleKey } from '../people/api';
 import { listPeriods, periodDueTotal, periodsKey } from '../periods/api';
 import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
-import { useCap, useFloor, useLate } from '../settings/api';
+import { isReviewLate, useCap, useFloor, useLate, useReviewSla } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { Fig } from '../session/Fig';
 
@@ -23,7 +23,7 @@ export function dueChange(previous: string, current: string): string {
 
 /** The sheet's summary, agreeing with the lists: per grade, how many people not retired are on it
  *  today, their due-totals added up (n/a ones skipped) and how many of them are active (see `isActive`); per period by from-date, its due-total and its change from the period before (none for the earliest); per status,
- *  how many claims have it; per void reason on the list, how many VOID claims were voided with it. */
+ *  how many claims have it; how many REVIEW claims are review-late (see `isReviewLate`); per void reason on the list, how many VOID claims were voided with it. */
 export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
@@ -34,6 +34,7 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
   const today = useSheetToday(sheetId, user);
   const cap = useCap(sheetId, today);
   const charges = useLate(sheetId, today);
+  const reviewSla = useReviewSla(sheetId);
   const byGrade = rateByGrade(rates.data, today);
   const all = claims.data ?? [];
   const active = (people.data ?? []).filter((p) => !p.retired);
@@ -75,6 +76,12 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
               <td />
             </tr>
           ))}
+          <tr>
+            <td>Review late</td>
+            <td>Claims <span data-testid="summary-review-late-count">
+              {all.filter((c) => isReviewLate(c, today, reviewSla)).length}</span></td>
+            <td />
+          </tr>
           {(voidReasons.data ?? []).map((r) => (
             <tr key={r.reason}>
               <td>Voided: {r.reason}</td>

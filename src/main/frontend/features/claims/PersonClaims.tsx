@@ -4,7 +4,7 @@ import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
-import { useNoteThreshold, useProofThreshold, type DatedOn } from '../settings/api';
+import { isReviewLate, useNoteThreshold, useProofThreshold, useReviewSla, type DatedOn } from '../settings/api';
 import { claimFromTemplate, listTemplates, templatesKey } from '../templates/api';
 import { addClaim, addClaimLine, claimTimeline, addProof, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
 import { Fig } from '../session/Fig';
@@ -372,6 +372,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
   };
 
   const noteThreshold = useNoteThreshold(sheetId);
+  const reviewSla = useReviewSla(sheetId);
   // Whether a claim needs a note before it is opened: an empty one, and its due above the threshold.
   const needsNote = (c: Claim) => {
     const threshold = noteThreshold(c.date);
@@ -581,6 +582,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 overdue <span data-testid="claim-overdue">{isOverdue(c, today, charges.lateFrom(c)) ? 'yes' : 'no'}</span>
               </td>
               <td data-testid="claim-status">{c.status}</td>
+              <td>Review late <span data-testid="claim-review-late">{isReviewLate(c, today, reviewSla) ? 'yes' : 'no'}</span></td>
               <td>Batch <span data-testid="claim-batch">{c.settleBatch ?? ''}</span></td>
               <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>
               <td>

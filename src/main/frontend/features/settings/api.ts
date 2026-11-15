@@ -48,9 +48,11 @@ export type Role = { sheetId: string; user: string; role: string };
  *  force rounds its live figures by it instead of by the policy date.
  *  The escalation gap (a number of days; blank means off; not dated): reminding a claim whose previous
  *  reminder was at least that many days before the sheet's today escalates it (an ESCALATE audit line),
- *  once per claim ever. */
+ *  once per claim ever.
+ *  The review SLA (a number of days; blank means none; not dated): a REVIEW claim whose review day (the
+ *  sheet's today when it went to REVIEW) plus them is before the sheet's today is review-late (see `isReviewLate`). */
 export const SETTING_KEYS = ['clerk-limit', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'rounding',
-  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'] as const;
+  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'] as const;
 
 /** The roles that may take each action of the permission matrix while its entry is blank. */
 export const PERMISSION_STANDING: Record<string, string> = {
@@ -62,7 +64,7 @@ export const PERMISSION_STANDING: Record<string, string> = {
 export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00', 'fiscal-start-month': '1' };
 
 /** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
-export const UNDATED_KEYS: readonly string[] = ['pot', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'perm-open', 'perm-settle', 'perm-void',
+export const UNDATED_KEYS: readonly string[] = ['pot', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'perm-open', 'perm-settle', 'perm-void',
   'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month'];
 
 /** The fiscal year a date (yyyy-MM-dd) falls in, FY<yyyy>, for a fiscal year start month (1 to 12). */
@@ -132,6 +134,32 @@ export function useProofThreshold(sheetId: string): (grade: string, date: string
 export function useNoteThreshold(sheetId: string): (date: string) => string | null {
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
   return (date) => settingOn(settings.data, 'note-threshold', date) || null;
+}
+
+/** The sheet's review SLA in whole days (null: none). */
+export function useReviewSla(sheetId: string): number | null {
+  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+  const value = settingOn(settings.data, 'review-sla', '9999-12-31');
+  return value ? Number(value) : null;
+}
+
+/** The day a claim last went to REVIEW (yyyy-MM-dd), from its status log (null: never). */
+export function reviewDay(c: Pick<Claim, 'log'>): string | null {
+  for (let i = (c.log ?? []).length - 1; i >= 0; i--) {
+    const m = /^REVIEW by .* on (\d{4}-\d{2}-\d{2}) due=/.exec(c.log[i]);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/** Whether a claim is review-late: REVIEW, and its review day plus the review SLA (null: none) is
+ *  before the sheet's today. */
+export function isReviewLate(c: Pick<Claim, 'status' | 'log'>, today: string, sla: number | null): boolean {
+  if (c.status !== 'REVIEW' || sla === null) return false;
+  const day = reviewDay(c);
+  if (day === null) return false;
+  const until = new Date(Date.parse(`${day}T00:00:00Z`) + sla * 86_400_000).toISOString().slice(0, 10);
+  return until < today;
 }
 
 /** The sheet's cap in force on its today: the most a person's due-total can be; null when there is none. */

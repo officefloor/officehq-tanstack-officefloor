@@ -89,6 +89,10 @@ public class SettingRepository {
      *  reminder was at least that many days before the sheet's today escalates it, once per claim. */
     public static final String ESCALATE_AFTER = "escalate-after";
 
+    /** The review SLA (a whole number of days; blank: none; not dated): a REVIEW claim whose review day
+     *  (the sheet's today when it went to REVIEW) plus them is before the sheet's today is late. */
+    public static final String REVIEW_SLA = "review-sla";
+
     /** A grade's grace days ({@code grace-<grade>}, dated; a whole number; blank: none): a claim whose
      *  person's grade in force on its date has them in force on that date is overdue, and gains its late
      *  charge, counting from its due-by plus them. */
@@ -117,7 +121,7 @@ public class SettingRepository {
     /** Whether a key is dated: every key that carries a figure (the policy date, the period
      *  numbering date, the grace days, the pot, the fiscal year start month and the permission matrix are not). */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
+        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
                 && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !FISCAL_START_MONTH.equals(key) && !PARENT.equals(key) && !Permissions.isKey(key);
     }
 
