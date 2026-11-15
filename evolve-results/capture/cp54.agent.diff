@@ -1,0 +1,516 @@
+diff --git a/src/main/frontend/features/settings/Roles.tsx b/src/main/frontend/features/settings/Roles.tsx
+index eea0c1929..9990bae5a 100644
+--- a/src/main/frontend/features/settings/Roles.tsx
++++ b/src/main/frontend/features/settings/Roles.tsx
+@@ -5,7 +5,7 @@ import { listRoles, rolesKey, setRole } from './api';
+ 
+ const EMPTY = { user: '', role: '' };
+ 
+-/** The roles assigned on the sheet (any other name is a clerk) and a form that assigns one. */
++/** The roles assigned on the sheet (any other name is a clerk; a viewer may change nothing) and a form that assigns one. */
+ export function Roles({ sheetId, user }: { sheetId: string; user: string }) {
+   const queryClient = useQueryClient();
+   const roles = useQuery({ queryKey: rolesKey(sheetId), queryFn: () => listRoles(sheetId) });
+@@ -41,16 +41,17 @@ export function Roles({ sheetId, user }: { sheetId: string; user: string }) {
+       >
+         <input data-testid="role-form-user" placeholder="User" value={form.user}
+           onChange={(e) => change({ user: e.target.value })} />{' '}
+-        <input data-testid="role-form-role" placeholder="clerk or steward" list="role-names" value={form.role}
++        <input data-testid="role-form-role" placeholder="clerk, steward or viewer" list="role-names" value={form.role}
+           onChange={(e) => change({ role: e.target.value })} />
+         <datalist id="role-names">
+           <option value="clerk" />
+           <option value="steward" />
++          <option value="viewer" />
+         </datalist>{' '}
+         <button type="submit" data-testid="role-form-submit" disabled={save.isPending}>
+           Set role
+         </button>
+-        {save.isError && <span data-testid="role-form-error">A role needs a user name and is clerk or steward.</span>}
++        {save.isError && <span data-testid="role-form-error">A role needs a user name and is clerk, steward or viewer.</span>}
+       </form>
+       <table>
+         <tbody>
+diff --git a/src/main/java/net/officefloor/hq/app/setting/HandleViewerRefused.java b/src/main/java/net/officefloor/hq/app/setting/HandleViewerRefused.java
+new file mode 100644
+index 000000000..f9181fae8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/HandleViewerRefused.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.setting;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleViewerRefused {
++    public void handle(@Parameter ViewerRefusedException ex,
++            ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.FORBIDDEN));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RefuseViewer.java b/src/main/java/net/officefloor/hq/app/setting/RefuseViewer.java
+new file mode 100644
+index 000000000..958297f72
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/RefuseViewer.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.setting;
++
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** The first step of every change: a viewer is refused before anything is read or written. */
++public class RefuseViewer {
++    public void refuse(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "by", required = false) String by, RoleRepository roles)
++            throws ViewerRefusedException {
++        if (Role.VIEWER.equals(roles.roleOf(sheetId.trim(), by == null ? "" : by))) {
++            throw new ViewerRefusedException("A viewer may change nothing");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Role.java b/src/main/java/net/officefloor/hq/app/setting/Role.java
+index 63e22ec2b..d206f096c 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Role.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Role.java
+@@ -1,7 +1,9 @@
+ package net.officefloor.hq.app.setting;
+ 
+-/** The role a user name has on a sheet: clerk (any name without one) or steward. */
++/** The role a user name has on a sheet: clerk (any name without one), steward, or viewer (sees
++ *  everything and may change nothing). */
+ public record Role(String sheetId, String user, String role) {
+     public static final String CLERK = "clerk";
+     public static final String STEWARD = "steward";
++    public static final String VIEWER = "viewer";
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateRole.java b/src/main/java/net/officefloor/hq/app/setting/ValidateRole.java
+index d666ef307..ef8815af5 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateRole.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateRole.java
+@@ -5,7 +5,7 @@ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateRole {
+-    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD);
++    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD, Role.VIEWER);
+ 
+     public void validate(@RequestBody RoleRequest request, Out<RoleRequest> body)
+             throws InvalidSettingException {
+@@ -15,7 +15,7 @@ public class ValidateRole {
+             throw new InvalidSettingException("A user name is required");
+         }
+         if (!ROLES.contains(role)) {
+-            throw new InvalidSettingException("Role must be clerk or steward");
++            throw new InvalidSettingException("Role must be clerk, steward or viewer");
+         }
+         body.set(new RoleRequest(user, role));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ViewerRefusedException.java b/src/main/java/net/officefloor/hq/app/setting/ViewerRefusedException.java
+new file mode 100644
+index 000000000..e1856ad6e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/ViewerRefusedException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.setting;
++
++/** A viewer may change nothing on the sheet. Refused and nothing is written. */
++public class ViewerRefusedException extends Exception {
++    public ViewerRefusedException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/resources/db/migration/V32__role_viewer.sql b/src/main/resources/db/migration/V32__role_viewer.sql
+new file mode 100644
+index 000000000..82cb82138
+--- /dev/null
++++ b/src/main/resources/db/migration/V32__role_viewer.sql
+@@ -0,0 +1,14 @@
++-- A third role: a viewer sees everything on the sheet and may change nothing. The role check is
++-- unnamed, so the table is rebuilt with the wider one.
++CREATE TABLE sheet_role_new (
++    sheet_id   VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    user_name  VARCHAR(200) NOT NULL,
++    role       VARCHAR(20)  NOT NULL CHECK (role IN ('clerk', 'steward', 'viewer')),
++    set_by     VARCHAR(200) NOT NULL,
++    set_at     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    PRIMARY KEY (sheet_id, user_name)
++);
++INSERT INTO sheet_role_new (sheet_id, user_name, role, set_by, set_at)
++    SELECT sheet_id, user_name, role, set_by, set_at FROM sheet_role;
++DROP TABLE sheet_role;
++ALTER TABLE sheet_role_new RENAME TO sheet_role;
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.setting.ViewerRefusedException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.setting.ViewerRefusedException.yml
+new file mode 100644
+index 000000000..daf8760b6
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.setting.ViewerRefusedException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.setting.HandleViewerRefused
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index 91182d94d..f2ffe97ee 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,4 +1,8 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId} — edit a claim's amount, date and note; refused like an add.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/approve.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/approve.POST.yml
+index e7f53a492..b685d3b9e 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/approve.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/approve.POST.yml
+@@ -1,5 +1,9 @@
+ # POST /api/sheets/{sheetId}/claims/{claimId}/approve — a steward approves a PENDING claim: it becomes
+ # SETTLED, its due fixed now; refused (409) for anyone else, for its opener, or when it is not PENDING.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.POST.yml
+index 344479b17..7036495d4 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.POST.yml
+@@ -1,6 +1,10 @@
+ # POST /api/sheets/{sheetId}/claims/{claimId}/defer?until=yyyy-MM-dd — defer an OPEN claim until a date
+ # after the sheet's today; refused (409) when it is not OPEN, (400) for a date not after today, (423)
+ # for a claim dated in a closed period.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/open.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/open.POST.yml
+index f844dff58..7a6139e9a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/open.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/open.POST.yml
+@@ -1,5 +1,9 @@
+ # POST /api/sheets/{sheetId}/claims/{claimId}/open — move a claim to OPEN; refused (409) when its
+ # status does not allow it.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proofs.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proofs.POST.yml
+index feb0b0b61..830cc7f8b 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proofs.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proofs.POST.yml
+@@ -1,5 +1,9 @@
+ # POST /api/sheets/{sheetId}/claims/{claimId}/proofs — raise a claim's proofs count by one; refused (409)
+ # for a SETTLED or VOID claim, (423) for a claim dated in a closed period.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: load
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml
+index e206f0934..3856e4475 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml
+@@ -1,5 +1,9 @@
+ # POST /api/sheets/{sheetId}/claims/{claimId}/reassign?to=<personId> — a steward moves a DRAFT, OPEN
+ # or PENDING claim to another person; refused (409, or 423 in a closed period) otherwise.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reject.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reject.POST.yml
+index e268b5a19..f6ea6fe13 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reject.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reject.POST.yml
+@@ -1,5 +1,9 @@
+ # POST /api/sheets/{sheetId}/claims/{claimId}/reject?reason=... — a steward rejects a PENDING claim with
+ # a reason: it goes back to OPEN; refused (409) for anyone else or when it is not PENDING, (400) with no reason.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml
+index d0ac6d363..4fd670ebe 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml
+@@ -1,6 +1,10 @@
+ # POST /api/sheets/{sheetId}/claims/{claimId}/resettle — a steward freezes a SETTLED claim again at the figure it
+ # would have today as an open claim bound by no statement; refused (409) for anyone else or any other status,
+ # and (423) for a claim dated in a closed period.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle.POST.yml
+index 07a17c0ae..d1c4bcfb6 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle.POST.yml
+@@ -1,5 +1,9 @@
+ # POST /api/sheets/{sheetId}/claims/{claimId}/settle — move an OPEN claim to SETTLED (or, by a clerk above
+ # the clerk limit, to PENDING); refused (409) when its status does not allow it.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/void.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/void.POST.yml
+index e7cecfecb..b35243141 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/void.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/void.POST.yml
+@@ -1,5 +1,9 @@
+ # POST /api/sheets/{sheetId}/claims/{claimId}/void — move a claim to VOID; refused (409) when its
+ # status does not allow it.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
+index 811500ef5..9c37545d6 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
+@@ -1,6 +1,10 @@
+ # POST /api/sheets/{sheetId}/paste-claims — add a DRAFT claim per pasted line of name,amount,date,note,
+ # in order, to the named person. Every line is checked first by the claim form's rules: when any line
+ # is refused nothing is added. Responds with how many were added.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.paste.ValidatePaste
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index ad9e66017..f2ab0990f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,4 +1,8 @@
+ # POST /api/sheets/{sheetId}/people — add a person; an empty or already-used name or unknown grade is refused.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index 3c916433b..95e8ffa6a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -1,5 +1,9 @@
+ # PUT /api/sheets/{sheetId}/people/{personId} — edit a person; refused like an add, and refused
+ # (409) when the body's version is not the stored one: someone else saved the person meanwhile.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 8002a81da..f85f59568 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -1,6 +1,10 @@
+ # POST /api/sheets/{sheetId}/people/{personId}/claims — add a claim to a person; a missing or
+ # over-two-decimal amount, a date that is not a date, or a correction (a negative amount) that does
+ # not name by number a SETTLED claim of the person, is refused.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
+index 202b88eff..57833c836 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
+@@ -2,6 +2,10 @@
+ # (blank: the sheet's today) to an optional to-date; a date that is not a date, or a to-date before
+ # the from-date, is refused. Only their OPEN claims dated within a hold, and not bound by a
+ # statement, count in no live total.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidateHold
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+index bc47ebfbf..f936bc77b 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+@@ -1,5 +1,9 @@
+ # POST /api/sheets/{sheetId}/people/{personId}/patrons — name another person on the sheet as one of
+ # the person's patrons; themselves, someone not on the sheet or a patron already named is refused.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePatron
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+index d92ace1af..d0eeb9ca2 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+@@ -1,5 +1,9 @@
+ # POST /api/sheets/{sheetId}/people/{personId}/retire — retire a person from a date (blank: the
+ # sheet's today); a date that is not a date is refused. Their claims keep counting in every total.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidateRetire
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+index a57839887..ad7f13db3 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+@@ -1,5 +1,9 @@
+ # POST /api/sheets/{sheetId}/people/{personId}/statement — take a statement of the person: record
+ # their due-total now and bind each of their counting claims to the figure it shows now.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
+index cf0900a2d..3ed3c181c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
+@@ -1,5 +1,9 @@
+ # POST /api/sheets/{sheetId}/periods — add a period; a missing or taken name, a bad date, a from-date
+ # after the to-date or dates overlapping another period are refused.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.period.ValidatePeriod
+   next: add
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml
+index 13892eb66..f3dcc9a8a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml
+@@ -1,5 +1,9 @@
+ # POST /api/sheets/{sheetId}/periods/{name}/close — close a period, fixing its due-total; refused
+ # (409) when it is already closed, and (403) for a role the permission matrix does not let close.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: close
+ close:
+   class: net.officefloor.hq.app.period.ClosePeriod
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml
+index 46322b17a..0867a1ce3 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml
+@@ -1,5 +1,9 @@
+ # POST /api/sheets/{sheetId}/periods/{name}/reopen — reopen a closed period, making its due-total
+ # live again; refused (409) for anyone but a steward, or when it is not closed.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: reopen
+ reopen:
+   class: net.officefloor.hq.app.period.ReopenPeriod
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+index 2261cf178..f72c4bd4f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+@@ -1,6 +1,10 @@
+ # POST /api/sheets/{sheetId}/quick-add — add a DRAFT claim (the sheet's today, empty note) to the
+ # named person, adding them first with grade A when the name is not on the sheet. Refused like the
+ # person and claim forms, before anything is written: a refusal leaves no new person behind.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.quick.ValidateQuickAdd
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml
+index fe2d96b7b..ca5b43e56 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml
+@@ -1,4 +1,8 @@
+ # POST /api/sheets/{sheetId}/rates — set a grade's rate; an unknown grade or a bad percent is refused.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.rate.ValidateRate
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.POST.yml
+index ad2c553a7..fa04a13bc 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.POST.yml
+@@ -1,4 +1,8 @@
+ # POST /api/sheets/{sheetId}/roles — assign a user name a role (clerk or steward); any other role is refused.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.setting.ValidateRole
+   next: set
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml
+index 1a2102ff1..372920e3f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml
+@@ -1,4 +1,8 @@
+ # POST /api/sheets/{sheetId}/settings — change a setting; an unknown key or a bad value is refused.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.setting.ValidateSetting
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+index e851ade32..52c8b209c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+@@ -1,4 +1,8 @@
+ # POST /api/sheets/{sheetId}/today — change the sheet's today (the date everything on it goes by).
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateSheetToday
+   next: before
