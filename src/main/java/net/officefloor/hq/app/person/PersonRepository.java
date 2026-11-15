@@ -203,15 +203,15 @@ public class PersonRepository {
         people.forEach((p) -> p.setSnapshots(snapshots.getOrDefault(p.getId(), new ArrayList<>())));
     }
 
-    /** Give each person their statements still standing, oldest first: by date, then in the order taken
-     *  (those a merge or transfer brought over among them by their date). */
+    /** Give each person their statements still standing, oldest first: in the order taken (an as-of
+     *  statement goes where it was taken, not where its date falls). */
     private void withStatements(String sheetId, List<Person> people) {
         if (people.isEmpty()) {
             return;
         }
         Map<Long, List<StatementLine>> statements = new HashMap<>();
         jdbc.query("SELECT person_id, stated_total, statement_date FROM person_statement WHERE sheet_id = ? "
-                + "ORDER BY person_id, statement_date, taken_at, id",
+                + "ORDER BY person_id, taken_at, id",
                 (rs) -> {
                     String total = rs.getString("stated_total");
                     statements.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())

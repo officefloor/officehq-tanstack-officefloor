@@ -42,7 +42,7 @@ public class Person {
     private java.util.List<Retirement> retirements = new java.util.ArrayList<>();
     /** The SNAPSHOTs written for them, oldest first. */
     private java.util.List<Snapshot> snapshots = new java.util.ArrayList<>();
-    /** Their statements still standing, oldest first (by date, then as taken). */
+    /** Their statements still standing, oldest first (in the order taken). */
     private java.util.List<StatementLine> statements = new java.util.ArrayList<>();
     /** Their holds, in the order they were added. */
     private java.util.List<Hold> holds = new java.util.ArrayList<>();
