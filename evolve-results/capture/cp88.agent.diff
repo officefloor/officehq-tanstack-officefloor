@@ -1,0 +1,49 @@
+diff --git a/src/main/frontend/features/rates/api.ts b/src/main/frontend/features/rates/api.ts
+index dae5e9c03..27961401c 100644
+--- a/src/main/frontend/features/rates/api.ts
++++ b/src/main/frontend/features/rates/api.ts
+@@ -76,9 +76,9 @@ export type Late = { pct: DatedOn; today: string; policy: string; lateFrom: (c:
+  *  date of the claim it corrects) is before the policy date; else they round half to even. */
+ export const roundsHalfUp = (c: Claim, late: Late) => (c.roundDate ?? c.date) < late.policy;
+ 
+-/** The late charge on an open (OPEN or PENDING) claim's `figure`: for each full 30 days it is past its due-by plus
+- *  its grace days (`late.lateFrom`) on the sheet's today, the late percent in force on that boundary date (that date
+- *  plus 30, 60, 90 ... days) of it,
++/** The late charge on an open (OPEN or PENDING) claim's `figure`, compounding: for each full 30 days it is past its
++ *  due-by plus its grace days (`late.lateFrom`) on the sheet's today, the late percent in force on that boundary date
++ *  (that date plus 30, 60, 90 ... days) of the figure plus the charges of the boundaries before it,
+  *  each rounded by the policy date to two decimals, added up (0 when not overdue, and on a correction). */
+ export function lateCharge(c: Claim, figure: string, late: Late): bigint {
+   const from = late.lateFrom(c);
+@@ -88,7 +88,7 @@ export function lateCharge(c: Claim, figure: string, late: Late): bigint {
+   let total = 0n;
+   for (let k = 1; k <= periods; k++) {
+     const boundary = new Date(start + k * 30 * 86_400_000).toISOString().slice(0, 10);
+-    total += roundPct(hundredths(figure) * hundredths(late.pct(boundary)), roundsHalfUp(c, late));
++    total += roundPct((hundredths(figure) + total) * hundredths(late.pct(boundary)), roundsHalfUp(c, late));
+   }
+   return total;
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Dues.java b/src/main/java/net/officefloor/hq/app/claim/Dues.java
+index fd96ad32a..8e80ba6b0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Dues.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Dues.java
+@@ -44,7 +44,8 @@ public final class Dues {
+ 
+     /** The late charge on a claim's figure: for each full 30 days its open (OPEN or PENDING) claim is past its
+      *  due-by (fixed when it was added) plus its grace days on the sheet's today, the late percent in force on that
+-     *  boundary date (its due-by plus grace plus 30, 60, 90 ... days) of it, each rounded by the policy date to two decimals, added up;
++     *  boundary date (its due-by plus grace plus 30, 60, 90 ... days) of the figure plus the charges of
++     *  the boundaries before it (compounding), each rounded by the policy date to two decimals, added up;
+      *  none (0.00) when it is not overdue (a deferred claim never is), or on a correction. */
+     public static BigDecimal charge(Claim claim, String figure, Late late) {
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+@@ -55,7 +56,7 @@ public final class Dues {
+         for (long k = 1; k <= periods; k++) {
+             String pct = late.pct().on(dueBy.plusDays(30 * k).toString());
+             if (pct == null) continue;
+-            total = total.add(new BigDecimal(figure).multiply(new BigDecimal(pct))
++            total = total.add(new BigDecimal(figure).add(total).multiply(new BigDecimal(pct))
+                     .divide(BigDecimal.valueOf(100), 2, rounding));
+         }
+         return total;
