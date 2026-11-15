@@ -5,7 +5,7 @@ import { listRoles, rolesKey, setRole } from './api';
 
 const EMPTY = { user: '', role: '' };
 
-/** The roles assigned on the sheet (any other name is a clerk) and a form that assigns one. */
+/** The roles assigned on the sheet (any other name is a clerk; a viewer may change nothing) and a form that assigns one. */
 export function Roles({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const roles = useQuery({ queryKey: rolesKey(sheetId), queryFn: () => listRoles(sheetId) });
@@ -41,16 +41,17 @@ export function Roles({ sheetId, user }: { sheetId: string; user: string }) {
       >
         <input data-testid="role-form-user" placeholder="User" value={form.user}
           onChange={(e) => change({ user: e.target.value })} />{' '}
-        <input data-testid="role-form-role" placeholder="clerk or steward" list="role-names" value={form.role}
+        <input data-testid="role-form-role" placeholder="clerk, steward or viewer" list="role-names" value={form.role}
           onChange={(e) => change({ role: e.target.value })} />
         <datalist id="role-names">
           <option value="clerk" />
           <option value="steward" />
+          <option value="viewer" />
         </datalist>{' '}
         <button type="submit" data-testid="role-form-submit" disabled={save.isPending}>
           Set role
         </button>
-        {save.isError && <span data-testid="role-form-error">A role needs a user name and is clerk or steward.</span>}
+        {save.isError && <span data-testid="role-form-error">A role needs a user name and is clerk, steward or viewer.</span>}
       </form>
       <table>
         <tbody>

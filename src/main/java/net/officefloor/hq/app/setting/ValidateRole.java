@@ -5,7 +5,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateRole {
-    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD);
+    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD, Role.VIEWER);
 
     public void validate(@RequestBody RoleRequest request, Out<RoleRequest> body)
             throws InvalidSettingException {
@@ -15,7 +15,7 @@ public class ValidateRole {
             throw new InvalidSettingException("A user name is required");
         }
         if (!ROLES.contains(role)) {
-            throw new InvalidSettingException("Role must be clerk or steward");
+            throw new InvalidSettingException("Role must be clerk, steward or viewer");
         }
         body.set(new RoleRequest(user, role));
     }
