@@ -25,6 +25,10 @@ public class SettingRepository {
     /** The clerk limit: the largest due a clerk may settle (two decimals; blank: no limit). */
     public static final String CLERK_LIMIT = "clerk-limit";
 
+    /** A grade's clerk limit ({@code clerk-limit-<grade>}, dated; two decimals; blank: none): a claim
+     *  whose person's grade on the sheet's today has one in force then goes by it instead of the sheet's. */
+    public static final String CLERK_LIMIT_OF_GRADE = "clerk-limit-";
+
     /** The proof threshold: a claim whose due is above the one in force on its date cannot be settled
      *  or approved without a proof (two decimals; blank: none). */
     public static final String PROOF_THRESHOLD = "proof-threshold";
@@ -218,9 +222,14 @@ public class SettingRepository {
         return value == null ? null : new BigDecimal(value);
     }
 
-    /** The sheet's clerk limit in force on its today; null when there is none. */
-    public BigDecimal clerkLimit(String sheetId) {
-        String value = dated(sheetId, CLERK_LIMIT, null).on(sheets.today(sheetId).toString());
+    /** The clerk limit of a grade in force on the sheet's today: its own when set, else the sheet's
+     *  (a null grade: the sheet's); null when there is none. */
+    public BigDecimal clerkLimit(String sheetId, String grade) {
+        String today = sheets.today(sheetId).toString();
+        String value = grade == null ? null : dated(sheetId, CLERK_LIMIT_OF_GRADE + grade, null).on(today);
+        if (value == null) {
+            value = dated(sheetId, CLERK_LIMIT, null).on(today);
+        }
         return value == null ? null : new BigDecimal(value);
     }
 

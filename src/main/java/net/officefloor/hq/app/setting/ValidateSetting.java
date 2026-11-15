@@ -42,6 +42,11 @@ public class ValidateSetting {
             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("The clerk limit is blank or 0.00 or more with up to two decimals");
             }
+        } else if (key.startsWith(SettingRepository.CLERK_LIMIT_OF_GRADE)
+                && GRADES.contains(key.substring(SettingRepository.CLERK_LIMIT_OF_GRADE.length()))) {
+            if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
+                throw new InvalidSettingException("A grade's clerk limit is blank or 0.00 or more with up to two decimals");
+            }
         } else if (SettingRepository.PROOF_THRESHOLD.equals(key)) {
             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("The proof threshold is blank or 0.00 or more with up to two decimals");

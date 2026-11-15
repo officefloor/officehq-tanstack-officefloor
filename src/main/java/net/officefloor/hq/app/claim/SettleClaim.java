@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** Settles a claim, fixing its due: its amount at its person's grade's rate in force on its date, rounded by the sheet's policy date to
  *  two decimals (a claim bound by a statement: the figure it was bound to). With no rate the due is not
  *  fixed and stays live. Its late charge on the sheet's today is added, then the sheet's floor applied last, and fixed with it. Refused for the user who opened it or last edited it (four eyes), and for a claim
- *  that is not OPEN, and for a role the permission matrix does not let settle. Settled by a clerk when the due is above the sheet's clerk limit (a due that is n/a is within any limit; a steward settles
+ *  that is not OPEN, and for a role the permission matrix does not let settle. Settled by a clerk when the due is above the clerk limit in force (its person's grade's on the sheet's today when set, else the sheet's; a due that is n/a is within any limit; a steward settles
  *  anything), it goes to PENDING instead (after the proof threshold: one above it with no proofs is refused), nothing fixed, until a steward approves or rejects it. */
 public class SettleClaim {
     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
@@ -59,7 +59,8 @@ public class SettleClaim {
         String due = dueOf(claim, person, rates, settings, sheets);
         if (judged) requireProof(claim, person, due, settings);
         if (due != null && Role.CLERK.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
-            BigDecimal limit = settings.clerkLimit(claim.getSheetId());
+            BigDecimal limit = settings.clerkLimit(claim.getSheetId(),
+                    person == null ? null : person.gradeOn(sheets.today(claim.getSheetId()).toString()));
             if (limit != null && new BigDecimal(due).compareTo(limit) > 0) {
                 claim.setStatus(ClaimStatus.OPEN.moveTo(ClaimStatus.PENDING).name());
                 return;
