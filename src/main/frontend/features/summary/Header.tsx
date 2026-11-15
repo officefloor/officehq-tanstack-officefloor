@@ -52,7 +52,7 @@ function useMyCrewTotal(sheetId: string, user: string): string | null {
 /** The sheet's header counters, shown at all times: everyone on the sheet (retired included), the
  *  claims per status (as the summary counts them), the sheet's due- and overdue-totals, and the
  *  signed-in user's own (blank when no one on the sheet has their name) and their crew total (blank when
- *  they lead no crew). */
+ *  they lead no crew), and how many REVIEW claims are assigned to them. */
 export function Header({ sheetId, user }: { sheetId: string; user: string }) {
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
@@ -60,6 +60,7 @@ export function Header({ sheetId, user }: { sheetId: string; user: string }) {
   const late = useOverdue(sheetId, user);
   const mine = useMyFigures(sheetId, user);
   const myCrew = useMyCrewTotal(sheetId, user);
+  const myReviews = (claims.data ?? []).filter((c) => c.status === 'REVIEW' && c.reviewAssignee === user).length;
   return (
     <header>
       People <span data-testid="header-people-count">{(people.data ?? []).length}</span>
@@ -73,6 +74,7 @@ export function Header({ sheetId, user }: { sheetId: string; user: string }) {
       {' · '}My due <span data-testid="my-due-total"><Fig>{mine?.due ?? ''}</Fig></span>
       {' · '}My overdue <span data-testid="my-overdue-total"><Fig>{mine?.overdue ?? ''}</Fig></span>
       {' · '}My crews due <span data-testid="my-crew-due-total"><Fig>{myCrew ?? ''}</Fig></span>
+      {' · '}My reviews <span data-testid="my-reviews-count">{myReviews}</span>
     </header>
   );
 }

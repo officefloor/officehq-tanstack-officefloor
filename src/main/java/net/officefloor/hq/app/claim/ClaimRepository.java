@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, photo_proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, void_reason, edited_by, settle_batch, waived_on, held, "
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, photo_proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, void_reason, edited_by, settle_batch, waived_on, held, review_assignee, "
             // Deferred now: OPEN (or VOID, voided while deferred: it keeps showing the deferral) and
             // deferred until a date after the sheet's today.
             + "(status IN ('OPEN', 'VOID') AND deferred_until IS NOT NULL AND deferred_until > "
@@ -26,7 +26,7 @@ public class ClaimRepository {
             + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = claim.sheet_id AND k.number = claim.corrects), "
             + "claim_date) AS round_date";
 
-    private static final RowMapper<Claim> ROW = (rs, n) -> withHeld(withWaived(withSettleBatch(withEditedBy(withVoidReason(withTags(withRef(withReminded(withCorrects(new Claim(rs.getLong("id"),
+    private static final RowMapper<Claim> ROW = (rs, n) -> withReviewAssignee(withHeld(withWaived(withSettleBatch(withEditedBy(withVoidReason(withTags(withRef(withReminded(withCorrects(new Claim(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getLong("person_id"),
             rs.getBigDecimal("amount").setScale(2).toPlainString(),
             rs.getObject("claim_date", LocalDate.class).toString(), rs.getString("note"),
@@ -39,7 +39,12 @@ public class ClaimRepository {
             rs.getObject("round_date", LocalDate.class).toString(),
             rs.getObject("due_by", LocalDate.class).toString(),
             rs.getObject("deferred_until", LocalDate.class), rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getInt("photo_proofs"), rs.getString("split_from"), rs.getString("locked_by"), rs.getBoolean("late_entry")),
-            rs.getObject("reminded_on", LocalDate.class)), rs.getString("ref")), rs.getString("tags")), rs.getString("void_reason")), rs.getString("edited_by")), rs.getObject("settle_batch", Integer.class)), rs.getObject("waived_on", LocalDate.class)), rs.getBoolean("held"));
+            rs.getObject("reminded_on", LocalDate.class)), rs.getString("ref")), rs.getString("tags")), rs.getString("void_reason")), rs.getString("edited_by")), rs.getObject("settle_batch", Integer.class)), rs.getObject("waived_on", LocalDate.class)), rs.getBoolean("held")), rs.getString("review_assignee"));
+
+    private static Claim withReviewAssignee(Claim claim, String reviewAssignee) {
+        claim.setReviewAssignee(reviewAssignee);
+        return claim;
+    }
 
     private static Claim withHeld(Claim claim, boolean held) {
         claim.setHeld(held);
@@ -328,7 +333,7 @@ public class ClaimRepository {
      *  claims there were then), deferred when OPEN and deferred until after the date. */
     public List<Claim> listOfAsOf(String sheetId, long personId, LocalDate asOf) {
         return jdbc.query("SELECT h.claim_id, h.person_id, h.amount, h.claim_date, h.status, h.settled_due, h.stated, "
-                + "h.stated_due, h.deferred_until, h.due_by, h.held, c.note, c.ref, c.tags, c.number, c.opened_by, c.corrects, c.waived_on, "
+                + "h.stated_due, h.deferred_until, h.due_by, h.held, c.note, c.ref, c.tags, c.number, c.opened_by, c.corrects, c.waived_on, c.review_assignee, "
                 + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = c.sheet_id AND k.number = c.corrects), "
                 + "h.claim_date) AS round_date FROM claim_history h JOIN claim c ON c.id = h.claim_id "
                 + "WHERE h.sheet_id = ? AND h.person_id = ? AND h.id = (SELECT MAX(h2.id) FROM claim_history h2 "
@@ -349,6 +354,7 @@ public class ClaimRepository {
                     LocalDate waivedOn = rs.getObject("waived_on", LocalDate.class);
                     claim.setWaivedOn(waivedOn == null || waivedOn.isAfter(asOf) ? null : waivedOn.toString());
                     claim.setHeld(rs.getBoolean("held"));
+                    claim.setReviewAssignee(rs.getString("review_assignee"));
                     return withCorrects(claim, rs.getString("corrects"),
                             rs.getObject("round_date", LocalDate.class).toString(),
                             rs.getObject("due_by", LocalDate.class).toString(), until,
@@ -377,6 +383,12 @@ public class ClaimRepository {
         jdbc.update("UPDATE claim SET waived_on = ? WHERE sheet_id = ? AND id = ?",
                 claim.getWaivedOn() == null ? null : LocalDate.parse(claim.getWaivedOn()),
                 claim.getSheetId(), claim.getId());
+    }
+
+    /** Save the user a REVIEW claim is assigned to. */
+    public void updateReviewAssignee(Claim claim) {
+        jdbc.update("UPDATE claim SET review_assignee = ? WHERE sheet_id = ? AND id = ?",
+                claim.getReviewAssignee(), claim.getSheetId(), claim.getId());
     }
 
     /** Save whether a claim is held, keeping it in its history. */

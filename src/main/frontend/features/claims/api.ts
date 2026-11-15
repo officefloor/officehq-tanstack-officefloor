@@ -53,6 +53,8 @@ export type Claim = {
   reminded: string | null;
   /** Whether a steward waived its late charge: it bears none from then on, whatever its overdue state. */
   waived: boolean;
+  /** The user a steward assigned it to review (null: never assigned); kept once it is reviewed. */
+  reviewAssignee: string | null;
   /** Whether it is held: shown only; a held claim counts in every total as any other. */
   held: boolean;
   /** Its external reference (null: none); used once per sheet, compared without regard to case. */
@@ -157,6 +159,12 @@ export function claimTimeline(sheetId: string, id: number): Promise<string[]> {
  *  any other status, or a claim already waived. */
 export function waiveClaim(sheetId: string, by: string, id: number): Promise<Claim> {
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/waive?by=${encodeURIComponent(by)}`, {});
+}
+
+/** A steward assigns a REVIEW claim to a user; refused (rejects) with 409 for anyone else or any other
+ *  status, 400 for a blank user. */
+export function assignReview(sheetId: string, by: string, id: number, to: string): Promise<Claim> {
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/assign-review?by=${encodeURIComponent(by)}&user=${encodeURIComponent(to)}`, {});
 }
 
 /** Hold an OPEN or PENDING claim, or release it when held; refused (rejects) with 409 for any other status. */

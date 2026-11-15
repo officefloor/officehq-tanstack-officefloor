@@ -185,6 +185,11 @@ public class Claim {
     public void setReminded(String reminded) { this.reminded = reminded; }
 
     private String waivedOn;
+    private String reviewAssignee;
+
+    /** The user a steward assigned it to review (none: never assigned); kept once it is reviewed. */
+    public String getReviewAssignee() { return reviewAssignee; }
+    public void setReviewAssignee(String reviewAssignee) { this.reviewAssignee = reviewAssignee; }
 
     /** The sheet's today its late charge was waived on (yyyy-MM-dd; none: not waived). */
     @JsonIgnore

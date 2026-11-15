@@ -6,7 +6,7 @@ import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import { isReviewLate, useNoteThreshold, useProofKinds, useProofThreshold, useReviewSla, type DatedOn } from '../settings/api';
 import { claimFromTemplate, listTemplates, templatesKey } from '../templates/api';
-import { addClaim, addClaimLine, claimTimeline, addProof, PROOF_KINDS, proofsOf, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, waiveClaim, holdClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, shareClaim, showShares, showTags, splitClaim, settlePartClaim, unlockClaim, updateClaim, type Claim, type ProofKind, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
+import { addClaim, addClaimLine, claimTimeline, addProof, PROOF_KINDS, proofsOf, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, waiveClaim, assignReview, holdClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, shareClaim, showShares, showTags, splitClaim, settlePartClaim, unlockClaim, updateClaim, type Claim, type ProofKind, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
 import { Fig } from '../session/Fig';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
@@ -167,6 +167,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      assigning.reset();
       holding.reset();
       redating.reset();
       proof.reset();
@@ -194,6 +195,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      assigning.reset();
       holding.reset();
       redating.reset();
       proof.reset();
@@ -213,6 +215,38 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
 
+  // The user typed for each claim to assign its review to.
+  const [assignees, setAssignees] = useState<Record<number, string>>({});
+
+  const assigning = useMutation({
+    mutationFn: (v: { id: number; to: string }) => assignReview(sheetId, user, v.id, v.to),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
+
+  const assign = (id: number) => {
+    const to = assignees[id] ?? '';
+    actOnce(() => {
+      move.reset();
+      reassign.reset();
+      sharing.reset();
+      deferral.reset();
+      reminder.reset();
+      waiver.reset();
+      assigning.reset();
+      holding.reset();
+      redating.reset();
+      proof.reset();
+      commenting.reset();
+      lining.reset();
+      division.reset();
+      partSettling.reset();
+      inline.reset();
+      setEditRefused(null);
+      locking.reset();
+      return assigning.mutateAsync({ id, to });
+    });
+  };
+
   const holding = useMutation({
     mutationFn: (id: number) => holdClaim(sheetId, user, id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
@@ -226,6 +260,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      assigning.reset();
       holding.reset();
       redating.reset();
       proof.reset();
@@ -248,6 +283,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      assigning.reset();
       holding.reset();
       redating.reset();
       proof.reset();
@@ -287,6 +323,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      assigning.reset();
       holding.reset();
       redating.reset();
       proof.reset();
@@ -332,6 +369,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      assigning.reset();
       holding.reset();
       redating.reset();
       proof.reset();
@@ -355,6 +393,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      assigning.reset();
       holding.reset();
       redating.reset();
       proof.reset();
@@ -389,6 +428,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      assigning.reset();
       holding.reset();
       redating.reset();
       proof.reset();
@@ -422,6 +462,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      assigning.reset();
       holding.reset();
       redating.reset();
       proof.reset();
@@ -456,6 +497,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      assigning.reset();
       holding.reset();
       redating.reset();
       proof.reset();
@@ -491,6 +533,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      assigning.reset();
       holding.reset();
       redating.reset();
       proof.reset();
@@ -552,6 +595,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      assigning.reset();
       holding.reset();
       redating.reset();
       proof.reset();
@@ -575,6 +619,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      assigning.reset();
       holding.reset();
       redating.reset();
       proof.reset();
@@ -597,6 +642,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      assigning.reset();
       holding.reset();
       redating.reset();
       proof.reset();
@@ -637,6 +683,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       deferral.reset();
       reminder.reset();
       waiver.reset();
+      assigning.reset();
       holding.reset();
       redating.reset();
       proof.reset();
@@ -657,6 +704,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     deferral.reset();
     reminder.reset();
     waiver.reset();
+    assigning.reset();
     holding.reset();
     redating.reset();
     proof.reset();
@@ -801,6 +849,18 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 <button type="button" data-testid="claim-waive" disabled={waiver.isPending}
                   onClick={() => waive(c.id)}>
                   Waive late charge
+                </button>
+              </td>
+              <td>
+                Review by <span data-testid="claim-review-assigned">{c.reviewAssignee ?? ''}</span>{' '}
+                <input data-testid="claim-review-user" value={assignees[c.id] ?? ''}
+                  onChange={(e) => {
+                    setAssignees((a) => ({ ...a, [c.id]: e.target.value }));
+                    if (assigning.variables?.id === c.id) assigning.reset();
+                  }} />{' '}
+                <button type="button" data-testid="claim-review-assign" disabled={assigning.isPending}
+                  onClick={() => assign(c.id)}>
+                  Assign review
                 </button>
               </td>
               <td>
@@ -1049,6 +1109,15 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                   <span data-testid="claim-error">{holding.error instanceof HttpError && holding.error.status === 409
                     ? `A ${c.status} claim cannot be ${c.held ? 'released' : 'held'}.`
                     : 'Your role may not hold a claim.'}</span>
+                )}
+                {assigning.isError && assigning.variables?.id === c.id && (
+                  <span data-testid="claim-error">{assigning.error instanceof HttpError && assigning.error.status === 400
+                    ? 'A review needs a user to be assigned to.'
+                    : assigning.error instanceof HttpError && assigning.error.status === 409
+                    ? (c.status === 'REVIEW'
+                      ? 'Only a steward can assign a claim\'s review.'
+                      : `A ${c.status} claim's review cannot be assigned.`)
+                    : 'Your role may not assign a claim\'s review.'}</span>
                 )}
                 {redating.isError && redating.variables?.id === c.id && (
                   <span data-testid="claim-error">{redating.error instanceof HttpError && redating.error.status === 423
