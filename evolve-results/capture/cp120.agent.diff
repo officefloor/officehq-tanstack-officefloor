@@ -1,0 +1,117 @@
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 0886e7597..40724f5bc 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -159,6 +159,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+     onSuccess: () => Promise.all([
+       queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+       queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++      queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
+     ]),
+   });
+ 
+diff --git a/src/main/frontend/features/pools/api.ts b/src/main/frontend/features/pools/api.ts
+index 85ad97358..1c80d7186 100644
+--- a/src/main/frontend/features/pools/api.ts
++++ b/src/main/frontend/features/pools/api.ts
+@@ -3,8 +3,8 @@ import { sheetKey } from '../sheet/api';
+ 
+ /** A member of a pool, a person (`personId`) or another pool (`poolId`, `name` its name), with their share
+  *  percent (two decimals); a `retired` member's share counts as 0.00 toward the pool's total. `cut` is
+- *  their cut of the pool's pot (two decimals; a retired member's 0.00, the remainder going to the largest
+- *  share), "" when the pool is unbalanced or has no pot. A pool that is a member of none cuts the sheet's
++ *  their cut of the pool's pot (two decimals; a retired member's or one on a hold in force on the sheet's
++ *  today 0.00, their share spread over the others in proportion; the remainder going to the largest share), "" when the pool is unbalanced or has no pot. A pool that is a member of none cuts the sheet's
+  *  pot; a member pool cuts its own cut in the pool above. */
+ export type PoolMember = { personId: number | null; poolId: number | null; name: string; share: string; retired: boolean; cut: string };
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index 7ca924b51..5810944c3 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -18,8 +18,6 @@ public class PoolRepository {
+ 
+     private static final BigDecimal FULL = new BigDecimal("100.00");
+ 
+-    private static final BigDecimal HUNDRED = new BigDecimal("100");
+-
+     private final JdbcTemplate jdbc;
+     private final SettingRepository settings;
+ 
+@@ -53,6 +51,9 @@ public class PoolRepository {
+                     }
+                 }, sheetId);
+         BigDecimal pot = settings.pot(sheetId);
++        Set<Long> held = new HashSet<>(jdbc.queryForList("SELECT DISTINCT h.person_id FROM person_hold h "
++                + "JOIN sheet s ON s.id = h.sheet_id WHERE h.sheet_id = ? AND h.from_date <= s.today "
++                + "AND (h.to_date IS NULL OR h.to_date >= s.today)", Long.class, sheetId));
+         Map<Long, BigDecimal> totals = new HashMap<>();
+         for (Map.Entry<Long, List<PoolMember>> pool : members.entrySet()) {
+             BigDecimal total = BigDecimal.ZERO.setScale(2);
+@@ -62,7 +63,7 @@ public class PoolRepository {
+             totals.put(pool.getKey(), total);
+         }
+         Map<Long, List<PoolMember>> cut = new HashMap<>();
+-        for (Long id : names.keySet()) cutOf(id, members, parents, totals, pot, cut, new HashSet<>());
++        for (Long id : names.keySet()) cutOf(id, members, parents, totals, held, pot, cut, new HashSet<>());
+         List<Pool> pools = new ArrayList<>();
+         for (Map.Entry<Long, String> pool : names.entrySet()) {
+             BigDecimal total = totals.get(pool.getKey());
+@@ -75,7 +76,7 @@ public class PoolRepository {
+     /** The pool's members with their cuts, worked out (and kept in {@code cut}) after those of the pool above
+      *  it: its pot is the sheet's pot when it is a member of none, else its cut in the pool above. */
+     private static List<PoolMember> cutOf(Long id, Map<Long, List<PoolMember>> members, Map<Long, Long> parents,
+-            Map<Long, BigDecimal> totals, BigDecimal sheetPot, Map<Long, List<PoolMember>> cut, Set<Long> seen) {
++            Map<Long, BigDecimal> totals, Set<Long> held, BigDecimal sheetPot, Map<Long, List<PoolMember>> cut, Set<Long> seen) {
+         List<PoolMember> done = cut.get(id);
+         if (done != null) return done;
+         List<PoolMember> of = members.get(id);
+@@ -84,29 +85,37 @@ public class PoolRepository {
+         if (parent == null) {
+             pot = sheetPot;
+         } else if (seen.add(id) && members.containsKey(parent)) {
+-            for (PoolMember m : cutOf(parent, members, parents, totals, sheetPot, cut, seen)) {
++            for (PoolMember m : cutOf(parent, members, parents, totals, held, sheetPot, cut, seen)) {
+                 if (id.equals(m.poolId()) && !m.cut().isEmpty()) pot = new BigDecimal(m.cut());
+             }
+         }
+-        List<PoolMember> result = pot != null && totals.get(id).compareTo(FULL) == 0 ? cut(of, pot) : of;
++        List<PoolMember> result = pot != null && totals.get(id).compareTo(FULL) == 0 ? cut(of, pot, held) : of;
+         cut.put(id, result);
+         return result;
+     }
+ 
+-    /** The members with their cuts of the pot: the pot times their share over 100, rounded half to even
+-     *  to two decimals (a retired member's 0.00); the remainder goes to the member with the largest share
+-     *  (the earliest added on a tie), so the cuts total exactly the pot. */
+-    private static List<PoolMember> cut(List<PoolMember> members, BigDecimal pot) {
++    /** The members with their cuts of the pot. A member with a cut is one neither retired nor on a hold in
++     *  force on the sheet's today ({@code held}); the others' cut is 0.00. Each member with a cut gets the pot
++     *  times their share over the shares of the members with a cut added up, rounded half to even to two
++     *  decimals; the remainder goes to the member with a cut with the largest share (the earliest added on a
++     *  tie), so the cuts total exactly the pot (all 0.00 when no member has a cut). */
++    private static List<PoolMember> cut(List<PoolMember> members, BigDecimal pot, Set<Long> held) {
+         BigDecimal[] cuts = new BigDecimal[members.size()];
++        boolean[] cutting = new boolean[members.size()];
++        BigDecimal shares = BigDecimal.ZERO.setScale(2);
++        for (int i = 0; i < members.size(); i++) {
++            PoolMember m = members.get(i);
++            cutting[i] = !m.retired() && (m.personId() == null || !held.contains(m.personId()));
++            if (cutting[i]) shares = shares.add(new BigDecimal(m.share()));
++        }
+         BigDecimal sum = BigDecimal.ZERO.setScale(2);
+         int largest = -1;
+         for (int i = 0; i < members.size(); i++) {
+-            PoolMember m = members.get(i);
+-            BigDecimal share = new BigDecimal(m.share());
+-            cuts[i] = m.retired() ? BigDecimal.ZERO.setScale(2)
+-                    : pot.multiply(share).divide(HUNDRED).setScale(2, RoundingMode.HALF_EVEN);
++            BigDecimal share = new BigDecimal(members.get(i).share());
++            cuts[i] = cutting[i] ? pot.multiply(share).divide(shares, 2, RoundingMode.HALF_EVEN)
++                    : BigDecimal.ZERO.setScale(2);
+             sum = sum.add(cuts[i]);
+-            if (!m.retired() && (largest < 0 || share.compareTo(new BigDecimal(members.get(largest).share())) > 0)) {
++            if (cutting[i] && (largest < 0 || share.compareTo(new BigDecimal(members.get(largest).share())) > 0)) {
+                 largest = i;
+             }
+         }
