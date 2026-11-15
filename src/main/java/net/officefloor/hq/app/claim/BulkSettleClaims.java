@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  it (its status log line, its CLAIM_SETTLED or CLAIM_PENDING line, a settled one's NOTIFY lines, then the rollup lines it moved).
  *  A claim gone to PENDING counts as settled. A claim that cannot be settled (its status does not
  *  allow it, the user opened it, its date is in a closed period, or it is not on the sheet) is left as
- *  it is and counted as refused. */
+ *  it is and counted as refused; every one is on an archived sheet. */
 public class BulkSettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by,
@@ -48,9 +48,11 @@ public class BulkSettleClaims {
             }
         }
 
+        boolean archived = sheets.isArchived(id);
         int settled = 0;
         Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
         for (Claim claim : ordered) {
+            if (archived) continue;
             try {
                 SettleClaim.settle(user, claim, people, rates, periods, roles, settings, sheets);
             } catch (ClaimStatusException | PeriodClosedException refused) {

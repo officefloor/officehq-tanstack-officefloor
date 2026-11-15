@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 
-/** `today` is the sheet's own date (yyyy-MM-dd): every date decision and default uses it. */
-export type Sheet = { id: string; createdBy: string; today: string };
+/** `today` is the sheet's own date (yyyy-MM-dd): every date decision and default uses it.
+ *  `archived`: a steward archived it; everything stays visible and every change is refused. */
+export type Sheet = { id: string; createdBy: string; today: string; archived: boolean };
 
 /** Load a sheet by id; the server starts it empty the first time the id is used. */
 export function openSheet(id: string, by: string): Promise<Sheet> {
@@ -17,6 +18,14 @@ export function setSheetToday(id: string, by: string, today: string): Promise<Sh
   return postJson<Sheet>(
     `/api/sheets/${encodeURIComponent(id)}/today?by=${encodeURIComponent(by)}`,
     { today },
+  );
+}
+
+/** Archive the sheet; refused (rejects) for anyone but a steward, and when already archived. */
+export function archiveSheet(id: string, by: string): Promise<Sheet> {
+  return postJson<Sheet>(
+    `/api/sheets/${encodeURIComponent(id)}/archive?by=${encodeURIComponent(by)}`,
+    {},
   );
 }
 

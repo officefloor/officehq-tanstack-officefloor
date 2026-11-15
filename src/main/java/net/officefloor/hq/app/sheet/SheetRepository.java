@@ -36,10 +36,20 @@ public class SheetRepository {
         jdbc.update("UPDATE sheet SET today = ? WHERE id = ?", today, id);
     }
 
+    /** Whether a steward has archived the sheet (a sheet never loaded is not). */
+    public boolean isArchived(String id) {
+        Sheet sheet = find(id);
+        return sheet != null && sheet.archived();
+    }
+
+    public void archive(String id) {
+        jdbc.update("UPDATE sheet SET archived = TRUE WHERE id = ?", id);
+    }
+
     public Sheet find(String id) {
-        return jdbc.query("SELECT id, created_by, today FROM sheet WHERE id = ?",
+        return jdbc.query("SELECT id, created_by, today, archived FROM sheet WHERE id = ?",
                 (rs, n) -> new Sheet(rs.getString("id"), rs.getString("created_by"),
-                        rs.getObject("today", LocalDate.class).toString()), id)
+                        rs.getObject("today", LocalDate.class).toString(), rs.getBoolean("archived")), id)
                 .stream().findFirst().orElse(null);
     }
 }

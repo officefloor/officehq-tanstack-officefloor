@@ -1,9 +1,17 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
-import { setSheetToday, sheetKey, type Sheet } from './api';
+import { archiveSheet, setSheetToday, sheetKey, type Sheet } from './api';
 
-/** The sheet's today, shown and changeable. Every date on the sheet goes by it. */
+/** Whether a change was refused rather than invalid (the server answers 403: a viewer, an archived
+ *  sheet, or archiving by anyone but a steward). */
+function refused(error: Error | null): boolean {
+  return error instanceof HttpError && error.status === 403;
+}
+
+/** The sheet's today, shown and changeable, and whether it is archived, with the button that archives
+ *  it. Every date on the sheet goes by its today. The two share the sheet's one error element. */
 export function SheetToday({ sheet, user }: { sheet: Sheet; user: string }) {
   const queryClient = useQueryClient();
   const [date, setDate] = useState('');
@@ -19,6 +27,11 @@ export function SheetToday({ sheet, user }: { sheet: Sheet; user: string }) {
     },
   });
 
+  const archive = useMutation({
+    mutationFn: () => archiveSheet(sheet.id, user),
+    onSuccess: (updated) => queryClient.setQueryData(sheetKey(sheet.id), updated),
+  });
+
   const submitOnce = useSubmitOnce();
 
   return (
@@ -28,6 +41,7 @@ export function SheetToday({ sheet, user }: { sheet: Sheet; user: string }) {
         const today = date.trim();
         submitOnce(() => {
           save.reset();
+          archive.reset();
           return save.mutateAsync(today);
         });
       }}
@@ -40,12 +54,35 @@ export function SheetToday({ sheet, user }: { sheet: Sheet; user: string }) {
         onChange={(e) => {
           setDate(e.target.value);
           save.reset();
+          archive.reset();
         }}
       />{' '}
       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
         Set today
       </button>
-      {save.isError && <span data-testid="sheet-error">That is not a date.</span>}
+      Archived <span data-testid="sheet-archived">{sheet.archived ? 'yes' : 'no'}</span>{' '}
+      <button
+        type="button"
+        data-testid="sheet-archive"
+        disabled={archive.isPending}
+        onClick={() => {
+          save.reset();
+          archive.reset();
+          archive.mutate();
+        }}
+      >
+        Archive
+      </button>{' '}
+      {save.isError && (
+        <span data-testid="sheet-error">
+          {refused(save.error) ? 'The sheet cannot be changed.' : 'That is not a date.'}
+        </span>
+      )}
+      {archive.isError && (
+        <span data-testid="sheet-error">
+          Only a steward may archive the sheet, once.
+        </span>
+      )}
     </form>
   );
 }

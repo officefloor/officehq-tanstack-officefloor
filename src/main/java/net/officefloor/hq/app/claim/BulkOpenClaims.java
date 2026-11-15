@@ -24,7 +24,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  within a person), each numbered in turn as {@link OpenClaim} numbers one and recorded as it would
  *  record it (its CLAIM_OPENED line, then the rollup lines it moved). A claim that cannot be opened
  *  (its status does not allow it, its date is in a closed period, or it is not on the sheet) is left
- *  as it is and counted as refused; every one is, for a role the permission matrix does not let open. */
+ *  as it is and counted as refused; every one is, for a role the permission matrix does not let open
+ *  or on an archived sheet. */
 public class BulkOpenClaims {
     public void open(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by,
@@ -47,7 +48,8 @@ public class BulkOpenClaims {
             }
         }
 
-        boolean allowed = Permissions.allows(id, user, Permissions.OPEN, roles, settings);
+        boolean allowed = !sheets.isArchived(id)
+                && Permissions.allows(id, user, Permissions.OPEN, roles, settings);
         int opened = 0;
         Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
         for (Claim claim : ordered) {
