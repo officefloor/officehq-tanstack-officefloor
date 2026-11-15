@@ -150,6 +150,14 @@ export function sumDues(dues: Array<string | null>): string {
   return formatCents(dues.reduce<bigint>((t, d) => (d === null ? t : t + hundredths(d)), 0n));
 }
 
+/** A sheet total of per-person figures: added up (n/a ones are no figure), leaving out the single
+ *  highest and the single lowest figure when there are three or more. */
+export function trimmedSum(figures: Array<string | null>): string {
+  const cents = figures.filter((f): f is string => f !== null).map(hundredths).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const kept = cents.length >= 3 ? cents.slice(1, -1) : cents;
+  return formatCents(kept.reduce((t, c) => t + c, 0n));
+}
+
 function formatCents(cents: bigint): string {
   const abs = cents < 0n ? -cents : cents;
   const frac = (abs % 100n).toString().padStart(2, '0');

@@ -20,7 +20,8 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 
 /** The sheet's figures at one moment, as the screen shows them: each person's claimed and
  *  due-total (null: n/a; else at most the sheet's cap) and overdue-total, in the order they were added, and the
- *  sheet's claimed-total, due-total and overdue-total. */
+ *  sheet's claimed-total, due-total and overdue-total (these two leave out the single highest and
+ *  lowest person's figure when three or more people have one). */
 public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueTotal, String overdueTotal) {
 
     /** A person's figures: their name, claimed, due-total (null: n/a) and overdue-total (the shown
@@ -45,8 +46,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
         List<Claim> all = claims.list(sheetId);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = zero();
-        BigDecimal dueTotal = zero();
-        BigDecimal overdueTotal = zero();
+        List<BigDecimal> dues = new ArrayList<>();
+        List<BigDecimal> overdues = new ArrayList<>();
         for (Person p : people.list(sheetId)) {
             BigDecimal claimed = zero();
             BigDecimal due = zero();
@@ -70,11 +71,11 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             figures.put(p.getId(), new Figures(p.getName(), claimed.toPlainString(),
                     na ? null : due.toPlainString(), overdue.toPlainString()));
             claimedTotal = claimedTotal.add(claimed);
-            if (!na) dueTotal = dueTotal.add(due);
-            overdueTotal = overdueTotal.add(overdue);
+            if (!na) dues.add(due);
+            overdues.add(overdue);
         }
-        return new Rollup(figures, claimedTotal.toPlainString(), dueTotal.toPlainString(),
-                overdueTotal.toPlainString());
+        return new Rollup(figures, claimedTotal.toPlainString(), trimmedSum(dues).toPlainString(),
+                trimmedSum(overdues).toPlainString());
     }
 
     /** The audit lines after a change from {@code before} to this: one ROLLUP per person whose
@@ -106,6 +107,16 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             if (found == null || nz(found.from()).compareTo(nz(r.from())) < 0) found = r;
         }
         return found == null || found.endedBefore(date) ? null : found.pct();
+    }
+
+    /** The figures added up, leaving out the single highest and the single lowest when there are three or more. */
+    private static BigDecimal trimmedSum(List<BigDecimal> figures) {
+        List<BigDecimal> sorted = new ArrayList<>(figures);
+        sorted.sort(BigDecimal::compareTo);
+        if (sorted.size() >= 3) sorted = sorted.subList(1, sorted.size() - 1);
+        BigDecimal total = zero();
+        for (BigDecimal f : sorted) total = total.add(f);
+        return total;
     }
 
     private static String nz(String from) {
