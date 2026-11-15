@@ -50,3 +50,15 @@ export const descendantsKey = (id: string) => [...sheetKey(id), 'descendants'] a
 export function listDescendants(id: string, live = false): Promise<string[]> {
   return getJson<string[]>(`/api/sheets/${encodeURIComponent(id)}/descendants`, live);
 }
+
+/** A clone just made: the sheet cloned and the id it was cloned to. */
+export type Clone = { from: string; to: string };
+
+/** Clone the sheet to another id; refused (rejects) for anyone but a steward, and when that sheet was
+ *  ever used. */
+export function cloneSheet(id: string, by: string, to: string): Promise<Clone> {
+  return postJson<Clone>(
+    `/api/sheets/${encodeURIComponent(id)}/clone?by=${encodeURIComponent(by)}`,
+    { to },
+  );
+}

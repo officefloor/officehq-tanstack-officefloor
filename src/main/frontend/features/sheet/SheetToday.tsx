@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listSettings, settingOn, settingsKey } from '../settings/api';
-import { archiveSheet, setSheetToday, sheetKey, type Sheet } from './api';
+import { archiveSheet, cloneSheet, setSheetToday, sheetKey, type Sheet } from './api';
 
 /** Whether a change was refused rather than invalid (the server answers 403: a viewer, an archived
  *  sheet, or archiving by anyone but a steward). */
@@ -12,7 +12,8 @@ function refused(error: Error | null): boolean {
 }
 
 /** The sheet's today, shown and changeable, and whether it is archived, with the button that archives
- *  it. Every date on the sheet goes by its today. The two share the sheet's one error element. */
+ *  it, and the entry and button that clone it to another id (the last clone made is shown). Every date
+ *  on the sheet goes by its today. They share the sheet's one error element. */
 export function SheetToday({ sheet, user }: { sheet: Sheet; user: string }) {
   const queryClient = useQueryClient();
   const [date, setDate] = useState('');
@@ -34,7 +35,16 @@ export function SheetToday({ sheet, user }: { sheet: Sheet; user: string }) {
     onSuccess: (updated) => queryClient.setQueryData(sheetKey(sheet.id), updated),
   });
 
+  const [cloneTo, setCloneTo] = useState('');
+  const clone = useMutation({ mutationFn: (to: string) => cloneSheet(sheet.id, user, to) });
+
   const submitOnce = useSubmitOnce();
+
+  const resetAll = () => {
+    save.reset();
+    archive.reset();
+    clone.reset();
+  };
 
   return (
     <form
@@ -42,8 +52,7 @@ export function SheetToday({ sheet, user }: { sheet: Sheet; user: string }) {
         e.preventDefault();
         const today = date.trim();
         submitOnce(() => {
-          save.reset();
-          archive.reset();
+          resetAll();
           return save.mutateAsync(today);
         });
       }}
@@ -55,8 +64,7 @@ export function SheetToday({ sheet, user }: { sheet: Sheet; user: string }) {
         value={date}
         onChange={(e) => {
           setDate(e.target.value);
-          save.reset();
-          archive.reset();
+          resetAll();
         }}
       />{' '}
       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
@@ -69,13 +77,33 @@ export function SheetToday({ sheet, user }: { sheet: Sheet; user: string }) {
         data-testid="sheet-archive"
         disabled={archive.isPending}
         onClick={() => {
-          save.reset();
-          archive.reset();
+          resetAll();
           archive.mutate();
         }}
       >
         Archive
       </button>{' '}
+      <input
+        data-testid="sheet-clone-to"
+        placeholder="Clone to sheet id"
+        value={cloneTo}
+        onChange={(e) => {
+          setCloneTo(e.target.value);
+          resetAll();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="sheet-clone"
+        disabled={clone.isPending}
+        onClick={() => {
+          resetAll();
+          clone.mutate(cloneTo.trim());
+        }}
+      >
+        Clone
+      </button>{' '}
+      Cloned to <span data-testid="sheet-cloned-to">{clone.data?.to ?? ''}</span>{' '}
       {save.isError && (
         <span data-testid="sheet-error">
           {refused(save.error) ? 'The sheet cannot be changed.' : 'That is not a date.'}
@@ -84,6 +112,11 @@ export function SheetToday({ sheet, user }: { sheet: Sheet; user: string }) {
       {archive.isError && (
         <span data-testid="sheet-error">
           Only a steward may archive the sheet, once.
+        </span>
+      )}
+      {clone.isError && (
+        <span data-testid="sheet-error">
+          Only a steward may clone the sheet, and only to a sheet never used.
         </span>
       )}
     </form>
