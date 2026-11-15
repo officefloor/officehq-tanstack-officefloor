@@ -1,0 +1,225 @@
+diff --git a/src/main/frontend/features/claims/PersonClaims.tsx b/src/main/frontend/features/claims/PersonClaims.tsx
+index b1797ef2e..1d7c621ab 100644
+--- a/src/main/frontend/features/claims/PersonClaims.tsx
++++ b/src/main/frontend/features/claims/PersonClaims.tsx
+@@ -4,7 +4,7 @@ import { HttpError } from '../../api/http';
+ import { useSubmitOnce } from '../../forms/useSubmitOnce';
+ import { listPeriods, periodOf, periodsKey } from '../periods/api';
+ import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
+-import { useProofThreshold, type DatedOn } from '../settings/api';
++import { useNoteThreshold, useProofThreshold, type DatedOn } from '../settings/api';
+ import { addClaim, addProof, claimsKey, deferClaim, redateClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
+ 
+ const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
+@@ -213,6 +213,14 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+     return c.proofs === 0 && threshold !== null && due !== null && Number(due) > Number(threshold);
+   };
+ 
++  const noteThreshold = useNoteThreshold(sheetId);
++  // Whether a claim needs a note before it is opened: an empty one, and its due above the threshold.
++  const needsNote = (c: Claim) => {
++    const threshold = noteThreshold(c.date);
++    const due = claimDue(c, rates, gradeOn, floor, charges);
++    return (c.note ?? '').trim() === '' && threshold !== null && due !== null && Number(due) > Number(threshold);
++  };
++
+   const reassign = useMutation({
+     mutationFn: (v: { id: number; to: number }) => reassignClaim(sheetId, user, v.id, v.to),
+     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+@@ -447,6 +455,8 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+                     ? 'A rejection needs a reason.'
+                     : (move.variables.action === 'settle' || move.variables.action === 'approve') && needsProof(c)
+                     ? 'A claim whose due is above the proof threshold needs a proof first.'
++                    : move.variables.action === 'open' && c.status === 'DRAFT' && needsNote(c)
++                    ? 'A claim whose due is above the note threshold needs a note before it is opened.'
+                     : c.deferred && move.variables.action === 'settle'
+                     ? `A deferred claim cannot be settled until ${c.deferredUntil}.`
+                     : c.status === 'OPEN' && move.variables.action === 'settle'
+diff --git a/src/main/frontend/features/settings/Settings.tsx b/src/main/frontend/features/settings/Settings.tsx
+index 5f6f7de76..b88a0b5a9 100644
+--- a/src/main/frontend/features/settings/Settings.tsx
++++ b/src/main/frontend/features/settings/Settings.tsx
+@@ -59,10 +59,11 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+                 : key === 'policy-date' ? 'Policy date' : key === 'period-numbering-from' ? 'Period numbering from'
+                 : key === 'grace-days' ? 'Grace days'
+                 : key === 'proof-threshold' ? 'Proof threshold'
++                : key === 'note-threshold' ? 'Note threshold'
+                 : key.startsWith('perm-') ? `Who may ${key.slice('perm-'.length)} (roles)`
+                 : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (days)` : 'Terms (days)'}{' '}
+               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
+-                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' ? 'None' : key === 'cap' ? 'No cap' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
++                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' ? 'None' : key === 'cap' ? 'No cap' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
+                   : key === 'period-numbering-from' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' ? 'Off' : key.startsWith('terms-') ? "Sheet's terms"
+                   : key.startsWith('perm-') ? PERMISSION_STANDING[key.slice('perm-'.length)] : undefined}
+                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
+@@ -84,7 +85,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+         </button>
+         {save.isError && (
+           <span data-testid="settings-error">
+-            The clerk limit and the cap must be blank, and the floor given, as 0.00 or more with up to two decimals;
++            The clerk limit, the cap, the proof threshold and the note threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
+             the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the policy date and period numbering date blank or a date; the grace days blank or a whole number of days; a permission blank or a comma separated list of clerk and steward; a from-date blank or a date.
+           </span>
+         )}
+diff --git a/src/main/frontend/features/settings/api.ts b/src/main/frontend/features/settings/api.ts
+index 8c4ae8133..999d03ed5 100644
+--- a/src/main/frontend/features/settings/api.ts
++++ b/src/main/frontend/features/settings/api.ts
+@@ -21,12 +21,13 @@ export type Role = { sheetId: string; user: string; role: string };
+  *  (terms-<grade>; blank means the sheet's terms) fix the due-by of a claim added for a person of that
+  *  grade on its date: its date plus those terms, kept when the terms or its date change later. The proof
+  *  threshold (two decimals; blank means none): a claim whose due is above the one in force on its date
+- *  cannot be settled or approved while it has no proofs. The permission matrix (perm-<action>, a comma
++ *  cannot be settled or approved while it has no proofs. The note threshold (two decimals; blank means none):
++ *  a claim whose due is above the one in force on its date cannot be opened with an empty note. The permission matrix (perm-<action>, a comma
+  *  separated list of roles; blank means the standing rule, PERMISSION_STANDING): who may take each action.
+  *  The grace days (whole days; blank means off): when the sheet's today changes, every open period whose
+  *  to-date plus them is before the new today is closed. */
+ export const SETTING_KEYS = ['clerk-limit', 'cap', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
+-  'period-numbering-from', 'grace-days', 'proof-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen'] as const;
++  'period-numbering-from', 'grace-days', 'proof-threshold', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen'] as const;
+ 
+ /** The roles that may take each action of the permission matrix while its entry is blank. */
+ export const PERMISSION_STANDING: Record<string, string> = {
+@@ -90,6 +91,12 @@ export function useProofThreshold(sheetId: string): (date: string) => string | n
+   return (date) => settingOn(settings.data, 'proof-threshold', date) || null;
+ }
+ 
++/** The sheet's note threshold by date (null: none in force on that date). */
++export function useNoteThreshold(sheetId: string): (date: string) => string | null {
++  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
++  return (date) => settingOn(settings.data, 'note-threshold', date) || null;
++}
++
+ /** The sheet's cap in force on its today: the most a person's due-total can be; null when there is none. */
+ export function useCap(sheetId: string, today: string): string | null {
+   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+index fe3fe2afc..75daf0701 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+@@ -23,7 +23,8 @@ import org.springframework.web.bind.annotation.RequestParam;
+ /** Opens the selected claims in list order (people in the order they were added, newest claim first
+  *  within a person), each numbered in turn as {@link OpenClaim} numbers one and recorded as it would
+  *  record it (its CLAIM_OPENED line, then the rollup lines it moved). A claim that cannot be opened
+- *  (its status does not allow it, its date is in a closed period, or it is not on the sheet) is left
++ *  (its status does not allow it, its date is in a closed period, it has an empty note and a due
++ *  above the note threshold, or it is not on the sheet) is left
+  *  as it is and counted as refused; every one is, for a role the permission matrix does not let open
+  *  or on an archived sheet. */
+ public class BulkOpenClaims {
+@@ -56,7 +57,9 @@ public class BulkOpenClaims {
+             if (!allowed) continue;
+             try {
+                 periods.requireOpen(id, claim.getDate());
+-                claim.setStatus(ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.OPEN).name());
++                ClaimStatus status = ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.OPEN);
++                OpenClaim.requireNote(claim, people, rates, settings, sheets);
++                claim.setStatus(status.name());
+             } catch (ClaimStatusException | PeriodClosedException refused) {
+                 continue;
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java b/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
+index dcaf7a255..e0ff756f0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
+@@ -1,7 +1,13 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
++import java.time.LocalDate;
+ import net.officefloor.hq.app.period.PeriodClosedException;
+ import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.Rate;
++import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.setting.Permissions;
+ import net.officefloor.hq.app.setting.RoleRepository;
+ import net.officefloor.hq.app.setting.SettingRepository;
+@@ -10,18 +16,39 @@ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** Opens a claim, giving it its number (see {@link ClaimNumbers}) and recording who opened it.
+- *  Refused for a role the permission matrix does not let open. */
++ *  Refused for a role the permission matrix does not let open, and for a claim with an empty note
++ *  whose due is above the note threshold in force on its date. */
+ public class OpenClaim {
+     public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
+             ClaimRepository claims, PeriodRepository periods, SettingRepository settings,
+-            SheetRepository sheets, RoleRepository roles)
++            SheetRepository sheets, RoleRepository roles, PersonRepository people, RateRepository rates)
+             throws ClaimStatusException, PeriodClosedException {
+         if (!Permissions.allows(claim.getSheetId(), by, Permissions.OPEN, roles, settings)) {
+             throw new ClaimStatusException("Your role may not open a claim");
+         }
+         periods.requireOpen(claim.getSheetId(), claim.getDate());
+-        claim.setStatus(ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.OPEN).name());
++        ClaimStatus opened = ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.OPEN);
++        requireNote(claim, people, rates, settings, sheets);
++        claim.setStatus(opened.name());
+         claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
+         claim.setOpenedBy(by == null ? "" : by);
+     }
++
++    /** Refuses opening a claim with an empty note whose due (null: n/a, never above) is above the
++     *  sheet's note threshold in force on the claim's date; shared with {@link BulkOpenClaims}. */
++    static void requireNote(Claim claim, PersonRepository people, RateRepository rates,
++            SettingRepository settings, SheetRepository sheets) throws ClaimStatusException {
++        if (claim.getNote() != null && !claim.getNote().trim().isEmpty()) return;
++        BigDecimal threshold = settings.noteThreshold(claim.getSheetId(), claim.getDate());
++        if (threshold == null) return;
++        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++        Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),
++                LocalDate.parse(claim.getDate()));
++        Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
++        String due = Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
++                late.rounding(claim.getRoundDate())), settings.floor(claim.getSheetId()).on(claim.getDate()), late);
++        if (due != null && new BigDecimal(due).compareTo(threshold) > 0) {
++            throw new ClaimStatusException("A claim whose due is above the note threshold needs a note to be opened");
++        }
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 60433bdab..db4e3fac6 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -20,6 +20,10 @@ public class SettingRepository {
+      *  or approved without a proof (two decimals; blank: none). */
+     public static final String PROOF_THRESHOLD = "proof-threshold";
+ 
++    /** The note threshold: a claim whose due is above the one in force on its date cannot be opened
++     *  with an empty note (two decimals; blank: none). */
++    public static final String NOTE_THRESHOLD = "note-threshold";
++
+     /** The cap: the most a person's due-total can be (two decimals; blank: no cap). */
+     public static final String CAP = "cap";
+ 
+@@ -130,6 +134,12 @@ public class SettingRepository {
+         return value == null ? null : new BigDecimal(value);
+     }
+ 
++    /** The sheet's note threshold in force on a date (yyyy-MM-dd); null when there is none. */
++    public BigDecimal noteThreshold(String sheetId, String date) {
++        String value = dated(sheetId, NOTE_THRESHOLD, null).on(date);
++        return value == null ? null : new BigDecimal(value);
++    }
++
+     /** The sheet's cap in force on its today; null when there is none. */
+     public BigDecimal cap(String sheetId) {
+         String value = dated(sheetId, CAP, null).on(sheets.today(sheetId).toString());
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 4aec47cf1..4a6ec4c12 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -44,6 +44,10 @@ public class ValidateSetting {
+             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
+                 throw new InvalidSettingException("The proof threshold is blank or 0.00 or more with up to two decimals");
+             }
++        } else if (SettingRepository.NOTE_THRESHOLD.equals(key)) {
++            if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
++                throw new InvalidSettingException("The note threshold is blank or 0.00 or more with up to two decimals");
++            }
+         } else if (SettingRepository.CAP.equals(key)) {
+             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
+                 throw new InvalidSettingException("The cap is blank or 0.00 or more with up to two decimals");
