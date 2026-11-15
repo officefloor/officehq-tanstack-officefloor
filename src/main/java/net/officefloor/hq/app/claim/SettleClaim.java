@@ -35,6 +35,14 @@ public class SettleClaim {
     static void settle(String by, Claim claim, PersonRepository people, RateRepository rates,
             PeriodRepository periods, RoleRepository roles, SettingRepository settings, SheetRepository sheets)
             throws ClaimStatusException, PeriodClosedException {
+        settle(by, claim, true, people, rates, periods, roles, settings, sheets);
+    }
+
+    /** As {@link #settle}, the four-eyes and proof rules judged on the claim itself only when {@code judged}
+     *  (a part-settle judges them on the original claim, by {@link #judge}, before the split). */
+    static void settle(String by, Claim claim, boolean judged, PersonRepository people, RateRepository rates,
+            PeriodRepository periods, RoleRepository roles, SettingRepository settings, SheetRepository sheets)
+            throws ClaimStatusException, PeriodClosedException {
         if (!Permissions.allows(claim.getSheetId(), by, Permissions.SETTLE, roles, settings)) {
             throw new ClaimStatusException("Your role may not settle a claim");
         }
@@ -46,21 +54,10 @@ public class SettleClaim {
             throw new ClaimStatusException("A deferred claim cannot be settled until " + claim.getDeferredUntil());
         }
         ClaimStatus settled = ClaimStatus.OPEN.moveTo(ClaimStatus.SETTLED);
-        if (claim.getOpenedBy() != null && claim.getOpenedBy().equals(by == null ? "" : by)) {
-            throw new ClaimStatusException("The user who opened a claim cannot settle it");
-        }
-        if (claim.getEditedBy() != null && claim.getEditedBy().equals(by == null ? "" : by)) {
-            throw new ClaimStatusException("The user who last edited a claim cannot settle it");
-        }
+        if (judged) requireFourEyes(by, claim);
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
-        Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),
-                LocalDate.parse(claim.getDate()), claim.getId());
-        // A claim bound by a statement settles at the figure it was bound to.
-        // Its late charge on the sheet's today is frozen in.
-        Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
-        String due = Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
-                late.rounding(claim.getRoundDate())), settings.floor(claim.getSheetId()).on(claim.getDate()), late);
-        requireProof(claim, person, due, settings);
+        String due = dueOf(claim, person, rates, settings, sheets);
+        if (judged) requireProof(claim, person, due, settings);
         if (due != null && Role.CLERK.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
             BigDecimal limit = settings.clerkLimit(claim.getSheetId());
             if (limit != null && new BigDecimal(due).compareTo(limit) > 0) {
@@ -70,6 +67,36 @@ public class SettleClaim {
         }
         claim.setStatus(settled.name());
         claim.setSettledDue(due);
+    }
+
+    /** The four-eyes and proof rules of settling, judged on the claim (unchanged) alone. */
+    static void judge(String by, Claim claim, PersonRepository people, RateRepository rates,
+            SettingRepository settings, SheetRepository sheets) throws ClaimStatusException {
+        requireFourEyes(by, claim);
+        Person person = people.find(claim.getSheetId(), claim.getPersonId());
+        requireProof(claim, person, dueOf(claim, person, rates, settings, sheets), settings);
+    }
+
+    /** Refuses the user who opened the claim or last edited it. */
+    static void requireFourEyes(String by, Claim claim) throws ClaimStatusException {
+        if (claim.getOpenedBy() != null && claim.getOpenedBy().equals(by == null ? "" : by)) {
+            throw new ClaimStatusException("The user who opened a claim cannot settle it");
+        }
+        if (claim.getEditedBy() != null && claim.getEditedBy().equals(by == null ? "" : by)) {
+            throw new ClaimStatusException("The user who last edited a claim cannot settle it");
+        }
+    }
+
+    /** The due the claim settles at now (null: n/a). */
+    static String dueOf(Claim claim, Person person, RateRepository rates, SettingRepository settings,
+            SheetRepository sheets) {
+        Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),
+                LocalDate.parse(claim.getDate()), claim.getId());
+        // A claim bound by a statement settles at the figure it was bound to.
+        // Its late charge on the sheet's today is frozen in.
+        Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
+        return Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
+                late.rounding(claim.getRoundDate())), settings.floor(claim.getSheetId()).on(claim.getDate()), late);
     }
 
     /** Refuses settling or approving a claim with no proofs (while the sheet's proof kinds are set: with

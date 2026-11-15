@@ -6,7 +6,7 @@ import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import { isReviewLate, useNoteThreshold, useProofKinds, useProofThreshold, useReviewSla, type DatedOn } from '../settings/api';
 import { claimFromTemplate, listTemplates, templatesKey } from '../templates/api';
-import { addClaim, addClaimLine, claimTimeline, addProof, PROOF_KINDS, proofsOf, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, waiveClaim, holdClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ProofKind, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
+import { addClaim, addClaimLine, claimTimeline, addProof, PROOF_KINDS, proofsOf, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, waiveClaim, holdClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, settlePartClaim, unlockClaim, updateClaim, type Claim, type ProofKind, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
 import { Fig } from '../session/Fig';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
@@ -61,6 +61,10 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  rest and is unbound, and a new OPEN claim of that amount, opened by the user, shows its number as split-from
  *  (a PENDING, deferred or settled claim, one in a closed period, or a role that may not open a claim refused
  *  with an error on the claim).
+ *  An OPEN claim can be part-settled by an amount typed beside it: the amount is split off as the split does
+ *  and the new claim settled at once by the user as the settle does (PENDING above a clerk's limit), the
+ *  four-eyes and proof rules judged on the original claim; a refused split or settle refuses it all, with an
+ *  error on the claim.
  *  A DRAFT's amount can be changed in its row, by an amount typed beside its edit button: saved as the
  *  claim form saves it (its date, note and corrected claim kept), refused likewise with an error on the claim. */
 export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, today, charges, selected, onSelect, people }: {
@@ -161,6 +165,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       commenting.reset();
       lining.reset();
       division.reset();
+      partSettling.reset();
       inline.reset();
       setEditRefused(null);
       locking.reset();
@@ -186,6 +191,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       commenting.reset();
       lining.reset();
       division.reset();
+      partSettling.reset();
       inline.reset();
       setEditRefused(null);
       locking.reset();
@@ -216,6 +222,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       commenting.reset();
       lining.reset();
       division.reset();
+      partSettling.reset();
       inline.reset();
       setEditRefused(null);
       locking.reset();
@@ -236,6 +243,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       commenting.reset();
       lining.reset();
       division.reset();
+      partSettling.reset();
       inline.reset();
       setEditRefused(null);
       locking.reset();
@@ -273,6 +281,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       commenting.reset();
       lining.reset();
       division.reset();
+      partSettling.reset();
       inline.reset();
       setEditRefused(null);
       locking.reset();
@@ -291,6 +300,17 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     },
   });
 
+  // The amount typed for each claim to part-settle.
+  const [partAmounts, setPartAmounts] = useState<Record<number, string>>({});
+
+  const partSettling = useMutation({
+    mutationFn: (v: { id: number; amount: string }) => settlePartClaim(sheetId, user, v.id, v.amount),
+    onSuccess: (_, v) => {
+      setPartAmounts((a) => ({ ...a, [v.id]: '' }));
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+
   const split = (id: number) => {
     const amount = (splitAmounts[id] ?? '').trim();
     actOnce(() => {
@@ -305,10 +325,33 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       commenting.reset();
       lining.reset();
       division.reset();
+      partSettling.reset();
       inline.reset();
       setEditRefused(null);
       locking.reset();
       return division.mutateAsync({ id, amount });
+    });
+  };
+
+  const settlePart = (id: number) => {
+    const amount = (partAmounts[id] ?? '').trim();
+    actOnce(() => {
+      move.reset();
+      reassign.reset();
+      deferral.reset();
+      reminder.reset();
+      waiver.reset();
+      holding.reset();
+      redating.reset();
+      proof.reset();
+      commenting.reset();
+      lining.reset();
+      division.reset();
+      partSettling.reset();
+      inline.reset();
+      setEditRefused(null);
+      locking.reset();
+      return partSettling.mutateAsync({ id, amount });
     });
   };
 
@@ -337,6 +380,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       commenting.reset();
       lining.reset();
       division.reset();
+      partSettling.reset();
       inline.reset();
       setEditRefused(null);
       locking.reset();
@@ -368,6 +412,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       commenting.reset();
       lining.reset();
       division.reset();
+      partSettling.reset();
       inline.reset();
       setEditRefused(null);
       locking.reset();
@@ -400,6 +445,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       commenting.reset();
       lining.reset();
       division.reset();
+      partSettling.reset();
       inline.reset();
       setEditRefused(null);
       locking.reset();
@@ -433,6 +479,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       commenting.reset();
       lining.reset();
       division.reset();
+      partSettling.reset();
       inline.reset();
       setEditRefused(null);
       locking.reset();
@@ -479,6 +526,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       commenting.reset();
       lining.reset();
       division.reset();
+      partSettling.reset();
       inline.reset();
       setEditRefused(null);
       locking.reset();
@@ -499,6 +547,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       commenting.reset();
       lining.reset();
       division.reset();
+      partSettling.reset();
       inline.reset();
       setEditRefused(null);
       locking.reset();
@@ -537,6 +586,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       commenting.reset();
       lining.reset();
       division.reset();
+      partSettling.reset();
       inline.reset();
       setEditRefused(null);
       return fromTemplate.mutateAsync(name);
@@ -555,6 +605,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     commenting.reset();
     lining.reset();
     division.reset();
+    partSettling.reset();
     inline.reset();
     locking.reset();
     if (c.status !== 'DRAFT') {
@@ -730,6 +781,15 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 <button type="button" data-testid="claim-split" disabled={division.isPending}
                   onClick={() => split(c.id)}>
                   Split
+                </button>
+                <input data-testid="claim-settle-part-amount" placeholder="Part amount" value={partAmounts[c.id] ?? ''}
+                  onChange={(e) => {
+                    setPartAmounts((a) => ({ ...a, [c.id]: e.target.value }));
+                    if (partSettling.variables?.id === c.id) partSettling.reset();
+                  }} />{' '}
+                <button type="button" data-testid="claim-settle-part" disabled={partSettling.isPending}
+                  onClick={() => settlePart(c.id)}>
+                  Settle part
                 </button>
               </td>
               <td data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</td>
@@ -925,6 +985,15 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     : c.status === 'OPEN' && !c.deferred
                     ? 'Your role may not open a claim, so it cannot split one.'
                     : `A ${c.deferred ? 'deferred' : c.status} claim cannot be split.`}</span>
+                )}
+                {partSettling.isError && partSettling.variables?.id === c.id && (
+                  <span data-testid="claim-error">{partSettling.error instanceof HttpError && partSettling.error.status === 423
+                    ? 'A claim due by a day inside a closed period cannot be part-settled.'
+                    : partSettling.error instanceof HttpError && partSettling.error.status === 400
+                    ? `A part-settle needs an amount more than 0.00 and less than ${Number(c.amount).toFixed(2)}.`
+                    : c.status === 'OPEN' && !c.deferred
+                    ? 'The part cannot be split off or settled: your role, four eyes or a missing proof refuses it.'
+                    : `A ${c.deferred ? 'deferred' : c.status} claim cannot be part-settled.`}</span>
                 )}
                 {proof.isError && proof.variables === c.id && (
                   <span data-testid="claim-error">{proof.error instanceof HttpError && proof.error.status === 423

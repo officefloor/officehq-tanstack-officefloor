@@ -1,0 +1,47 @@
+# POST /api/sheets/{sheetId}/claims/{claimId}/settle-part?amount=<n.nn> — part-settle an OPEN claim: the
+# amount is split off exactly as the split does, and the new claim is settled at once by the user exactly
+# as the settle does (to PENDING by a clerk above the clerk limit). The settle's role, four-eyes and proof
+# rules are judged on the original claim (the new claim's opener is the user). A split or a settle that
+# would be refused refuses the whole action, writing nothing.
+# A viewer may change nothing: refused before anything is read or written.
+guard:
+  class: net.officefloor.hq.app.setting.RefuseViewer
+  next: before
+before:
+  class: net.officefloor.hq.app.rollup.TakeRollup
+  govern: [ transaction ]
+  next: load
+load:
+  class: net.officefloor.hq.app.claim.LoadClaim
+  govern: [ transaction ]
+  next: judge
+judge:
+  class: net.officefloor.hq.app.claim.JudgePartSettle
+  govern: [ transaction ]
+  next: split
+split:
+  class: net.officefloor.hq.app.claim.SplitClaim
+  govern: [ transaction ]
+  next: settle
+settle:
+  class: net.officefloor.hq.app.claim.SettlePart
+  govern: [ transaction ]
+  next: save
+save:
+  class: net.officefloor.hq.app.claim.SaveSplit
+  govern: [ transaction ]
+  next: audit
+audit:
+  class: net.officefloor.hq.app.claim.RecordClaimSplit
+  govern: [ transaction ]
+  next: rollup
+rollup:
+  class: net.officefloor.hq.app.rollup.RecordRollup
+  govern: [ transaction ]
+  next: settled
+settled:
+  class: net.officefloor.hq.app.claim.SaveSettledPart
+  govern: [ transaction ]
+  next: respond
+respond:
+  class: net.officefloor.hq.app.claim.RespondWithSplit

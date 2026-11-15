@@ -177,6 +177,13 @@ export function splitClaim(sheetId: string, by: string, id: number, amount: stri
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/split?by=${encodeURIComponent(by)}&amount=${encodeURIComponent(amount)}`, {});
 }
 
+/** Part-settle an OPEN claim: `amount` is split off as {@link splitClaim} does, and the new claim is settled
+ *  at once by the user as the settle does (to PENDING by a clerk above the clerk limit); the four-eyes and
+ *  proof rules are judged on the original claim. A refused split or settle refuses it all. Resolves to the new claim. */
+export function settlePartClaim(sheetId: string, by: string, id: number, amount: string): Promise<Claim> {
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/settle-part?by=${encodeURIComponent(by)}&amount=${encodeURIComponent(amount)}`, {});
+}
+
 /** The kinds a proof may be (none chosen: a receipt). */
 export const PROOF_KINDS = ['receipt', 'photo'] as const;
 export type ProofKind = typeof PROOF_KINDS[number];
