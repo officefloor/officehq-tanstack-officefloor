@@ -10,7 +10,7 @@ import { BulkRedate } from '../claims/BulkRedate';
 import { PersonClaims } from '../claims/PersonClaims';
 import { PersonPlans } from '../plans/PersonPlans';
 import { backing, claimsKey, patronShares, isActive, correctsAnother, listClaims, liveClaims, showTags, sumAmounts, tagsKey } from '../claims/api';
-import { listPeriods, periodOf, periodsKey, personPeriodDue } from '../periods/api';
+import { listPeriods, periodOf, periodsKey, personPeriodCarried, personPeriodDue } from '../periods/api';
 import { listPools, personCutTotal, poolsKey } from '../pools/api';
 import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
 import { useCap, useFloor, useLate } from '../settings/api';
@@ -38,7 +38,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', con
  *  their OPEN claims dated within a hold, and not bound by a statement, count in no total), their
  *  patrons (each `<name> <share>`, sorted by name (see `patronShares`), with a picker that names one more), their plans (see `PersonPlans`), their aliases (sorted as names are
  *  compared, with an entry and a button that adds one) and backing (see `backing`), and
- *  their due-total for each period (see `personPeriodDue`), the due of their open claims by age (see `agedDues`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
+ *  their due-total and carried figure for each period (see `personPeriodDue`, `personPeriodCarried`), the due of their open claims by age (see `agedDues`), their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims, each
  *  with a checkbox that selects it for a button that opens the selected claims together.
  *  Each person has a checkbox that selects them for a grade given to the selected people together.
  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
@@ -562,6 +562,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   <td key={q.name}>
                     {q.name} <span data-testid={`person-period-${q.name}-due-total`}>
                       <Fig>{personPeriodDue(q, p, claims.data ?? [], people.data, rates.data, floor, charges)}</Fig></span>
+                    {' '}carried <span data-testid={`person-period-${q.name}-carried`}>
+                      <Fig>{personPeriodCarried(q, periods.data ?? [], p, claims.data ?? [], people.data, rates.data, floor, charges)}</Fig></span>
                   </td>
                 ))}
                 <td>

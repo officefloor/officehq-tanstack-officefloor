@@ -107,6 +107,18 @@ export function personPeriodDue(p: Period, person: Person, claims: Claim[], peop
     .map((c) => claimDue(c, rates, (d) => gradeOn(person, d), floor, late)));
 }
 
+/** A person's carried figure for a period: the due as shown now of their claims that count (see `liveClaims`)
+ *  due by a day in a period ending before this one starts, whose status at the end of this period's last day
+ *  (see `statusOn`) was OPEN or PENDING; n/a ones skipped. */
+export function personPeriodCarried(p: Period, periods: Period[], person: Person, claims: Claim[],
+  people: Person[] | undefined, rates: Rate[] | undefined, floor: DatedOn, late: Late): string {
+  const earlier = periods.filter((e) => e.to < p.from);
+  return sumDues(liveClaims(claims.filter((c) => c.personId === person.id), people)
+    .filter((c) => { const s = statusOn(c, p.to); return s === 'OPEN' || s === 'PENDING'; })
+    .filter((c) => earlier.some((e) => e.from <= c.dueBy && c.dueBy <= e.to))
+    .map((c) => claimDue(c, rates, (d) => gradeOn(person, d), floor, late)));
+}
+
 /** A period's due-total as its row shows it: the sum of everyone's due-total for it. */
 export function periodDueTotal(p: Period, claims: Claim[], people: Person[] | undefined, rates: Rate[] | undefined,
   floor: DatedOn, late: Late): string {
