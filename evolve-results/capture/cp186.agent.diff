@@ -1,0 +1,167 @@
+diff --git a/src/main/frontend/features/periods/Periods.tsx b/src/main/frontend/features/periods/Periods.tsx
+index fc4f26fb8..3352a5788 100644
+--- a/src/main/frontend/features/periods/Periods.tsx
++++ b/src/main/frontend/features/periods/Periods.tsx
+@@ -6,7 +6,7 @@ import { listPeople, peopleKey } from '../people/api';
+ import { listRates, ratesKey } from '../rates/api';
+ import { fiscalYearOf, useFiscalStartMonth, useFloor, useLate } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+-import { addPeriod, closePeriod, generateFiscalYear, generatePeriods, listPeriods, lockPeriod, periodDueTotal, periodsKey, reopenPeriod, softClosePeriod, type PeriodInput } from './api';
++import { addPeriod, closePeriod, generateFiscalYear, generatePeriods, generateQuarters, listPeriods, lockPeriod, periodDueTotal, periodsKey, reopenPeriod, softClosePeriod, type PeriodInput } from './api';
+ import { Fig } from '../session/Fig';
+ import { ImportOpenings } from './ImportOpenings';
+ 
+@@ -36,12 +36,15 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
+     },
+   });
+ 
+-  // Generate monthly periods between two dates, or a fiscal year's; the one count shown is cleared while it runs.
++  // Generate monthly periods between two dates, a fiscal year's or a year's quarters; the one count shown
++  // is cleared while it runs.
+   const [range, setRange] = useState({ from: '', to: '' });
+   const [fyYear, setFyYear] = useState('');
++  const [quarterYear, setQuarterYear] = useState('');
+   const generate = useMutation({
+-    mutationFn: (r: { from: string; to: string } | { year: string }) => 'year' in r
+-      ? generateFiscalYear(sheetId, user, r.year) : generatePeriods(sheetId, user, r.from, r.to),
++    mutationFn: (r: { from: string; to: string } | { year: string } | { quarters: string }) => 'quarters' in r
++      ? generateQuarters(sheetId, user, r.quarters)
++      : 'year' in r ? generateFiscalYear(sheetId, user, r.year) : generatePeriods(sheetId, user, r.from, r.to),
+     onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
+   });
+   const generateOnce = useSubmitOnce();
+@@ -137,8 +140,10 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
+         </button>{' '}
+         {generate.isSuccess && <>Made <span data-testid="period-generated">{generate.data.made}</span></>}
+         {generate.isError && (
+-          <span data-testid="period-generate-error">{generate.variables && 'year' in generate.variables
+-            ? 'The fiscal year must be a year (yyyy).' : 'The to-date must be on or after the from-date.'}</span>
++          <span data-testid="period-generate-error">{generate.variables && 'quarters' in generate.variables
++            ? 'The quarters\' year must be a year (yyyy).'
++            : generate.variables && 'year' in generate.variables
++              ? 'The fiscal year must be a year (yyyy).' : 'The to-date must be on or after the from-date.'}</span>
+         )}
+       </form>
+       <form
+@@ -159,6 +164,24 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
+           Generate fiscal year
+         </button>
+       </form>
++      <form
++        onSubmit={(e) => {
++          e.preventDefault();
++          generateOnce(() => {
++            generate.reset();
++            return generate.mutateAsync({ quarters: quarterYear });
++          });
++        }}
++      >
++        <label>
++          Generate quarters of{' '}
++          <input data-testid="period-generate-quarters-year" value={quarterYear} placeholder="yyyy"
++            onChange={(e) => { setQuarterYear(e.target.value); generate.reset(); }} />
++        </label>{' '}
++        <button type="submit" data-testid="period-generate-quarters" disabled={generate.isPending}>
++          Generate quarters
++        </button>
++      </form>
+       <ImportOpenings sheetId={sheetId} user={user} />
+       <table>
+         <tbody>
+diff --git a/src/main/frontend/features/periods/api.ts b/src/main/frontend/features/periods/api.ts
+index d37e62bcb..2f22b3bfb 100644
+--- a/src/main/frontend/features/periods/api.ts
++++ b/src/main/frontend/features/periods/api.ts
+@@ -67,6 +67,14 @@ export function generateFiscalYear(sheetId: string, by: string, year: string): P
+     { year });
+ }
+ 
++/** Make the four calendar quarters of the year as periods named <year>-Q1 to <year>-Q4, each as adding a
++ *  period would, leaving out a quarter whose name is taken or whose days overlap a period; refused
++ *  (rejects) when the year is not yyyy. Resolves to how many were made. */
++export function generateQuarters(sheetId: string, by: string, year: string): Promise<{ made: number }> {
++  return postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/generate-quarters?by=${encodeURIComponent(by)}`,
++    { year });
++}
++
+ /** The period whose dates contain the date (yyyy-MM-dd), or undefined for none. A claim belongs to the
+  *  period its due-by falls in. */
+ export function periodOf(periods: Period[] | undefined, date: string): Period | undefined {
+diff --git a/src/main/java/net/officefloor/hq/app/period/GenerateQuarters.java b/src/main/java/net/officefloor/hq/app/period/GenerateQuarters.java
+new file mode 100644
+index 000000000..fb2b437c3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/GenerateQuarters.java
+@@ -0,0 +1,42 @@
++package net.officefloor.hq.app.period;
++
++import java.time.LocalDate;
++import java.time.YearMonth;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Makes the four calendar quarters of a year as periods named <yyyy>-Q1 to <yyyy>-Q4, each from the first
++ *  day of its first month to the last day of its third, each recorded as PERIOD_ADDED. A quarter whose
++ *  name is already a period, or whose days overlap a period on the sheet, is left out. A year that is not
++ *  four digits is refused and nothing is written. */
++public class GenerateQuarters {
++    public void generate(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "by", required = false) String by,
++            @RequestBody GenerateQuartersRequest request, SheetRepository sheets,
++            PeriodRepository periods, Audit audit, Out<GeneratePeriodsResult> result) throws InvalidPeriodException {
++        String id = sheetId.trim();
++        String user = by == null ? "" : by;
++        String year = request == null || request.year() == null ? "" : request.year().trim();
++        if (!year.matches("\\d{4}")) {
++            throw new InvalidPeriodException("A year is four digits (yyyy)");
++        }
++        int y = Integer.parseInt(year);
++        sheets.open(id, user);
++        int made = 0;
++        for (int q = 1; q <= 4; q++) {
++            String name = year + "-Q" + q;
++            LocalDate first = YearMonth.of(y, q * 3 - 2).atDay(1);
++            LocalDate last = YearMonth.of(y, q * 3).atEndOfMonth();
++            if (periods.nameTaken(id, name) || periods.overlaps(id, first, last)) continue;
++            Period period = periods.add(id, name, first, last, user);
++            audit.record("PERIOD_ADDED sheet=" + id + " by=" + user + " period=" + period.name()
++                    + " from=" + period.from() + " to=" + period.to());
++            made++;
++        }
++        result.set(new GeneratePeriodsResult(made));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/GenerateQuartersRequest.java b/src/main/java/net/officefloor/hq/app/period/GenerateQuartersRequest.java
+new file mode 100644
+index 000000000..01c721dcf
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/GenerateQuartersRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.period;
++
++/** Body of generating a year's calendar quarters: the year (yyyy) that names them, <yyyy>-Q1 to <yyyy>-Q4. */
++public record GenerateQuartersRequest(String year) {
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-quarters.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-quarters.POST.yml
+new file mode 100644
+index 000000000..cc8f65f18
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-quarters.POST.yml
+@@ -0,0 +1,13 @@
++# POST /api/sheets/{sheetId}/generate-quarters — make the year's four calendar quarters as periods named
++# <yyyy>-Q1 to <yyyy>-Q4, each as adding a period would, leaving out a quarter whose name is taken or whose
++# days overlap a period. A year that is not yyyy is refused. Responds with how many were made.
++# A viewer may change nothing: refused before anything is read or written.
++guard:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: generate
++generate:
++  class: net.officefloor.hq.app.period.GenerateQuarters
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.period.RespondWithGeneratedPeriods
