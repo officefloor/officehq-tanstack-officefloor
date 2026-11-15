@@ -43,6 +43,7 @@ public class PersonRepository {
         withGrades(sheetId, people);
         withHolds(sheetId, people);
         withAliases(sheetId, people);
+        withClashing(sheetId, people);
         jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY added_at, patron_id",
                 (rs) -> {
                     Person p = byId.get(rs.getLong("person_id"));
@@ -63,6 +64,7 @@ public class PersonRepository {
             withGrades(sheetId, List.of(person));
             withHolds(sheetId, List.of(person));
             withAliases(sheetId, List.of(person));
+            withClashing(sheetId, List.of(person));
         }
         return person;
     }
@@ -145,6 +147,65 @@ public class PersonRepository {
                     aliases.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(rs.getString("alias"));
                 }, sheetId);
         people.forEach((p) -> p.setAliases(aliases.getOrDefault(p.getId(), new ArrayList<>())));
+    }
+
+    /** The other sheets of the sheet's tree, among the sheets that exist: its ancestors (its parent,
+     *  its parent's parent, ...) and its descendants (its children, their children, ...). */
+    public java.util.Set<String> treeSheets(String sheetId) {
+        java.util.Set<String> tree = new java.util.LinkedHashSet<>();
+        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
+        for (String at = parentOf(sheetId); at != null && seen.add(at); at = parentOf(at)) {
+            tree.add(at);
+        }
+        List<String> below = new ArrayList<>(List.of(sheetId));
+        java.util.Set<String> seenBelow = new java.util.HashSet<>(List.of(sheetId));
+        for (int i = 0; i < below.size(); i++) {
+            for (String child : jdbc.queryForList("SELECT sheet_id FROM sheet_setting WHERE setting = 'parent' AND val = ?",
+                    String.class, below.get(i))) {
+                if (seenBelow.add(child)) {
+                    below.add(child);
+                    tree.add(child);
+                }
+            }
+        }
+        tree.remove(sheetId);
+        tree.removeIf((s) -> jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ?", Integer.class, s) == 0);
+        return tree;
+    }
+
+    private String parentOf(String sheetId) {
+        return jdbc.queryForList("SELECT val FROM sheet_setting WHERE sheet_id = ? AND setting = 'parent'",
+                String.class, sheetId).stream().filter((v) -> v != null && !v.isBlank()).findFirst().orElse(null);
+    }
+
+    /** The names and aliases used on the other sheets of the sheet's tree, as names are compared
+     *  (lower-cased, trimmed). */
+    public java.util.Set<String> treeNames(String sheetId) {
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (String other : treeSheets(sheetId)) {
+            names.addAll(jdbc.queryForList("SELECT name_key FROM person WHERE sheet_id = ?", String.class, other));
+            names.addAll(jdbc.queryForList("SELECT alias_key FROM person_alias WHERE sheet_id = ?", String.class, other));
+        }
+        return names;
+    }
+
+    /** Whether the name is used, as a name or alias, on another sheet of the sheet's tree. */
+    public boolean nameTakenInTree(String sheetId, String name) {
+        return treeNames(sheetId).contains(key(name));
+    }
+
+    private static String key(String name) {
+        return name == null ? "" : name.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** Mark each person whose name or an alias is used on another sheet of the sheet's tree. */
+    private void withClashing(String sheetId, List<Person> people) {
+        if (people.isEmpty()) {
+            return;
+        }
+        java.util.Set<String> names = treeNames(sheetId);
+        people.forEach((p) -> p.setClashing(names.contains(key(p.getName()))
+                || p.getAliases().stream().anyMatch((a) -> names.contains(key(a)))));
     }
 
     /** Give the person the alias (stored as given, trimmed). */

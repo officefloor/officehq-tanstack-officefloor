@@ -5,6 +5,7 @@ import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.PeriodClosedException;
 import net.officefloor.hq.app.period.PeriodRepository;
+import net.officefloor.hq.app.person.InvalidPersonException;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -25,13 +26,16 @@ public class FindOrAddPerson {
             @Val Rollup before, SheetRepository sheets, PersonRepository people,
             ClaimRepository claims, RateRepository rates, PeriodRepository periods,
             SettingRepository settings, HolidayRepository holidays, Audit audit,
-            Out<Person> person) throws PeriodClosedException {
+            Out<Person> person) throws PeriodClosedException, InvalidPersonException {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
         Person found = people.findByName(id, name.name());
         if (found != null) {
             person.set(found);
             return;
+        }
+        if (people.nameTakenInTree(id, name.name())) {
+            throw new InvalidPersonException("The name is already in use on the sheet's tree");
         }
         // The claim would be refused when its due-by (grade A's terms in business days after its date) falls in a closed period.
         java.time.LocalDate date = settings.entryDate(id);

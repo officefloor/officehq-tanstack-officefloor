@@ -519,6 +519,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   </button>
                 </td>
                 <td>
+                  Clashing <span data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</span>
+                </td>
+                <td>
                   Aliases <span data-testid="person-aliases">{p.aliases.join(', ')}</span>{' '}
                   <input data-testid="person-alias-input" value={aliasInputs[p.id] ?? ''}
                     onChange={(e) => {

@@ -146,6 +146,10 @@ public class Person {
     public void setPatronIds(java.util.List<Long> patronIds) { this.patronIds = patronIds; }
     public java.util.List<String> getAliases() { return aliases; }
     public void setAliases(java.util.List<String> aliases) { this.aliases = aliases; }
+    /** Whether their name or an alias is used, as a name or alias, on another sheet of the sheet's tree. */
+    private boolean clashing;
+    public boolean isClashing() { return clashing; }
+    public void setClashing(boolean clashing) { this.clashing = clashing; }
 
     /** Whether the claim counts in live totals: it counts by status, and is not an open (OPEN or
      *  PENDING) claim dated within one of their holds, or of a person whose retirement date is reached,

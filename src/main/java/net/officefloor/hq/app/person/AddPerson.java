@@ -13,7 +13,7 @@ public class AddPerson {
             Out<Person> person) throws InvalidPersonException {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
-        if (people.nameTaken(id, request.name(), null)) {
+        if (people.nameTaken(id, request.name(), null) || people.nameTakenInTree(id, request.name())) {
             throw new InvalidPersonException("The name is already in use");
         }
         if (request.contact() != null && people.contactTaken(id, request.contact(), null)) {

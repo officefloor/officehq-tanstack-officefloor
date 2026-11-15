@@ -13,6 +13,15 @@ public class ApplyPerson {
         if (people.nameTaken(person.getSheetId(), request.name(), person.getId())) {
             throw new InvalidPersonException("The name is already in use");
         }
+        // Someone clashing with another sheet of the tree can only be saved under a name, and with
+        // aliases, that no longer clash.
+        java.util.Set<String> tree = people.treeNames(person.getSheetId());
+        if (tree.contains(request.name().trim().toLowerCase(java.util.Locale.ROOT))) {
+            throw new InvalidPersonException("The name is already in use on the sheet's tree");
+        }
+        if (person.getAliases().stream().anyMatch((a) -> tree.contains(a.trim().toLowerCase(java.util.Locale.ROOT)))) {
+            throw new InvalidPersonException("An alias is already in use on the sheet's tree");
+        }
         if (request.contact() != null && people.contactTaken(person.getSheetId(), request.contact(), person.getId())) {
             throw new InvalidPersonException("The contact is already in use");
         }

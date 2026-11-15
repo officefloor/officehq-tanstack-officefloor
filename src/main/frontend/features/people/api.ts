@@ -30,6 +30,9 @@ export type Person = {
   contact: string | null;
   /** Their aliases, sorted as names are compared; the quick-add bar and the paste box find them by one. */
   aliases: string[];
+  /** Whether their name or an alias is used on another sheet of the sheet's tree (its ancestors and
+   *  descendants): until renamed clear of it, every edit through the person form is refused. */
+  clashing: boolean;
 };
 /** `gradeFrom` is the date an edit's grade applies from (blank: the sheet's today); `terms` their
  *  own terms in whole days (blank: none); `contact` their contact (blank: none). */
