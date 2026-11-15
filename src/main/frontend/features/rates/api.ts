@@ -194,3 +194,15 @@ function formatCents(cents: bigint): string {
 
 /** A due as shown: n/a when there is none. */
 export const showDue = (due: string | null) => due ?? 'n/a';
+
+/** What a candidate rate for a grade on every date would change: how many open (OPEN or PENDING) claims
+ *  of people on that grade on the claim's date would show a different due, and the sum of the differences
+ *  (new minus current, two decimals). */
+export type RatePreview = { count: number; diff: string };
+
+/** Preview a candidate rate for a grade; nothing is saved. Refused (rejects) when the percent is missing,
+ *  negative or has more than two decimals. */
+export function previewRate(sheetId: string, grade: string, pct: string): Promise<RatePreview> {
+  return getJson<RatePreview>(`/api/sheets/${encodeURIComponent(sheetId)}/rate-preview`
+    + `?grade=${encodeURIComponent(grade)}&pct=${encodeURIComponent(pct)}`);
+}
