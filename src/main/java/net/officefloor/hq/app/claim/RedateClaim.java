@@ -20,6 +20,12 @@ public class RedateClaim {
     public void redate(@RequestParam(name = "by", required = false) String by,
             @RequestParam(name = "date", required = false) String date, @Val Claim claim,
             PersonRepository people, RoleRepository roles, PeriodRepository periods, Out<Redating> redating) throws ClaimStatusException, InvalidClaimException, PeriodClosedException {
+        redating.set(redate(by, claim, date, people, roles, periods));
+    }
+
+    /** Re-dates the claim in place by the rules above (writing nothing): the date it had and the one it has now. */
+    static Redating redate(String by, Claim claim, String date, PersonRepository people, RoleRepository roles,
+            PeriodRepository periods) throws ClaimStatusException, InvalidClaimException, PeriodClosedException {
         String sheetId = claim.getSheetId();
         if (!Role.STEWARD.equals(roles.roleOf(sheetId, by == null ? "" : by))) {
             throw new ClaimStatusException("Only a steward can re-date a claim");
@@ -40,6 +46,6 @@ public class RedateClaim {
         }
         String old = claim.getDate();
         claim.setDate(to.toString());
-        redating.set(new Redating(old, claim.getDate()));
+        return new Redating(old, claim.getDate());
     }
 }

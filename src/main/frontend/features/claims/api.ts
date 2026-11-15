@@ -325,3 +325,13 @@ export type BulkReassignResult = { reassigned: number; refused: number };
 export function bulkReassignClaims(sheetId: string, by: string, claimIds: number[], toPersonId: number): Promise<BulkReassignResult> {
   return postJson<BulkReassignResult>(`${sheetBase(sheetId)}/bulk-reassign?by=${encodeURIComponent(by)}`, { claimIds, to: toPersonId });
 }
+
+/** How many of the selected claims a bulk re-date re-dated, and how many it refused (left as they were). */
+export type BulkRedateResult = { redated: number; refused: number };
+
+/** Re-date the selected claims to one `date` together in list order (people in their list places, newest
+ *  claim first within a person), each by the rules of re-dating one; each that cannot be re-dated is left
+ *  as it is and counted as refused. */
+export function bulkRedateClaims(sheetId: string, by: string, claimIds: number[], date: string): Promise<BulkRedateResult> {
+  return postJson<BulkRedateResult>(`${sheetBase(sheetId)}/bulk-redate?by=${encodeURIComponent(by)}`, { claimIds, date });
+}
