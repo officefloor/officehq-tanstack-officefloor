@@ -377,7 +377,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
               <td data-testid="claim-due">{showDue(claimDue(c, rates, gradeOn, floor, charges))}</td>
               <td>
                 Due by <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
-                overdue <span data-testid="claim-overdue">{isOverdue(c, today) ? 'yes' : 'no'}</span>
+                overdue <span data-testid="claim-overdue">{isOverdue(c, today, charges.lateFrom(c)) ? 'yes' : 'no'}</span>
               </td>
               <td data-testid="claim-status">{c.status}</td>
               <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>

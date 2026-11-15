@@ -182,9 +182,10 @@ export function sumAmounts(claims: Claim[]): string {
 /** A claim's due-by (yyyy-MM-dd), fixed when it was added. */
 export const dueBy = (c: Claim): string => c.dueBy;
 
-/** Whether a claim is overdue: it is open (OPEN or PENDING), not deferred, and its due-by is before the sheet's `today`. */
-export const isOverdue = (c: Claim, today: string) =>
-  isOpen(c) && !c.deferred && today !== '' && dueBy(c) < today;
+/** Whether a claim is overdue: it is open (OPEN or PENDING), not deferred, and the date its lateness counts
+ *  from (`lateFrom`: its due-by plus its grace days; by default its due-by) is before the sheet's `today`. */
+export const isOverdue = (c: Claim, today: string, lateFrom: string = dueBy(c)) =>
+  isOpen(c) && !c.deferred && today !== '' && lateFrom < today;
 
 /** How many of the selected claims a bulk open opened, and how many it refused (left as they were). */
 export type BulkOpenResult = { opened: number; refused: number };

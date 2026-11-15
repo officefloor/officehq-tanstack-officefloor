@@ -1,5 +1,5 @@
 import { getJson, postJson } from '../../api/http';
-import { counts, dueBy, isBound, isCorrection, isOpen, isOverdue, type Claim } from '../claims/api';
+import { counts, isBound, isCorrection, isOpen, isOverdue, type Claim } from '../claims/api';
 import { sheetKey } from '../sheet/api';
 import type { DatedOn } from '../settings/api';
 
@@ -67,19 +67,23 @@ export function dueOf(amount: string, pct: string | undefined, halfUp: boolean):
 }
 
 /** What a claim's late charge goes by: the sheet's late percent by date (a charge goes by the one in force on each 30-day boundary) and its today (a claim's due-by is its own);
- *  and the sheet's policy date (its today when blank), which decides how a claim's live figures round. */
-export type Late = { pct: DatedOn; today: string; policy: string };
+ *  the sheet's policy date (its today when blank), which decides how a claim's live figures round; and the date
+ *  a claim's lateness counts from (`lateFrom`: its due-by plus the grace days of its person's grade in force on
+ *  its date, as in force on that date). */
+export type Late = { pct: DatedOn; today: string; policy: string; lateFrom: (c: Claim) => string };
 
 /** Whether a claim's live figures round half up: its round date (its own, or for a correction the
  *  date of the claim it corrects) is before the policy date; else they round half to even. */
 export const roundsHalfUp = (c: Claim, late: Late) => (c.roundDate ?? c.date) < late.policy;
 
-/** The late charge on an open (OPEN or PENDING) claim's `figure`: for each full 30 days it is past its due-by on
- *  the sheet's today, the late percent in force on that boundary date (its due-by plus 30, 60, 90 ... days) of it,
+/** The late charge on an open (OPEN or PENDING) claim's `figure`: for each full 30 days it is past its due-by plus
+ *  its grace days (`late.lateFrom`) on the sheet's today, the late percent in force on that boundary date (that date
+ *  plus 30, 60, 90 ... days) of it,
  *  each rounded by the policy date to two decimals, added up (0 when not overdue, and on a correction). */
 export function lateCharge(c: Claim, figure: string, late: Late): bigint {
-  if (isCorrection(c) || !isOverdue(c, late.today)) return 0n;
-  const start = Date.parse(`${dueBy(c)}T00:00:00Z`);
+  const from = late.lateFrom(c);
+  if (isCorrection(c) || !isOverdue(c, late.today, from)) return 0n;
+  const start = Date.parse(`${from}T00:00:00Z`);
   const periods = Math.floor((Date.parse(`${late.today}T00:00:00Z`) - start) / 86_400_000 / 30);
   let total = 0n;
   for (let k = 1; k <= periods; k++) {
@@ -149,10 +153,10 @@ export function splitDues(claims: Claim[], dueOfClaim: (c: Claim) => string | nu
   };
 }
 
-/** The overdue claims among those that count (`claims`, the live ones): their count and the sum
- *  of their due figures (n/a ones skipped). */
-export function overdue(claims: Claim[], today: string, dueOfClaim: (c: Claim) => string | null) {
-  const late = claims.filter((c) => isOverdue(c, today));
+/** The overdue claims among those that count (`claims`, the live ones) on the sheet's today (`charges.today`,
+ *  each past its `charges.lateFrom`): their count and the sum of their due figures (n/a ones skipped). */
+export function overdue(claims: Claim[], charges: Late, dueOfClaim: (c: Claim) => string | null) {
+  const late = claims.filter((c) => isOverdue(c, charges.today, charges.lateFrom(c)));
   return { count: late.length, total: sumDues(late.map(dueOfClaim)) };
 }
 

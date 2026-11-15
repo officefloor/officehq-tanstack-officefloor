@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
 import { sheetKey } from '../sheet/api';
 import type { Late } from '../rates/api';
+import { dueBy, type Claim } from '../claims/api';
+import { gradeOn, listPeople, peopleKey } from '../people/api';
 
 /** A value recorded for a sheet setting: its value as text ("" when blank), in force from its
  *  from-date (yyyy-MM-dd; null: from the beginning of time, and always for an undated key). A key
@@ -27,9 +29,12 @@ export type Role = { sheetId: string; user: string; role: string };
  *  The entry date (yyyy-MM-dd; blank means off): while set, a new claim with a blank date (the claim form,
  *  the quick-add bar, a pasted line, a correction) takes it instead of the sheet's today.
  *  The grace days (whole days; blank means off): when the sheet's today changes, every open period whose
- *  to-date plus them is before the new today is closed. */
+ *  to-date plus them is before the new today is closed. A grade's grace days (grace-<grade>, whole days;
+ *  blank means none): a claim whose person's grade in force on its date has them in force on that date is
+ *  overdue only once its due-by plus them is before the sheet's today, and its late charge's 30-day
+ *  boundaries count from there; the due-by it shows is unchanged. */
 export const SETTING_KEYS = ['clerk-limit', 'cap', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date',
-  'period-numbering-from', 'entry-date', 'grace-days', 'proof-threshold', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen'] as const;
+  'period-numbering-from', 'entry-date', 'grace-days', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'note-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen'] as const;
 
 /** The roles that may take each action of the permission matrix while its entry is blank. */
 export const PERMISSION_STANDING: Record<string, string> = {
@@ -106,12 +111,22 @@ export function useCap(sheetId: string, today: string): string | null {
 }
 
 /** What a claim's late charge and rounding go by: the sheet's late percent by date (a late charge goes
- *  by the one in force on each 30-day boundary), today and policy date (its today when blank). */
+ *  by the one in force on each 30-day boundary), today and policy date (its today when blank), and the
+ *  date a claim's lateness counts from: its due-by plus the grace days (grace-<grade>) of its person's
+ *  grade in force on its date, as in force on that date (blank: none). */
 export function useLate(sheetId: string, today: string): Late {
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+  const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
   const pct = (date: string) => settingOn(settings.data, 'late-pct', date) || SETTING_DEFAULTS['late-pct'];
   const policy = settingOn(settings.data, 'policy-date', today) || today;
-  return { pct, today, policy };
+  const lateFrom = (c: Claim) => {
+    const person = people.data?.find((p) => p.id === c.personId);
+    const grace = person === undefined ? '' : settingOn(settings.data, `grace-${gradeOn(person, c.date)}`, c.date) ?? '';
+    if (grace === '') return dueBy(c);
+    const from = new Date(Date.parse(`${dueBy(c)}T00:00:00Z`) + Number(grace) * 86_400_000);
+    return from.toISOString().slice(0, 10);
+  };
+  return { pct, today, policy, lateFrom };
 }
 
 /** A steward's delegation of the steward role to a user, from a date to a date (yyyy-MM-dd, inclusive):

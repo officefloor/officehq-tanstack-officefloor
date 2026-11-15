@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.function.ToIntFunction;
 import net.officefloor.hq.app.setting.DatedSetting;
 
 /** A claim's due figure. */
@@ -11,9 +12,16 @@ public final class Dues {
     private Dues() {
     }
 
-    /** What a late charge goes by: the sheet's late percent by date (a charge goes by the one in force on each 30-day boundary) and its today (a claim's due-by is its own); and the
-     *  sheet's policy date (its today when blank), which decides how a claim's live figures round. */
-    public record Late(DatedSetting pct, LocalDate today, LocalDate policy) {
+    /** What a late charge goes by: the sheet's late percent by date (a charge goes by the one in force on each 30-day boundary) and its today (a claim's due-by is its own); the
+     *  sheet's policy date (its today when blank), which decides how a claim's live figures round; and
+     *  a claim's grace days (those of its person's grade in force on its date, as in force on it; 0: none). */
+    public record Late(DatedSetting pct, LocalDate today, LocalDate policy, ToIntFunction<Claim> grace) {
+
+        /** The date a claim's lateness counts from: its due-by plus its grace days. It is overdue once
+         *  this is before the sheet's today. */
+        public LocalDate lateFrom(Claim claim) {
+            return LocalDate.parse(claim.getDueBy()).plusDays(grace.applyAsInt(claim));
+        }
 
         /** How the live figures of a claim round by its round date ({@link Claim#getRoundDate}):
          *  half up before the policy date, half to even on or after it. */
@@ -35,13 +43,13 @@ public final class Dues {
     }
 
     /** The late charge on a claim's figure: for each full 30 days its open (OPEN or PENDING) claim is past its
-     *  due-by (fixed when it was added) on the sheet's today, the late percent in force on that boundary date
-     *  (its due-by plus 30, 60, 90 ... days) of it, each rounded by the policy date to two decimals, added up;
+     *  due-by (fixed when it was added) plus its grace days on the sheet's today, the late percent in force on that
+     *  boundary date (its due-by plus grace plus 30, 60, 90 ... days) of it, each rounded by the policy date to two decimals, added up;
      *  none (0.00) when it is not overdue (a deferred claim never is), or on a correction. */
     public static BigDecimal charge(Claim claim, String figure, Late late) {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         if (figure == null || isCorrection(claim.getAmount()) || !ClaimStatus.isOpen(claim.getStatus()) || claim.isDeferred()) return total;
-        LocalDate dueBy = LocalDate.parse(claim.getDueBy());
+        LocalDate dueBy = late.lateFrom(claim);
         long periods = Math.max(0, ChronoUnit.DAYS.between(dueBy, late.today())) / 30;
         RoundingMode rounding = late.rounding(claim.getRoundDate());
         for (long k = 1; k <= periods; k++) {

@@ -311,7 +311,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
             const live = liveClaims(own, [p]);
             const claimed = sumAmounts(live);
             const pct = byGrade.get(p.grade);
-            const late = overdue(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
+            const late = overdue(live, charges, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
             const aged = agedDues(live, today, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
             const split = splitDues(live, (c) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges));
             return (

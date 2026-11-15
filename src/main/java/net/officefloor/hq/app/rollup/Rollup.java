@@ -25,7 +25,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueTotal, String overdueTotal) {
 
     /** A person's figures: their name, claimed, due-total (null: n/a) and overdue-total (the shown
-     *  dues of their open claims past their due-by on the sheet's today, n/a ones skipped). */
+     *  dues of their open claims past their due-by plus grace days on the sheet's today, n/a ones skipped). */
     public record Figures(String name, String claimed, String dueTotal, String overdueTotal) {
         public boolean sameAs(Figures other) {
             return other != null && claimed.equals(other.claimed)
@@ -62,7 +62,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 kept |= c.getSettledDue() != null || c.isBound()
                         || (pct != null && (!grade.equals(p.getGrade()) || c.getDate().compareTo(today) <= 0));
                 if (d != null) due = due.add(new BigDecimal(d));
-                if (d != null && ClaimStatus.isOpen(c.getStatus()) && c.getDueBy().compareTo(today) < 0) {
+                if (d != null && ClaimStatus.isOpen(c.getStatus()) && late.lateFrom(c).isBefore(todayDate)) {
                     overdue = overdue.add(new BigDecimal(d));
                 }
             }

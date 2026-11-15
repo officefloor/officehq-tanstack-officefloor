@@ -16,7 +16,7 @@ public class ValidateSetting {
     /** A whole number of days, 0 or more. */
     private static final Pattern DAYS = Pattern.compile("\\d{1,6}");
 
-    /** The grades that may have their own terms. */
+    /** The grades that may have their own terms and grace days. */
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     /** The roles a permission may name. */
@@ -78,6 +78,13 @@ public class ValidateSetting {
                 throw new InvalidSettingException("The grace days are blank or a whole number of days, 0 or more");
             }
             body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null));
+            return;
+        } else if (key.startsWith(SettingRepository.GRACE_OF_GRADE)
+                && GRADES.contains(key.substring(SettingRepository.GRACE_OF_GRADE.length()))) {
+            if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("A grade's grace days are blank or a whole number of days, 0 or more");
+            }
+            body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), given));
             return;
         } else if (SettingRepository.POLICY_DATE.equals(key)
                 || SettingRepository.PERIOD_NUMBERING_FROM.equals(key)

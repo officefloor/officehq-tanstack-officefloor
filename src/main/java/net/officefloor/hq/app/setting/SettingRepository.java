@@ -4,8 +4,17 @@ import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.function.LongFunction;
+import java.util.function.ToIntFunction;
+import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.Dues;
+import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -56,6 +65,11 @@ public class SettingRepository {
      *  whose to-date plus them is before the new today is closed. */
     public static final String GRACE_DAYS = "grace-days";
 
+    /** A grade's grace days ({@code grace-<grade>}, dated; a whole number; blank: none): a claim whose
+     *  person's grade in force on its date has them in force on that date is overdue, and gains its late
+     *  charge, counting from its due-by plus them. */
+    public static final String GRACE_OF_GRADE = "grace-";
+
     /** The late percent until it is first set. */
     public static final String DEFAULT_LATE_PCT = "0.00";
 
@@ -74,10 +88,12 @@ public class SettingRepository {
 
     private final JdbcTemplate jdbc;
     private final SheetRepository sheets;
+    private final PersonRepository people;
 
-    public SettingRepository(JdbcTemplate jdbc, SheetRepository sheets) {
+    public SettingRepository(JdbcTemplate jdbc, SheetRepository sheets, PersonRepository people) {
         this.jdbc = jdbc;
         this.sheets = sheets;
+        this.people = people;
     }
 
     /** Every value recorded for the sheet's settings, by key, then by from-date (none first). */
@@ -119,7 +135,9 @@ public class SettingRepository {
     public Dues.Late lateAsOf(String sheetId, LocalDate asOf) {
         String policy = datedAsOf(sheetId, POLICY_DATE, null, asOf).on("9999-12-31");
         return new Dues.Late(datedAsOf(sheetId, LATE_PCT, DEFAULT_LATE_PCT, asOf), asOf,
-                policy == null ? asOf : LocalDate.parse(policy));
+                policy == null ? asOf : LocalDate.parse(policy),
+                grace((grade) -> datedAsOf(sheetId, GRACE_OF_GRADE + grade, null, asOf),
+                        (id) -> people.findAsOf(sheetId, id, asOf)));
     }
 
     /** An undated setting's value; null when blank or never set. */
@@ -197,7 +215,23 @@ public class SettingRepository {
 
     /** What a claim's late charge and rounding go by on the sheet now. */
     public Dues.Late late(String sheetId, LocalDate today) {
-        return new Dues.Late(latePct(sheetId), today, policyDate(sheetId, today));
+        return new Dues.Late(latePct(sheetId), today, policyDate(sheetId, today),
+                grace((grade) -> dated(sheetId, GRACE_OF_GRADE + grade, null), (id) -> people.find(sheetId, id)));
+    }
+
+    /** A claim's grace days: those of its person's grade in force on the claim's date, as in force on
+     *  that date (0: none), each grade's and person's looked up once. */
+    private static ToIntFunction<Claim> grace(Function<String, DatedSetting> ofGrade, LongFunction<Person> person) {
+        Map<String, DatedSetting> graces = new HashMap<>();
+        Map<Long, Optional<Person>> persons = new HashMap<>();
+        return (claim) -> {
+            Person p = persons.computeIfAbsent(claim.getPersonId(), (id) -> Optional.ofNullable(person.apply(id))).orElse(null);
+            if (p == null) return 0;
+            String grade = p.gradeOn(claim.getDate());
+            if (grade == null) return 0;
+            String days = graces.computeIfAbsent(grade, ofGrade).on(claim.getDate());
+            return days == null ? 0 : Integer.parseInt(days);
+        };
     }
 
     /** Record the setting's value (null: blank) from the from-date (null: from the beginning of time,

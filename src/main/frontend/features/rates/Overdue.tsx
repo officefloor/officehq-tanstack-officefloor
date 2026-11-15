@@ -18,8 +18,8 @@ export function useOverdue(sheetId: string, user: string): ReturnType<typeof ove
   const byId = new Map<number, Person>((people.data ?? []).map((p) => [p.id, p]));
   const live = liveClaims(claims.data ?? [], people.data).filter((c) => byId.has(c.personId));
   const dueOf = (c: Parameters<typeof claimDue>[0]) => claimDue(c, rates.data, (d) => gradeOn(byId.get(c.personId)!, d), floor, charges);
-  const perPerson = (people.data ?? []).map((p) => overdue(live.filter((c) => c.personId === p.id), today, dueOf).total);
-  return { count: overdue(live, today, dueOf).count, total: trimmedSum(perPerson) };
+  const perPerson = (people.data ?? []).map((p) => overdue(live.filter((c) => c.personId === p.id), charges, dueOf).total);
+  return { count: overdue(live, charges, dueOf).count, total: trimmedSum(perPerson) };
 }
 
 export function Overdue({ sheetId, user }: { sheetId: string; user: string }) {
