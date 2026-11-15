@@ -1,0 +1,73 @@
+diff --git a/src/main/frontend/features/pools/Pools.tsx b/src/main/frontend/features/pools/Pools.tsx
+index 04a377423..2776a33b1 100644
+--- a/src/main/frontend/features/pools/Pools.tsx
++++ b/src/main/frontend/features/pools/Pools.tsx
+@@ -7,7 +7,7 @@ import { addPool, addPoolMember, listPools, poolsKey } from './api';
+ import type { MemberRef, Pool } from './api';
+ 
+ /** The sheet's pools and a form to add one (name trimmed; a blank or repeated one refused). Each pool
+- *  lists its members with their shares, its total share (a retired member's counting as 0.00) and
++ *  lists its members with their shares, its total share (a retired member's counting as given) and
+  *  whether it is balanced (exactly 100.00), each member's cut of
+  *  the pool's pot (blank when unbalanced or no pot), and adds a member — a person or another pool, listed
+  *  as pool:<name> — from its row, with optional from/to dates (a member whose dates leave out the sheet's
+diff --git a/src/main/frontend/features/pools/api.ts b/src/main/frontend/features/pools/api.ts
+index 5cfba7d50..3666e45bb 100644
+--- a/src/main/frontend/features/pools/api.ts
++++ b/src/main/frontend/features/pools/api.ts
+@@ -2,9 +2,9 @@ import { getJson, postJson } from '../../api/http';
+ import { sheetKey } from '../sheet/api';
+ 
+ /** A member of a pool, a person (`personId`) or another pool (`poolId`, `name` its name), with their share
+- *  percent (two decimals); a `retired` member's share counts as 0.00 toward the pool's total. `cut` is
++ *  percent (two decimals); a `retired` member's share counts as given toward the pool's total. `cut` is
+  *  their cut of the pool's pot (two decimals; a retired member's or one on a hold in force on the sheet's
+- *  today 0.00, their share spread over the others in proportion; the remainder going to the largest share), "" when the pool is unbalanced or has no pot. A pool that is a member of none cuts the sheet's
++ *  today 0.00, their share spread over the others in proportion; the remainder going to the largest share), "" when every current member is retired or the pool is unbalanced or has no pot. A pool that is a member of none cuts the sheet's
+  *  pot; a member pool cuts its own cut in the pool above. `from`/`to` are the dates the membership runs
+  *  (null: no bound); a member that is not `current` (its dates leave out the sheet's today) is left out of
+  *  the total share and has no cut (""). */
+diff --git a/src/main/java/net/officefloor/hq/app/pool/Pool.java b/src/main/java/net/officefloor/hq/app/pool/Pool.java
+index 62b9e1107..876f1785a 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/Pool.java
++++ b/src/main/java/net/officefloor/hq/app/pool/Pool.java
+@@ -3,7 +3,7 @@ package net.officefloor.hq.app.pool;
+ import java.util.List;
+ 
+ /** A pool on a sheet, its members (in the order they were added), the total of their shares (a retired
+- *  member's, or one whose dates do not include the sheet's today, counting as 0.00) and whether that total is exactly 100.00. {@code parentId} is the pool it is a
++ *  member's counting as given; one whose dates do not include the sheet's today counting as 0.00) and whether that total is exactly 100.00. {@code parentId} is the pool it is a
+  *  member of (null: none); its pot is then its cut there, else the sheet's pot. */
+ public record Pool(long id, String sheetId, String name, List<PoolMember> members, String totalShare,
+         boolean balanced, Long parentId) {
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index 7d690b963..a4fc3652e 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -63,7 +63,7 @@ public class PoolRepository {
+         for (Map.Entry<Long, List<PoolMember>> pool : members.entrySet()) {
+             BigDecimal total = BigDecimal.ZERO.setScale(2);
+             for (PoolMember m : pool.getValue()) {
+-                if (!m.retired() && m.current()) total = total.add(new BigDecimal(m.share()));
++                if (m.current()) total = total.add(new BigDecimal(m.share()));
+             }
+             totals.put(pool.getKey(), total);
+         }
+@@ -101,11 +101,16 @@ public class PoolRepository {
+ 
+     /** The members with their cuts of the pot. A member with a cut is one neither retired nor on a hold in
+      *  force on the sheet's today ({@code held}); the others' cut is 0.00, but a member whose dates do not
+-     *  include the sheet's today is left out entirely (cut ""). Each member with a cut gets the pot
++     *  include the sheet's today is left out entirely (cut ""), as is every member when each current member
++     *  is retired (the pool shows no cuts). Each member with a cut gets the pot
+      *  times their share over the shares of the members with a cut added up, rounded half to even to two
+      *  decimals; the remainder goes to the member with a cut with the largest share (the earliest added on a
+      *  tie), so the cuts total exactly the pot (all 0.00 when no member has a cut). */
+     private static List<PoolMember> cut(List<PoolMember> members, BigDecimal pot, Set<Long> held) {
++        if (members.stream().anyMatch(PoolMember::current)
++                && members.stream().filter(PoolMember::current).allMatch(PoolMember::retired)) {
++            return members.stream().map(m -> m.withCut("")).toList();
++        }
+         BigDecimal[] cuts = new BigDecimal[members.size()];
+         boolean[] cutting = new boolean[members.size()];
+         BigDecimal shares = BigDecimal.ZERO.setScale(2);
