@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, "
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, void_reason, "
             // Deferred now: OPEN and deferred until a date after the sheet's today.
             + "(status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > "
             + "(SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred, "
@@ -22,7 +22,7 @@ public class ClaimRepository {
             + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = claim.sheet_id AND k.number = claim.corrects), "
             + "claim_date) AS round_date";
 
-    private static final RowMapper<Claim> ROW = (rs, n) -> withTags(withRef(withReminded(withCorrects(new Claim(rs.getLong("id"),
+    private static final RowMapper<Claim> ROW = (rs, n) -> withVoidReason(withTags(withRef(withReminded(withCorrects(new Claim(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getLong("person_id"),
             rs.getBigDecimal("amount").setScale(2).toPlainString(),
             rs.getObject("claim_date", LocalDate.class).toString(), rs.getString("note"),
@@ -35,7 +35,12 @@ public class ClaimRepository {
             rs.getObject("round_date", LocalDate.class).toString(),
             rs.getObject("due_by", LocalDate.class).toString(),
             rs.getObject("deferred_until", LocalDate.class), rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"), rs.getString("locked_by"), rs.getBoolean("late_entry")),
-            rs.getObject("reminded_on", LocalDate.class)), rs.getString("ref")), rs.getString("tags"));
+            rs.getObject("reminded_on", LocalDate.class)), rs.getString("ref")), rs.getString("tags")), rs.getString("void_reason"));
+
+    private static Claim withVoidReason(Claim claim, String voidReason) {
+        claim.setVoidReason(voidReason);
+        return claim;
+    }
 
     private static Claim withTags(Claim claim, String tags) {
         claim.setTags(tags);
@@ -149,12 +154,12 @@ public class ClaimRepository {
     }
 
     public void update(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, settled_due = ?, opened_by = ?, corrects = ?, ref = ?, ref_key = ?, tags = ? WHERE sheet_id = ? AND id = ?",
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, settled_due = ?, opened_by = ?, corrects = ?, ref = ?, ref_key = ?, tags = ?, void_reason = ? WHERE sheet_id = ? AND id = ?",
                 new BigDecimal(claim.getAmount()), LocalDate.parse(claim.getDate()), claim.getNote(),
                 claim.getStatus(), claim.getNumber(),
                 claim.getSettledDue() == null ? null : new BigDecimal(claim.getSettledDue()),
                 claim.getOpenedBy(), claim.getCorrects(), claim.getRef(), refKey(claim.getRef()), claim.getTags(),
-                claim.getSheetId(), claim.getId());
+                claim.getVoidReason(), claim.getSheetId(), claim.getId());
         snapshot(claim.getSheetId(), claim.getId());
         useTags(claim.getSheetId(), claim.getTags());
     }

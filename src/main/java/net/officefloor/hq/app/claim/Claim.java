@@ -36,6 +36,7 @@ public class Claim {
     private String reminded;
     private String ref;
     private String tags;
+    private String voidReason;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, String number, String settledDue, String openedBy) {
@@ -144,6 +145,10 @@ public class Claim {
     /** Its tags, sorted and comma separated (none: no tags). */
     public String getTags() { return tags; }
     public void setTags(String tags) { this.tags = tags; }
+
+    /** The reason it was voided with, from the sheet's void reasons (none: voided without one, or not voided). */
+    public String getVoidReason() { return voidReason; }
+    public void setVoidReason(String voidReason) { this.voidReason = voidReason; }
 
     /** The audit suffix: {@code " tags=<tags>"} for a claim that has tags. */
     @JsonIgnore

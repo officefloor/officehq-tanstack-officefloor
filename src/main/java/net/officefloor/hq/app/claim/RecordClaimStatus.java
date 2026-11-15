@@ -12,7 +12,9 @@ public class RecordClaimStatus {
             @Val Claim claim, PersonRepository people, Audit audit) {
         audit.record(line(ClaimStatus.valueOf(claim.getStatus()).event(), by, claim, people)
                 + (ClaimStatus.SETTLED.name().equals(claim.getStatus()) ? due(claim) : "")
-                + (claim.isReversal() ? reversed(claim) : ""));
+                + (claim.isReversal() ? reversed(claim) : "")
+                + (ClaimStatus.VOID.name().equals(claim.getStatus()) && claim.getVoidReason() != null
+                        ? " reason=" + claim.getVoidReason() : ""));
     }
 
     /** A claim line: the event, the sheet, the user, then the claim's person, amount, date and number. */

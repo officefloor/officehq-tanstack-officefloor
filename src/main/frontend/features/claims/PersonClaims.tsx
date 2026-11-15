@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import { useNoteThreshold, useProofThreshold, type DatedOn } from '../settings/api';
-import { addClaim, addProof, claimsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
+import { addClaim, addProof, claimsKey, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
 
@@ -62,6 +62,9 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
   const [editRefused, setEditRefused] = useState<{ id: number; message: string } | null>(null);
   // The rejection reason typed for each claim.
   const [reasons, setReasons] = useState<Record<number, string>>({});
+  // The void reason chosen for each claim (blank: none), from the sheet's list.
+  const [voidReasons, setVoidReasons] = useState<Record<number, string>>({});
+  const voidReasonList = useQuery({ queryKey: voidReasonsKey(sheetId), queryFn: () => listVoidReasons(sheetId) });
 
   const save = useMutation({
     mutationFn: (v: { id: number | null; input: ClaimInput }) =>
@@ -107,7 +110,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
   // The claim whose last status change was refused; cleared by the next action on any claim here.
   const move = useMutation({
     mutationFn: (v: { id: number; action: ClaimAction }) =>
-      moveClaim(sheetId, user, v.id, v.action, reasons[v.id] ?? ''),
+      moveClaim(sheetId, user, v.id, v.action, (v.action === 'void' ? voidReasons[v.id] : reasons[v.id]) ?? ''),
     onSuccess: (_, v) => {
       if (v.action === 'reject') setReasons((r) => ({ ...r, [v.id]: '' }));
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
@@ -470,6 +473,14 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     {LABELS[a]}
                   </button>
                 ))}{' '}
+                <select data-testid="claim-void-reason" value={voidReasons[c.id] ?? ''}
+                  onChange={(e) => {
+                    setVoidReasons((r) => ({ ...r, [c.id]: e.target.value }));
+                    if (move.variables?.id === c.id) move.reset();
+                  }}>
+                  <option value="">No void reason</option>
+                  {(voidReasonList.data ?? []).map((r) => <option key={r.reason} value={r.reason}>{r.reason}</option>)}
+                </select>{' '}
                 <input data-testid="claim-reject-reason" placeholder="Reason" value={reasons[c.id] ?? ''}
                   onChange={(e) => {
                     setReasons((r) => ({ ...r, [c.id]: e.target.value }));
@@ -540,6 +551,8 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                 {move.isError && move.variables?.id === c.id && (
                   <span data-testid="claim-error">{move.error instanceof HttpError && move.error.status === 423
                     ? 'A claim due by a day inside a closed period cannot be changed.'
+                    : move.error instanceof HttpError && move.error.status === 400 && move.variables.action === 'void'
+                    ? 'A void needs a reason chosen from the void reasons.'
                     : move.error instanceof HttpError && move.error.status === 400
                     ? 'A rejection needs a reason.'
                     : (move.variables.action === 'settle' || move.variables.action === 'approve') && needsProof(c)

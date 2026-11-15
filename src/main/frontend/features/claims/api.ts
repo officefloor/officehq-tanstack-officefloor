@@ -48,6 +48,8 @@ export type Claim = {
   ref: string | null;
   /** Its tags: trimmed, lower-cased, without repeats, sorted and comma separated (null: none). */
   tags: string | null;
+  /** The reason it was voided with, from the sheet's void reasons (null: none). */
+  voidReason: string | null;
 };
 /** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects.
  *  `ref`: its external reference (trimmed; blank: none), refused when already used on the sheet.
@@ -106,10 +108,10 @@ export function unlockClaim(sheetId: string, by: string, id: number): Promise<Cl
 
 /** Change a claim's status; refused (rejects) when its status does not allow the change, when the
  *  user settling or approving it is the one who opened it, when a non-steward approves or rejects it,
- *  or when a rejection has no `reason`. A steward's `resettle` freezes a SETTLED claim again at the
+ *  or when a rejection has no `reason`, or a void none from the sheet's void reasons while it has any. A steward's `resettle` freezes a SETTLED claim again at the
  *  figure it would have today as an open claim bound by no statement. */
 export function moveClaim(sheetId: string, by: string, id: number, action: ClaimAction, reason = ''): Promise<Claim> {
-  const extra = action === 'reject' ? `&reason=${encodeURIComponent(reason)}` : '';
+  const extra = action === 'reject' || action === 'void' ? `&reason=${encodeURIComponent(reason)}` : '';
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/${action}?by=${encodeURIComponent(by)}${extra}`, {});
 }
 
@@ -236,4 +238,20 @@ export type PasteResult = { added: number };
  *  adding nothing, when any line would be refused by the claim form or names no one on the sheet. */
 export function pasteClaims(sheetId: string, by: string, text: string): Promise<PasteResult> {
   return postJson<PasteResult>(`${sheetBase(sheetId)}/paste-claims?by=${encodeURIComponent(by)}`, { text });
+}
+
+/** A reason on the sheet's list of void reasons (trimmed): while the list is not empty, a claim is voided
+ *  with one of them. */
+export type VoidReason = { sheetId: string; reason: string; by: string };
+
+export const voidReasonsKey = (sheetId: string) => [...sheetKey(sheetId), 'void-reasons'] as const;
+
+/** The sheet's void reasons, in the order they were added. */
+export function listVoidReasons(sheetId: string): Promise<VoidReason[]> {
+  return getJson<VoidReason[]>(`${sheetBase(sheetId)}/void-reasons`);
+}
+
+/** Add a void reason; refused (rejects) for a blank one or one already on the list. */
+export function addVoidReason(sheetId: string, by: string, reason: string): Promise<VoidReason> {
+  return postJson<VoidReason>(`${sheetBase(sheetId)}/void-reasons?by=${encodeURIComponent(by)}`, { reason });
 }
