@@ -1,0 +1,126 @@
+diff --git a/src/main/frontend/features/claims/PersonClaims.tsx b/src/main/frontend/features/claims/PersonClaims.tsx
+index 28a1242d1..2cdb55308 100644
+--- a/src/main/frontend/features/claims/PersonClaims.tsx
++++ b/src/main/frontend/features/claims/PersonClaims.tsx
+@@ -6,7 +6,7 @@ import { listPeriods, periodOf, periodsKey } from '../periods/api';
+ import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
+ import { useNoteThreshold, useProofThreshold, type DatedOn } from '../settings/api';
+ import { claimFromTemplate, listTemplates, templatesKey } from '../templates/api';
+-import { addClaim, addClaimLine, addProof, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
++import { addClaim, addClaimLine, claimTimeline, addProof, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, showTags, splitClaim, unlockClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
+ import { Fig } from '../session/Fig';
+ 
+ const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
+@@ -185,6 +185,14 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+   };
+ 
+   // The new date typed for each claim to re-date it to.
++  // Each claim's timeline as last read from the audit file (absent: not shown); re-read on each press.
++  const [timelines, setTimelines] = useState<Record<number, string[]>>({});
++  const timeline = useMutation({
++    mutationFn: (id: number) => claimTimeline(sheetId, id),
++    onMutate: (id) => setTimelines((t) => { const rest = { ...t }; delete rest[id]; return rest; }),
++    onSuccess: (lines, id) => setTimelines((t) => ({ ...t, [id]: lines })),
++  });
++
+   const [redates, setRedates] = useState<Record<number, string>>({});
+ 
+   const redating = useMutation({
+@@ -612,6 +620,10 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+               <td data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</td>
+               <td>
+                 {(c.log ?? []).map((line, i) => <div key={i} data-testid="claim-log-line">{line}</div>)}
++                <button type="button" data-testid="claim-timeline" onClick={() => timeline.mutate(c.id)}>
++                  Timeline
++                </button>
++                {(timelines[c.id] ?? []).map((line, i) => <div key={i} data-testid="claim-timeline-line">{line}</div>)}
+               </td>
+               <td>
+                 {(c.comments ?? []).map((line, i) => <div key={i} data-testid="claim-comments-line">{line}</div>)}
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index 7f6cbebb7..e218cbd67 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -135,6 +135,12 @@ export function deferClaim(sheetId: string, by: string, id: number, until: strin
+   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/defer?by=${encodeURIComponent(by)}&until=${encodeURIComponent(until)}`, {});
+ }
+ 
++/** A claim's timeline: the audit lines about it exactly as the file holds them, newest first — those
++ *  carrying its number, or for a claim with no number those naming its person, amount and date together. */
++export function claimTimeline(sheetId: string, id: number): Promise<string[]> {
++  return getJson<string[]>(`${sheetBase(sheetId)}/claims/${id}/timeline`);
++}
++
+ /** Remind an OPEN or PENDING claim on the sheet's today; refused (rejects) with 409 for any other
+  *  status, or when it was already reminded on the sheet's today. */
+ export function remindClaim(sheetId: string, by: string, id: number): Promise<Claim> {
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index 47d4bacdc..d6d3d151e 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -94,6 +94,24 @@ public class Audit {
+         return found;
+     }
+ 
++    /** A claim's timeline: the sheet's lines exactly as the file holds them, newest first, that carry
++     *  {@code number=<its number>}; for a claim with no number, those naming its person, amount and
++     *  date together (and no number, which would make them another claim's). */
++    public List<String> claimLines(String sheetId, String number, String person, String amount, String date) {
++        List<String> found = new ArrayList<>();
++        for (String line : lines(sheetId, null)) {
++            String padded = " " + line + " ";
++            boolean ours = number != null && !number.isBlank()
++                    ? padded.contains(" number=" + number + " ")
++                    : !padded.contains(" number=")
++                            && padded.contains(" person=" + person + " ")
++                            && padded.contains(" amount=" + amount + " ")
++                            && padded.contains(" date=" + date + " ");
++            if (ours) found.add(line);
++        }
++        return found;
++    }
++
+     /** Whether the line carries name=<who> or person=<who> (who: trimmed, lower case). */
+     private static boolean about(String line, String who) {
+         String lower = " " + line.toLowerCase(Locale.ROOT) + " ";
+diff --git a/src/main/java/net/officefloor/hq/app/audit/ListClaimTimeline.java b/src/main/java/net/officefloor/hq/app/audit/ListClaimTimeline.java
+new file mode 100644
+index 000000000..b4215591b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/audit/ListClaimTimeline.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app.audit;
++
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/** A claim's timeline: the audit lines about it, newest first, as the file holds them — those carrying
++ *  its number, or for a claim with no number those naming its person, amount and date together. */
++public class ListClaimTimeline {
++    public void list(@Val Claim claim, PersonRepository people, Audit audit,
++            ObjectResponse<List<String>> response) {
++        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++        response.send(audit.claimLines(claim.getSheetId(), claim.getNumber(),
++                person == null ? "" : person.getName(), claim.getAmount(), claim.getDate()));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml
+new file mode 100644
+index 000000000..240e9ce4e
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml
+@@ -0,0 +1,9 @@
++# GET /api/sheets/{sheetId}/claims/{claimId}/timeline — the audit lines about the claim, newest first:
++# those carrying its number, or for a claim with no number those naming its person, amount and date.
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ readonly-transaction ]
++  next: list
++list:
++  class: net.officefloor.hq.app.audit.ListClaimTimeline
++  govern: [ readonly-transaction ]
