@@ -14,6 +14,7 @@ import { agedDues, claimDue, excessOf, listRates, overdue, personDue, rateByGrad
 import { useCap, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { BulkGrade } from './BulkGrade';
+import { BulkRetire } from './BulkRetire';
 import { ExportPeople } from './ExportPeople';
 import { ImportPeople } from './ImportPeople';
 import { QuickAdd } from './QuickAdd';
@@ -399,6 +400,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       <ExportPeople rows={() => everyone.map((p) => [p.name, gradeOn(p, today), p.retiredFrom ?? '', showDue(dueOf.get(p.id) ?? null)])} />
       <BulkOpen sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
       <BulkGrade sheetId={sheetId} user={user} selected={[...selectedPeople]} onDone={() => setSelectedPeople(new Set())} />
+      <BulkRetire sheetId={sheetId} user={user} selected={[...selectedPeople]} onDone={() => setSelectedPeople(new Set())} />
       <BulkSettle sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
       <BulkReassign sheetId={sheetId} user={user} selected={[...selected]} people={everyone}
         onDone={() => setSelected(new Set())} />
