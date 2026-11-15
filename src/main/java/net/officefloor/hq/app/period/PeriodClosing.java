@@ -68,6 +68,10 @@ public final class PeriodClosing {
             total = total.add(new BigDecimal(due));
             if (person != null) personTotals.merge(person.getId(), new BigDecimal(due), BigDecimal::add);
         }
+        // An opening balance is part of the carried figure fixed now.
+        found.personOpenings().forEach((pid, amount) -> {
+            if (personCarried.containsKey(pid)) personCarried.merge(pid, new BigDecimal(amount), BigDecimal::add);
+        });
         return periods.close(found, total, personTotals, personCarried, user, soft);
     }
 }

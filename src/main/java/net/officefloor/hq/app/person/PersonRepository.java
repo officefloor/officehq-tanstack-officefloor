@@ -589,6 +589,7 @@ public class PersonRepository {
                     + "WHERE sheet_id = ? AND id = ?", sheetId, id);
         }
         jdbc.update("DELETE FROM period_person_total WHERE person_id = ?", id);
+        jdbc.update("DELETE FROM period_opening WHERE person_id = ?", id);
         for (String table : List.of("person_grade", "person_terms", "person_grade_history", "person_retired_history", "person_retirement", "person_alias", "plan")) {
             jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, sheetId, id);
         }

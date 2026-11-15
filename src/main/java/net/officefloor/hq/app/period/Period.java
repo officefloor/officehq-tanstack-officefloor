@@ -7,10 +7,12 @@ import java.util.Map;
  *  due-total for it fixed then too, by person id (a person not in it shows 0.00). A soft-closed period
  *  ({@code soft}, not {@code closed}) has its figures fixed the same way, but claims due by a day in it can
  *  still be added and changed. Its cap (null: none) is the most OPEN or PENDING claims a person may
- *  have in it. Once fixed, each person's carried figure for it is fixed then too ({@code personCarried}). */
+ *  have in it. Once fixed, each person's carried figure for it is fixed then too ({@code personCarried}).
+ *  Each person's opening balance for it (pasted, added up), by person id ({@code personOpenings}); it is
+ *  added to their live carried figure, and fixed into it when the period is closed or soft-closed. */
 public record Period(String sheetId, String name, String from, String to, boolean closed,
         String closedTotal, Map<Long, String> personTotals, boolean soft, Integer cap,
-        Map<Long, String> personCarried) {
+        Map<Long, String> personCarried, Map<Long, String> personOpenings) {
 
     /** Whether its figures are fixed: closed or soft-closed. */
     public boolean fixed() {

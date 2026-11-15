@@ -17,6 +17,8 @@ export type Period = {
   cap: number | null;
   /** Once closed or soft-closed, each person's carried figure for it fixed when it was closed, by person id. */
   personCarried: Record<string, string>;
+  /** Each person's opening balance for it (pasted amounts added up), by person id; part of their carried figure. */
+  personOpenings: Record<string, string>;
 };
 /** cap: a whole number above zero, blank for none. */
 export type PeriodInput = { name: string; from: string; to: string; cap: string };
@@ -35,6 +37,15 @@ export function listPeriods(sheetId: string): Promise<Period[]> {
  *  number above zero. */
 export function addPeriod(sheetId: string, by: string, input: PeriodInput): Promise<Period> {
   return postJson<Period>(`${base(sheetId)}?by=${encodeURIComponent(by)}`, input);
+}
+
+/** Add each pasted line of name,period,amount (a person on the sheet by name or alias, a period on the sheet,
+ *  an amount of 0.00 or more with two decimals) to the person's opening balance for the period; refused
+ *  (rejects) with nothing written when there is no line or any line is refused. Resolves to how many lines
+ *  went through. */
+export function importOpenings(sheetId: string, by: string, text: string): Promise<{ imported: number }> {
+  return postJson<{ imported: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/import-openings?by=${encodeURIComponent(by)}`,
+    { text });
 }
 
 /** Make one period per calendar month from the from-date's month to the to-date's month (a blank date
@@ -110,17 +121,17 @@ export function personPeriodDue(p: Period, person: Person, claims: Claim[], peop
 }
 
 /** A person's carried figure for a period: once closed or soft-closed, the one fixed for them when it was closed
- *  (0.00 for a person added later); else the due as shown now of their claims that count (see `liveClaims`)
+ *  (0.00 for a person added later); else their opening balance for it (see `importOpenings`) plus the due as shown now of their claims that count (see `liveClaims`)
  *  due by a day in a period ending before this one starts, whose status at the end of this period's last day
  *  (see `statusOn`) was OPEN or PENDING; n/a ones skipped. */
 export function personPeriodCarried(p: Period, periods: Period[], person: Person, claims: Claim[],
   people: Person[] | undefined, rates: Rate[] | undefined, floor: DatedOn, late: Late): string {
   if (p.closed || p.soft) return p.personCarried[String(person.id)] ?? '0.00';
   const earlier = periods.filter((e) => e.to < p.from);
-  return sumDues(liveClaims(claims.filter((c) => c.personId === person.id), people)
+  return sumDues([p.personOpenings[String(person.id)] ?? null, ...liveClaims(claims.filter((c) => c.personId === person.id), people)
     .filter((c) => { const s = statusOn(c, p.to); return s === 'OPEN' || s === 'PENDING'; })
     .filter((c) => earlier.some((e) => e.from <= c.dueBy && c.dueBy <= e.to))
-    .map((c) => claimDue(c, rates, (d) => gradeOn(person, d), floor, late)));
+    .map((c) => claimDue(c, rates, (d) => gradeOn(person, d), floor, late))]);
 }
 
 /** A period's due-total as its row shows it: the sum of everyone's due-total for it. */

@@ -17,7 +17,7 @@ public class PeriodRepository {
             rs.getObject("to_date", LocalDate.class).toString(), rs.getBoolean("closed"),
             rs.getBigDecimal("closed_total") == null ? null
                     : rs.getBigDecimal("closed_total").setScale(2).toPlainString(), Map.of(),
-            rs.getBoolean("soft_closed"), (Integer) rs.getObject("claim_cap", Integer.class), Map.of());
+            rs.getBoolean("soft_closed"), (Integer) rs.getObject("claim_cap", Integer.class), Map.of(), Map.of());
 
     private static final String COLUMNS = "SELECT sheet_id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap FROM period ";
 
@@ -30,7 +30,7 @@ public class PeriodRepository {
     /** The sheet's periods, by from-date. */
     public List<Period> list(String sheetId) {
         return jdbc.query(COLUMNS + "WHERE sheet_id = ? ORDER BY from_date", ROW, sheetId).stream()
-                .map(this::withPersonTotals).toList();
+                .map(this::withPersonTotals).map(this::withOpenings).toList();
     }
 
     /** The period with each person's due-total and carried figure fixed when it was closed. */
@@ -46,13 +46,47 @@ public class PeriodRepository {
                 },
                 p.sheetId(), p.name());
         return new Period(p.sheetId(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(), totals, p.soft(), p.cap(),
-                carried);
+                carried, p.personOpenings());
+    }
+
+    /** The period with each person's opening balance for it. */
+    private Period withOpenings(Period p) {
+        return new Period(p.sheetId(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(), p.personTotals(), p.soft(),
+                p.cap(), p.personCarried(), openings(p.sheetId(), p.name()));
+    }
+
+    /** Each person's opening balance for the sheet's period, by person id. */
+    private Map<Long, String> openings(String sheetId, String name) {
+        Map<Long, String> openings = new LinkedHashMap<>();
+        jdbc.query("SELECT o.person_id, o.amount FROM period_opening o JOIN period p ON p.id = o.period_id "
+                + "WHERE p.sheet_id = ? AND p.name = ? ORDER BY o.person_id",
+                rs -> {
+                    openings.put(rs.getLong("person_id"), rs.getBigDecimal("amount").setScale(2).toPlainString());
+                },
+                sheetId, name);
+        return openings;
+    }
+
+    /** The sheet's period with the name, compared ignoring case; null when there is none. */
+    public Period findByName(String sheetId, String name) {
+        return jdbc.query(COLUMNS + "WHERE sheet_id = ? AND name_key = LOWER(?)", ROW, sheetId, name)
+                .stream().findFirst().map(this::withPersonTotals).map(this::withOpenings).orElse(null);
+    }
+
+    /** Add the amount to the person's opening balance for the sheet's period. */
+    public void addOpening(String sheetId, String period, long personId, BigDecimal amount) {
+        int n = jdbc.update("UPDATE period_opening SET amount = amount + ? WHERE person_id = ? AND period_id = "
+                + "(SELECT id FROM period WHERE sheet_id = ? AND name = ?)", amount, personId, sheetId, period);
+        if (n == 0) {
+            jdbc.update("INSERT INTO period_opening (period_id, person_id, amount) SELECT id, ?, ? FROM period "
+                    + "WHERE sheet_id = ? AND name = ?", personId, amount, sheetId, period);
+        }
     }
 
     /** The sheet's period with the name; null when there is none. */
     public Period find(String sheetId, String name) {
         return jdbc.query(COLUMNS + "WHERE sheet_id = ? AND name = ?", ROW, sheetId, name)
-                .stream().findFirst().map(this::withPersonTotals).orElse(null);
+                .stream().findFirst().map(this::withPersonTotals).map(this::withOpenings).orElse(null);
     }
 
     /** Refuse a change to a claim whose due-by (yyyy-MM-dd) is inside one of the sheet's closed periods:
@@ -94,7 +128,7 @@ public class PeriodRepository {
         personTotals.keySet().forEach((id) -> carried.put(id,
                 personCarried.getOrDefault(id, BigDecimal.ZERO.setScale(2)).toPlainString()));
         return new Period(period.sheetId(), period.name(), period.from(), period.to(), !soft,
-                total.toPlainString(), shown, soft, period.cap(), carried);
+                total.toPlainString(), shown, soft, period.cap(), carried, openings(period.sheetId(), period.name()));
     }
 
     /** Reopen the closed or soft-closed period: its due-total is live again. */
@@ -103,7 +137,8 @@ public class PeriodRepository {
                 + "(SELECT id FROM period WHERE sheet_id = ? AND name = ?)", period.sheetId(), period.name());
         jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL, closed_by = NULL, "
                 + "closed_at = NULL WHERE sheet_id = ? AND name = ?", period.sheetId(), period.name());
-        return new Period(period.sheetId(), period.name(), period.from(), period.to(), false, null, Map.of(), false, period.cap(), Map.of());
+        return new Period(period.sheetId(), period.name(), period.from(), period.to(), false, null, Map.of(), false, period.cap(), Map.of(),
+                openings(period.sheetId(), period.name()));
     }
 
     /** Whether another period on the sheet has the name, compared without regard to case. */
@@ -128,7 +163,7 @@ public class PeriodRepository {
     public Period add(String sheetId, String name, LocalDate from, LocalDate to, String user, Integer cap) {
         jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, created_by, claim_cap) "
                 + "VALUES (?, ?, ?, ?, ?, ?)", sheetId, name, from, to, user, cap);
-        return new Period(sheetId, name, from.toString(), to.toString(), false, null, Map.of(), false, cap, Map.of());
+        return new Period(sheetId, name, from.toString(), to.toString(), false, null, Map.of(), false, cap, Map.of(), Map.of());
     }
 
     /** The sheet's period whose dates contain the date (yyyy-MM-dd); null when there is none. */
@@ -138,8 +173,8 @@ public class PeriodRepository {
                 .stream().findFirst().orElse(null);
     }
 
-    /** Move the person {@code fromId}'s fixed due-totals and carried figures of closed periods to
-     *  {@code intoId}, added to into's where into has one. */
+    /** Move the person {@code fromId}'s fixed due-totals and carried figures of closed periods, and their
+     *  opening balances, to {@code intoId}, added to into's where into has one. */
     public void moveTotals(String sheetId, long fromId, long intoId) {
         String ofSheet = "period_id IN (SELECT id FROM period WHERE sheet_id = ?)";
         jdbc.update("UPDATE period_person_total t SET total = total + (SELECT f.total FROM period_person_total f "
@@ -150,6 +185,14 @@ public class PeriodRepository {
         jdbc.update("DELETE FROM period_person_total WHERE person_id = ? AND " + ofSheet + " AND period_id IN "
                 + "(SELECT t.period_id FROM period_person_total t WHERE t.person_id = ?)", fromId, sheetId, intoId);
         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE person_id = ? AND " + ofSheet,
+                intoId, fromId, sheetId);
+        jdbc.update("UPDATE period_opening t SET amount = amount + (SELECT f.amount FROM period_opening f "
+                + "WHERE f.period_id = t.period_id AND f.person_id = ?) WHERE t.person_id = ? AND t." + ofSheet
+                + " AND t.period_id IN (SELECT f.period_id FROM period_opening f WHERE f.person_id = ?)",
+                fromId, intoId, sheetId, fromId);
+        jdbc.update("DELETE FROM period_opening WHERE person_id = ? AND " + ofSheet + " AND period_id IN "
+                + "(SELECT t.period_id FROM period_opening t WHERE t.person_id = ?)", fromId, sheetId, intoId);
+        jdbc.update("UPDATE period_opening SET person_id = ? WHERE person_id = ? AND " + ofSheet,
                 intoId, fromId, sheetId);
     }
 }

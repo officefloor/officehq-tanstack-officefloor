@@ -8,6 +8,7 @@ import { fiscalYearOf, useFiscalStartMonth, useFloor, useLate } from '../setting
 import { useSheetToday } from '../sheet/api';
 import { addPeriod, closePeriod, generateFiscalYear, generatePeriods, listPeriods, periodDueTotal, periodsKey, reopenPeriod, softClosePeriod, type PeriodInput } from './api';
 import { Fig } from '../session/Fig';
+import { ImportOpenings } from './ImportOpenings';
 
 type PeriodAction = 'close' | 'soft-close' | 'reopen';
 
@@ -156,6 +157,7 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
           Generate fiscal year
         </button>
       </form>
+      <ImportOpenings sheetId={sheetId} user={user} />
       <table>
         <tbody>
           {(periods.data ?? []).map((p) => (
