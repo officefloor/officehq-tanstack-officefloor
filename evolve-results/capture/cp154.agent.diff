@@ -1,0 +1,99 @@
+diff --git a/src/main/frontend/features/periods/api.ts b/src/main/frontend/features/periods/api.ts
+index 753a2ba0d..8da16cd2b 100644
+--- a/src/main/frontend/features/periods/api.ts
++++ b/src/main/frontend/features/periods/api.ts
+@@ -1,5 +1,5 @@
+ import { getJson, postJson } from '../../api/http';
+-import { liveClaims, type Claim, type ClaimStatus } from '../claims/api';
++import { counts, liveClaims, type Claim, type ClaimStatus } from '../claims/api';
+ import { gradeOn, type Person } from '../people/api';
+ import { claimDue, sumDues, type Late, type Rate } from '../rates/api';
+ import type { DatedOn } from '../settings/api';
+@@ -112,3 +112,17 @@ export function periodDueTotal(p: Period, claims: Claim[], people: Person[] | un
+   floor: DatedOn, late: Late): string {
+   return sumDues((people ?? []).map((q) => personPeriodDue(p, q, claims, people, rates, floor, late)));
+ }
++
++/** A period's classic due-total: once closed or soft-closed, the one fixed when it was closed; else the due as
++ *  shown now of everyone's claims due by a day in it whose status now is OPEN, PENDING or SETTLED, less those the
++ *  live rules leave out (see `liveClaims`), n/a ones skipped. */
++export function classicPeriodDueTotal(p: Period, claims: Claim[], people: Person[] | undefined, rates: Rate[] | undefined,
++  floor: DatedOn, late: Late): string {
++  if (p.closed || p.soft) return sumDues((people ?? []).map((q) => p.personTotals[String(q.id)] ?? '0.00'));
++  const byId = new Map((people ?? []).map((q) => [q.id, q]));
++  return sumDues(liveClaims(claims, people).filter(counts).filter((c) => p.from <= c.dueBy && c.dueBy <= p.to)
++    .map((c) => {
++      const person = byId.get(c.personId);
++      return person ? claimDue(c, rates, (d) => gradeOn(person, d), floor, late) : null;
++    }));
++}
+diff --git a/src/main/frontend/features/summary/Classic.tsx b/src/main/frontend/features/summary/Classic.tsx
+new file mode 100644
+index 000000000..acaf2ee1e
+--- /dev/null
++++ b/src/main/frontend/features/summary/Classic.tsx
+@@ -0,0 +1,48 @@
++import { useQuery } from '@tanstack/react-query';
++import { claimsKey, listClaims, liveClaims } from '../claims/api';
++import { gradeOn, listPeople, peopleKey } from '../people/api';
++import { classicPeriodDueTotal, listPeriods, periodsKey } from '../periods/api';
++import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
++import { useCap, useFloor, useLate } from '../settings/api';
++import { useSheetToday } from '../sheet/api';
++
++/** The classic summary, shown beside the summary: per period by from-date, its due-total counting each claim by
++ *  its status now (see `classicPeriodDueTotal`); and the sheet's due-total, everyone's due-total added up with
++ *  no trimming. */
++export function Classic({ sheetId, user }: { sheetId: string; user: string }) {
++  const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
++  const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
++  const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
++  const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
++  const floor = useFloor(sheetId);
++  const today = useSheetToday(sheetId, user);
++  const cap = useCap(sheetId, today);
++  const charges = useLate(sheetId, today);
++  const byGrade = rateByGrade(rates.data, today);
++  const all = claims.data ?? [];
++  const live = liveClaims(all, people.data);
++  const dueTotal = sumDues((people.data ?? []).map((p) =>
++    personDue(live.filter((c) => c.personId === p.id), rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap)));
++  const byStart = [...(periods.data ?? [])].sort((a, b) => a.from.localeCompare(b.from));
++
++  return (
++    <section>
++      <h3>Classic summary</h3>
++      <table>
++        <tbody>
++          {byStart.map((p) => (
++            <tr key={p.name}>
++              <td>Period {p.name}</td>
++              <td>Due <span data-testid={`classic-period-${p.name}-due-total`}>
++                {classicPeriodDueTotal(p, all, people.data, rates.data, floor, charges)}</span></td>
++            </tr>
++          ))}
++          <tr>
++            <td>Sheet</td>
++            <td>Due <span data-testid="classic-due-total">{dueTotal}</span></td>
++          </tr>
++        </tbody>
++      </table>
++    </section>
++  );
++}
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 3411dcd7a..7dfb439b4 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -1,4 +1,5 @@
+ import { SheetBody } from '../../slots/defs/sheetBody';
++import { Classic } from './Classic';
+ import { Consolidated } from './Consolidated';
+ import { Header } from './Header';
+ import { Summary } from './Summary';
+@@ -9,4 +10,5 @@ export const contributions = [
+   SheetBody.fill({ order: -99, Component: Consolidated }),
+   SheetBody.fill({ order: -98, Component: TreeSearch }),
+   SheetBody.fill({ order: 27, Component: Summary }),
++  SheetBody.fill({ order: 28, Component: Classic }),
+ ];
