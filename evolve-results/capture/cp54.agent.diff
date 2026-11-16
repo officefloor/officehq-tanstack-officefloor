@@ -1,0 +1,418 @@
+diff --git a/src/main/frontend/features/hold/hold.slot.tsx b/src/main/frontend/features/hold/hold.slot.tsx
+index 28ee8947d..bce74763a 100644
+--- a/src/main/frontend/features/hold/hold.slot.tsx
++++ b/src/main/frontend/features/hold/hold.slot.tsx
+@@ -4,6 +4,7 @@ import { postJson } from '../../api/http';
+ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { peopleKey, type Person } from '../people/people';
++import { usePersonRowAction } from '../people/rowAction';
+ 
+ function HoldHead() {
+   return (
+@@ -22,6 +23,7 @@ function PersonHold({ sheetId, user, person }: { sheetId: string; user: string;
+   const [from, setFrom] = useState('');
+   const [to, setTo] = useState('');
+   const submit = useSubmitOnce();
++  const rowAction = usePersonRowAction(sheetId, person.id, 'hold');
+   const hold = useMutation({
+     mutationFn: (dates: { from: string; to: string }) =>
+       postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/hold`, { ...dates, by: user }),
+@@ -66,13 +68,14 @@ function PersonHold({ sheetId, user, person }: { sheetId: string; user: string;
+           disabled={hold.isPending}
+           onClick={() => {
+             if (!submit.begin()) return;
++            rowAction.take();
+             hold.reset();
+             hold.mutate({ from: from.trim(), to: to.trim() });
+           }}
+         >
+           Hold
+         </button>
+-        {hold.isError && <span data-testid="person-error"> Could not hold this person.</span>}
++        {hold.isError && rowAction.isLatest && <span data-testid="person-error"> Could not hold this person.</span>}
+       </td>
+     </>
+   );
+diff --git a/src/main/frontend/features/people/rowAction.ts b/src/main/frontend/features/people/rowAction.ts
+new file mode 100644
+index 000000000..3fe60df17
+--- /dev/null
++++ b/src/main/frontend/features/people/rowAction.ts
+@@ -0,0 +1,22 @@
++import { useCallback, useSyncExternalStore } from 'react';
++
++// The action last taken on each person's row (by sheet and person id). A row shows one error at a time: an action's
++// error shows only while it is the latest action taken on that row, so taking the next action clears the last error.
++const latest = new Map<string, string>();
++const listeners = new Set<() => void>();
++
++function subscribe(listener: () => void) {
++  listeners.add(listener);
++  return () => listeners.delete(listener);
++}
++
++/** Marks `action` as the latest taken on the person's row (call when it is taken), and whether it still is. */
++export function usePersonRowAction(sheetId: string, personId: number, action: string) {
++  const key = `${sheetId}\u0000${personId}`;
++  const current = useSyncExternalStore(subscribe, () => latest.get(key));
++  const take = useCallback(() => {
++    latest.set(key, action);
++    listeners.forEach((l) => l());
++  }, [key, action]);
++  return { take, isLatest: current === undefined || current === action };
++}
+diff --git a/src/main/frontend/features/retire/retire.slot.tsx b/src/main/frontend/features/retire/retire.slot.tsx
+index 0efbbe57e..90863c231 100644
+--- a/src/main/frontend/features/retire/retire.slot.tsx
++++ b/src/main/frontend/features/retire/retire.slot.tsx
+@@ -4,6 +4,7 @@ import { postJson } from '../../api/http';
+ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { peopleKey, type Person } from '../people/people';
++import { usePersonRowAction } from '../people/rowAction';
+ 
+ function RetireHead() {
+   return (
+@@ -22,6 +23,7 @@ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string
+   const queryClient = useQueryClient();
+   const [from, setFrom] = useState('');
+   const submit = useSubmitOnce();
++  const rowAction = usePersonRowAction(sheetId, person.id, 'retire');
+   const retire = useMutation({
+     mutationFn: (date: string) =>
+       postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/retire`, { from: date, by: user }),
+@@ -52,13 +54,14 @@ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string
+           disabled={retire.isPending}
+           onClick={() => {
+             if (!submit.begin()) return;
++            rowAction.take();
+             retire.reset();
+             retire.mutate(from.trim());
+           }}
+         >
+           Retire
+         </button>
+-        {retire.isError && <span data-testid="person-error"> Could not retire this person.</span>}
++        {retire.isError && rowAction.isLatest && <span data-testid="person-error"> Could not retire this person.</span>}
+       </td>
+     </>
+   );
+diff --git a/src/main/frontend/features/roles/roles.slot.tsx b/src/main/frontend/features/roles/roles.slot.tsx
+index e23a33d68..e215e40b5 100644
+--- a/src/main/frontend/features/roles/roles.slot.tsx
++++ b/src/main/frontend/features/roles/roles.slot.tsx
+@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { SheetPage } from '../../slots/defs/sheetPage';
+ import { rolesKey, useRoles, type Role } from './roles';
+ 
+-/** The sheet's roles: the form that gives a user name a role (clerk or steward), and every role given. */
++/** The sheet's roles: the form that gives a user name a role (clerk, steward or viewer — a viewer sees everything and changes nothing), and every role given. */
+ function Roles({ sheetId, user }: { sheetId: string; user: string }) {
+   const roles = useRoles(sheetId);
+   const queryClient = useQueryClient();
+@@ -64,13 +64,14 @@ function Roles({ sheetId, user }: { sheetId: string; user: string }) {
+           <datalist id="role-choices">
+             <option value="clerk" />
+             <option value="steward" />
++            <option value="viewer" />
+           </datalist>
+         </label>{' '}
+         <button type="submit" data-testid="role-form-submit" disabled={save.isPending}>
+           Set role
+         </button>
+         {save.isError && (
+-          <span data-testid="role-form-error">The user name must not be blank and the role must be clerk or steward.</span>
++          <span data-testid="role-form-error">The user name must not be blank and the role must be clerk, steward or viewer.</span>
+         )}
+       </form>
+       {roles.isError && <p data-testid="roles-load-error">Could not load roles.</p>}
+diff --git a/src/main/frontend/features/roles/roles.ts b/src/main/frontend/features/roles/roles.ts
+index e6ddc53b7..a225878c0 100644
+--- a/src/main/frontend/features/roles/roles.ts
++++ b/src/main/frontend/features/roles/roles.ts
+@@ -1,7 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+-/** The role a user name has on the sheet: clerk (any name not given one) or steward. */
++/** The role a user name has on the sheet: clerk (any name not given one), steward or viewer (sees everything, changes nothing). */
+ export type Role = { sheetId: string; user: string; role: string };
+ 
+ export const rolesKey = (sheetId: string) => ['sheet', sheetId, 'roles'];
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index 724e7b908..be7941c40 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
+ import type { Person } from '../people/people';
++import { usePersonRowAction } from '../people/rowAction';
+ import { claimsKey } from '../claims/claims';
+ import { statementsKey, useStatements } from './statements';
+ 
+@@ -22,6 +23,7 @@ function PersonStatements({ sheetId, user, person }: { sheetId: string; user: st
+   const statements = useStatements(sheetId);
+   const queryClient = useQueryClient();
+   const mine = statements.data?.find((s) => s.personId === person.id);
++  const rowAction = usePersonRowAction(sheetId, person.id, 'statement');
+   const take = useMutation({
+     mutationFn: () =>
+       postJson(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/statements`, { by: user }),
+@@ -43,13 +45,14 @@ function PersonStatements({ sheetId, user, person }: { sheetId: string; user: st
+           data-testid="person-statement"
+           disabled={take.isPending}
+           onClick={() => {
++            rowAction.take();
+             take.reset();
+             take.mutate();
+           }}
+         >
+           Statement
+         </button>
+-        {take.isError && <span data-testid="person-error"> Could not take a statement for this person.</span>}
++        {take.isError && rowAction.isLatest && <span data-testid="person-error"> Could not take a statement for this person.</span>}
+       </td>
+     </>
+   );
+diff --git a/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java b/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java
+index fe9618149..ef9958744 100644
+--- a/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java
++++ b/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java
+@@ -1,6 +1,6 @@
+ package net.officefloor.hq.app.role;
+ 
+-/** A role that cannot be given: a blank user name, or a role other than clerk or steward. */
++/** A role that cannot be given: a blank user name, or a role other than clerk, steward or viewer. */
+ public class InvalidRoleException extends Exception {
+     public InvalidRoleException(String message) {
+         super(message);
+diff --git a/src/main/java/net/officefloor/hq/app/role/Role.java b/src/main/java/net/officefloor/hq/app/role/Role.java
+index bc50378b0..5ef882bb8 100644
+--- a/src/main/java/net/officefloor/hq/app/role/Role.java
++++ b/src/main/java/net/officefloor/hq/app/role/Role.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.role;
+ 
+-/** The role a user name has on a sheet: clerk or steward. */
++/** The role a user name has on a sheet: clerk, steward or viewer. */
+ public record Role(String sheetId, String user, String role) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/RoleRepository.java b/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
+index 37c256a63..f490df8b2 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
++++ b/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
+@@ -6,12 +6,13 @@ import java.util.List;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+-/** The stored roles, one per user name per sheet. A name with no row is a clerk. */
++/** The stored roles (clerk, steward or viewer), one per user name per sheet. A name with no row is a clerk. */
+ @Repository
+ public class RoleRepository {
+ 
+     public static final String CLERK = "clerk";
+     public static final String STEWARD = "steward";
++    public static final String VIEWER = "viewer";
+ 
+     private final JdbcTemplate jdbc;
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/role/RoleRequest.java b/src/main/java/net/officefloor/hq/app/role/RoleRequest.java
+index d9bad78a7..8e9d42a76 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RoleRequest.java
++++ b/src/main/java/net/officefloor/hq/app/role/RoleRequest.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.role;
+ 
+-/** Body of giving a user a role: the role (clerk or steward), and who gives it. */
++/** Body of giving a user a role: the role (clerk, steward or viewer), and who gives it. */
+ public record RoleRequest(String role, String by) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+index a2d38ce99..1157bd933 100644
+--- a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
++++ b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+@@ -5,9 +5,9 @@ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** Reads the body: the user name is not blank, the role clerk or steward. */
++/** Reads the body: the user name is not blank, the role clerk, steward or viewer. */
+ public class ValidateRole {
+-    private static final Set<String> ROLES = Set.of(RoleRepository.CLERK, RoleRepository.STEWARD);
++    private static final Set<String> ROLES = Set.of(RoleRepository.CLERK, RoleRepository.STEWARD, RoleRepository.VIEWER);
+ 
+     public void validate(@PathVariable("user") String user, @RequestBody RoleRequest request, Out<RoleValues> values)
+             throws InvalidRoleException {
+@@ -17,7 +17,7 @@ public class ValidateRole {
+         }
+         String role = request == null || request.role() == null ? "" : request.role().trim();
+         if (!ROLES.contains(role)) {
+-            throw new InvalidRoleException("The role must be clerk or steward");
++            throw new InvalidRoleException("The role must be clerk, steward or viewer");
+         }
+         values.set(new RoleValues(u, role, request.by() == null ? "" : request.by().trim()));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/role/ViewerGuard.java b/src/main/java/net/officefloor/hq/app/role/ViewerGuard.java
+new file mode 100644
+index 000000000..3847ee761
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/role/ViewerGuard.java
+@@ -0,0 +1,156 @@
++package net.officefloor.hq.app.role;
++
++import com.fasterxml.jackson.databind.JsonNode;
++import com.fasterxml.jackson.databind.ObjectMapper;
++import jakarta.servlet.FilterChain;
++import jakarta.servlet.ReadListener;
++import jakarta.servlet.ServletException;
++import jakarta.servlet.ServletInputStream;
++import jakarta.servlet.http.HttpServletRequest;
++import jakarta.servlet.http.HttpServletRequestWrapper;
++import jakarta.servlet.http.HttpServletResponse;
++import java.io.BufferedReader;
++import java.io.ByteArrayInputStream;
++import java.io.IOException;
++import java.io.InputStreamReader;
++import java.net.URLDecoder;
++import java.nio.charset.StandardCharsets;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++import org.springframework.boot.web.servlet.FilterRegistrationBean;
++import org.springframework.context.annotation.Bean;
++import org.springframework.context.annotation.Configuration;
++import org.springframework.core.Ordered;
++import org.springframework.web.filter.OncePerRequestFilter;
++
++/**
++ * A viewer changes nothing: every change to a sheet (any non-GET request under {@code /api/sheets/<id>/}) made
++ * by a user whose role on that sheet is viewer is refused (403) before it reaches its endpoint, so nothing is
++ * stored and nothing audited. A bulk action instead goes through with nothing done: 0 done, every selected claim
++ * refused.
++ */
++@Configuration
++public class ViewerGuard {
++
++    private static final Pattern SHEET_PATH = Pattern.compile("^/api/sheets/([^/]+)(/.*)?$");
++    private static final ObjectMapper JSON = new ObjectMapper();
++
++    @Bean
++    public FilterRegistrationBean<OncePerRequestFilter> viewerGuardFilter(RoleRepository roles) {
++        FilterRegistrationBean<OncePerRequestFilter> registration = new FilterRegistrationBean<>(new Filter(roles));
++        registration.addUrlPatterns("/api/*");
++        registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
++        return registration;
++    }
++
++    private static final class Filter extends OncePerRequestFilter {
++        private final RoleRepository roles;
++
++        Filter(RoleRepository roles) {
++            this.roles = roles;
++        }
++
++        @Override
++        protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
++                throws ServletException, IOException {
++            String method = request.getMethod();
++            Matcher m = SHEET_PATH.matcher(request.getRequestURI());
++            if ("GET".equals(method) || "HEAD".equals(method) || "OPTIONS".equals(method) || !m.matches()) {
++                chain.doFilter(request, response);
++                return;
++            }
++            String sheetId = URLDecoder.decode(m.group(1), StandardCharsets.UTF_8).trim();
++            String rest = m.group(2) == null ? "" : m.group(2);
++            byte[] body = request.getInputStream().readAllBytes();
++            JsonNode json = parse(body);
++            String by = json != null && json.hasNonNull("by") ? json.get("by").asText().trim() : "";
++            if (!RoleRepository.VIEWER.equals(roles.roleOf(sheetId, by))) {
++                chain.doFilter(new Replay(request, body), response);
++                return;
++            }
++            if (rest.equals("/bulk-open") || rest.equals("/bulk-settle")) {
++                int selected = json != null && json.get("claimIds") != null && json.get("claimIds").isArray()
++                        ? json.get("claimIds").size()
++                        : 0;
++                String done = rest.equals("/bulk-open") ? "opened" : "settled";
++                response.setStatus(HttpServletResponse.SC_OK);
++                response.setContentType("application/json");
++                response.setCharacterEncoding("UTF-8");
++                response.getWriter().write("{\"" + done + "\":0,\"refused\":" + selected + "}");
++                return;
++            }
++            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
++            response.setContentType("text/plain");
++            response.getWriter().write("A viewer cannot change the sheet");
++        }
++
++        private static JsonNode parse(byte[] body) {
++            if (body.length == 0) {
++                return null;
++            }
++            try {
++                JsonNode node = JSON.readTree(body);
++                return node != null && node.isObject() ? node : null;
++            } catch (IOException e) {
++                return null;
++            }
++        }
++    }
++
++    /** The request with its body, already read, readable again by the endpoint. */
++    private static final class Replay extends HttpServletRequestWrapper {
++        private final byte[] body;
++
++        Replay(HttpServletRequest request, byte[] body) {
++            super(request);
++            this.body = body;
++        }
++
++        @Override
++        public ServletInputStream getInputStream() {
++            ByteArrayInputStream in = new ByteArrayInputStream(body);
++            return new ServletInputStream() {
++                @Override
++                public int read() {
++                    return in.read();
++                }
++
++                @Override
++                public int read(byte[] b, int off, int len) {
++                    return in.read(b, off, len);
++                }
++
++                @Override
++                public boolean isFinished() {
++                    return in.available() == 0;
++                }
++
++                @Override
++                public boolean isReady() {
++                    return true;
++                }
++
++                @Override
++                public void setReadListener(ReadListener listener) {
++                    throw new UnsupportedOperationException();
++                }
++            };
++        }
++
++        @Override
++        public BufferedReader getReader() {
++            String encoding = getCharacterEncoding() == null ? "UTF-8" : getCharacterEncoding();
++            return new BufferedReader(new InputStreamReader(getInputStream(), java.nio.charset.Charset.forName(encoding)));
++        }
++
++        @Override
++        public int getContentLength() {
++            return body.length;
++        }
++
++        @Override
++        public long getContentLengthLong() {
++            return body.length;
++        }
++    }
++}
