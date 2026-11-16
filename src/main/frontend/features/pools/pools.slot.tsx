@@ -7,9 +7,10 @@ import { usePeople } from '../people/people';
 import { poolsKey, usePools, type Pool, type PoolMember } from './pools';
 
 /** One pool: its total share and whether it is balanced, each member's line with their share, and the picker that adds
- *  a person with a share. A person already in the pool, or a share not more than 0.00 and at most 100.00 with two
+ *  a person, or another pool (pool:<name>), with a share. A pool already a member of a pool, one that would contain
+ *  itself through any chain, or a chain of pools more than three deep is refused too. A person already in the pool, or a share not more than 0.00 and at most 100.00 with two
  *  decimals, is refused with the pool's error. */
-function PoolRow({ sheetId, user, pool }: { sheetId: string; user: string; pool: Pool }) {
+function PoolRow({ sheetId, user, pool, pools }: { sheetId: string; user: string; pool: Pool; pools: Pool[] }) {
   const people = usePeople(sheetId);
   const queryClient = useQueryClient();
   const [chosen, setChosen] = useState('');
@@ -17,7 +18,7 @@ function PoolRow({ sheetId, user, pool }: { sheetId: string; user: string; pool:
 
   const submit = useSubmitOnce();
   const add = useMutation({
-    mutationFn: (m: { personId: number; share: string }) =>
+    mutationFn: (m: { personId: number | null; memberPool: string | null; share: string }) =>
       postJson<PoolMember>(`/api/sheets/${encodeURIComponent(sheetId)}/pools/members`, { pool: pool.name, ...m, by: user }),
     onSuccess: async () => {
       setChosen('');
@@ -33,8 +34,11 @@ function PoolRow({ sheetId, user, pool }: { sheetId: string; user: string; pool:
       <span data-testid="pool-balanced">{pool.balanced ? 'yes' : 'no'}</span>
       <ul>
         {pool.members.map((m) => (
-          <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
-            {m.name}: <span data-testid="pool-share">{m.share.toFixed(2)}</span>, cut{' '}
+          <li
+            key={m.pool === null ? m.personId : `pool-${m.pool}`}
+            data-testid={m.pool === null ? `pool-member-${pool.name}-${m.personId}` : `pool-member-${pool.name}-pool-${m.pool}`}
+          >
+            {m.pool === null ? m.name : `pool:${m.pool}`}: <span data-testid="pool-share">{m.share.toFixed(2)}</span>, cut{' '}
             <span data-testid="pool-cut">{m.cut ?? ''}</span>
             {m.retired && ' (retired)'}
           </li>
@@ -54,6 +58,11 @@ function PoolRow({ sheetId, user, pool }: { sheetId: string; user: string; pool:
             {p.name}
           </option>
         ))}
+        {pools.map((p) => (
+          <option key={`pool:${p.name}`} value={`pool:${p.name}`}>
+            {`pool:${p.name}`}
+          </option>
+        ))}
       </select>{' '}
       <input
         data-testid="pool-member-share"
@@ -71,7 +80,9 @@ function PoolRow({ sheetId, user, pool }: { sheetId: string; user: string; pool:
         onClick={() => {
           if (!submit.begin()) return;
           add.reset();
-          add.mutate({ personId: Number(chosen), share }); // nothing chosen: no person 0, so the server refuses it
+          // nothing chosen: no person 0, so the server refuses it
+          if (chosen.startsWith('pool:')) add.mutate({ personId: null, memberPool: chosen.slice('pool:'.length), share });
+          else add.mutate({ personId: Number(chosen), memberPool: null, share });
         }}
       >
         Add member
@@ -125,7 +136,7 @@ function Pools({ sheetId, user }: { sheetId: string; user: string }) {
       {pools.isError && <p data-testid="pools-load-error">Could not load pools.</p>}
       <ul>
         {(pools.data ?? []).map((p) => (
-          <PoolRow key={p.name} sheetId={sheetId} user={user} pool={p} />
+          <PoolRow key={p.name} sheetId={sheetId} user={user} pool={p} pools={pools.data ?? []} />
         ))}
       </ul>
     </section>
