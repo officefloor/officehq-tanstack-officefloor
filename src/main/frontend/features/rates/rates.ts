@@ -5,8 +5,8 @@ import { lateSteps, roundsHalfUp, type Late } from '../overdue/late';
 import { gradeOn, type Person } from '../people/people';
 
 /** A grade's rate on the sheet: `rate` is a percent as text with two decimals (never a float), in force from
- *  `from` (yyyy-MM-dd; null: from the beginning of time). */
-export type Rate = { sheetId: string; grade: string; rate: string; from: string | null };
+ *  `from` (yyyy-MM-dd; null: from the beginning of time) through `to` (yyyy-MM-dd; null: no end). */
+export type Rate = { sheetId: string; grade: string; rate: string; from: string | null; to: string | null };
 
 export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'];
 
@@ -19,14 +19,15 @@ export function useRates(sheetId: string) {
 }
 
 /** The grade's rate in force on a date (yyyy-MM-dd): the one with the latest from-date on or before it, a rate
- *  with no from-date applying from the beginning of time; undefined when none applies. */
+ *  with no from-date applying from the beginning of time; undefined when none applies, or that rate's to-date is
+ *  before the date. */
 export function rateFor(rates: Rate[] | undefined, grade: string, on: string): string | undefined {
   let found: Rate | undefined;
   for (const r of rates ?? []) {
     if (r.grade !== grade || (r.from !== null && r.from > on)) continue;
     if (found === undefined || (found.from ?? '') < (r.from ?? '')) found = r;
   }
-  return found?.rate;
+  return found === undefined || (found.to !== null && found.to < on) ? undefined : found.rate;
 }
 
 /** A two-decimal number ("12.34") in hundredths, exactly. */

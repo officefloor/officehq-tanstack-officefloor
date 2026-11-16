@@ -12,7 +12,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class RateRepository {
 
-    private static final String COLUMNS = "sheet_id, grade, rate, from_date";
+    private static final String COLUMNS = "sheet_id, grade, rate, from_date, to_date";
 
     private final JdbcTemplate jdbc;
 
@@ -27,12 +27,15 @@ public class RateRepository {
     }
 
     /** The grade's rate in force on a date — the latest from-date on or before it, a rate with none applying
-     *  from the beginning of time — or null when no rate applies. */
+     *  from the beginning of time — or null when no rate applies, or that rate's to-date is before the date. */
     public Rate find(String sheetId, String grade, LocalDate on) {
         List<Rate> found = jdbc.query("SELECT " + COLUMNS + " FROM rate WHERE sheet_id = ? AND grade = ?"
                 + " AND (from_date IS NULL OR from_date <= ?) ORDER BY from_date DESC NULLS LAST LIMIT 1",
                 RateRepository::map, sheetId, grade, Date.valueOf(on));
-        return found.isEmpty() ? null : found.get(0);
+        if (found.isEmpty() || (found.get(0).to() != null && found.get(0).to().isBefore(on))) {
+            return null;
+        }
+        return found.get(0);
     }
 
     /** Stores the rate, replacing the one the grade had for the same from-date. */
@@ -40,14 +43,15 @@ public class RateRepository {
         Date from = rate.from() == null ? null : Date.valueOf(rate.from());
         jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
                 rate.sheetId(), rate.grade(), from);
-        jdbc.update("INSERT INTO rate (" + COLUMNS + ") VALUES (?, ?, ?, ?)",
-                rate.sheetId(), rate.grade(), rate.rate(), from);
+        jdbc.update("INSERT INTO rate (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?)",
+                rate.sheetId(), rate.grade(), rate.rate(), from, rate.to() == null ? null : Date.valueOf(rate.to()));
         return rate;
     }
 
     private static Rate map(ResultSet rs, int n) throws SQLException {
         Date from = rs.getDate("from_date");
+        Date to = rs.getDate("to_date");
         return new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("rate").setScale(2),
-                from == null ? null : from.toLocalDate());
+                from == null ? null : from.toLocalDate(), to == null ? null : to.toLocalDate());
     }
 }

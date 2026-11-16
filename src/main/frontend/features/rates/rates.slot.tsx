@@ -11,7 +11,7 @@ import { useSheetToday } from '../session/session';
 import { useFloor, useLate } from '../settings/settings';
 import { personDue, rateFor, ratesKey, useRates, type Rate } from './rates';
 
-/** The sheet's rates: the form that sets one (from an optional from-date), each grade's rate in force on the
+/** The sheet's rates: the form that sets one (from an optional from-date, through an optional to-date), each grade's rate in force on the
  *  sheet's today, and every rate set. */
 function Rates({ sheetId, user }: { sheetId: string; user: string }) {
   const rates = useRates(sheetId);
@@ -20,18 +20,21 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
   const [grade, setGrade] = useState<string>(GRADES[0]);
   const [pct, setPct] = useState('');
   const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
 
   const submit = useSubmitOnce();
   const save = useMutation({
-    mutationFn: (v: { grade: string; rate: string; from: string }) =>
+    mutationFn: (v: { grade: string; rate: string; from: string; to: string }) =>
       putJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates/${encodeURIComponent(v.grade)}`, {
         rate: v.rate,
         from: v.from,
+        to: v.to,
         by: user,
       }),
     onSuccess: () => {
       setPct('');
       setFrom('');
+      setTo('');
       void queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
     },
     onSettled: submit.end,
@@ -46,7 +49,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
           e.preventDefault();
           if (!submit.begin()) return;
           save.reset();
-          save.mutate({ grade, rate: pct, from });
+          save.mutate({ grade, rate: pct, from, to });
         }}
       >
         <label>
@@ -90,11 +93,23 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          To{' '}
+          <input
+            type="date"
+            data-testid="rate-form-to"
+            value={to}
+            onChange={(e) => {
+              setTo(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
         {save.isError && (
-          <span data-testid="rate-form-error">The rate must be a percent 0.00 or more, with up to two decimals, and the from-date a date.</span>
+          <span data-testid="rate-form-error">The rate must be a percent 0.00 or more, with up to two decimals; the from- and to-dates must be dates, the to-date not before the from-date.</span>
         )}
       </form>
       {rates.isError && <p data-testid="rates-load-error">Could not load rates.</p>}
@@ -115,6 +130,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
               <td>{r.grade}</td>
               <td data-testid="rate-pct">{r.rate}</td>
               <td data-testid="rate-from">{r.from ?? ''}</td>
+              <td data-testid="rate-to">{r.to ?? ''}</td>
             </tr>
           ))}
         </tbody>
