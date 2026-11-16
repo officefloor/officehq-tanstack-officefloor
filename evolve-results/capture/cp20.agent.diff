@@ -1,0 +1,194 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index f9968f240..c67d0fb00 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -25,7 +25,7 @@ type Action = 'open' | 'settle' | 'void';
+ 
+ /** One claim: its values, status, due and the period its date falls in, with the buttons that edit it or change its status. An action
+  *  the status does not allow, or settling a claim the user opened, is refused by the server and shows the claim's
+- *  error. */
++ *  error. Only a DRAFT can be edited: Edit on any other claim shows the claim's error instead of opening the editor. */
+ function ClaimRow({
+   sheetId,
+   user,
+@@ -50,7 +50,9 @@ function ClaimRow({
+       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/status`, { action, by: user }),
+     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+   });
++  const [editRefused, setEditRefused] = useState(false);
+   const act = (action: Action) => {
++    setEditRefused(false);
+     status.reset();
+     status.mutate(action);
+   };
+@@ -70,6 +72,11 @@ function ClaimRow({
+         data-testid="claim-edit"
+         onClick={() => {
+           status.reset();
++          if (c.status !== 'DRAFT') {
++            setEditRefused(true);
++            return;
++          }
++          setEditRefused(false);
+           onEdit();
+         }}
+       >
+@@ -89,6 +96,9 @@ function ClaimRow({
+       <button type="button" data-testid="claim-void" disabled={status.isPending} onClick={() => act('void')}>
+         Void
+       </button>
++      {editRefused && (
++        <span data-testid="claim-error"> Only a draft claim can be edited; void it and add a new one instead.</span>
++      )}
+       {status.isError && (
+         <span data-testid="claim-error">
+           {' '}
+@@ -170,7 +180,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
+           </button>
+           {save.isError && (
+             <span data-testid="claim-form-error">
+-              The amount must be 0.00 or more, with up to two decimals, and the date not inside a closed period.
++              The amount must be 0.00 or more, with up to two decimals, the date not inside a closed period, and only a draft claim can be edited.
+             </span>
+           )}
+         </form>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index 4cbd5e617..d0b555026 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -6,10 +6,14 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Applies the edited values; a claim dated inside a closed period, or moved into one, is refused. */
++/** Applies the edited values; only a DRAFT claim can be edited (an open claim is voided and a new one added instead),
++ * and a claim dated inside a closed period, or moved into one, is refused. */
+ public class ApplyClaim {
+     public void apply(@Val Claim claim, @Val ClaimValues values, SheetRepository sheets, PeriodRepository periods,
+             Out<Claim> changed) throws InvalidClaimException {
++        if (claim.status() != ClaimStatus.DRAFT) {
++            throw new InvalidClaimException("Only a DRAFT claim can be edited");
++        }
+         LocalDate date = values.date() != null ? values.date() : sheets.today(claim.sheetId());
+         if (periods.closedOn(claim.sheetId(), claim.date()) || periods.closedOn(claim.sheetId(), date)) {
+             throw new InvalidClaimException("The claim's date is inside a closed period");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index b89433dee..e54671b52 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -9,8 +9,8 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+- * Moves the claim to its new status: DRAFT to OPEN, OPEN to SETTLED, DRAFT or OPEN to VOID. Voiding clears the
+- * claim's number; the number it had is kept for the audit line. Settling fixes the claim's due: its amount at its
++ * Moves the claim to its new status: DRAFT to OPEN, OPEN to SETTLED, DRAFT or OPEN to VOID. A voided claim keeps
++ * its number (never given again). Settling fixes the claim's due: its amount at its
+  * person's grade's rate in force on the claim's date, rounded half to even to two decimals (left live when no rate applies),
+  * or the figure a statement bound it to.
+  * Opening records who opened the claim; that user cannot settle it (four eyes). A claim dated inside a closed
+@@ -36,7 +36,7 @@ public class ApplyClaimStatus {
+         }
+         number.set(new ClaimNumber(claim.number()));
+         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
+-                claim.note(), change.to(), change.to() == ClaimStatus.VOID ? null : claim.number(),
++                claim.note(), change.to(), claim.number(),
+                 change.to() == ClaimStatus.SETTLED ? due(claim, people, rates) : claim.due(),
+                 change.to() == ClaimStatus.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue()));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 1c6c8d5e0..24cd55f0d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -5,7 +5,7 @@ import java.time.LocalDate;
+ 
+ /**
+  * A claim of a person on a sheet: an amount (0.00 or more, two decimals), a date, a note (may be empty), its status
+- * its number (given when opened; null for a draft or a voided claim) and its due fixed when settled (null when not
++ * its number (given when opened; kept when voided; null for a draft) and its due fixed when settled (null when not
+  * settled, or settled while its grade had no rate), who opened it (null when never opened),
+  * whether it is bound to the figure it had at its person's last statement ({@code stated}) and that figure
+  * ({@code statedDue}; null when it had none).
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java
+index c039ca073..516aa6b1a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** The number a status change's audit line carries: the claim's number, or for a voided claim the one it had. */
++/** The number a status change's audit line carries: the claim's number (a voided claim keeps it). */
+ public record ClaimNumber(Long value) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 34d11def8..4533036c0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -55,9 +55,11 @@ public class ClaimRepository {
+         return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null);
+     }
+ 
+-    public void update(Claim claim) {
+-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE sheet_id = ? AND id = ?",
+-                claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.sheetId(), claim.id());
++    /** Stores the claim's values, but only while it is still a DRAFT; false when it no longer is (nothing is written). */
++    public boolean update(Claim claim) {
++        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE sheet_id = ? AND id = ? AND status = ?",
++                claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.sheetId(), claim.id(),
++                ClaimStatus.DRAFT.name()) == 1;
+     }
+ 
+     /**
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
+index 99df240a2..f862ea3cc 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
+@@ -8,7 +8,7 @@ import net.officefloor.hq.app.rollup.RollupBefore;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Writes CLAIM_OPENED, CLAIM_SETTLED or CLAIM_VOIDED to the audit file once the status is stored, ending
+- * with number=<number> when the claim has (or, voided, had) one; CLAIM_SETTLED then ends with the due it fixed
++ * with number=<number> when the claim has one; CLAIM_SETTLED then ends with the due it fixed
+  * (due=n/a when its grade had no rate). Then writes the
+  * figures the change moved (see Rollup). */
+ public class RecordClaimStatusChanged {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+index 37e86918e..0d5e6a6e3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+@@ -3,7 +3,9 @@ package net.officefloor.hq.app.claim;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class SaveClaim {
+-    public void save(@Val Claim claim, ClaimRepository claims) {
+-        claims.update(claim);
++    public void save(@Val Claim claim, ClaimRepository claims) throws InvalidClaimException {
++        if (!claims.update(claim)) {
++            throw new InvalidClaimException("Only a DRAFT claim can be edited");
++        }
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index 626d2be60..85e0def1f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,5 +1,5 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId} — edit a claim's amount, date and note, validated as an
+-# add (a blank date takes the sheet's today). A claim dated, or moved, inside a closed period is a 400. Invalid values are a 400 and a claim not on the sheet a
++# add (a blank date takes the sheet's today). Only a DRAFT claim can be edited: any other is a 400. A claim dated, or moved, inside a closed period is a 400. Invalid values are a 400 and a claim not on the sheet a
+ # 404, neither writing anything. Responds with the claim as stored.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml
+index d71bc9002..1ffc8064c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml
+@@ -2,7 +2,7 @@
+ # (DRAFT to OPEN), settle (OPEN to SETTLED) or void (DRAFT or OPEN to VOID). An action the claim's
+ # status does not allow, a claim dated inside a closed period, settling by the user who opened the claim, or an unknown action, is a 409
+ # and a claim not on the sheet a 404, neither writing anything. Opening gives the claim the sheet's
+-# next number and records who opened it; voiding clears the number. Responds with the claim as
++# next number and records who opened it; a voided claim keeps its number. Responds with the claim as
+ # stored.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaimStatus
