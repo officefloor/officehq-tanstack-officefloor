@@ -8,7 +8,7 @@ import { useCap, useFloor, useLate } from '../settings/settings';
 // here so every place that shows one shows the same value.
 
 /** The statuses claims are counted by. */
-export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
+export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'];
 
 /** The sheet's due-total: everyone's due-total added up, skipping n/a, leaving out the single highest and lowest
  *  when three or more people have one. */

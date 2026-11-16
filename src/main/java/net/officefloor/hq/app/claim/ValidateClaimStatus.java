@@ -3,7 +3,7 @@ package net.officefloor.hq.app.claim;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Reads the body: the action is open, settle, approve, reject (which needs a reason), void (with the void reason
+/** Reads the body: the action is open, settle, approve, reject (which needs a reason), review, void (with the void reason
  *  chosen, if any), resettle, delete or restore. */
 public class ValidateClaimStatus {
     public void validate(@RequestBody ClaimStatusRequest request, Out<ClaimStatusChange> change)
@@ -16,12 +16,13 @@ public class ValidateClaimStatus {
             case "reject" -> ClaimAction.REJECT;
             case "void" -> ClaimAction.VOID;
             case "resettle" -> ClaimAction.RESETTLE;
+            case "review" -> ClaimAction.REVIEW;
             case "delete" -> ClaimAction.DELETE;
             case "restore" -> ClaimAction.RESTORE;
-            default -> throw new InvalidClaimStatusException("The action must be open, settle, approve, reject, void, resettle, delete or restore");
+            default -> throw new InvalidClaimStatusException("The action must be open, settle, approve, reject, void, resettle, delete, restore or review");
         };
         ClaimStatus to = switch (taken) {
-            case OPEN, REJECT -> ClaimStatus.OPEN;
+            case OPEN, REJECT, REVIEW -> ClaimStatus.OPEN;
             case SETTLE, APPROVE, RESETTLE -> ClaimStatus.SETTLED;
             case VOID -> ClaimStatus.VOID;
             case DELETE -> ClaimStatus.DELETED;

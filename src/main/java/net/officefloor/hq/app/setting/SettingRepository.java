@@ -31,6 +31,9 @@ public class SettingRepository {
     /** The due above which a claim cannot be opened while its note is empty; blank for none. */
     public static final String NOTE_THRESHOLD = "note-threshold";
 
+    /** The due above which an opened claim goes to REVIEW instead of OPEN; blank for none. */
+    public static final String REVIEW_THRESHOLD = "review-threshold";
+
     /** The least a claim's live due may be; 1.00 until set. */
     public static final String FLOOR = "floor";
 
@@ -173,6 +176,12 @@ public class SettingRepository {
     /** The sheet's note threshold in force on the date (a claim's date), or null when there is none. */
     public BigDecimal noteThreshold(String sheetId, LocalDate date) {
         String value = value(sheetId, NOTE_THRESHOLD, date);
+        return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The sheet's review threshold in force on the date (a claim's date), or null when there is none. */
+    public BigDecimal reviewThreshold(String sheetId, LocalDate date) {
+        String value = value(sheetId, REVIEW_THRESHOLD, date);
         return value == null ? null : new BigDecimal(value);
     }
 

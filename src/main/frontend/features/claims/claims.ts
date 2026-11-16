@@ -6,8 +6,9 @@ import { heldOn, retiredOn, type Person } from '../people/people';
 /** A claim's status: DRAFT when added, then OPEN and SETTLED; a clerk settling above the clerk limit makes it PENDING
  *  until a steward approves (SETTLED) or rejects (OPEN) it; a DRAFT, OPEN or PENDING claim may be VOID, as may a SETTLED one
  *  by a steward within 7 days of its settlement; a DRAFT may be DELETED (counting nowhere), and restored to DRAFT on the
- *  sheet-today it was deleted. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+ *  sheet-today it was deleted. Opening a claim whose due is above the review threshold on its date makes it REVIEW
+ *  (unnumbered, counting nowhere) until a steward reviews it (OPEN); it may only be voided otherwise. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED' | 'REVIEW';
 
 /** A claim of a person. `amount` is text with two decimals (never a float); `date` is yyyy-MM-dd; `number` (text: FY2026-1, FY2026-2, ... (older claims 1, 2, ...), or P1-1, X-1 when numbered per period) is given
  *  when the claim is opened (null for a draft or a voided claim); `due` is the due fixed when it was settled (null

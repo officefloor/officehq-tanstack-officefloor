@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  whole number of days 0 or more (not blank), kept without leading zeros, and so is terms-A, terms-B or terms-C (a
  *  grade's own terms); or grace-A, grace-B or grace-C (a grade's grace), its value blank (none) or a whole number of days 0 or
  *  more, kept without leading zeros; or grace-days, its value blank (off) or a whole number of days 0 or more (undated); or pot, or alert-threshold, its value blank (none; off) or an amount with up to two decimals, kept with two (undated); or fiscal-start-month, its value a whole month 1 to 12 (not blank), kept without leading zeros (undated); or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today); or
- *  period-numbering-from or entry-date, its value a date yyyy-MM-dd or blank (off); or cap, proof-threshold, proof-threshold-A, -B or -C (a grade's own) or note-threshold, its value blank (none) or
+ *  period-numbering-from or entry-date, its value a date yyyy-MM-dd or blank (off); or cap, proof-threshold, proof-threshold-A, -B or -C (a grade's own) or note-threshold or review-threshold, its value blank (none) or
  *  an amount like the clerk limit; or perm-open, perm-settle, perm-void, perm-reassign, perm-close or perm-reopen, its value
  *  blank (the standing rule) or roles (clerk, steward) separated by commas, kept without spaces or repeats; or rounding, its value blank (none) or half-up or half-even; or parent, its
  *  value blank (none) or the id of a sheet that exists (has been loaded), is not this sheet and does not have this sheet
@@ -53,11 +53,12 @@ public class ValidateSetting {
                 && GRADES.contains(k.substring(SettingRepository.PROOF_THRESHOLD_PREFIX.length()));
         proofThreshold = proofThreshold || gradeProofThreshold;
         boolean noteThreshold = SettingRepository.NOTE_THRESHOLD.equals(k);
+        boolean reviewThreshold = SettingRepository.REVIEW_THRESHOLD.equals(k);
         boolean parent = SettingRepository.PARENT.equals(k);
         boolean rounding = SettingRepository.ROUNDING.equals(k);
         boolean perm = k.startsWith(SettingRepository.PERM_PREFIX)
                 && SettingRepository.PERMISSIONS.containsKey(k.substring(SettingRepository.PERM_PREFIX.length()));
-        if (!parent && !rounding && !perm && !SettingRepository.CLERK_LIMIT.equals(k) && !cap && !proofThreshold && !noteThreshold && !floor && !terms && !grace && !latePct && !policyDate && !numberingFrom && !graceDays && !entryDate && !pot && !alertThreshold && !fiscalStart) {
+        if (!parent && !rounding && !perm && !SettingRepository.CLERK_LIMIT.equals(k) && !cap && !proofThreshold && !noteThreshold && !reviewThreshold && !floor && !terms && !grace && !latePct && !policyDate && !numberingFrom && !graceDays && !entryDate && !pot && !alertThreshold && !fiscalStart) {
             throw new InvalidSettingException("Unknown setting " + k);
         }
         String value = request == null || request.value() == null ? "" : request.value().trim();
@@ -184,6 +185,7 @@ public class ValidateSetting {
                     : cap ? "The cap must be an amount with up to two decimals, or blank"
                     : proofThreshold ? "The proof threshold must be an amount with up to two decimals, or blank"
                     : noteThreshold ? "The note threshold must be an amount with up to two decimals, or blank"
+                    : reviewThreshold ? "The review threshold must be an amount with up to two decimals, or blank"
                     : "The clerk limit must be an amount with up to two decimals, or blank");
         }
         values.set(new SettingValues(k, value.isEmpty() ? null : new BigDecimal(value).setScale(2).toPlainString(),

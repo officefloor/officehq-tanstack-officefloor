@@ -39,6 +39,9 @@ import net.officefloor.plugin.variable.Val;
  * it would have today as an OPEN claim bound by no statement (today's rates, grades, floor and late charge).
  * A DRAFT claim (not one whose due-by falls inside a closed period) is deleted (DELETED: it counts nowhere), and a DELETED
  * one restored (DRAFT again), but only on the sheet's today it was deleted (its status log's latest DELETED line).
+ * Opening a claim whose due is above the sheet's review threshold in force on its date (if it has one) makes it REVIEW
+ * instead, unnumbered, recording who opened it (see #needsReview); only a steward reviews it, making it OPEN (numbered
+ * then). A REVIEW claim may otherwise only be voided.
  */
 public class ApplyClaimStatus {
 
@@ -52,10 +55,12 @@ public class ApplyClaimStatus {
             case SETTLE -> claim.status() == ClaimStatus.OPEN;
             case APPROVE, REJECT -> claim.status() == ClaimStatus.PENDING;
             case VOID -> claim.status() == ClaimStatus.DRAFT || claim.status() == ClaimStatus.OPEN
-                    || claim.status() == ClaimStatus.PENDING || claim.status() == ClaimStatus.SETTLED;
+                    || claim.status() == ClaimStatus.PENDING || claim.status() == ClaimStatus.SETTLED
+                    || claim.status() == ClaimStatus.REVIEW;
             case RESETTLE -> claim.status() == ClaimStatus.SETTLED;
             case DELETE -> claim.status() == ClaimStatus.DRAFT;
             case RESTORE -> claim.status() == ClaimStatus.DELETED;
+            case REVIEW -> claim.status() == ClaimStatus.REVIEW;
         };
         if (!allowed) {
             throw new InvalidClaimStatusException("A " + claim.status() + " claim cannot be made " + change.to());
@@ -113,6 +118,9 @@ public class ApplyClaimStatus {
                         + VOID_SETTLED_DAYS + " days of its settlement");
             }
         }
+        if (change.action() == ClaimAction.REVIEW && !steward) {
+            throw new InvalidClaimStatusException("Only a steward reviews a claim");
+        }
         if (change.action() == ClaimAction.RESETTLE && !steward) {
             throw new InvalidClaimStatusException("Only a steward re-settles a claim");
         }
@@ -143,6 +151,9 @@ public class ApplyClaimStatus {
                 settledDue = null;
             }
         }
+        if (change.action() == ClaimAction.OPEN && needsReview(claim, people, rates, settings, late)) {
+            to = ClaimStatus.REVIEW;
+        }
         number.set(new ClaimNumber(claim.number()));
         previous.set(new PreviousDue(claim.due(), claim.status()));
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
@@ -158,6 +169,19 @@ public class ApplyClaimStatus {
             return false;
         }
         BigDecimal threshold = settings.noteThreshold(claim.sheetId(), claim.date());
+        if (threshold == null) {
+            return false;
+        }
+        BigDecimal due = late.add(claim, due(claim, people, rates, late.rounding()),
+                settings.floor(claim.sheetId(), claim.date()));
+        return due != null && due.compareTo(threshold) > 0;
+    }
+
+    /** Whether opening the claim takes it to REVIEW: its due (as needsNote works it out) is above the sheet's review
+     *  threshold in force on its date (none: never; a due of n/a: never). */
+    static boolean needsReview(Claim claim, PersonRepository people, RateRepository rates, SettingRepository settings,
+            LateCharge late) {
+        BigDecimal threshold = settings.reviewThreshold(claim.sheetId(), claim.date());
         if (threshold == null) {
             return false;
         }
