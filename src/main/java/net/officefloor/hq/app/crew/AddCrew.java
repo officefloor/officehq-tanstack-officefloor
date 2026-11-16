@@ -14,6 +14,9 @@ public class AddCrew {
         if (lead == null) {
             throw new InvalidCrewException("No such person on the sheet");
         }
+        if (crews.isPool(sheet, name)) {
+            throw new InvalidCrewException(name + " is already a pool");
+        }
         if (!crews.add(sheet, name, request.leadId())) {
             throw new InvalidCrewException(name + " is already a crew");
         }

@@ -88,7 +88,54 @@ public class PoolRepository {
             // a pool above is built first; the list keeps the order added
             inOrder.add(share(id, names, members, parents, pot, held, pools));
         }
+        inOrder.addAll(crews(sheetId, pot, held));
         return inOrder;
+    }
+
+    /** The sheet's crews as pools, after the stored pools, in the order added: each under its name, with the lead and then
+     *  the members (in the order added) at equal shares of 100.00 (in cents, the remainder on the lead), so always
+     *  balanced, and cut from the sheet's pot like any pool that is a member of none. */
+    private List<Pool> crews(String sheetId, BigDecimal pot, Set<Long> held) {
+        Map<Long, String> names = new LinkedHashMap<>();
+        Map<Long, List<Object[]>> people = new LinkedHashMap<>();
+        jdbc.query("SELECT c.id, c.name, c.lead_id, p.name AS lead, p.retired_from FROM crew c"
+                + " JOIN person p ON p.id = c.lead_id WHERE c.sheet_id = ? ORDER BY c.id",
+                rs -> {
+                    long id = rs.getLong("id");
+                    names.put(id, rs.getString("name"));
+                    people.computeIfAbsent(id, k -> new ArrayList<>()).add(new Object[] { rs.getLong("lead_id"),
+                            rs.getString("lead"), rs.getDate("retired_from") != null });
+                }, sheetId);
+        jdbc.query("SELECT m.crew_id, m.person_id, p.name, p.retired_from FROM crew_member m JOIN crew c ON c.id = m.crew_id"
+                + " JOIN person p ON p.id = m.person_id WHERE c.sheet_id = ? ORDER BY m.id",
+                rs -> {
+                    List<Object[]> in = people.get(rs.getLong("crew_id"));
+                    long personId = rs.getLong("person_id");
+                    if (in != null && in.stream().noneMatch(m -> m[0].equals(personId))) {
+                        in.add(new Object[] { personId, rs.getString("name"), rs.getDate("retired_from") != null });
+                    }
+                }, sheetId);
+        List<Pool> out = new ArrayList<>();
+        for (Map.Entry<Long, String> crew : names.entrySet()) {
+            List<Object[]> in = people.get(crew.getKey());
+            long each = 10000 / in.size();
+            long remainder = 10000 - each * in.size();
+            List<PoolMember> members = new ArrayList<>();
+            for (int i = 0; i < in.size(); i++) {
+                Object[] m = in.get(i);
+                BigDecimal share = BigDecimal.valueOf(i == 0 ? each + remainder : each, 2);
+                members.add(new PoolMember((Long) m[0], (String) m[1], null, share, (Boolean) m[2], null, null, null,
+                        true));
+            }
+            out.add(new Pool(crew.getValue(), pot != null ? cuts(members, pot, held) : members, HUNDRED, true));
+        }
+        return out;
+    }
+
+    /** Whether the sheet has a crew by that name (a pool cannot take a crew's name). */
+    public boolean isCrew(String sheetId, String name) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM crew WHERE sheet_id = ? AND name = ?", Integer.class, sheetId,
+                name) > 0;
     }
 
     /** The ids of the sheet's people with a hold whose dates include the day (the sheet's today). */

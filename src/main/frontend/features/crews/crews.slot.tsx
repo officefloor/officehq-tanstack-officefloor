@@ -5,6 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { usePeopleDue } from '../header/totals';
 import { usePeople } from '../people/people';
+import { poolsKey } from '../pools/pools';
 import { crewDueTotal, crewsKey, useCrews, type Crew, type CrewMember } from './crews';
 
 /** One crew: its lead, its due-total, each member's line, and the picker that adds a person. The lead, or a person
@@ -21,6 +22,7 @@ function CrewRow({ sheetId, user, crew, due }: { sheetId: string; user: string; 
     onSuccess: async () => {
       setChosen('');
       await queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) });
+      await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
     },
     onSettled: submit.end,
   });
@@ -87,6 +89,7 @@ function Crews({ sheetId, user }: { sheetId: string; user: string }) {
       setName('');
       setLead('');
       await queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) });
+      await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
     },
     onSettled: submit.end,
   });

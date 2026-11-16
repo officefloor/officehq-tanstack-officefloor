@@ -48,6 +48,12 @@ public class CrewRepository {
         }
     }
 
+    /** Whether the sheet has a pool by that name (a crew cannot take a pool's name). */
+    public boolean isPool(String sheetId, String name) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM pool WHERE sheet_id = ? AND name = ?", Integer.class, sheetId,
+                name) > 0;
+    }
+
     /** The id of the sheet's crew by that name, or null when there is none. */
     public Long idOf(String sheetId, String name) {
         List<Long> ids = jdbc.queryForList("SELECT id FROM crew WHERE sheet_id = ? AND name = ?", Long.class, sheetId,

@@ -27,7 +27,8 @@ export type Pool = { name: string; members: PoolMember[]; totalShare: number; ba
 /** Under the people's key, so every change to a person (a retirement above all) reloads the totals. */
 export const poolsKey = (sheetId: string) => [...peopleKey(sheetId), 'pools'];
 
-/** The sheet's pools, in the order added. */
+/** The sheet's pools, in the order added, then each crew as a pool under its name (its lead and members at equal
+ *  shares, the remainder on the lead). A pool and a crew never share a name. */
 export function usePools(sheetId: string) {
   return useQuery({
     queryKey: poolsKey(sheetId),
