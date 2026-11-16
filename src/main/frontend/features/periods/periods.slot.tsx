@@ -102,33 +102,46 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
 
 export const contribution = SheetPage.fill({ order: 7, Component: Periods });
 
-/** Closes a period: its due-total is fixed as it is now. Closing one already closed shows the period's error. */
+/** Closes a period: its due-total is fixed as it is now. Reopens a closed one (a steward only): its due-total is
+ *  live again. A refused action shows the period's error; the next action on the period clears it. */
 function PeriodClose({ sheetId, user, period }: { sheetId: string; user: string; period: Period }) {
   const queryClient = useQueryClient();
-  const close = useMutation({
-    mutationFn: () =>
-      postJson<Period>(
-        `/api/sheets/${encodeURIComponent(sheetId)}/periods/${period.id}/close`,
-        { by: user },
-      ),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
-    },
-  });
+  const act = (action: 'close' | 'reopen') =>
+    postJson<Period>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/${period.id}/${action}`, { by: user });
+  const onSuccess = () => {
+    void queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+  };
+  const close = useMutation({ mutationFn: () => act('close'), onSuccess });
+  const reopen = useMutation({ mutationFn: () => act('reopen'), onSuccess });
+  const pending = close.isPending || reopen.isPending;
   return (
     <>
       <button
         type="button"
         data-testid="period-close"
-        disabled={close.isPending}
+        disabled={pending}
         onClick={() => {
           close.reset();
+          reopen.reset();
           close.mutate();
         }}
       >
         Close
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="period-reopen"
+        disabled={pending}
+        onClick={() => {
+          close.reset();
+          reopen.reset();
+          reopen.mutate();
+        }}
+      >
+        Reopen
       </button>
       {close.isError && <span data-testid="period-error"> This period is already closed.</span>}
+      {reopen.isError && <span data-testid="period-error"> Only a steward can reopen a period, and only a closed one.</span>}
     </>
   );
 }

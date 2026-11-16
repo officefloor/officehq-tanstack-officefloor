@@ -62,6 +62,12 @@ public class PeriodRepository {
                 total, period.sheetId(), period.id()) == 1;
     }
 
+    /** Reopens the period, dropping its fixed due-total, but only while it is closed; false when it was not. */
+    public boolean reopen(Period period) {
+        return jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND id = ? AND closed = TRUE",
+                period.sheetId(), period.id()) == 1;
+    }
+
     /** Stores a new period and returns it with its id. */
     public Period add(String sheetId, String name, LocalDate from, LocalDate to) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
