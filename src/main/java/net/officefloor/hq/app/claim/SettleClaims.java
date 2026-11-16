@@ -15,6 +15,7 @@ import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupBefore;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
+import net.officefloor.hq.app.watch.WatchRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,7 +30,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class SettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId, @Val BulkSettleRequest request, ClaimRepository claims,
             PersonRepository people, RateRepository rates, PeriodRepository periods, SettingRepository settings,
-            RoleRepository roles, SheetRepository sheets, Rollup rollup, Audit audit, ClaimLog log,
+            RoleRepository roles, SheetRepository sheets, WatchRepository watches, Rollup rollup, Audit audit, ClaimLog log,
             Out<BulkSettleResult> result) {
         String sheet = sheetId.trim();
         Set<Long> selected = new HashSet<>(request.claimIds());
@@ -66,7 +67,7 @@ public class SettleClaims {
                 continue;
             }
             settled++;
-            record.record(stored[0], change, number[0], previous[0], people, before, rollup, audit);
+            record.record(stored[0], change, number[0], previous[0], people, watches, before, rollup, audit);
         }
         result.set(new BulkSettleResult(settled, selected.size() - settled));
     }
