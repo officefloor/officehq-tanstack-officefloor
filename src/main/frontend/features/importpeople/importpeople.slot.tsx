@@ -6,12 +6,13 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { claimsKey } from '../claims/claims';
 import { peopleKey } from '../people/people';
 
-type Result = { added: number };
+type Result = { added: number; updated: number };
 
-/** The import box: lines of name,grade,terms,contact (terms and contact may be absent or blank) each add a person, in
- *  order, as the person form adds one. The server checks every line by the person form's rules first (a name or
- *  contact repeated within the paste counts as taken): one failing line refuses the import and adds nothing. Shows how
- *  many were added; the count is cleared while a new press runs. */
+/** The import box: lines of name,grade,terms,contact (terms and contact may be absent or blank), in order. A line whose
+ *  name matches a person on the sheet (by name or alias) updates them as the person form edits one; every other line
+ *  adds a person as the form adds one. The server checks every line by the person form's rules first (a name or
+ *  contact repeated within the paste counts as taken): one failing line refuses the import and stores nothing. Shows
+ *  how many were added and how many updated; the counts are cleared while a new press runs. */
 function ImportPeople({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
@@ -57,14 +58,15 @@ function ImportPeople({ sheetId, user }: { sheetId: string; user: string }) {
       {importPeople.isSuccess && (
         <>
           {' '}
-          Added <span data-testid="import-added">{importPeople.data.added}</span>
+          Added <span data-testid="import-added">{importPeople.data.added}</span>, updated{' '}
+          <span data-testid="import-updated">{importPeople.data.updated}</span>
         </>
       )}
       {importPeople.isError && (
         <span data-testid="import-error">
           {' '}
-          Nothing was imported: every line must keep the person form's rules, with no name or contact already on the
-          sheet or repeated in the paste.
+          Nothing was imported: every line must keep the person form's rules, with no contact already on the sheet, and
+          no name or contact repeated in the paste.
         </span>
       )}
     </form>

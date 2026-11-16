@@ -16,7 +16,13 @@ import net.officefloor.plugin.variable.Val;
 public class ApplyPerson {
     public void apply(@Val Person person, @Val PersonValues values, SheetRepository sheets, Out<Person> changed,
             Out<TermsBefore> termsBefore, Out<ContactBefore> contactBefore) {
-        LocalDate today = sheets.today(person.sheetId());
+        termsBefore.set(new TermsBefore(person.terms()));
+        contactBefore.set(new ContactBefore(person.contact()));
+        changed.set(edited(person, values, sheets.today(person.sheetId())));
+    }
+
+    /** The person as the edit leaves them, on the sheet's today (see above). */
+    static Person edited(Person person, PersonValues values, LocalDate today) {
         List<PersonGrade> grades = new ArrayList<>(person.grades());
         if (values.gradeFrom() != null || !values.grade().equals(person.grade())) {
             LocalDate from = values.gradeFrom() != null ? values.gradeFrom() : today;
@@ -24,10 +30,8 @@ public class ApplyPerson {
             grades.add(new PersonGrade(values.grade(), from));
             grades.sort(Comparator.comparing(PersonGrade::from, Comparator.nullsFirst(Comparator.naturalOrder())));
         }
-        termsBefore.set(new TermsBefore(person.terms()));
-        contactBefore.set(new ContactBefore(person.contact()));
         List<PersonGrade> kept = List.copyOf(grades);
-        changed.set(new Person(person.id(), person.sheetId(), values.name(), Person.gradeOn(kept, today), person.version() + 1,
-                person.retiredFrom(), kept, person.holds(), values.terms(), values.contact(), person.aliases()));
+        return new Person(person.id(), person.sheetId(), values.name(), Person.gradeOn(kept, today), person.version() + 1,
+                person.retiredFrom(), kept, person.holds(), values.terms(), values.contact(), person.aliases());
     }
 }
