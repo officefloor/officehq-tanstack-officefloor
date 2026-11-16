@@ -5,7 +5,7 @@ import type { Late } from '../overdue/late';
 import { gradeOn, usePeople } from '../people/people';
 import { useSheetToday } from '../session/session';
 
-/** A sheet setting: `value` is text (clerk-limit, cap, floor: an amount with two decimals; terms, terms-A, terms-B, terms-C: a whole number of days; late-pct: a percent with two decimals; grace-A, grace-B, grace-C: a whole number of days; policy-date, period-numbering-from, entry-date: yyyy-MM-dd), null when blank.
+/** A sheet setting: `value` is text (clerk-limit, cap, floor: an amount with two decimals; terms, terms-A, terms-B, terms-C: a whole number of days; late-pct: a percent with two decimals; grace-A, grace-B, grace-C: a whole number of days; policy-date, period-numbering-from, entry-date: yyyy-MM-dd; fiscal-start-month: a month 1 to 12), null when blank.
  *  `from` is the date the value is in force from (yyyy-MM-dd); null when undated (policy-date, period-numbering-from, entry-date, or a
  *  value from before settings were dated: in force on every date). */
 export type Setting = { sheetId: string; key: string; value: string | null; from: string | null };
@@ -30,6 +30,15 @@ export function inForce(settings: Setting[] | undefined, key: string, date: stri
     if (found === undefined || (s.from !== null && (found.from === null || s.from > found.from))) found = s;
   }
   return found;
+}
+
+/** The fiscal year start month a sheet has until one is set. */
+export const DEFAULT_FISCAL_START_MONTH = '1';
+
+/** The sheet's fiscal year start month (1 to 12; undated), 1 unless set. */
+export function useFiscalStartMonth(sheetId: string): number {
+  const settings = useSettings(sheetId);
+  return Number(settings.data?.find((s) => s.key === 'fiscal-start-month')?.value ?? DEFAULT_FISCAL_START_MONTH);
 }
 
 /** A dated figure: its value in force on a date (yyyy-MM-dd). */

@@ -17,12 +17,12 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  decimals; or floor or late-pct, its value such an amount (not blank), all kept with two decimals; or terms, its value a
  *  whole number of days 0 or more (not blank), kept without leading zeros, and so is terms-A, terms-B or terms-C (a
  *  grade's own terms); or grace-A, grace-B or grace-C (a grade's grace), its value blank (none) or a whole number of days 0 or
- *  more, kept without leading zeros; or grace-days, its value blank (off) or a whole number of days 0 or more (undated); or pot, its value blank (none) or an amount with up to two decimals, kept with two (undated); or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today); or
+ *  more, kept without leading zeros; or grace-days, its value blank (off) or a whole number of days 0 or more (undated); or pot, its value blank (none) or an amount with up to two decimals, kept with two (undated); or fiscal-start-month, its value a whole month 1 to 12 (not blank), kept without leading zeros (undated); or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today); or
  *  period-numbering-from or entry-date, its value a date yyyy-MM-dd or blank (off); or cap, proof-threshold, proof-threshold-A, -B or -C (a grade's own) or note-threshold, its value blank (none) or
  *  an amount like the clerk limit; or perm-open, perm-settle, perm-void, perm-reassign, perm-close or perm-reopen, its value
  *  blank (the standing rule) or roles (clerk, steward) separated by commas, kept without spaces or repeats; or parent, its
  *  value blank (none) or the id of a sheet that exists (has been loaded), is not this sheet and does not have this sheet
- *  as an ancestor (undated). Every key but policy-date, period-numbering-from, entry-date, grace-days, pot and the permissions is dated: its from-date is blank (the
+ *  as an ancestor (undated). Every key but policy-date, period-numbering-from, entry-date, grace-days, pot, fiscal-start-month and the permissions is dated: its from-date is blank (the
  *  sheet's today) or a date yyyy-MM-dd. */
 public class ValidateSetting {
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
@@ -45,6 +45,7 @@ public class ValidateSetting {
         boolean graceDays = SettingRepository.GRACE_DAYS.equals(k);
         boolean entryDate = SettingRepository.ENTRY_DATE.equals(k);
         boolean pot = SettingRepository.POT.equals(k);
+        boolean fiscalStart = SettingRepository.FISCAL_START_MONTH.equals(k);
         boolean cap = SettingRepository.CAP.equals(k);
         boolean proofThreshold = SettingRepository.PROOF_THRESHOLD.equals(k);
         boolean gradeProofThreshold = k.startsWith(SettingRepository.PROOF_THRESHOLD_PREFIX)
@@ -54,14 +55,14 @@ public class ValidateSetting {
         boolean parent = SettingRepository.PARENT.equals(k);
         boolean perm = k.startsWith(SettingRepository.PERM_PREFIX)
                 && SettingRepository.PERMISSIONS.containsKey(k.substring(SettingRepository.PERM_PREFIX.length()));
-        if (!parent && !perm && !SettingRepository.CLERK_LIMIT.equals(k) && !cap && !proofThreshold && !noteThreshold && !floor && !terms && !grace && !latePct && !policyDate && !numberingFrom && !graceDays && !entryDate && !pot) {
+        if (!parent && !perm && !SettingRepository.CLERK_LIMIT.equals(k) && !cap && !proofThreshold && !noteThreshold && !floor && !terms && !grace && !latePct && !policyDate && !numberingFrom && !graceDays && !entryDate && !pot && !fiscalStart) {
             throw new InvalidSettingException("Unknown setting " + k);
         }
         String value = request == null || request.value() == null ? "" : request.value().trim();
         String by = request == null || request.by() == null ? "" : request.by().trim();
         String fromText = request == null || request.from() == null ? "" : request.from().trim();
         LocalDate from = null;
-        if (!policyDate && !numberingFrom && !entryDate && !graceDays && !pot && !fromText.isEmpty()) {
+        if (!policyDate && !numberingFrom && !entryDate && !graceDays && !pot && !fiscalStart && !fromText.isEmpty()) {
             try {
                 from = LocalDate.parse(fromText);
             } catch (DateTimeParseException e) {
@@ -126,6 +127,14 @@ public class ValidateSetting {
                 throw new InvalidSettingException("The grace days must be a whole number of days, 0 or more, or blank");
             }
             values.set(new SettingValues(k, String.valueOf(Integer.parseInt(value)), null, false, by));
+            return;
+        }
+        if (fiscalStart) {
+            int month = DAYS.matcher(value).matches() ? Integer.parseInt(value) : 0;
+            if (month < 1 || month > 12) {
+                throw new InvalidSettingException("The fiscal year start month must be a whole month, 1 to 12");
+            }
+            values.set(new SettingValues(k, String.valueOf(month), null, false, by));
             return;
         }
         if (pot) {

@@ -38,6 +38,14 @@ export function periodOf(periods: Period[] | undefined, date: string): Period | 
   return periods?.find((p) => p.from <= date && date <= p.to);
 }
 
+/** The fiscal year a date (yyyy-MM-dd) falls in, named FY<yyyy> by the calendar year its first day falls in: a
+ *  fiscal year starts on the first day of the start month (1 to 12). */
+export function fiscalYearOf(date: string, startMonth: number): string {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  return `FY${month >= startMonth ? year : year - 1}`;
+}
+
 /** The status a claim had at the end of a day (yyyy-MM-dd), as its status log records it: the last line made on
  *  or before that day; undefined when the claim was added after it. */
 export function statusAsOf(claim: Claim, day: string): ClaimStatus | undefined {

@@ -71,6 +71,12 @@ public class SettingRepository {
     /** The sheet's pot, shared out as each balanced pool's cuts (two decimals); blank for none (undated). */
     public static final String POT = "pot";
 
+    /** The month (1 to 12) the sheet's fiscal year starts in; 1 unless set (undated). */
+    public static final String FISCAL_START_MONTH = "fiscal-start-month";
+
+    /** The fiscal year start month a sheet has until one is set. */
+    public static final int DEFAULT_FISCAL_START_MONTH = 1;
+
     /** The sheet's parent sheet: its id, or blank for none (undated). A grade with no rate in force on a date takes
      *  the parent's, then the parent's parent's, up to PARENT_LEVELS levels up. */
     public static final String PARENT = "parent";
@@ -238,6 +244,12 @@ public class SettingRepository {
     public Integer graceDays(String sheetId) {
         String value = value(sheetId, GRACE_DAYS);
         return value == null ? null : Integer.valueOf(value);
+    }
+
+    /** The sheet's fiscal year start month (1 to 12), 1 unless set. */
+    public int fiscalStartMonth(String sheetId) {
+        String value = value(sheetId, FISCAL_START_MONTH);
+        return value == null ? DEFAULT_FISCAL_START_MONTH : Integer.parseInt(value);
     }
 
     /** The sheet's pot, or null when it is blank (none). */
