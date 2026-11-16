@@ -1,0 +1,172 @@
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index d525fdb16..ad04ed66d 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -15,12 +15,14 @@ function StatementsHead({ user }: { user: string }) {
+       {shown('statement-count') && <th>Statements</th>}
+       {shown('stated-total') && <th>Stated total</th>}
+       {shown('statement-date') && <th>Stated on</th>}
++      <th>Statement lines</th>
+       <th />
+     </>
+   );
+ }
+ 
+-/** A person's statement count, their last statement's due-total and date, and the date (blank: now) and button that
++/** A person's statement count, their last statement's due-total and date, a line per statement in force (oldest
++ *  first), and the date (blank: now) and button that
+  *  take one: it records their due-total as of that date and binds each of their claims that counted then to its rate
+  *  figure then (not floored); and
+  *  the button that cancels their last statement (a steward only), making the claims it bound live again. */
+@@ -60,6 +62,13 @@ function PersonStatements({ sheetId, user, person }: { sheetId: string; user: st
+       {shown('statement-count') && <td data-testid="person-statement-count">{mine?.count ?? 0}</td>}
+       {shown('stated-total') && <td data-testid="person-stated-total">{mine?.dueTotal ?? ''}</td>}
+       {shown('statement-date') && <td data-testid="person-statement-date">{mine?.date ?? ''}</td>}
++      <td data-testid="person-statement-lines">
++        {(mine?.lines ?? []).map((line, i) => (
++          <div key={i} data-testid="person-statement-line-line">
++            {line}
++          </div>
++        ))}
++      </td>
+       <td>
+         <input
+           data-testid="person-statement-asof"
+diff --git a/src/main/frontend/features/statements/statements.ts b/src/main/frontend/features/statements/statements.ts
+index 5fccfbd40..21e9a0e30 100644
+--- a/src/main/frontend/features/statements/statements.ts
++++ b/src/main/frontend/features/statements/statements.ts
+@@ -1,9 +1,10 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+-/** A person's statements: how many were taken, and the last one's due-total (two decimals, or n/a) and date
+- *  (yyyy-MM-dd, the sheet's today when it was taken). A person with none has no entry. */
+-export type StatementSummary = { personId: number; count: number; dueTotal: string; date: string };
++/** A person's statements: how many were taken, the last one's due-total (two decimals, or n/a) and date
++ *  (yyyy-MM-dd, the sheet's today when it was taken), and one line per statement in force, oldest first, as
++ *  "<statement date> <due-total>". A person with none has no entry. */
++export type StatementSummary = { personId: number; count: number; dueTotal: string; date: string; lines: string[] };
+ 
+ export const statementsKey = (sheetId: string) => ['sheet', sheetId, 'statements'];
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+index f0a5f9a29..690c4fb2b 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+@@ -12,20 +12,22 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** The sheet's rates, by grade, then those of its parent, the parent's parent, up to three levels up (each with its
+  *  level), which apply to a grade on a date the sheet has no rate for; read as of a date (see AsOf), the sheet's own
+- *  as they stood then (see SheetAsOf). */
++ *  as they stood then (see SheetAsOf) and those inherited as they are now (a parent keeps its own today, so the date
++ *  says nothing of when its rates were stored). */
+ public class RespondWithRates {
+     public void respond(@PathVariable("sheetId") String sheetId,
+             @RequestParam(value = "asOf", required = false) String asOf, RateRepository rates,
+             SettingRepository settings, ObjectResponse<List<RateResponse>> response) {
+         LocalDate date = AsOf.parse(asOf);
+-        if (date != null) {
+-            SheetAsOf sheet = SheetAsOf.read(sheetId.trim(), date, rates, settings);
+-            response.send(sheet.rates().stream().map((r) -> RateResponse.from(r, 0, sheet.older(r))).toList());
+-            return;
+-        }
+         List<RateResponse> shown = new ArrayList<>();
+         List<String> chain = rates.chain(sheetId.trim());
+-        for (int level = 0; level < chain.size(); level++) {
++        if (date != null) {
++            SheetAsOf sheet = SheetAsOf.read(chain.get(0), date, rates, settings);
++            for (Rate rate : sheet.rates()) {
++                shown.add(RateResponse.from(rate, 0, sheet.older(rate)));
++            }
++        }
++        for (int level = date == null ? 0 : 1; level < chain.size(); level++) {
+             for (Rate rate : rates.list(chain.get(level))) {
+                 shown.add(RateResponse.from(rate, level, rates.older(rate.sheetId(), rate.grade(), rate.from())));
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementRepository.java b/src/main/java/net/officefloor/hq/app/statement/StatementRepository.java
+index 6118ca687..20b110bf5 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/StatementRepository.java
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementRepository.java
+@@ -1,9 +1,13 @@
+ package net.officefloor.hq.app.statement;
+ 
+ import java.sql.Date;
++import java.util.ArrayList;
++import java.util.HashMap;
+ import java.util.List;
++import java.util.Map;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.core.RowCallbackHandler;
+ import org.springframework.stereotype.Repository;
+ 
+ /** The stored statements, kept per sheet. Ids are assigned in the order statements are taken. A cancelled statement is
+@@ -45,29 +49,48 @@ public class StatementRepository {
+                 Date.valueOf(sheets.today(sheetId)), sheetId, personId) > 0;
+     }
+ 
+-    /** For each person on the sheet with a statement: their count, and their last statement's due-total and date. */
++    /** For each person on the sheet with a statement: their count, their last statement's due-total and date,
++     *  and their statement lines. */
+     public List<StatementSummary> summaries(String sheetId) {
++        Map<Long, List<String>> lines = lines(sheetId, "cancelled_on IS NULL");
+         return jdbc.query("SELECT s.person_id, c.n, s.due_total, s.taken_on FROM statement s"
+                 + " JOIN (SELECT person_id, COUNT(*) n, MAX(COALESCE(ord, id)) last_key FROM statement WHERE sheet_id = ?"
+                 + " AND cancelled_on IS NULL GROUP BY person_id) c"
+                 + " ON s.person_id = c.person_id AND COALESCE(s.ord, s.id) = c.last_key AND s.sheet_id = ? ORDER BY s.person_id",
+                 (rs, n) -> new StatementSummary(rs.getLong("person_id"), rs.getInt("n"), rs.getString("due_total"),
+-                        rs.getDate("taken_on").toLocalDate().toString()),
++                        rs.getDate("taken_on").toLocalDate().toString(), lines.getOrDefault(rs.getLong("person_id"), List.of())),
+                 sheetId, sheetId);
+     }
+ 
+     /** The summaries as they stood at the end of the date: only the statements taken while the sheet's today was on or
+      *  before it, and not cancelled by then, count. */
+     public List<StatementSummary> summaries(String sheetId, java.time.LocalDate asOf) {
++        Map<Long, List<String>> lines = lines(sheetId, "COALESCE(made_on, taken_on) <= ? AND (cancelled_on IS NULL OR cancelled_on > ?)",
++                Date.valueOf(asOf), Date.valueOf(asOf));
+         return jdbc.query("SELECT s.person_id, c.n, s.due_total, s.taken_on FROM statement s"
+                 + " JOIN (SELECT person_id, COUNT(*) n, MAX(COALESCE(ord, id)) last_key FROM statement WHERE sheet_id = ?"
+                 + " AND COALESCE(made_on, taken_on) <= ? AND (cancelled_on IS NULL OR cancelled_on > ?) GROUP BY person_id) c"
+                 + " ON s.person_id = c.person_id AND COALESCE(s.ord, s.id) = c.last_key AND s.sheet_id = ? ORDER BY s.person_id",
+                 (rs, n) -> new StatementSummary(rs.getLong("person_id"), rs.getInt("n"), rs.getString("due_total"),
+-                        rs.getDate("taken_on").toLocalDate().toString()),
++                        rs.getDate("taken_on").toLocalDate().toString(), lines.getOrDefault(rs.getLong("person_id"), List.of())),
+                 sheetId, Date.valueOf(asOf), Date.valueOf(asOf), sheetId);
+     }
+ 
++    /** Each person's statement lines, "<statement date> <due-total>", oldest first; statements of the same date in
++     *  their order (those a merge or a transfer brought over before the person's own). */
++    private Map<Long, List<String>> lines(String sheetId, String where, Object... args) {
++        Map<Long, List<String>> lines = new HashMap<>();
++        Object[] params = new Object[args.length + 1];
++        params[0] = sheetId;
++        System.arraycopy(args, 0, params, 1, args.length);
++        jdbc.query("SELECT person_id, taken_on, due_total FROM statement WHERE sheet_id = ? AND " + where
++                + " ORDER BY person_id, taken_on, COALESCE(ord, id), id",
++                (RowCallbackHandler) rs -> lines.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>())
++                        .add(rs.getDate("taken_on").toLocalDate() + " " + rs.getString("due_total")),
++                params);
++        return lines;
++    }
++
+     /**
+      * Moves the statements of person {@code from} on sheet {@code fromSheet} to person {@code to} on sheet
+      * {@code toSheet}, kept in their order and ordered before to's own statements, so to's count is their own plus
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementSummary.java b/src/main/java/net/officefloor/hq/app/statement/StatementSummary.java
+index 6ac00cd42..f0b5980d0 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/StatementSummary.java
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementSummary.java
+@@ -1,6 +1,8 @@
+ package net.officefloor.hq.app.statement;
+ 
+-/** A person's statements as the screen shows them: how many were taken, and the last one's due-total and date
+- *  (yyyy-MM-dd). */
+-public record StatementSummary(long personId, int count, String dueTotal, String date) {
++import java.util.List;
++
++/** A person's statements as the screen shows them: how many were taken, the last one's due-total and date
++ *  (yyyy-MM-dd), and one line per statement in force, oldest first: "&lt;statement date&gt; &lt;due-total&gt;". */
++public record StatementSummary(long personId, int count, String dueTotal, String date, List<String> lines) {
+ }
