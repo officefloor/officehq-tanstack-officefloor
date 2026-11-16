@@ -5,7 +5,7 @@ import type { Late } from '../overdue/late';
 import { gradeOn, usePeople } from '../people/people';
 import { useSheetToday } from '../session/session';
 
-/** A sheet setting: `value` is text (clerk-limit, cap, floor: an amount with two decimals; terms, terms-A, terms-B, terms-C: a whole number of days; late-pct: a percent with two decimals; grace-A, grace-B, grace-C: a whole number of days; policy-date, period-numbering-from, entry-date: yyyy-MM-dd; fiscal-start-month: a month 1 to 12), null when blank.
+/** A sheet setting: `value` is text (clerk-limit, cap, floor: an amount with two decimals; terms, terms-A, terms-B, terms-C: a whole number of days; late-pct: a percent with two decimals; grace-A, grace-B, grace-C: a whole number of days; policy-date, period-numbering-from, entry-date: yyyy-MM-dd; alert-threshold: an amount with two decimals, undated; fiscal-start-month: a month 1 to 12), null when blank.
  *  `from` is the date the value is in force from (yyyy-MM-dd); null when undated (policy-date, period-numbering-from, entry-date, or a
  *  value from before settings were dated: in force on every date). */
 export type Setting = { sheetId: string; key: string; value: string | null; from: string | null };

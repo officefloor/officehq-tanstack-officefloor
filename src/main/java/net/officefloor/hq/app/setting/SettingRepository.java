@@ -71,6 +71,10 @@ public class SettingRepository {
     /** The sheet's pot, shared out as each balanced pool's cuts (two decimals); blank for none (undated). */
     public static final String POT = "pot";
 
+    /** The sheet's alert threshold: a person whose due-total rises above it is alerted (see Rollup); two decimals,
+     *  blank for off (undated). */
+    public static final String ALERT_THRESHOLD = "alert-threshold";
+
     /** The month (1 to 12) the sheet's fiscal year starts in; 1 unless set (undated). */
     public static final String FISCAL_START_MONTH = "fiscal-start-month";
 
@@ -250,6 +254,12 @@ public class SettingRepository {
     public int fiscalStartMonth(String sheetId) {
         String value = value(sheetId, FISCAL_START_MONTH);
         return value == null ? DEFAULT_FISCAL_START_MONTH : Integer.parseInt(value);
+    }
+
+    /** The sheet's alert threshold, or null when it is blank (off). */
+    public BigDecimal alertThreshold(String sheetId) {
+        String value = value(sheetId, ALERT_THRESHOLD);
+        return value == null ? null : new BigDecimal(value);
     }
 
     /** The sheet's pot, or null when it is blank (none). */

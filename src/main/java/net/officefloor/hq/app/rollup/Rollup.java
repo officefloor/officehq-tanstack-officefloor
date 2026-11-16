@@ -27,7 +27,9 @@ import org.springframework.stereotype.Service;
  *
  * A change takes the figures before it ({@link #take}) and, after its own audit lines, writes ROLLUP for every
  * person whose figures (claimed, due-total or overdue-total) moved (a person new to the sheet counts as moved), then
- * TOTALS when any of the sheet's three totals moved ({@link #record}).
+ * TOTALS when any of the sheet's three totals moved ({@link #record}), then ALERT, in list order, for every person
+ * whose due-total went from at or below the sheet's alert threshold (or no due-total: n/a, or new to the sheet) to
+ * above it (none while the threshold is off).
  */
 @Service
 public class Rollup {
@@ -106,9 +108,32 @@ public class Rollup {
             audit.record("TOTALS sheet=" + sheetId + " by=" + by + " claimed-total=" + claimedAfter + " due-total="
                     + dueAfter + " overdue-total=" + overdueAfter);
         }
+        alert(sheetId, by, before.figures(), after);
     }
 
-    /** Writes ROLLUP for every person on the sheet, in list order, then TOTALS: the figures of a sheet just made. */
+    /** Writes ALERT, in list order, for every person whose due-total went from at or below the sheet's alert threshold
+     *  (or no due-total) before to above it now. */
+    private void alert(String sheetId, String by, Map<Long, Figures> before, Map<Long, Figures> after) {
+        BigDecimal threshold = settings.alertThreshold(sheetId);
+        if (threshold == null) {
+            return;
+        }
+        for (Map.Entry<Long, Figures> e : after.entrySet()) {
+            Figures was = before.get(e.getKey());
+            Figures now = e.getValue();
+            if (above(now, threshold) && (was == null || !above(was, threshold))) {
+                audit.record("ALERT sheet=" + sheetId + " by=" + by + " name=" + now.name() + " due-total="
+                        + now.dueTotal());
+            }
+        }
+    }
+
+    private static boolean above(Figures figures, BigDecimal threshold) {
+        return !figures.dueTotal().equals("n/a") && new BigDecimal(figures.dueTotal()).compareTo(threshold) > 0;
+    }
+
+    /** Writes ROLLUP for every person on the sheet, in list order, then TOTALS, then ALERT for those above the alert
+     *  threshold: the figures of a sheet just made. */
     public void recordAll(String sheetId, String by) {
         Map<Long, Figures> now = take(sheetId).figures();
         for (Figures f : now.values()) {
@@ -117,6 +142,7 @@ public class Rollup {
         }
         audit.record("TOTALS sheet=" + sheetId + " by=" + by + " claimed-total=" + claimedTotal(now) + " due-total="
                 + dueTotal(now) + " overdue-total=" + overdueTotal(now));
+        alert(sheetId, by, Map.of(), now);
     }
 
     private static String claimedTotal(Map<Long, Figures> figures) {
