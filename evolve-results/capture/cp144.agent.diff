@@ -1,0 +1,116 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index d0d78b93b..047eb7ca5 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -9,7 +9,7 @@ import { heldOn, retiredOn, type Person } from '../people/people';
+  *  sheet-today it was deleted. */
+ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+ 
+-/** A claim of a person. `amount` is text with two decimals (never a float); `date` is yyyy-MM-dd; `number` (text: 1, 2, ..., or P1-1, X-1 when numbered per period) is given
++/** A claim of a person. `amount` is text with two decimals (never a float); `date` is yyyy-MM-dd; `number` (text: FY2026-1, FY2026-2, ... (older claims 1, 2, ...), or P1-1, X-1 when numbered per period) is given
+  *  when the claim is opened (null for a draft or a voided claim); `due` is the due fixed when it was settled (null
+  *  while its due is live, worked out from its grade's current rate); `openedBy` is who opened it (null when never
+  *  opened); `stated` is whether its person's last statement bound it to the figure `statedDue` (null when it had
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java
+index b12c88c2b..af4e67328 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java
+@@ -10,8 +10,9 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+  * The number a claim receives as it is opened. While the sheet's period-numbering-from setting is a date and the
+  * sheet's today is on or after it, the claim is numbered within the period containing its due-by, {@code <period>-<n>}
+  * counting from 1 in each period, or {@code X-<n>} in its own sequence when no period contains it. Otherwise it takes
+- * the next number of the sheet's tree (1, 2, ...): one more than the last number given on any sheet of the tree, so
+- * the sheets of a tree share one sequence.
++ * the next number of the sheet's tree within the fiscal year of its due-by (by the sheet's fiscal start month),
++ * {@code FY<yyyy>-<n>}: one more than the last number given in that fiscal year on any sheet of the tree, counting from
++ * 1 in each fiscal year, so the sheets of a tree share one sequence per fiscal year.
+  */
+ public final class ClaimNumbering {
+ 
+@@ -22,13 +23,19 @@ public final class ClaimNumbering {
+             SheetRepository sheets) {
+         String sheet = claim.sheetId();
+         if (!perPeriod(sheet, settings, sheets)) {
+-            return String.valueOf(claims.nextNumber(sheet, settings.tree(sheet)));
++            String fy = fiscalYearOf(claim.dueBy(), settings.fiscalStartMonth(sheet));
++            return fy + "-" + claims.nextFiscalYearNumber(sheet, settings.tree(sheet), fy);
+         }
+         Period period = periods.containing(sheet, claim.dueBy());
+         String key = period == null ? "X" : period.name();
+         return key + "-" + claims.nextPeriodNumber(sheet, key);
+     }
+ 
++    /** The fiscal year a date falls in, FY<yyyy> by the calendar year its first day (of the start month) falls in. */
++    public static String fiscalYearOf(LocalDate date, int startMonth) {
++        return "FY" + (date.getMonthValue() >= startMonth ? date.getYear() : date.getYear() - 1);
++    }
++
+     /** Whether claims are numbered per period now: the period-numbering-from setting is a date on or before today. */
+     public static boolean perPeriod(String sheet, SettingRepository settings, SheetRepository sheets) {
+         LocalDate from = settings.periodNumberingFrom(sheet);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 71d8d2e4a..fb7eae998 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -465,6 +465,45 @@ public class ClaimRepository {
+         return last + 1;
+     }
+ 
++    /**
++     * The next claim number of the tree's sequence for a fiscal year ({@code FY<yyyy>}): one more than the last number
++     * given in that fiscal year on any sheet of the tree, 1 for the first, its counter rows locked until the
++     * transaction ends as for {@link #nextNumber}.
++     */
++    public long nextFiscalYearNumber(String sheetId, List<String> tree, String fiscalYear) {
++        Set<String> all = new TreeSet<>(tree);
++        all.add(sheetId);
++        long last = 0;
++        for (String s : all) {
++            ensureFiscalYearNumberRow(s, fiscalYear);
++            jdbc.update("UPDATE claim_fy_number_seq SET last_number = last_number WHERE sheet_id = ? AND fiscal_year = ?",
++                    s, fiscalYear);
++            last = Math.max(last, jdbc.queryForObject(
++                    "SELECT last_number FROM claim_fy_number_seq WHERE sheet_id = ? AND fiscal_year = ?",
++                    Long.class, s, fiscalYear));
++        }
++        jdbc.update("UPDATE claim_fy_number_seq SET last_number = ? WHERE sheet_id = ? AND fiscal_year = ?",
++                last + 1, sheetId, fiscalYear);
++        return last + 1;
++    }
++
++    /** Adds the fiscal year sequence's counter row if it has none, committed at once (see ensureNumberRow). */
++    private synchronized void ensureFiscalYearNumberRow(String sheetId, String fiscalYear) {
++        try (Connection con = dataSource.getConnection()) {
++            con.setAutoCommit(true);
++            try (PreparedStatement ps = con.prepareStatement("INSERT INTO claim_fy_number_seq (sheet_id, fiscal_year, last_number) "
++                    + "SELECT ?, ?, 0 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM claim_fy_number_seq WHERE sheet_id = ? AND fiscal_year = ?)")) {
++                ps.setString(1, sheetId);
++                ps.setString(2, fiscalYear);
++                ps.setString(3, sheetId);
++                ps.setString(4, fiscalYear);
++                ps.executeUpdate();
++            }
++        } catch (SQLException e) {
++            throw new IllegalStateException(e);
++        }
++    }
++
+     /**
+      * The next number in the sheet's per-period sequence {@code key} (a period's name, or X for no period): 1 for the
+      * first, then one more each time, its counter row locked until the transaction ends as for {@link #nextNumber}.
+diff --git a/src/main/resources/db/migration/V74__claim_fy_numbering.sql b/src/main/resources/db/migration/V74__claim_fy_numbering.sql
+new file mode 100644
+index 000000000..fc50aa9eb
+--- /dev/null
++++ b/src/main/resources/db/migration/V74__claim_fy_numbering.sql
+@@ -0,0 +1,10 @@
++-- The last number given in each fiscal year's sheet-wide sequence of a sheet: fiscal_year is FY<yyyy>, the fiscal
++-- year (by the sheet's fiscal start month) of the due-by of the claims numbered in it. A tree shares each fiscal
++-- year's sequence: the next number is one more than the last given on any sheet of the tree. Like claim_number_seq,
++-- a number is never given twice.
++CREATE TABLE claim_fy_number_seq (
++    sheet_id    VARCHAR(200) NOT NULL,
++    fiscal_year VARCHAR(20) NOT NULL,
++    last_number BIGINT NOT NULL,
++    PRIMARY KEY (sheet_id, fiscal_year)
++);
