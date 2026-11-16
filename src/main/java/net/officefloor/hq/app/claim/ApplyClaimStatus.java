@@ -24,6 +24,7 @@ import net.officefloor.plugin.variable.Val;
  * clerk limit, if it has one, makes it PENDING instead (its due left live, not bound by a statement); a due of n/a is
  * within any limit. A steward settles anything. Only a steward approves a PENDING claim (fixing its live figure, late
  * charge included, at that moment) or rejects it (OPEN again, bound again by its statement if one bound it).
+ * Opening, settling and voiding are each taken only by the roles the sheet's permission allows (see SettingRepository#permits).
  * Only a steward re-settles a SETTLED claim (not one dated inside a closed period): its due is fixed again at the figure
  * it would have today as an OPEN claim bound by no statement (today's rates, grades, floor and late charge).
  */
@@ -47,7 +48,17 @@ public class ApplyClaimStatus {
         if (change.action() == ClaimAction.SETTLE && ClaimDue.deferred(claim, sheets.today(claim.sheetId()))) {
             throw new InvalidClaimStatusException("A deferred claim cannot be settled until the date it is deferred until");
         }
-        boolean steward = RoleRepository.STEWARD.equals(roles.roleOf(claim.sheetId(), change.by()));
+        String role = roles.roleOf(claim.sheetId(), change.by());
+        boolean steward = RoleRepository.STEWARD.equals(role);
+        String permission = switch (change.action()) {
+            case OPEN -> "open";
+            case SETTLE -> "settle";
+            case VOID -> "void";
+            default -> null;
+        };
+        if (permission != null && !settings.permits(claim.sheetId(), permission, role)) {
+            throw new InvalidClaimStatusException("A " + role + " may not " + permission + " a claim");
+        }
         if ((change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE)
                 && change.by().equals(claim.openedBy())) {
             throw new InvalidClaimStatusException("The user who opened a claim cannot settle nor approve it");

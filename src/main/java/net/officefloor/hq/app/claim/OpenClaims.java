@@ -12,6 +12,7 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupBefore;
+import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
@@ -22,11 +23,11 @@ import org.springframework.web.bind.annotation.PathVariable;
  * Opens each selected claim that can be opened, in list order (people in the order they were added, a person's
  * claims newest first): as the single open does, it must be a DRAFT not dated inside a closed period, takes its
  * number (see ClaimNumbering) and records who opened it, adds its OPEN line to its status log (see ClaimLog), then writes CLAIM_OPENED and the figures it moved (see Rollup).
- * Each that cannot, or is not on the sheet, is left as it is and counted refused.
+ * A user whose role the sheet does not permit to open opens none. Each that cannot, or is not on the sheet, is left as it is and counted refused.
  */
 public class OpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenRequest request, ClaimRepository claims,
-            PersonRepository people, PeriodRepository periods, SettingRepository settings, SheetRepository sheets, Rollup rollup, Audit audit, ClaimLog log,
+            PersonRepository people, PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, Rollup rollup, Audit audit, ClaimLog log,
             Out<BulkOpenResult> result) {
         String sheet = sheetId.trim();
         Set<Long> selected = new HashSet<>(request.claimIds());
@@ -41,6 +42,9 @@ public class OpenClaims {
                         personOrder.getOrDefault(b.personId(), Integer.MAX_VALUE)))
                 .toList();
         int opened = 0;
+        if (!settings.permits(sheet, "open", roles.roleOf(sheet, request.by()))) {
+            chosen = List.of();
+        }
         for (Claim claim : chosen) {
             if (claim.status() != ClaimStatus.DRAFT || periods.closedOn(sheet, claim.date())) {
                 continue;

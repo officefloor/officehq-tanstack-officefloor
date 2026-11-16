@@ -4,7 +4,10 @@ import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -48,6 +51,19 @@ public class SettingRepository {
 
     /** The date from which an opened claim is numbered within its period (see ClaimNumbering); blank: off. */
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
+
+    /** The prefix of an action's permission: perm-open, perm-settle, perm-void, perm-reassign, perm-close or
+     *  perm-reopen, its value the roles that may take it, comma separated; blank: the standing rule (see PERMISSIONS). */
+    public static final String PERM_PREFIX = "perm-";
+
+    /** The actions with a permission, each with the roles that may take it while its permission is blank. */
+    public static final Map<String, String> PERMISSIONS = Map.of(
+            "open", RoleRepository.CLERK + "," + RoleRepository.STEWARD,
+            "settle", RoleRepository.CLERK + "," + RoleRepository.STEWARD,
+            "void", RoleRepository.CLERK + "," + RoleRepository.STEWARD,
+            "close", RoleRepository.CLERK + "," + RoleRepository.STEWARD,
+            "reassign", RoleRepository.STEWARD,
+            "reopen", RoleRepository.STEWARD);
 
     /** The from-date an undated setting is stored under: before every date. */
     private static final LocalDate UNDATED = LocalDate.of(1, 1, 1);
@@ -145,6 +161,14 @@ public class SettingRepository {
     public LocalDate periodNumberingFrom(String sheetId) {
         String value = value(sheetId, PERIOD_NUMBERING_FROM);
         return value == null ? null : LocalDate.parse(value);
+    }
+
+    /** Whether the role may take the action (open, settle, void, reassign, close or reopen) on the sheet: the roles its
+     *  permission lists, or the standing rule while it is blank. */
+    public boolean permits(String sheetId, String action, String role) {
+        String value = value(sheetId, PERM_PREFIX + action);
+        String roles = value == null ? PERMISSIONS.get(action) : value;
+        return Arrays.asList(roles.split(",")).contains(role);
     }
 
     /** Stores the setting from its from-date (null: undated), replacing the value recorded from that date. */

@@ -4,20 +4,21 @@ import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.role.RoleRepository;
+import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Checks a move of a claim to another person on the sheet. Only a steward moves a claim, and only a DRAFT, OPEN or
+ * Checks a move of a claim to another person on the sheet. Only a role the sheet's reassign permission allows (a steward while it is blank) moves a claim, and only a DRAFT, OPEN or
  * PENDING one: a SETTLED or VOID claim stays. A claim dated inside a closed period, a correction (it belongs with the
  * claim it corrects), a move to the claim's own person, to a person not on the sheet, or to one retired before the
  * claim's date, is refused.
  */
 public class ApplyReassign {
     public void apply(@Val Claim claim, @Val ReassignRequest request, PersonRepository people, RoleRepository roles,
-            PeriodRepository periods, Out<ClaimReassignment> reassignment) throws InvalidClaimStatusException {
-        if (!RoleRepository.STEWARD.equals(roles.roleOf(claim.sheetId(), request.by()))) {
-            throw new InvalidClaimStatusException("Only a steward moves a claim");
+            SettingRepository settings,             PeriodRepository periods, Out<ClaimReassignment> reassignment) throws InvalidClaimStatusException {
+        if (!settings.permits(claim.sheetId(), "reassign", roles.roleOf(claim.sheetId(), request.by()))) {
+            throw new InvalidClaimStatusException("The sheet's permission does not let this user move a claim");
         }
         if (claim.status() != ClaimStatus.DRAFT && claim.status() != ClaimStatus.OPEN
                 && claim.status() != ClaimStatus.PENDING) {

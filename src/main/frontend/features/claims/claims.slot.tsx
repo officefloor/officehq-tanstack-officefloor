@@ -255,13 +255,13 @@ function ClaimRow({
           {' '}
           {(c.status === 'OPEN' || c.status === 'PENDING') && c.openedBy === user && status.variables !== 'reject' && status.variables !== 'void' && status.variables !== 'resettle'
             ? 'You opened this claim, so someone else must settle or approve it.'
-            : `A ${c.status} claim cannot be changed that way, nor one dated inside a closed period, nor a deferred one settled, nor one with no proofs settled or approved when its due is above the proof threshold; only a steward approves or rejects a pending claim or re-settles a settled one, and a rejection needs a reason.`}
+            : `A ${c.status} claim cannot be changed that way, nor one dated inside a closed period, nor a deferred one settled, nor one with no proofs settled or approved when its due is above the proof threshold; only a steward approves or rejects a pending claim or re-settles a settled one, a rejection needs a reason, and only a role the sheet lets open, settle or void a claim may do so.`}
         </span>
       )}
       {reassign.isError && (
         <span data-testid="claim-error">
           {' '}
-          Only a steward moves a claim, and only a draft, open or pending one (not a correction, nor one dated inside a
+          Only a role the sheet lets reassign (a steward unless set) moves a claim, and only a draft, open or pending one (not a correction, nor one dated inside a
           closed period) to another person not retired before its date.
         </span>
       )}

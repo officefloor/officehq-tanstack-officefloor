@@ -126,7 +126,7 @@ export const contributions = [
   PersonRow.fill({ order: 22, Component: PersonPeriods }),
 ];
 
-/** Closes a period: its due-total is fixed as it is now. Reopens a closed one (a steward only): its due-total is
+/** Closes a period: its due-total is fixed as it is now. Reopens a closed one (the roles the reopen permission allows; a steward while blank): its due-total is
  *  live again. A refused action shows the period's error; the next action on the period clears it. */
 function PeriodClose({ sheetId, user, period }: { sheetId: string; user: string; period: Period }) {
   const queryClient = useQueryClient();
@@ -164,8 +164,8 @@ function PeriodClose({ sheetId, user, period }: { sheetId: string; user: string;
       >
         Reopen
       </button>
-      {close.isError && <span data-testid="period-error"> This period is already closed.</span>}
-      {reopen.isError && <span data-testid="period-error"> Only a steward can reopen a period, and only a closed one.</span>}
+      {close.isError && <span data-testid="period-error"> This period is already closed, or your role may not close a period.</span>}
+      {reopen.isError && <span data-testid="period-error"> Only a role the sheet lets reopen (a steward unless set) can reopen a period, and only a closed one.</span>}
     </>
   );
 }

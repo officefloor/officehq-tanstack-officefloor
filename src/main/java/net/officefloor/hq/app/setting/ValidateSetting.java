@@ -3,7 +3,10 @@ package net.officefloor.hq.app.setting;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
+import net.officefloor.hq.app.role.RoleRepository;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,12 +17,14 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  whole number of days 0 or more (not blank), kept without leading zeros, and so is terms-A, terms-B or terms-C (a
  *  grade's own terms); or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today); or
  *  period-numbering-from, its value a date yyyy-MM-dd or blank (off); or cap or proof-threshold, its value blank (none) or
- *  an amount like the clerk limit. Every key but policy-date and period-numbering-from is dated: its from-date is blank (the
+ *  an amount like the clerk limit; or perm-open, perm-settle, perm-void, perm-reassign, perm-close or perm-reopen, its value
+ *  blank (the standing rule) or roles (clerk, steward) separated by commas, kept without spaces or repeats. Every key but policy-date, period-numbering-from and the permissions is dated: its from-date is blank (the
  *  sheet's today) or a date yyyy-MM-dd. */
 public class ValidateSetting {
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
     private static final Set<String> GRADES = Set.of("A", "B", "C");
+    private static final Set<String> ROLES = Set.of(RoleRepository.CLERK, RoleRepository.STEWARD);
 
     public void validate(@PathVariable("key") String key, @RequestBody SettingRequest request, Out<SettingValues> values)
             throws InvalidSettingException {
@@ -32,7 +37,9 @@ public class ValidateSetting {
         boolean numberingFrom = SettingRepository.PERIOD_NUMBERING_FROM.equals(k);
         boolean cap = SettingRepository.CAP.equals(k);
         boolean proofThreshold = SettingRepository.PROOF_THRESHOLD.equals(k);
-        if (!SettingRepository.CLERK_LIMIT.equals(k) && !cap && !proofThreshold && !floor && !terms && !latePct && !policyDate && !numberingFrom) {
+        boolean perm = k.startsWith(SettingRepository.PERM_PREFIX)
+                && SettingRepository.PERMISSIONS.containsKey(k.substring(SettingRepository.PERM_PREFIX.length()));
+        if (!perm && !SettingRepository.CLERK_LIMIT.equals(k) && !cap && !proofThreshold && !floor && !terms && !latePct && !policyDate && !numberingFrom) {
             throw new InvalidSettingException("Unknown setting " + k);
         }
         String value = request == null || request.value() == null ? "" : request.value().trim();
@@ -45,6 +52,24 @@ public class ValidateSetting {
             } catch (DateTimeParseException e) {
                 throw new InvalidSettingException("The from-date must be yyyy-MM-dd, or blank");
             }
+        }
+        if (perm) {
+            if (value.isEmpty()) {
+                values.set(new SettingValues(k, null, null, false, by));
+                return;
+            }
+            List<String> roles = new ArrayList<>();
+            for (String role : value.split(",", -1)) {
+                String r = role.trim();
+                if (!ROLES.contains(r)) {
+                    throw new InvalidSettingException("A permission must be roles (clerk, steward) separated by commas, or blank");
+                }
+                if (!roles.contains(r)) {
+                    roles.add(r);
+                }
+            }
+            values.set(new SettingValues(k, String.join(",", roles), null, false, by));
+            return;
         }
         if (policyDate || numberingFrom) {
             if (value.isEmpty()) {

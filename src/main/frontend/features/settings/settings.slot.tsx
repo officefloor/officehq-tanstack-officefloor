@@ -8,10 +8,14 @@ import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, inForce, settingsKey, u
 
 const GRADES = ['A', 'B', 'C'] as const;
 type GradeTerms = `terms-${(typeof GRADES)[number]}`;
-type Key = 'clerk-limit' | 'cap' | 'proof-threshold' | 'floor' | 'terms' | GradeTerms | 'late-pct' | 'policy-date' | 'period-numbering-from';
-const KEYS: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'period-numbering-from'];
+const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
+type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
+const PERM_KEYS: PermKey[] = PERM_ACTIONS.map((a) => `perm-${a}` as PermKey);
+type Key = PermKey | 'clerk-limit' | 'cap' | 'proof-threshold' | 'floor' | 'terms' | GradeTerms | 'late-pct' | 'policy-date' | 'period-numbering-from';
+const KEYS: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'period-numbering-from', ...PERM_KEYS];
 const BLANK: Record<Key, string> = {
   'clerk-limit': '', cap: '', 'proof-threshold': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '',
+  ...(Object.fromEntries(PERM_KEYS.map((k) => [k, ''])) as Record<PermKey, string>),
 };
 /** The keys whose values are dated: each saved from a from-date (blank: the sheet's today). */
 const DATED: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct'];
@@ -24,8 +28,10 @@ const dated = (key: Key) => DATED.includes(key);
  *  sheet's) and the late percent (what an overdue claim gains of its figure for every full 30 days
  *  overdue; 0.00 until set) and the policy date (yyyy-MM-dd; blank: the sheet's today — a claim dated before it rounds
  *  half up, one on or after it half to even) and the period numbering from-date (yyyy-MM-dd; blank: off — while the sheet's
- *  today is on or after it, a claim opened is numbered within its period). Every setting but the policy date and the
- *  period numbering from-date is dated: saved with its from-date (blank: the sheet's today) it keeps the values from
+ *  today is on or after it, a claim opened is numbered within its period) and the permission matrix (for each of open, settle,
+ *  void, reassign, close and reopen, the roles that may take it, comma separated; blank: the standing rule — open, settle,
+ *  void and close by clerk and steward, reassign and reopen by steward; undated). Every setting but the policy date, the
+ *  period numbering from-date and the permissions is dated: saved with its from-date (blank: the sheet's today) it keeps the values from
  *  other dates, and what shows in force is the value on the sheet's today (a claim takes its floor, late percent and
  *  terms, and proof threshold, from its own date). Saving stores the fields entered since the last save
  *  (a field focused counts, so a blank typed over a blank still saves), the clerk limit when none was. */
@@ -56,7 +62,7 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
   });
   const current = (key: Key) => (dated(key) ? inForce(settings.data, key, today) : settings.data?.find((s) => s.key === key))?.value ?? '';
 
-  const field = (key: Key, label: string, inputMode: 'decimal' | 'numeric' = 'decimal') => (
+  const field = (key: Key, label: string, inputMode: 'decimal' | 'numeric' | 'text' = 'decimal') => (
     <label>
       {label}{' '}
       <input
@@ -113,13 +119,16 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {field('late-pct', 'Late %')}{' '}
         {field('policy-date', 'Policy date (yyyy-MM-dd)', 'numeric')}{' '}
         {field('period-numbering-from', 'Period numbering from (yyyy-MM-dd)', 'numeric')}{' '}
+        {PERM_ACTIONS.map((a) => (
+          <span key={a}>{field(`perm-${a}`, `Roles that may ${a} (comma separated)`, 'text')} </span>
+        ))}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
         {save.isError && (
           <span data-testid="settings-error">
             The from-date must be yyyy-MM-dd, or blank; the clerk limit must be an amount with up to two decimals, or blank; the cap and the proof threshold likewise; the floor an amount with up to two
-            decimals; the terms, and a grade's terms, a whole number of days, 0 or more; the late percent a percent with up to two decimals; the policy date yyyy-MM-dd, or blank; the period numbering from-date yyyy-MM-dd, or blank.
+            decimals; the terms, and a grade's terms, a whole number of days, 0 or more; the late percent a percent with up to two decimals; the policy date yyyy-MM-dd, or blank; the period numbering from-date yyyy-MM-dd, or blank; a permission roles (clerk, steward) separated by commas, or blank.
           </span>
         )}
       </form>
@@ -156,6 +165,12 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         Period numbering from{' '}
         <span data-testid="setting-period-numbering-from-current">{current('period-numbering-from')}</span>
       </p>
+      {PERM_ACTIONS.map((a) => (
+        <p key={a}>
+          Roles that may {a}{' '}
+          <span data-testid={`setting-perm-${a}-current`}>{current(`perm-${a}`)}</span>
+        </p>
+      ))}
     </section>
   );
 }
