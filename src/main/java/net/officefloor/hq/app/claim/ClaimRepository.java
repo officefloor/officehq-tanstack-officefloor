@@ -183,6 +183,12 @@ public class ClaimRepository {
                 claim.sheetId(), claim.id()) == 1;
     }
 
+    /** Unbinds every claim of the person bound by their last statement (live again). */
+    public void unbindAll(String sheetId, long personId) {
+        jdbc.update("UPDATE claim SET stated = FALSE, stated_due = NULL WHERE sheet_id = ? AND person_id = ? AND stated",
+                sheetId, personId);
+    }
+
     /** Binds the claim to a statement figure (null: it had none), or unbinds it when {@code stated} is false. */
     public void bind(Claim claim, boolean stated, BigDecimal statedDue) {
         jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet_id = ? AND id = ?",
