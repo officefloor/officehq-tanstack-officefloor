@@ -1,0 +1,250 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index ec3b7d843..58418d7f4 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -24,12 +24,12 @@ function ClaimsHead() {
+   );
+ }
+ 
+-type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void';
++type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
+ 
+ /** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, its status log (oldest first), due-by (fixed when it was added), whether it is overdue, and the period its date falls in, with the buttons that edit it or change its status. A clerk's settle above the clerk limit makes it PENDING; a
+  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
+  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
+- *  shows the claim's error. A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
++ *  shows the claim's error. A steward re-settles a SETTLED claim (its due fixed again at today's figure). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
+  *  with the claim's error, for anyone else or any other claim). Only a DRAFT can be edited: Edit on any other claim shows the claim's error instead of opening the editor. */
+ function ClaimRow({
+   sheetId,
+@@ -150,6 +150,9 @@ function ClaimRow({
+       <button type="button" data-testid="claim-void" disabled={status.isPending} onClick={() => act('void')}>
+         Void
+       </button>
++      <button type="button" data-testid="claim-resettle" disabled={status.isPending} onClick={() => act('resettle')}>
++        Re-settle
++      </button>
+       <select
+         data-testid="claim-reassign-to"
+         aria-label="Move to"
+@@ -187,9 +190,9 @@ function ClaimRow({
+       {status.isError && (
+         <span data-testid="claim-error">
+           {' '}
+-          {(c.status === 'OPEN' || c.status === 'PENDING') && c.openedBy === user && status.variables !== 'reject' && status.variables !== 'void'
++          {(c.status === 'OPEN' || c.status === 'PENDING') && c.openedBy === user && status.variables !== 'reject' && status.variables !== 'void' && status.variables !== 'resettle'
+             ? 'You opened this claim, so someone else must settle or approve it.'
+-            : `A ${c.status} claim cannot be changed that way, nor one dated inside a closed period; only a steward approves or rejects a pending claim, and a rejection needs a reason.`}
++            : `A ${c.status} claim cannot be changed that way, nor one dated inside a closed period; only a steward approves or rejects a pending claim or re-settles a settled one, and a rejection needs a reason.`}
+         </span>
+       )}
+       {reassign.isError && (
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 1299a800c..5a170033d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -22,16 +22,19 @@ import net.officefloor.plugin.variable.Val;
+  * clerk limit, if it has one, makes it PENDING instead (its due left live, not bound by a statement); a due of n/a is
+  * within any limit. A steward settles anything. Only a steward approves a PENDING claim (fixing its live figure, late
+  * charge included, at that moment) or rejects it (OPEN again, bound again by its statement if one bound it).
++ * Only a steward re-settles a SETTLED claim (not one dated inside a closed period): its due is fixed again at the figure
++ * it would have today as an OPEN claim bound by no statement (today's rates, grades, floor and late charge).
+  */
+ public class ApplyClaimStatus {
+     public void apply(@Val Claim claim, @Val ClaimStatusChange change, PersonRepository people, RateRepository rates,
+-            PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, Out<Claim> changed, Out<ClaimNumber> number) throws InvalidClaimStatusException {
++            PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, Out<Claim> changed, Out<ClaimNumber> number, Out<PreviousDue> previous) throws InvalidClaimStatusException {
+         boolean allowed = switch (change.action()) {
+             case OPEN -> claim.status() == ClaimStatus.DRAFT;
+             case SETTLE -> claim.status() == ClaimStatus.OPEN;
+             case APPROVE, REJECT -> claim.status() == ClaimStatus.PENDING;
+             case VOID -> claim.status() == ClaimStatus.DRAFT || claim.status() == ClaimStatus.OPEN
+                     || claim.status() == ClaimStatus.PENDING;
++            case RESETTLE -> claim.status() == ClaimStatus.SETTLED;
+         };
+         if (!allowed) {
+             throw new InvalidClaimStatusException("A " + claim.status() + " claim cannot be made " + change.to());
+@@ -47,9 +50,20 @@ public class ApplyClaimStatus {
+         if ((change.action() == ClaimAction.APPROVE || change.action() == ClaimAction.REJECT) && !steward) {
+             throw new InvalidClaimStatusException("Only a steward approves or rejects a pending claim");
+         }
++        if (change.action() == ClaimAction.RESETTLE && !steward) {
++            throw new InvalidClaimStatusException("Only a steward re-settles a claim");
++        }
+         ClaimStatus to = change.to();
+         LateCharge late = LateCharge.of(claim.sheetId(), sheets, settings, claims);
+-        BigDecimal settledDue = to == ClaimStatus.SETTLED ? late.add(claim, due(claim, people, rates, settings, late.rounding())) : claim.due();
++        BigDecimal settledDue;
++        if (change.action() == ClaimAction.RESETTLE) {
++            Claim asOpen = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
++                    claim.note(), ClaimStatus.OPEN, claim.number(), null, claim.openedBy(), false, null,
++                    claim.corrects(), claim.dueBy());
++            settledDue = late.add(asOpen, due(asOpen, people, rates, settings, late.rounding()));
++        } else {
++            settledDue = to == ClaimStatus.SETTLED ? late.add(claim, due(claim, people, rates, settings, late.rounding())) : claim.due();
++        }
+         if (change.action() == ClaimAction.SETTLE && settledDue != null && !steward) {
+             BigDecimal limit = settings.clerkLimit(claim.sheetId());
+             if (limit != null && settledDue.compareTo(limit) > 0) {
+@@ -58,6 +72,7 @@ public class ApplyClaimStatus {
+             }
+         }
+         number.set(new ClaimNumber(claim.number()));
++        previous.set(new PreviousDue(claim.due()));
+         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
+                 claim.note(), to, claim.number(), settledDue,
+                 change.action() == ClaimAction.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy()));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimAction.java b/src/main/java/net/officefloor/hq/app/claim/ClaimAction.java
+index d9f10aac3..b57fc1602 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimAction.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimAction.java
+@@ -2,5 +2,5 @@ package net.officefloor.hq.app.claim;
+ 
+ /** An action on a claim's status. */
+ public enum ClaimAction {
+-    OPEN, SETTLE, APPROVE, REJECT, VOID
++    OPEN, SETTLE, APPROVE, REJECT, VOID, RESETTLE
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/PreviousDue.java b/src/main/java/net/officefloor/hq/app/claim/PreviousDue.java
+new file mode 100644
+index 000000000..25112e220
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/PreviousDue.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++
++/** The due a claim had fixed before a status change (null: none, or n/a), so a re-settle can name its old figure. */
++public record PreviousDue(BigDecimal value) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
+index 1e85bc015..5cb1488c0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+@@ -7,12 +8,12 @@ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.rollup.RollupBefore;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Writes CLAIM_OPENED, CLAIM_SETTLED, CLAIM_PENDING, CLAIM_APPROVED, CLAIM_REJECTED or CLAIM_VOIDED to the audit
++/** Writes CLAIM_OPENED, CLAIM_SETTLED, CLAIM_PENDING, CLAIM_APPROVED, CLAIM_REJECTED, CLAIM_VOIDED or CLAIM_RESETTLED to the audit
+  * file once the status is stored, ending with number=<number> when the claim has one; CLAIM_SETTLED and CLAIM_APPROVED
+- * then end with the due they fixed (due=n/a when its grade had no rate), CLAIM_REJECTED with reason=<reason>. Then writes the
++ * then end with the due they fixed (due=n/a when its grade had no rate), CLAIM_REJECTED with reason=<reason>, CLAIM_RESETTLED with old=<previous due> new=<new due>. Then writes the
+  * figures the change moved (see Rollup). */
+ public class RecordClaimStatusChanged {
+-    public void record(@Val Claim claim, @Val ClaimStatusChange change, @Val ClaimNumber number,
++    public void record(@Val Claim claim, @Val ClaimStatusChange change, @Val ClaimNumber number, @Val PreviousDue previous,
+             PersonRepository people, @Val RollupBefore before, Rollup rollup, Audit audit) {
+         String event = switch (change.action()) {
+             case OPEN -> "CLAIM_OPENED";
+@@ -20,14 +21,21 @@ public class RecordClaimStatusChanged {
+             case APPROVE -> "CLAIM_APPROVED";
+             case REJECT -> "CLAIM_REJECTED";
+             case VOID -> "CLAIM_VOIDED";
++            case RESETTLE -> "CLAIM_RESETTLED";
+         };
+         Person person = people.find(claim.sheetId(), claim.personId());
+         audit.record(event + " sheet=" + claim.sheetId() + " by=" + change.by() + " person="
+                 + (person == null ? "" : person.name()) + " amount=" + claim.amount().toPlainString()
+                 + " date=" + claim.date() + (number.value() == null ? "" : " number=" + number.value())
+-                + (claim.status() == ClaimStatus.SETTLED
++                + (change.action() == ClaimAction.RESETTLE
++                        ? " old=" + figure(previous.value()) + " new=" + figure(claim.due())
++                        : claim.status() == ClaimStatus.SETTLED
+                         ? " due=" + (claim.due() == null ? "n/a" : claim.due().toPlainString()) : "")
+                 + (change.action() == ClaimAction.REJECT ? " reason=" + change.reason() : ""));
+         rollup.record(claim.sheetId(), change.by(), before);
+     }
++
++    private static String figure(BigDecimal due) {
++        return due == null ? "n/a" : due.toPlainString();
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
+index 27e4cd58c..9bc5cc690 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
+@@ -26,6 +26,7 @@ public class SaveClaimStatus {
+             case OPEN -> ClaimStatus.DRAFT;
+             case SETTLE -> ClaimStatus.OPEN;
+             case APPROVE, REJECT -> ClaimStatus.PENDING;
++            case RESETTLE -> ClaimStatus.SETTLED;
+             case VOID -> null;
+         };
+         boolean stored = from != null ? claims.updateStatus(toSave, from)
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+index dfda8502f..96ae54b31 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+@@ -56,16 +56,17 @@ public class SettleClaims {
+             Claim[] changed = new Claim[1];
+             Claim[] stored = new Claim[1];
+             ClaimNumber[] number = new ClaimNumber[1];
++            PreviousDue[] previous = new PreviousDue[1];
+             try {
+                 apply.apply(claim, change, people, rates, periods, settings, roles, sheets, claims,
+-                        (c) -> changed[0] = c, (n) -> number[0] = n);
++                        (c) -> changed[0] = c, (n) -> number[0] = n, (p) -> previous[0] = p);
+                 save.save(changed[0], change, claims, periods, settings, sheets, log, (c) -> stored[0] = c,
+                         (n) -> number[0] = n);
+             } catch (InvalidClaimStatusException refused) {
+                 continue;
+             }
+             settled++;
+-            record.record(stored[0], change, number[0], people, before, rollup, audit);
++            record.record(stored[0], change, number[0], previous[0], people, before, rollup, audit);
+         }
+         result.set(new BulkSettleResult(settled, selected.size() - settled));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+index 7750ec97f..75f4d1986 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+@@ -3,7 +3,7 @@ package net.officefloor.hq.app.claim;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** Reads the body: the action is open, settle, approve, reject (which needs a reason) or void. */
++/** Reads the body: the action is open, settle, approve, reject (which needs a reason), void or resettle. */
+ public class ValidateClaimStatus {
+     public void validate(@RequestBody ClaimStatusRequest request, Out<ClaimStatusChange> change)
+             throws InvalidClaimStatusException {
+@@ -14,11 +14,12 @@ public class ValidateClaimStatus {
+             case "approve" -> ClaimAction.APPROVE;
+             case "reject" -> ClaimAction.REJECT;
+             case "void" -> ClaimAction.VOID;
+-            default -> throw new InvalidClaimStatusException("The action must be open, settle, approve, reject or void");
++            case "resettle" -> ClaimAction.RESETTLE;
++            default -> throw new InvalidClaimStatusException("The action must be open, settle, approve, reject, void or resettle");
+         };
+         ClaimStatus to = switch (taken) {
+             case OPEN, REJECT -> ClaimStatus.OPEN;
+-            case SETTLE, APPROVE -> ClaimStatus.SETTLED;
++            case SETTLE, APPROVE, RESETTLE -> ClaimStatus.SETTLED;
+             case VOID -> ClaimStatus.VOID;
+         };
+         String reason = request.reason() == null ? "" : request.reason().trim();
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml
+index f0fbce5ab..d5fcc6844 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml
+@@ -1,8 +1,9 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/status — change a claim's status by an action: open
+ # (DRAFT to OPEN), settle (OPEN to SETTLED, or to PENDING when a clerk settles a claim whose due is above the sheet's
+ # clerk limit), approve (PENDING to SETTLED) or reject with a reason (PENDING back to OPEN), both by a steward, or void
+-# (DRAFT, OPEN or PENDING to VOID). An action the claim's status does not allow, a claim dated inside a closed period,
+-# settling or approving by the user who opened the claim, approving or rejecting by a clerk, a rejection without a
++# (DRAFT, OPEN or PENDING to VOID), or resettle by a steward (SETTLED again, its due fixed anew at today's figure as
++# an open claim bound by no statement). An action the claim's status does not allow, a claim dated inside a closed period,
++# settling or approving by the user who opened the claim, approving, rejecting or re-settling by a clerk, a rejection without a
+ # reason, or an unknown action, is a 409 and a claim not on the sheet a 404, neither writing anything. Opening gives
+ # the claim the sheet's next number and records who opened it; a voided claim keeps its number. Responds with the
+ # claim as stored.
