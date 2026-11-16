@@ -95,6 +95,14 @@ public class ClaimRepository {
                 to, claim.sheetId(), claim.sheetId(), claim.id(), from) == 1;
     }
 
+    /** Stores the claim's new date and number, but only while it is still OPEN or PENDING and dated {@code was}; false
+     *  when another change got there first (nothing is written). */
+    public boolean redate(Claim claim, LocalDate was) {
+        return jdbc.update("UPDATE claim SET claim_date = ?, claim_number = ? WHERE sheet_id = ? AND id = ? AND claim_date = ? "
+                + "AND status IN ('OPEN', 'PENDING')",
+                Date.valueOf(claim.date()), claim.number(), claim.sheetId(), claim.id(), Date.valueOf(was)) == 1;
+    }
+
     /** Stores the date the claim is deferred until, but only while it is still OPEN; false when it no longer is
      *  (nothing is written). */
     public boolean defer(Claim claim) {

@@ -29,7 +29,7 @@ type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
 /** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, its status log (oldest first), due-by (fixed when it was added), whether it is overdue, whether it is deferred and until when, its proofs count, and the period its date falls in, with the buttons that edit it or change its status. A clerk's settle above the clerk limit makes it PENDING; a
  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
- *  shows the claim's error. An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one dated inside a closed period); a claim with no proofs whose due is above the proof threshold on its date cannot be settled nor approved. A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
+ *  shows the claim's error. An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one dated inside a closed period); a claim with no proofs whose due is above the proof threshold on its date cannot be settled nor approved. A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). A steward re-dates an OPEN or PENDING claim to the date typed beside Re-date (its due-by and any statement figure stay; refused, with the claim's error, for anyone else, any other claim, or a date inside a closed period or after the person's retirement). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
  *  with the claim's error, for anyone else or any other claim). Split takes the amount typed beside it off an OPEN claim (not deferred nor dated inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Only a DRAFT can be edited: Edit on any other claim shows the claim's error instead of opening the editor. */
 function ClaimRow({
   sheetId,
@@ -85,6 +85,15 @@ function ClaimRow({
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
   });
+  const [newDate, setNewDate] = useState('');
+  const redate = useMutation({
+    mutationFn: (date: string) =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/date`, { date, by: user }),
+    onSuccess: () => {
+      setNewDate('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
   const proof = useMutation({
     mutationFn: () => postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/proofs`, { by: user }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
@@ -104,6 +113,7 @@ function ClaimRow({
     setEditRefused(false);
     reassign.reset();
     defer.reset();
+    redate.reset();
     proof.reset();
     split.reset();
     status.reset();
@@ -141,6 +151,7 @@ function ClaimRow({
           status.reset();
           reassign.reset();
           defer.reset();
+          redate.reset();
           proof.reset();
           split.reset();
           if (c.status !== 'DRAFT') {
@@ -194,6 +205,7 @@ function ClaimRow({
           status.reset();
           reassign.reset();
           defer.reset();
+          redate.reset();
           proof.reset();
           split.reset();
           proof.mutate();
@@ -209,6 +221,7 @@ function ClaimRow({
         onChange={(e) => {
           setDeferUntil(e.target.value);
           defer.reset();
+          redate.reset();
           proof.reset();
           split.reset();
         }}
@@ -222,12 +235,40 @@ function ClaimRow({
           status.reset();
           reassign.reset();
           defer.reset();
+          redate.reset();
           proof.reset();
           split.reset();
           defer.mutate(deferUntil.trim());
         }}
       >
         Defer
+      </button>{' '}
+      <input
+        type="date"
+        data-testid="claim-date-new"
+        aria-label="New date"
+        value={newDate}
+        onChange={(e) => {
+          setNewDate(e.target.value);
+          redate.reset();
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-redate"
+        disabled={redate.isPending}
+        onClick={() => {
+          setEditRefused(false);
+          status.reset();
+          reassign.reset();
+          defer.reset();
+          redate.reset();
+          proof.reset();
+          split.reset();
+          redate.mutate(newDate.trim());
+        }}
+      >
+        Re-date
       </button>{' '}
       <input
         data-testid="claim-split-amount"
@@ -248,6 +289,7 @@ function ClaimRow({
           status.reset();
           reassign.reset();
           defer.reset();
+          redate.reset();
           proof.reset();
           split.reset();
           split.mutate(splitAmount.trim());
@@ -282,6 +324,7 @@ function ClaimRow({
           status.reset();
           reassign.reset();
           defer.reset();
+          redate.reset();
           proof.reset();
           split.reset();
           reassign.mutate(Number(moveTo));
@@ -311,6 +354,13 @@ function ClaimRow({
         <span data-testid="claim-error">
           {' '}
           Only an open claim, not dated inside a closed period, can be deferred, and only to a date after today.
+        </span>
+      )}
+      {redate.isError && (
+        <span data-testid="claim-error">
+          {' '}
+          Only a steward re-dates a claim, and only an open or pending one not dated inside a closed period, to a date
+          neither inside a closed period nor after the person's retirement.
         </span>
       )}
       {proof.isError && (

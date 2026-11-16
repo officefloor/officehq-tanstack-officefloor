@@ -20,12 +20,17 @@ public final class ClaimNumbering {
     public static String next(Claim claim, ClaimRepository claims, PeriodRepository periods, SettingRepository settings,
             SheetRepository sheets) {
         String sheet = claim.sheetId();
-        LocalDate from = settings.periodNumberingFrom(sheet);
-        if (from == null || sheets.today(sheet).isBefore(from)) {
+        if (!perPeriod(sheet, settings, sheets)) {
             return String.valueOf(claims.nextNumber(sheet));
         }
         Period period = periods.containing(sheet, claim.date());
         String key = period == null ? "X" : period.name();
         return key + "-" + claims.nextPeriodNumber(sheet, key);
+    }
+
+    /** Whether claims are numbered per period now: the period-numbering-from setting is a date on or before today. */
+    public static boolean perPeriod(String sheet, SettingRepository settings, SheetRepository sheets) {
+        LocalDate from = settings.periodNumberingFrom(sheet);
+        return from != null && !sheets.today(sheet).isBefore(from);
     }
 }
