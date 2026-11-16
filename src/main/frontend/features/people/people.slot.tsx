@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
+import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { GRADES, peopleKey, useEditingPerson, usePeople, type Person } from './people';
 
@@ -92,6 +93,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
           <tr>
             <th>Name</th>
             <th>Grade</th>
+            <PeopleHead.Slot sheetId={sheetId} user={user} />
             <th />
           </tr>
         </thead>
@@ -100,6 +102,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
+              <PersonRow.Slot sheetId={sheetId} user={user} person={p} />
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => openEditor(p)}>
                   Edit
