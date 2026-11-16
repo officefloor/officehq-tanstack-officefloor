@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { putJson } from '../../api/http';
+import { postJson, putJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
@@ -112,6 +112,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
           <span data-testid="rate-form-error">The rate must be a percent 0.00 or more, with up to two decimals; the from- and to-dates must be dates, the to-date not before the from-date.</span>
         )}
       </form>
+      <ImportRates sheetId={sheetId} user={user} />
       {rates.isError && <p data-testid="rates-load-error">Could not load rates.</p>}
       <RatePreview sheetId={sheetId} rates={rates.data} />
       <table data-testid="rates-current">
@@ -137,6 +138,66 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
         </tbody>
       </table>
     </section>
+  );
+}
+
+/** The rate import box: lines of grade,rate,from,to (from and to may be absent or blank). The server checks every line
+ *  by the rate form's rules first: one failing line refuses the import and sets nothing. Otherwise each line is set
+ *  in order as the form sets one. Shows how many were set; the count is cleared while a new press runs. */
+function ImportRates({ sheetId, user }: { sheetId: string; user: string }) {
+  const queryClient = useQueryClient();
+  const [text, setText] = useState('');
+  const submit = useSubmitOnce();
+  const importRates = useMutation({
+    mutationFn: (t: string) =>
+      postJson<{ set: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/import-rates`, { text: t, by: user }),
+    onSuccess: () => {
+      setText('');
+      void queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
+    },
+    onSettled: submit.end,
+  });
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!submit.begin()) return;
+        importRates.reset();
+        importRates.mutate(text);
+      }}
+    >
+      <label>
+        Import rates (grade,rate,from,to per line)
+        <br />
+        <textarea
+          data-testid="import-rates"
+          rows={4}
+          cols={50}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            importRates.reset();
+          }}
+        />
+      </label>
+      <br />
+      <button type="submit" data-testid="import-rates-submit" disabled={importRates.isPending}>
+        Import rates
+      </button>
+      {importRates.isSuccess && (
+        <>
+          {' '}
+          Set <span data-testid="import-rates-set">{importRates.data.set}</span>
+        </>
+      )}
+      {importRates.isError && (
+        <span data-testid="import-rates-error">
+          {' '}
+          Nothing was set: every line must keep the rate form's rules.
+        </span>
+      )}
+    </form>
   );
 }
 

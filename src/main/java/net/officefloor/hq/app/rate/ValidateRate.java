@@ -17,6 +17,11 @@ public class ValidateRate {
 
     public void validate(@PathVariable("grade") String grade, @RequestBody RateRequest request, Out<RateValues> values)
             throws InvalidRateException {
+        values.set(check(grade, request));
+    }
+
+    /** The rate form's rules: the grade's rate as set by the request, or refused. */
+    static RateValues check(String grade, RateRequest request) throws InvalidRateException {
         String g = grade == null ? "" : grade.trim();
         if (!GRADES.contains(g)) {
             throw new InvalidRateException("Grade must be A, B or C");
@@ -30,8 +35,8 @@ public class ValidateRate {
         if (from != null && to != null && to.isBefore(from)) {
             throw new InvalidRateException("The to-date must not be before the from-date");
         }
-        values.set(new RateValues(g, new BigDecimal(rate).setScale(2), from, to,
-                request.by() == null ? "" : request.by().trim()));
+        return new RateValues(g, new BigDecimal(rate).setScale(2), from, to,
+                request.by() == null ? "" : request.by().trim());
     }
 
     private static LocalDate date(String value, String name) throws InvalidRateException {
