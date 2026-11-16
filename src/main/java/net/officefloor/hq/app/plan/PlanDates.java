@@ -26,4 +26,18 @@ public final class PlanDates {
         }
         return dates;
     }
+
+    /** The plan's first {@code count} dates after the day and on or before its end. */
+    public static List<LocalDate> after(Plan plan, LocalDate day, int count) {
+        List<LocalDate> next = new ArrayList<>();
+        for (LocalDate date : upTo(plan, plan.end())) {
+            if (next.size() == count) {
+                break;
+            }
+            if (date.isAfter(day)) {
+                next.add(date);
+            }
+        }
+        return next;
+    }
 }

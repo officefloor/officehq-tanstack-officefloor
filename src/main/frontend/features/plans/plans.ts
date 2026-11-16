@@ -3,7 +3,8 @@ import { getJson } from '../../api/http';
 
 /** A person's plan: a claim of the amount every `every` days from `start` up to `end` — or, with a `day` (1 to 31)
  *  instead, on that day of every month (the month's last day when it is shorter) — and how many claims it has made so
- *  far. Exactly one of `every` and `day` is set. */
+ *  far, and its next dates: its first five dates after the sheet's today and on or before `end`, comma and space
+ *  separated. Exactly one of `every` and `day` is set. */
 export type Plan = {
   id: number;
   personId: number;
@@ -13,6 +14,7 @@ export type Plan = {
   day: number | null;
   end: string;
   generated: number;
+  nextDates: string;
 };
 
 export const plansKey = (sheetId: string) => ['sheet', sheetId, 'plans'];

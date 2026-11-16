@@ -15,8 +15,8 @@ function PlansHead() {
 type PlanForm = { amount: string; start: string; every: string; day: string; end: string };
 const EMPTY: PlanForm = { amount: '', start: '', every: '', day: '', end: '' };
 
-/** A person's plans (amount, start, every N days or monthly on a day of the month, end, and how many claims each has
- *  made so far), in the order added, and the form that adds one (fill every N days or the day of the month, 1 to 31,
+/** A person's plans (amount, start, every N days or monthly on a day of the month, end, how many claims each has
+ *  made so far, and its next five dates), in the order added, and the form that adds one (fill every N days or the day of the month, 1 to 31,
  *  not both). The server refuses a bad amount, interval or day, or an end before the start: the row's
  *  plan error shows, until the form is changed or submitted again. */
 function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
@@ -47,7 +47,8 @@ function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string;
         {mine.map((p) => (
           <li key={p.id} data-testid={`plan-row-${p.id}`}>
             {p.amount} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} from {p.start} to {p.end}; made{' '}
-            <span data-testid="plan-generated">{p.generated}</span>
+            <span data-testid="plan-generated">{p.generated}</span>; next{' '}
+            <span data-testid="plan-next-dates">{p.nextDates}</span>
           </li>
         ))}
       </ul>
