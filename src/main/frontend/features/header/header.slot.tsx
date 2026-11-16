@@ -1,14 +1,16 @@
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { usePeople } from '../people/people';
-import { STATUSES, useSheetDueTotal, useSheetOverdue, useStatusCounts } from './totals';
+import { STATUSES, useSheetDueTotal, useSheetOverdue, useMyFigures, useStatusCounts } from './totals';
 
 /** The sheet's header counters, at the top of the sheet: its people (retired included), its claims per status
- *  (as the summary counts them), and its due-total and overdue-total (as the rollups show them). */
-function Header({ sheetId }: { sheetId: string }) {
+ *  (as the summary counts them), its due-total and overdue-total (as the rollups show them), and the signed-in user's
+ *  own due-total and overdue-total (blank when no person on the sheet has the user's name or alias). */
+function Header({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
   const withStatus = useStatusCounts(sheetId);
   const dueTotal = useSheetDueTotal(sheetId);
   const overdue = useSheetOverdue(sheetId);
+  const my = useMyFigures(sheetId, user);
 
   return (
     <header data-testid="header">
@@ -21,6 +23,8 @@ function Header({ sheetId }: { sheetId: string }) {
       ))}
       {' · '}Due total <span data-testid="header-due-total">{dueTotal}</span>
       {' · '}Overdue total <span data-testid="header-overdue-total">{overdue.total}</span>
+      {' · '}My due total <span data-testid="my-due-total">{my?.due ?? ''}</span>
+      {' · '}My overdue total <span data-testid="my-overdue-total">{my?.overdue ?? ''}</span>
     </header>
   );
 }

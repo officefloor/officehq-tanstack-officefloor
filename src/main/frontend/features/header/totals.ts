@@ -53,6 +53,25 @@ export function useSheetOverdue(sheetId: string): { count: number; total: string
   return { count: all.reduce((n, o) => n + o.count, 0), total: trimmedSum(all.map((o) => o.total)) };
 }
 
+/** The signed-in user's own due-total and overdue-total: those of the person on the sheet whose name or an alias is the
+ *  user's name (as names are compared: case ignored), or null when there is no such person. */
+export function useMyFigures(sheetId: string, user: string): { due: string; overdue: string } | null {
+  const people = usePeople(sheetId);
+  const claims = useClaims(sheetId);
+  const rates = useRates(sheetId);
+  const late = useLate(sheetId);
+  const floor = useFloor(sheetId);
+  const cap = useCap(sheetId);
+  const key = user.trim().toLowerCase();
+  const p = (people.data ?? []).find((x) => [x.name, ...(x.aliases ?? [])].some((n) => n.trim().toLowerCase() === key));
+  if (!p || key === '') return null;
+  const mine = live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today);
+  return {
+    due: personDue(mine, rates.data, p, late, floor, cap),
+    overdue: overdue(mine, rates.data, p, late, floor).total,
+  };
+}
+
 /** How many of the sheet's claims have each status. */
 export function useStatusCounts(sheetId: string): (status: ClaimStatus) => number {
   const claims = useClaims(sheetId);
