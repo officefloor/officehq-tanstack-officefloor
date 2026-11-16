@@ -1,0 +1,493 @@
+diff --git a/src/main/frontend/features/sheet/today.slot.tsx b/src/main/frontend/features/sheet/today.slot.tsx
+index 33ab6df75..49c86016a 100644
+--- a/src/main/frontend/features/sheet/today.slot.tsx
++++ b/src/main/frontend/features/sheet/today.slot.tsx
+@@ -6,11 +6,13 @@ import { SheetPage } from '../../slots/defs/sheetPage';
+ import { useSheet, type Sheet } from '../session/session';
+ 
+ /** The sheet's today: shown, and changeable. Changing it re-reads the whole sheet. Also whether the sheet is
+- *  archived, and archiving it (a steward only). Both share the sheet's one error element. */
++ *  archived, and archiving it (a steward only), and cloning it to another, never used, id (a steward only), showing the
++ *  last id it was cloned to. All share the sheet's one error element. */
+ function SheetToday({ sheetId, user }: { sheetId: string; user: string }) {
+   const sheet = useSheet(sheetId);
+   const queryClient = useQueryClient();
+   const [typed, setTyped] = useState('');
++  const [cloneTo, setCloneTo] = useState('');
+   const submit = useSubmitOnce();
+   const stored = (saved: Sheet) => {
+     queryClient.setQueryData(['sheet', sheetId], saved);
+@@ -26,6 +28,15 @@ function SheetToday({ sheetId, user }: { sheetId: string; user: string }) {
+     mutationFn: () => postJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}/archive`, { by: user }),
+     onSuccess: stored,
+   });
++  const clone = useMutation({
++    mutationFn: (to: string) =>
++      postJson<{ from: string; to: string }>(`/api/sheets/${encodeURIComponent(sheetId)}/clone`, { to, by: user }),
++  });
++  const resetAll = () => {
++    save.reset();
++    archive.reset();
++    clone.reset();
++  };
+   return (
+     <form
+       data-testid="sheet-today-form"
+@@ -33,6 +44,7 @@ function SheetToday({ sheetId, user }: { sheetId: string; user: string }) {
+         e.preventDefault();
+         if (!submit.begin()) return;
+         archive.reset();
++        clone.reset();
+         save.mutate(typed.trim());
+       }}
+     >
+@@ -43,8 +55,7 @@ function SheetToday({ sheetId, user }: { sheetId: string; user: string }) {
+         value={typed}
+         onChange={(e) => {
+           setTyped(e.target.value);
+-          save.reset();
+-          archive.reset();
++          resetAll();
+         }}
+       />
+       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
+@@ -57,16 +68,40 @@ function SheetToday({ sheetId, user }: { sheetId: string; user: string }) {
+         data-testid="sheet-archive"
+         disabled={archive.isPending}
+         onClick={() => {
+-          save.reset();
+-          archive.reset();
++          resetAll();
+           archive.mutate();
+         }}
+       >
+         Archive
+-      </button>
+-      {(save.isError || archive.isError) && (
++      </button>{' '}
++      <input
++        data-testid="sheet-clone-to"
++        placeholder="Clone to sheet id"
++        value={cloneTo}
++        onChange={(e) => {
++          setCloneTo(e.target.value);
++          resetAll();
++        }}
++      />
++      <button
++        type="button"
++        data-testid="sheet-clone"
++        disabled={clone.isPending}
++        onClick={() => {
++          resetAll();
++          clone.mutate(cloneTo.trim());
++        }}
++      >
++        Clone
++      </button>{' '}
++      Cloned to <span data-testid="sheet-cloned-to">{clone.data?.to ?? ''}</span>
++      {(save.isError || archive.isError || clone.isError) && (
+         <span data-testid="sheet-error">
+-          {archive.isError ? 'Could not archive the sheet.' : 'Could not change today.'}
++          {clone.isError
++            ? 'Could not clone the sheet.'
++            : archive.isError
++              ? 'Could not archive the sheet.'
++              : 'Could not change today.'}
+         </span>
+       )}
+     </form>
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index ffaedcb31..b98c67c7d 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -108,6 +108,17 @@ public class Rollup {
+         }
+     }
+ 
++    /** Writes ROLLUP for every person on the sheet, in list order, then TOTALS: the figures of a sheet just made. */
++    public void recordAll(String sheetId, String by) {
++        Map<Long, Figures> now = take(sheetId).figures();
++        for (Figures f : now.values()) {
++            audit.record("ROLLUP sheet=" + sheetId + " by=" + by + " person=" + f.name() + " claimed=" + f.claimed()
++                    + " due-total=" + f.dueTotal() + " overdue-total=" + f.overdueTotal());
++        }
++        audit.record("TOTALS sheet=" + sheetId + " by=" + by + " claimed-total=" + claimedTotal(now) + " due-total="
++                + dueTotal(now) + " overdue-total=" + overdueTotal(now));
++    }
++
+     private static String claimedTotal(Map<Long, Figures> figures) {
+         return figures.values().stream().map((f) -> new BigDecimal(f.claimed()))
+                 .reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add).toPlainString();
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/CloneRepository.java b/src/main/java/net/officefloor/hq/app/sheet/CloneRepository.java
+new file mode 100644
+index 000000000..5da2fc8e9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/CloneRepository.java
+@@ -0,0 +1,198 @@
++package net.officefloor.hq.app.sheet;
++
++import java.sql.Date;
++import java.sql.PreparedStatement;
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.Comparator;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Locale;
++import java.util.Map;
++import java.util.function.Function;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimNumbering;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.support.GeneratedKeyHolder;
++import org.springframework.stereotype.Repository;
++
++/**
++ * Copies a sheet to another, never used, id. The copy takes the sheet's today, settings, roles, rates, holidays, void
++ * reasons, templates, people (with their grades, terms, contacts, aliases, holds, retirements and patrons), pools,
++ * periods (all open, no figures fixed) and claims (status, frozen due, dates, notes and their logs, unbound from any
++ * statement). Statements, watches, delegations, settle batches and archiving are not copied. The copy's claims are
++ * numbered afresh by its own numbering, in the order the originals were opened: by the sheet's today when each was
++ * opened, then by the order they were copied in (people in list order, each one's claims as added).
++ */
++@Repository
++public class CloneRepository {
++
++    /** The tables kept per sheet: a sheet with a row in any of them (or one loaded) has been used. */
++    private static final List<String> SHEET_TABLES = List.of("person", "claim", "rate", "setting", "user_role", "period",
++            "pool", "holiday", "void_reason", "claim_template", "delegation", "statement", "sheet_archived", "watch");
++
++    private final JdbcTemplate jdbc;
++    private final SheetRepository sheets;
++    private final ClaimRepository claims;
++    private final PeriodRepository periods;
++    private final SettingRepository settings;
++
++    public CloneRepository(JdbcTemplate jdbc, SheetRepository sheets, ClaimRepository claims, PeriodRepository periods,
++            SettingRepository settings) {
++        this.jdbc = jdbc;
++        this.sheets = sheets;
++        this.claims = claims;
++        this.periods = periods;
++        this.settings = settings;
++    }
++
++    /** Whether the sheet has never been used: never loaded, never changed, nothing kept for it. */
++    public boolean unused(String id) {
++        if (sheets.exists(id)) {
++            return false;
++        }
++        for (String table : SHEET_TABLES) {
++            Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE sheet_id = ?", Integer.class, id);
++            if (n != null && n > 0) {
++                return false;
++            }
++        }
++        return true;
++    }
++
++    /** Copies sheet {@code from} to the unused sheet {@code to} (see the class comment); from then on {@code to} exists. */
++    public void copy(String from, String to) {
++        sheets.saveToday(to, sheets.today(from));
++        sheets.markLoaded(to);
++        for (String table : List.of("setting", "setting_log", "user_role", "rate", "rate_log", "holiday", "void_reason",
++                "claim_template")) {
++            copy(table, "WHERE sheet_id = ?" + (hasColumn(table, "id") ? " ORDER BY id" : ""), from, to, Map.of());
++        }
++
++        Map<Object, Object> people = copy("person", "WHERE sheet_id = ? ORDER BY id", from, to, Map.of());
++        Map<String, Function<Map<String, Object>, Object>> ofPerson = Map.of("person_id", (r) -> people.get(r.get("person_id")));
++        for (String table : List.of("person_grade", "person_grade_log", "person_terms_log", "person_alias", "person_hold",
++                "person_retire_log", "person_retirement")) {
++            copy(table, "WHERE sheet_id = ? ORDER BY " + (hasColumn(table, "id") ? "id" : "person_id"), from, to, ofPerson);
++        }
++        copy("patron", "WHERE sheet_id = ? ORDER BY named_seq", from, to, Map.of(
++                "person_id", (r) -> people.get(r.get("person_id")),
++                "patron_id", (r) -> people.get(r.get("patron_id"))));
++
++        Map<Object, Object> pools = copy("pool", "WHERE sheet_id = ? ORDER BY id", from, to, Map.of());
++        Map<String, Function<Map<String, Object>, Object>> member = new HashMap<>();
++        member.put("pool_id", (r) -> pools.get(r.get("pool_id")));
++        member.put("person_id", (r) -> r.get("person_id") == null ? null : people.get(r.get("person_id")));
++        member.put("member_pool_id", (r) -> r.get("member_pool_id") == null ? null : pools.get(r.get("member_pool_id")));
++        copy("pool_member", "WHERE pool_id IN (SELECT id FROM pool WHERE sheet_id = ?) ORDER BY id", from, null, member);
++
++        Map<String, Function<Map<String, Object>, Object>> open = new HashMap<>();
++        open.put("closed", (r) -> false);
++        open.put("soft_closed", (r) -> false);
++        open.put("closed_total", (r) -> null);
++        copy("period", "WHERE sheet_id = ? ORDER BY id", from, to, open);
++
++        Map<String, Function<Map<String, Object>, Object>> claim = new HashMap<>();
++        claim.put("person_id", (r) -> people.get(r.get("person_id")));
++        claim.put("claim_number", (r) -> null);
++        claim.put("stated", (r) -> false);
++        claim.put("stated_due", (r) -> null);
++        claim.put("locked_by", (r) -> null);
++        Map<Object, Object> copied = copy("claim", "c WHERE c.sheet_id = ? ORDER BY "
++                + "(SELECT p.position FROM person p WHERE p.id = c.person_id), c.person_id, c.id", from, to, claim);
++        Map<String, Function<Map<String, Object>, Object>> ofClaim = Map.of("claim_id", (r) -> copied.get(r.get("claim_id")));
++        for (String table : List.of("claim_log", "claim_edit", "claim_comment", "claim_reminder")) {
++            copy(table, "WHERE sheet_id = ? ORDER BY id", from, to, ofClaim);
++        }
++        copy("claim_void_reason", "WHERE sheet_id = ?", from, to, ofClaim);
++        copy("claim_proof_log", "WHERE claim_id IN (SELECT id FROM claim WHERE sheet_id = ?) ORDER BY id", from, null, ofClaim);
++
++        renumber(from, to, copied);
++    }
++
++    /** Gives the copied claims that had a number one afresh, by the copy's own numbering, in the order the originals
++     *  were opened; a correction or split names the claim it corrects or was split from by its new number. */
++    private void renumber(String from, String to, Map<Object, Object> copied) {
++        record Numbered(long id, long copy, String number, LocalDate opened) {
++        }
++        List<Numbered> numbered = new ArrayList<>();
++        jdbc.query("SELECT c.id, c.claim_number, c.claim_date, (SELECT MIN(l.log_date) FROM claim_log l WHERE l.sheet_id = c.sheet_id "
++                + "AND l.claim_id = c.id AND l.status = 'OPEN') AS opened FROM claim c WHERE c.sheet_id = ? AND c.claim_number IS NOT NULL",
++                (rs) -> {
++                    LocalDate opened = rs.getObject("opened", LocalDate.class);
++                    long id = rs.getLong("id");
++                    numbered.add(new Numbered(id, ((Number) copied.get(id)).longValue(), rs.getString("claim_number"),
++                            opened == null ? rs.getObject("claim_date", LocalDate.class) : opened));
++                }, from);
++        numbered.sort(Comparator.comparing(Numbered::opened).thenComparingLong(Numbered::copy));
++        Map<String, String> renumbered = new HashMap<>();
++        for (Numbered n : numbered) {
++            Claim claim = claims.find(to, n.copy());
++            String number = ClaimNumbering.next(claim, claims, periods, settings, sheets);
++            claims.renumber(claim, number);
++            renumbered.put(n.number(), number);
++        }
++        for (String column : List.of("corrects", "split_from")) {
++            jdbc.query("SELECT id, " + column + " FROM claim WHERE sheet_id = ? AND " + column + " IS NOT NULL", (rs) -> {
++                String was = rs.getString(2);
++                if (renumbered.containsKey(was)) {
++                    jdbc.update("UPDATE claim SET " + column + " = ? WHERE id = ?", renumbered.get(was), rs.getLong(1));
++                }
++            }, to);
++        }
++    }
++
++    /**
++     * Copies the rows of {@code table} picked by {@code where} (its one parameter: the sheet copied from) in that order,
++     * each with every stored column as it was but its own id (given afresh), its sheet ({@code to}, when not null) and
++     * the columns {@code overrides} works out from the row. Returns the new id of each row by its old id (tables with an
++     * id of their own).
++     */
++    private Map<Object, Object> copy(String table, String where, String from, String to,
++            Map<String, Function<Map<String, Object>, Object>> overrides) {
++        List<String> columns = jdbc.queryForList("SELECT LOWER(COLUMN_NAME) FROM INFORMATION_SCHEMA.COLUMNS "
++                + "WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME = ? AND IS_GENERATED = 'NEVER' AND IS_IDENTITY = 'NO' "
++                + "ORDER BY ORDINAL_POSITION", String.class, table.toUpperCase(Locale.ROOT));
++        boolean ownId = hasColumn(table, "id") && !columns.contains("id");
++        String insert = "INSERT INTO " + table + " (" + String.join(", ", columns) + ") VALUES ("
++                + String.join(", ", columns.stream().map((c) -> "?").toList()) + ")";
++        Map<Object, Object> ids = new HashMap<>();
++        for (Map<String, Object> row : jdbc.queryForList("SELECT * FROM " + table + " " + where, from)) {
++            Object[] values = new Object[columns.size()];
++            for (int i = 0; i < values.length; i++) {
++                String column = columns.get(i);
++                Function<Map<String, Object>, Object> override = overrides.get(column);
++                values[i] = override != null ? override.apply(row)
++                        : column.equals("sheet_id") && to != null ? to
++                        : row.get(column);
++                if (values[i] instanceof LocalDate date) {
++                    values[i] = Date.valueOf(date);
++                }
++            }
++            if (!ownId) {
++                jdbc.update(insert, values);
++                continue;
++            }
++            GeneratedKeyHolder keys = new GeneratedKeyHolder();
++            jdbc.update(con -> {
++                PreparedStatement ps = con.prepareStatement(insert, new String[] { "id" });
++                for (int i = 0; i < values.length; i++) {
++                    ps.setObject(i + 1, values[i]);
++                }
++                return ps;
++            }, keys);
++            ids.put(row.get("id"), keys.getKey().longValue());
++        }
++        return ids;
++    }
++
++    private boolean hasColumn(String table, String column) {
++        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'PUBLIC' "
++                + "AND TABLE_NAME = ? AND COLUMN_NAME = ?", Integer.class, table.toUpperCase(Locale.ROOT),
++                column.toUpperCase(Locale.ROOT));
++        return n != null && n > 0;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/CloneRequest.java b/src/main/java/net/officefloor/hq/app/sheet/CloneRequest.java
+new file mode 100644
+index 000000000..865c838d1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/CloneRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.sheet;
++
++/** Body of cloning a sheet: the id of the sheet to clone it to, and who clones it. */
++public record CloneRequest(String to, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/CloneSheet.java b/src/main/java/net/officefloor/hq/app/sheet/CloneSheet.java
+new file mode 100644
+index 000000000..dfd26e90a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/CloneSheet.java
+@@ -0,0 +1,23 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Clones the sheet to another id (see CloneRepository). Only a steward may clone, and only to an id never used. */
++public class CloneSheet {
++    public void cloneSheet(@PathVariable("sheetId") String sheetId, @Val CloneRequest request, CloneRepository clones,
++            RoleRepository roles, Out<SheetClone> clone) throws InvalidCloneException {
++        String id = sheetId.trim();
++        if (!RoleRepository.STEWARD.equals(roles.roleOf(id, request.by()))) {
++            throw new InvalidCloneException("Only a steward may clone the sheet");
++        }
++        if (request.to().isEmpty() || request.to().contains("/") || request.to().equals(id)
++                || !clones.unused(request.to())) {
++            throw new InvalidCloneException("The sheet can only be cloned to an id never used");
++        }
++        clones.copy(id, request.to());
++        clone.set(new SheetClone(id, request.to()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/HandleInvalidClone.java b/src/main/java/net/officefloor/hq/app/sheet/HandleInvalidClone.java
+new file mode 100644
+index 000000000..7a641b7b3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/HandleInvalidClone.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidClone {
++    public void handle(@Parameter InvalidCloneException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/InvalidCloneException.java b/src/main/java/net/officefloor/hq/app/sheet/InvalidCloneException.java
+new file mode 100644
+index 000000000..8840f6b85
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/InvalidCloneException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.sheet;
++
++/** A clone refused: the user is not a steward, or the id to clone to has been used. */
++public class InvalidCloneException extends Exception {
++    public InvalidCloneException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RecordSheetCloned.java b/src/main/java/net/officefloor/hq/app/sheet/RecordSheetCloned.java
+new file mode 100644
+index 000000000..892f47fb2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RecordSheetCloned.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.plugin.variable.Val;
++
++/** Writes SHEET_CLONE_MADE on the sheet cloned, then the clone's first lines: SHEET_CLONED, followed by ROLLUP for
++ *  every person and TOTALS. */
++public class RecordSheetCloned {
++    public void record(@Val SheetClone clone, @Val CloneRequest request, Audit audit, Rollup rollup) {
++        audit.record("SHEET_CLONE_MADE sheet=" + clone.from() + " by=" + request.by() + " to=" + clone.to());
++        audit.record("SHEET_CLONED sheet=" + clone.to() + " by=" + request.by() + " from=" + clone.from());
++        rollup.recordAll(clone.to(), request.by());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithClone.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithClone.java
+new file mode 100644
+index 000000000..9e572861b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithClone.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithClone {
++    public void respond(@Val SheetClone clone, ObjectResponse<SheetClone> response) {
++        response.send(clone);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetClone.java b/src/main/java/net/officefloor/hq/app/sheet/SheetClone.java
+new file mode 100644
+index 000000000..289dcd27c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetClone.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.sheet;
++
++/** A clone made: the sheet cloned ({@code from}) and the id it was cloned to. */
++public record SheetClone(String from, String to) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ValidateClone.java b/src/main/java/net/officefloor/hq/app/sheet/ValidateClone.java
+new file mode 100644
+index 000000000..c16130b3b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/ValidateClone.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Reads the body: the id to clone the sheet to, and who clones it. */
++public class ValidateClone {
++    public void validate(@RequestBody CloneRequest request, Out<CloneRequest> body) {
++        body.set(new CloneRequest(request == null || request.to() == null ? "" : request.to().trim(),
++                request == null || request.by() == null ? "" : request.by().trim()));
++    }
++}
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.InvalidCloneException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.InvalidCloneException.yml
+new file mode 100644
+index 000000000..940e0f970
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.InvalidCloneException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.sheet.HandleInvalidClone
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/clone.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/clone.POST.yml
+new file mode 100644
+index 000000000..64d5320a0
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/clone.POST.yml
+@@ -0,0 +1,16 @@
++# POST /api/sheets/{sheetId}/clone — clone the sheet to another id (see CloneRepository for what is copied). Only a
++# steward may clone, and only to an id never used (never loaded, nothing kept for it); otherwise a 400 that writes
++# nothing. Responds with the clone made.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateClone
++  next: clone
++clone:
++  class: net.officefloor.hq.app.sheet.CloneSheet
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.sheet.RecordSheetCloned
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithClone
