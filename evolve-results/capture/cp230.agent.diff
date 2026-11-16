@@ -1,0 +1,205 @@
+diff --git a/src/main/frontend/features/claims/PersonClaims.tsx b/src/main/frontend/features/claims/PersonClaims.tsx
+index cb61ae1c1..de7af4e7c 100644
+--- a/src/main/frontend/features/claims/PersonClaims.tsx
++++ b/src/main/frontend/features/claims/PersonClaims.tsx
+@@ -4,7 +4,7 @@ import { HttpError } from '../../api/http';
+ import { useSubmitOnce } from '../../forms/useSubmitOnce';
+ import { listPeriods, periodOf, periodsKey } from '../periods/api';
+ import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
+-import { isReviewLate, useNoteThreshold, useProofKinds, useProofThreshold, useReviewSla, type DatedOn } from '../settings/api';
++import { isPendingLate, isReviewLate, useNoteThreshold, usePendingSla, useProofKinds, useProofThreshold, useReviewSla, type DatedOn } from '../settings/api';
+ import { claimFromTemplate, listTemplates, templatesKey } from '../templates/api';
+ import { addClaim, addClaimLine, claimTimeline, addProof, PROOF_KINDS, proofsOf, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, waiveClaim, assignReview, holdClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, shareClaim, showShares, showTags, splitClaim, settlePartClaim, unlockClaim, updateClaim, type Claim, type ProofKind, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
+ import { Fig } from '../session/Fig';
+@@ -561,6 +561,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+ 
+   const noteThreshold = useNoteThreshold(sheetId);
+   const reviewSla = useReviewSla(sheetId);
++  const pendingSla = usePendingSla(sheetId);
+   // Whether a claim needs a note before it is opened: an empty one, and its due above the threshold.
+   const needsNote = (c: Claim) => {
+     const threshold = noteThreshold(c.date);
+@@ -828,6 +829,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates,
+               </td>
+               <td data-testid="claim-status">{c.status}</td>
+               <td>Review late <span data-testid="claim-review-late">{isReviewLate(c, today, reviewSla) ? 'yes' : 'no'}</span></td>
++              <td>Pending late <span data-testid="claim-pending-late">{isPendingLate(c, today, pendingSla) ? 'yes' : 'no'}</span></td>
+               <td>Batch <span data-testid="claim-batch">{c.settleBatch ?? ''}</span></td>
+               <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>
+               <td>
+diff --git a/src/main/frontend/features/settings/Settings.tsx b/src/main/frontend/features/settings/Settings.tsx
+index 30c06c882..65017536a 100644
+--- a/src/main/frontend/features/settings/Settings.tsx
++++ b/src/main/frontend/features/settings/Settings.tsx
+@@ -68,6 +68,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+                 : key === 'grace-days' ? 'Grace days'
+                 : key === 'escalate-after' ? 'Escalate after (days)'
+                 : key === 'review-sla' ? 'Review SLA (days)'
++                : key === 'pending-sla' ? 'Pending SLA (days)'
+                 : key === 'max-open' ? 'Most open claims per person'
+                 : key === 'score-mid' ? 'Score mid threshold'
+                 : key === 'score-high' ? 'Score high threshold'
+@@ -85,7 +86,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+                 : key.startsWith('grace-') ? `Grace days for grade ${key.slice('grace-'.length)}`
+                 : key.startsWith('terms-') ? `Terms for grade ${key.slice('terms-'.length)} (business days)` : 'Terms (business days)'}{' '}
+               <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
+-                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' || key === 'review-threshold' || key === 'review-sla' || key === 'max-open' || key === 'score-mid' || key === 'score-high' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key.startsWith('clerk-limit-') ? "Sheet's limit" : key === 'cap' ? 'No cap' : key === 'pot' || key === 'parent' || key === 'proof-kinds' ? 'None' : key === 'alert-threshold' ? 'Off' : key === 'rounding' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
++                placeholder={key === 'clerk-limit' ? 'No limit' : key === 'proof-threshold' || key === 'note-threshold' || key === 'review-threshold' || key === 'review-sla' || key === 'pending-sla' || key === 'max-open' || key === 'score-mid' || key === 'score-high' ? 'None' : key.startsWith('proof-threshold-') ? "Sheet's threshold" : key.startsWith('clerk-limit-') ? "Sheet's limit" : key === 'cap' ? 'No cap' : key === 'pot' || key === 'parent' || key === 'proof-kinds' ? 'None' : key === 'alert-threshold' ? 'Off' : key === 'rounding' ? 'None' : key === 'policy-date' ? 'Today (yyyy-MM-dd)'
+                   : key === 'period-numbering-from' || key === 'entry-date' ? 'Off (yyyy-MM-dd)' : key === 'grace-days' || key === 'escalate-after' || key === 'score-log' ? 'Off' : key.startsWith('grace-') ? 'None' : key.startsWith('terms-') ? "Sheet's terms"
+                   : key === 'default-grade' ? 'A'
+                   : key.startsWith('perm-') ? PERMISSION_STANDING[key.slice('perm-'.length)] : undefined}
+diff --git a/src/main/frontend/features/settings/api.ts b/src/main/frontend/features/settings/api.ts
+index 920a7e291..b9751cf73 100644
+--- a/src/main/frontend/features/settings/api.ts
++++ b/src/main/frontend/features/settings/api.ts
+@@ -53,6 +53,8 @@ export type Role = { sheetId: string; user: string; role: string };
+  *  once per claim ever.
+  *  The review SLA (a number of days; blank means none; not dated): a REVIEW claim whose review day (the
+  *  sheet's today when it went to REVIEW) plus them is before the sheet's today is review-late (see `isReviewLate`).
++ *  The pending SLA (a number of days; blank means none; not dated): a PENDING claim whose pending day (the
++ *  sheet's today when it last went to PENDING) plus them is before the sheet's today is pending-late (see `isPendingLate`).
+  *  The score thresholds (score-mid and score-high, whole numbers; blank means none; not dated): while both
+  *  are set, each person shows a score band (see `scoreBand`).
+  *  The score log (on or blank; not dated): while on, changing the sheet's today records a SCORE audit line per
+@@ -64,7 +66,7 @@ export type Role = { sheetId: string; user: string; role: string };
+  *  A grade's clerk limit (clerk-limit-<grade>, two decimals; blank means none; dated): a claim whose person's
+  *  grade on the sheet's today has one in force then goes by it instead of the sheet's clerk limit. */
+ export const SETTING_KEYS = ['clerk-limit', 'clerk-limit-A', 'clerk-limit-B', 'clerk-limit-C', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'rounding',
+-  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'max-open', 'score-mid', 'score-high', 'score-log', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'] as const;
++  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'pending-sla', 'max-open', 'score-mid', 'score-high', 'score-log', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'] as const;
+ 
+ /** The roles that may take each action of the permission matrix while its entry is blank. */
+ export const PERMISSION_STANDING: Record<string, string> = {
+@@ -76,7 +78,7 @@ export const PERMISSION_STANDING: Record<string, string> = {
+ export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00', 'fiscal-start-month': '1' };
+ 
+ /** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
+-export const UNDATED_KEYS: readonly string[] = ['pot', 'proof-kinds', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'max-open', 'score-mid', 'score-high', 'score-log', 'perm-open', 'perm-settle', 'perm-void',
++export const UNDATED_KEYS: readonly string[] = ['pot', 'proof-kinds', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'pending-sla', 'max-open', 'score-mid', 'score-high', 'score-log', 'perm-open', 'perm-settle', 'perm-void',
+   'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'];
+ 
+ /** The fiscal year a date (yyyy-MM-dd) falls in, FY<yyyy>, for a fiscal year start month (1 to 12). */
+@@ -170,6 +172,13 @@ export function useReviewSla(sheetId: string): number | null {
+   return value ? Number(value) : null;
+ }
+ 
++/** The sheet's pending SLA in whole days (null: none). */
++export function usePendingSla(sheetId: string): number | null {
++  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
++  const value = settingOn(settings.data, 'pending-sla', '9999-12-31');
++  return value ? Number(value) : null;
++}
++
+ /** The sheet's score thresholds as whole numbers (null: either is blank). */
+ export function useScoreThresholds(sheetId: string): { mid: number; high: number } | null {
+   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+@@ -205,6 +214,25 @@ export function isReviewLate(c: Pick<Claim, 'status' | 'log'>, today: string, sl
+   return until < today;
+ }
+ 
++/** The day a claim last went to PENDING (yyyy-MM-dd), from its status log (null: never). */
++export function pendingDay(c: Pick<Claim, 'log'>): string | null {
++  for (let i = (c.log ?? []).length - 1; i >= 0; i--) {
++    const m = /^PENDING by .* on (\d{4}-\d{2}-\d{2}) due=/.exec(c.log[i]);
++    if (m) return m[1];
++  }
++  return null;
++}
++
++/** Whether a claim is pending-late: PENDING, and its pending day plus the pending SLA (null: none) is
++ *  before the sheet's today. */
++export function isPendingLate(c: Pick<Claim, 'status' | 'log'>, today: string, sla: number | null): boolean {
++  if (c.status !== 'PENDING' || sla === null) return false;
++  const day = pendingDay(c);
++  if (day === null) return false;
++  const until = new Date(Date.parse(`${day}T00:00:00Z`) + sla * 86_400_000).toISOString().slice(0, 10);
++  return until < today;
++}
++
+ /** The sheet's cap in force on its today: the most a person's due-total can be; null when there is none. */
+ export function useCap(sheetId: string, today: string, live = false): string | null {
+   const settings = useQuery({ queryKey: liveKey(settingsKey(sheetId), live), queryFn: () => listSettings(sheetId, live) });
+diff --git a/src/main/frontend/features/summary/Summary.tsx b/src/main/frontend/features/summary/Summary.tsx
+index 30ce8dfea..05d4556a4 100644
+--- a/src/main/frontend/features/summary/Summary.tsx
++++ b/src/main/frontend/features/summary/Summary.tsx
+@@ -6,7 +6,7 @@ import { gradeOn, listPeople, peopleKey } from '../people/api';
+ import { listPeriods, periodDueTotal, periodsKey } from '../periods/api';
+ import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
+ import { heldOf } from '../rates/shares';
+-import { isReviewLate, useFloor, useLate, useReviewSla } from '../settings/api';
++import { isPendingLate, isReviewLate, useFloor, useLate, usePendingSla, useReviewSla } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+ import { Fig } from '../session/Fig';
+ 
+@@ -46,7 +46,7 @@ export function dueChange(previous: string, current: string): string {
+ 
+ /** The sheet's summary, agreeing with the lists: per grade, how many people not retired are on it
+  *  today, their due-totals added up (n/a ones skipped) and how many of them are active (see `isActive`); per period by from-date, its due-total and its change from the period before (none for the earliest); per status,
+- *  how many claims have it; how many REVIEW claims are review-late (see `isReviewLate`); per void reason on the list, how many VOID claims were voided with it. */
++ *  how many claims have it; how many REVIEW claims are review-late (see `isReviewLate`); how many PENDING claims are pending-late (see `isPendingLate`); per void reason on the list, how many VOID claims were voided with it. */
+ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
+   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
+   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
+@@ -57,6 +57,7 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
+   const today = useSheetToday(sheetId, user);
+   const charges = useLate(sheetId, today);
+   const reviewSla = useReviewSla(sheetId);
++  const pendingSla = usePendingSla(sheetId);
+   const all = claims.data ?? [];
+   const active = (people.data ?? []).filter((p) => !p.retired);
+   const liveOf = (p: (typeof active)[number]) => liveClaims(all.filter((c) => c.personId === p.id), [p]);
+@@ -103,6 +104,12 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
+               {all.filter((c) => isReviewLate(c, today, reviewSla)).length}</span></td>
+             <td />
+           </tr>
++          <tr>
++            <td>Pending late</td>
++            <td>Claims <span data-testid="summary-pending-late-count">
++              {all.filter((c) => isPendingLate(c, today, pendingSla)).length}</span></td>
++            <td />
++          </tr>
+           {(voidReasons.data ?? []).map((r) => (
+             <tr key={r.reason}>
+               <td>Voided: {r.reason}</td>
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 9fcc8c9cc..d502e79c1 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -101,6 +101,10 @@ public class SettingRepository {
+      *  (the sheet's today when it went to REVIEW) plus them is before the sheet's today is late. */
+     public static final String REVIEW_SLA = "review-sla";
+ 
++    /** The pending SLA (a whole number of days; blank: none; not dated): a PENDING claim whose pending day
++     *  (the sheet's today when it last went to PENDING) plus them is before the sheet's today is late. */
++    public static final String PENDING_SLA = "pending-sla";
++
+     /** The maximum of open claims per person (a whole number; blank: none; not dated): opening a claim
+      *  is refused when its person already has that many OPEN or PENDING claims. */
+     public static final String MAX_OPEN = "max-open";
+@@ -150,7 +154,7 @@ public class SettingRepository {
+     /** Whether a key is dated: every key that carries a figure (the policy date, the period
+      *  numbering date, the grace days, the pot, the proof kinds, the fiscal year start month and the permission matrix are not). */
+     public static boolean isDated(String key) {
+-        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !MAX_OPEN.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !SCORE_LOG.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
++        return !POLICY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !PENDING_SLA.equals(key) && !MAX_OPEN.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !SCORE_LOG.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
+                 && !ENTRY_DATE.equals(key) && !PROOF_KINDS.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !FISCAL_START_MONTH.equals(key) && !PARENT.equals(key) && !DEFAULT_GRADE.equals(key) && !Permissions.isKey(key);
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index c0ae938e6..6dd907521 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -132,6 +132,12 @@ public class ValidateSetting {
+             }
+             body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null));
+             return;
++        } else if (SettingRepository.PENDING_SLA.equals(key)) {
++            if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
++                throw new InvalidSettingException("The pending SLA is blank or a whole number of days, 0 or more");
++            }
++            body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null));
++            return;
+         } else if (SettingRepository.MAX_OPEN.equals(key)) {
+             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+                 throw new InvalidSettingException("The maximum of open claims is blank or a whole number, 0 or more");
