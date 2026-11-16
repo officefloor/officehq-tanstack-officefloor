@@ -6,7 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 public class RespondWithClaimCreated {
-    public void respond(@Val Claim claim, ObjectResponse<ResponseEntity<ClaimResponse>> response, ClaimRepository claims) {
-        response.send(new ResponseEntity<>(ClaimResponse.from(claim, claims), HttpStatus.CREATED));
+    public void respond(@Val Claim claim, ObjectResponse<ResponseEntity<ClaimResponse>> response, ClaimRepository claims, ClaimLogRepository log) {
+        response.send(new ResponseEntity<>(ClaimResponse.from(claim, claims, log), HttpStatus.CREATED));
     }
 }

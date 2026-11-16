@@ -9,10 +9,11 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Stores the new status. Opening gives the claim its number (see ClaimNumbering). A change another user made first (the
  * stored status is no longer the one this change started from) is refused, and the transaction gives back the number.
+ * A stored change adds its line to the claim's status log (see ClaimLog).
  */
 public class SaveClaimStatus {
     public void save(@Val Claim claim, @Val ClaimStatusChange change, ClaimRepository claims, PeriodRepository periods,
-            SettingRepository settings, SheetRepository sheets, Out<Claim> saved,
+            SettingRepository settings, SheetRepository sheets, ClaimLog log, Out<Claim> saved,
             Out<ClaimNumber> number) throws InvalidClaimStatusException {
         Claim toSave = claim;
         if (change.action() == ClaimAction.OPEN) {
@@ -33,6 +34,7 @@ public class SaveClaimStatus {
         if (!stored) {
             throw new InvalidClaimStatusException("The claim was changed by someone else");
         }
+        log.write(toSave, change.by());
         saved.set(toSave);
     }
 }

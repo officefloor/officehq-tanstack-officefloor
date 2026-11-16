@@ -13,7 +13,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  none), which it shows while its due is not fixed; `corrects` is, for a correction (a negative amount),
  *  the number of the SETTLED claim of the same person it corrects (null for any other claim); `roundsOn` (yyyy-MM-dd)
  *  is the date that decides how its live figures round: the corrected claim's date for a correction, else its own;
- *  `dueBy` (yyyy-MM-dd) is its due-by, fixed when it was added from the terms of its person's grade on its date. */
+ *  `dueBy` (yyyy-MM-dd) is its due-by, fixed when it was added from the terms of its person's grade on its date;
+ *  `log` is its status log, oldest first. */
 export type Claim = {
   id: number;
   sheetId: string;
@@ -30,7 +31,15 @@ export type Claim = {
   corrects: string | null;
   roundsOn: string;
   dueBy: string;
+  log: ClaimLogLine[];
 };
+
+/** One line of a claim's status log: the status it took, who made the change, the sheet's today (yyyy-MM-dd) when
+ *  it was made, and the claim's due as shown at that moment (two decimals, or n/a). */
+export type ClaimLogLine = { status: ClaimStatus; by: string; date: string; due: string };
+
+/** A status log line as shown: `<STATUS> by <user> on <date> due=<due>`. */
+export const logLine = (l: ClaimLogLine) => `${l.status} by ${l.by} on ${l.date} due=${l.due}`;
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'];
 

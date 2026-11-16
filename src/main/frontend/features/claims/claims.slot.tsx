@@ -9,7 +9,7 @@ import { periodOf, usePeriods } from '../periods/periods';
 import { claimDue, rateFor, useRates } from '../rates/rates';
 import { dueBy, isOverdue } from '../overdue/overdue';
 import { useFloor, useLate } from '../settings/settings';
-import { claimsKey, live, total, useClaims, type Claim } from './claims';
+import { claimsKey, live, logLine, total, useClaims, type Claim } from './claims';
 import { useSelectedClaims } from './selection';
 
 type Values = { amount: string; date: string; note: string; corrects: string };
@@ -26,7 +26,7 @@ function ClaimsHead() {
 
 type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void';
 
-/** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, due-by (fixed when it was added), whether it is overdue, and the period its date falls in, with the buttons that edit it or change its status. A clerk's settle above the clerk limit makes it PENDING; a
+/** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, its status log (oldest first), due-by (fixed when it was added), whether it is overdue, and the period its date falls in, with the buttons that edit it or change its status. A clerk's settle above the clerk limit makes it PENDING; a
  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
  *  shows the claim's error. A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
@@ -199,6 +199,13 @@ function ClaimRow({
           closed period) to another person not retired before its date.
         </span>
       )}
+      <ol data-testid="claim-log">
+        {c.log.map((l, i) => (
+          <li key={i} data-testid="claim-log-line">
+            {logLine(l)}
+          </li>
+        ))}
+      </ol>
     </li>
   );
 }

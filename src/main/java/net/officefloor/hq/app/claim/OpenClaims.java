@@ -21,12 +21,12 @@ import org.springframework.web.bind.annotation.PathVariable;
 /**
  * Opens each selected claim that can be opened, in list order (people in the order they were added, a person's
  * claims newest first): as the single open does, it must be a DRAFT not dated inside a closed period, takes its
- * number (see ClaimNumbering) and records who opened it, then writes CLAIM_OPENED and the figures it moved (see Rollup).
+ * number (see ClaimNumbering) and records who opened it, adds its OPEN line to its status log (see ClaimLog), then writes CLAIM_OPENED and the figures it moved (see Rollup).
  * Each that cannot, or is not on the sheet, is left as it is and counted refused.
  */
 public class OpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenRequest request, ClaimRepository claims,
-            PersonRepository people, PeriodRepository periods, SettingRepository settings, SheetRepository sheets, Rollup rollup, Audit audit,
+            PersonRepository people, PeriodRepository periods, SettingRepository settings, SheetRepository sheets, Rollup rollup, Audit audit, ClaimLog log,
             Out<BulkOpenResult> result) {
         String sheet = sheetId.trim();
         Set<Long> selected = new HashSet<>(request.claimIds());
@@ -54,6 +54,7 @@ public class OpenClaims {
                 continue;
             }
             opened++;
+            log.write(toSave, request.by());
             Person person = byId.get(claim.personId());
             audit.record("CLAIM_OPENED sheet=" + sheet + " by=" + request.by() + " person="
                     + (person == null ? "" : person.name()) + " amount=" + claim.amount().toPlainString()
