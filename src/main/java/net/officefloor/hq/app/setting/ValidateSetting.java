@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  whole number of days 0 or more (not blank), kept without leading zeros, and so is terms-A, terms-B or terms-C (a
  *  grade's own terms); or grace-A, grace-B or grace-C (a grade's grace), its value blank (none) or a whole number of days 0 or
  *  more, kept without leading zeros; or grace-days, its value blank (off) or a whole number of days 0 or more (undated); or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today); or
- *  period-numbering-from or entry-date, its value a date yyyy-MM-dd or blank (off); or cap, proof-threshold or note-threshold, its value blank (none) or
+ *  period-numbering-from or entry-date, its value a date yyyy-MM-dd or blank (off); or cap, proof-threshold, proof-threshold-A, -B or -C (a grade's own) or note-threshold, its value blank (none) or
  *  an amount like the clerk limit; or perm-open, perm-settle, perm-void, perm-reassign, perm-close or perm-reopen, its value
  *  blank (the standing rule) or roles (clerk, steward) separated by commas, kept without spaces or repeats. Every key but policy-date, period-numbering-from, entry-date, grace-days and the permissions is dated: its from-date is blank (the
  *  sheet's today) or a date yyyy-MM-dd. */
@@ -42,6 +42,9 @@ public class ValidateSetting {
         boolean entryDate = SettingRepository.ENTRY_DATE.equals(k);
         boolean cap = SettingRepository.CAP.equals(k);
         boolean proofThreshold = SettingRepository.PROOF_THRESHOLD.equals(k);
+        boolean gradeProofThreshold = k.startsWith(SettingRepository.PROOF_THRESHOLD_PREFIX)
+                && GRADES.contains(k.substring(SettingRepository.PROOF_THRESHOLD_PREFIX.length()));
+        proofThreshold = proofThreshold || gradeProofThreshold;
         boolean noteThreshold = SettingRepository.NOTE_THRESHOLD.equals(k);
         boolean perm = k.startsWith(SettingRepository.PERM_PREFIX)
                 && SettingRepository.PERMISSIONS.containsKey(k.substring(SettingRepository.PERM_PREFIX.length()));

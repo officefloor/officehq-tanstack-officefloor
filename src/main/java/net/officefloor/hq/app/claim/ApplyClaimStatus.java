@@ -21,7 +21,7 @@ import net.officefloor.plugin.variable.Val;
  * or the figure a statement bound it to, with its late charge as of the sheet's today frozen in (see LateCharge).
  * Opening records who opened the claim; that user cannot settle nor approve it (four eyes), nor can the user who last
  * edited it (see ClaimRepository#editedBy). A claim whose due is
- * above the sheet's proof threshold in force on its date (if it has one) cannot be settled nor approved while its proofs
+ * above the proof threshold in force on its date (its person's grade's on that date when one is set, else the sheet's; if any) cannot be settled nor approved while its proofs
  * count is 0 (checked before the clerk limit, so it never goes PENDING); a due of n/a is within any threshold. A claim whose due-by falls inside a closed
  * period cannot change status, nor can a deferred claim be settled (see ClaimDue#deferred). A clerk (any user not made a steward) settling a claim whose due is above the sheet's
  * clerk limit, if it has one, makes it PENDING instead (its due left live, not bound by a statement); a due of n/a is
@@ -118,7 +118,9 @@ public class ApplyClaimStatus {
         }
         if ((change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE) && settledDue != null
                 && claim.proofs() == 0) {
-            BigDecimal threshold = settings.proofThreshold(claim.sheetId(), claim.date());
+            Person person = people.find(claim.sheetId(), claim.personId());
+            BigDecimal threshold = settings.proofThreshold(claim.sheetId(),
+                    person == null ? null : person.gradeOn(claim.date()), claim.date());
             if (threshold != null && settledDue.compareTo(threshold) > 0) {
                 throw new InvalidClaimStatusException("A claim whose due is above the proof threshold needs a proof");
             }

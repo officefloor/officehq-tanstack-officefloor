@@ -25,6 +25,9 @@ public class SettingRepository {
     /** The due above which a claim needs a proof before it is settled or approved; blank for none. */
     public static final String PROOF_THRESHOLD = "proof-threshold";
 
+    /** The prefix of a grade's own proof threshold: proof-threshold-A, -B or -C (blank: none, so the sheet's applies). */
+    public static final String PROOF_THRESHOLD_PREFIX = "proof-threshold-";
+
     /** The due above which a claim cannot be opened while its note is empty; blank for none. */
     public static final String NOTE_THRESHOLD = "note-threshold";
 
@@ -131,6 +134,13 @@ public class SettingRepository {
     public BigDecimal proofThreshold(String sheetId, LocalDate date) {
         String value = value(sheetId, PROOF_THRESHOLD, date);
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The proof threshold of a grade in force on the date (a claim's date): its own when one is set on it, else the
+     *  sheet's (a null grade has the sheet's); null when there is none. */
+    public BigDecimal proofThreshold(String sheetId, String grade, LocalDate date) {
+        String value = grade == null ? null : value(sheetId, PROOF_THRESHOLD_PREFIX + grade, date);
+        return value == null ? proofThreshold(sheetId, date) : new BigDecimal(value);
     }
 
     /** The sheet's note threshold in force on the date (a claim's date), or null when there is none. */
