@@ -1,0 +1,136 @@
+diff --git a/src/main/frontend/features/settings/PolicyVersions.tsx b/src/main/frontend/features/settings/PolicyVersions.tsx
+new file mode 100644
+index 000000000..a45cbdd7c
+--- /dev/null
++++ b/src/main/frontend/features/settings/PolicyVersions.tsx
+@@ -0,0 +1,38 @@
++import { useState } from 'react';
++import { useQuery, useQueryClient } from '@tanstack/react-query';
++import { claimsKey, listClaims } from '../claims/api';
++import { listPolicyVersions, policyVersionsKey, usePolicyVersions } from './api';
++
++/** The sheet's policy versions, oldest first, once shown: each one's number, its from-date (start:
++ *  always), the setting and value its change set, and how many claims go by it (the version in force on
++ *  their date). */
++export function PolicyVersions({ sheetId }: { sheetId: string }) {
++  const queryClient = useQueryClient();
++  const [shown, setShown] = useState(false);
++  const versions = useQuery({ queryKey: policyVersionsKey(sheetId), queryFn: () => listPolicyVersions(sheetId) });
++  const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
++  const policy = usePolicyVersions(sheetId);
++  const count = (version: number) => (claims.data ?? []).filter((c) => policy.on(c.date) === version).length;
++
++  return (
++    <section>
++      <h3>Policy versions</h3>
++      <button type="button" data-testid="policy-show" onClick={() => {
++        setShown(true);
++        void queryClient.invalidateQueries({ queryKey: policyVersionsKey(sheetId) });
++        void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId), exact: true });
++      }}>
++        Show policy versions
++      </button>
++      {shown && (
++        <ul>
++          {(versions.data ?? []).map((v) => (
++            <li key={v.version} data-testid="policy-line">
++              {v.version} {v.from ?? 'start'} {v.key}={v.value} {count(v.version)}
++            </li>
++          ))}
++        </ul>
++      )}
++    </section>
++  );
++}
+diff --git a/src/main/frontend/features/settings/api.ts b/src/main/frontend/features/settings/api.ts
+index 33ed5923b..16f13146a 100644
+--- a/src/main/frontend/features/settings/api.ts
++++ b/src/main/frontend/features/settings/api.ts
+@@ -242,8 +242,8 @@ export function useCap(sheetId: string, live = false): (date: string) => string
+ 
+ /** The policy settings (the rounding mode, the floor, the cap, the terms, the late percent and the clerk
+  *  limit) are versioned together: every change to one of them is a new policy version, numbered from 1 in
+- *  the order made, in force from its from-date (null: always). */
+-export type PolicyVersion = { sheetId: string; version: number; key: string; from: string | null };
++ *  the order made, in force from its from-date (null: always), carrying the value its change set. */
++export type PolicyVersion = { sheetId: string; version: number; key: string; from: string | null; value: string };
+ 
+ export const policyVersionsKey = (sheetId: string) => [...settingsKey(sheetId), 'policy-versions'] as const;
+ 
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index d223a81d1..d0f277bbb 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -1,11 +1,13 @@
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { Delegations } from './Delegations';
+ import { Holidays } from './Holidays';
++import { PolicyVersions } from './PolicyVersions';
+ import { Roles } from './Roles';
+ import { Settings } from './Settings';
+ 
+ export const contributions = [
+   SheetBody.fill({ order: 6, Component: Settings }),
++  SheetBody.fill({ order: 6.5, Component: PolicyVersions }),
+   SheetBody.fill({ order: 7, Component: Roles }),
+   SheetBody.fill({ order: 8, Component: Delegations }),
+   SheetBody.fill({ order: 9, Component: Holidays }),
+diff --git a/src/main/java/net/officefloor/hq/app/setting/PolicyVersion.java b/src/main/java/net/officefloor/hq/app/setting/PolicyVersion.java
+index 8b98ecef1..390a96345 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/PolicyVersion.java
++++ b/src/main/java/net/officefloor/hq/app/setting/PolicyVersion.java
+@@ -1,6 +1,6 @@
+ package net.officefloor.hq.app.setting;
+ 
+ /** A version of the sheet's policy: its number (from 1, in the order the changes were made), the policy
+- *  setting whose change made it, and the from-date it is in force from (yyyy-MM-dd; null: always). */
+-public record PolicyVersion(String sheetId, int version, String key, String from) {
++ *  setting whose change made it, the value it set (blank: none), and the from-date it is in force from (yyyy-MM-dd; null: always). */
++public record PolicyVersion(String sheetId, int version, String key, String from, String value) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index b7e31b737..388c0de36 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -313,11 +313,11 @@ public class SettingRepository {
+ 
+     /** The sheet's policy versions, oldest first. */
+     public List<PolicyVersion> policyVersions(String sheetId) {
+-        return jdbc.query("SELECT sheet_id, version, setting, from_date FROM policy_version WHERE sheet_id = ? "
++        return jdbc.query("SELECT sheet_id, version, setting, from_date, val FROM policy_version WHERE sheet_id = ? "
+                 + "ORDER BY version", (rs, n) -> {
+                     LocalDate from = rs.getObject("from_date", LocalDate.class);
+                     return new PolicyVersion(rs.getString("sheet_id"), rs.getInt("version"), rs.getString("setting"),
+-                            from == null ? null : from.toString());
++                            from == null ? null : from.toString(), rs.getString("val") == null ? "" : rs.getString("val"));
+                 }, sheetId);
+     }
+ 
+@@ -405,9 +405,9 @@ public class SettingRepository {
+         jdbc.update("INSERT INTO setting_history (sheet_id, setting, val, from_date, on_date) "
+                 + "VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", sheetId, key, value, from, sheetId);
+         if (POLICY_KEYS.contains(key)) {
+-            jdbc.update("INSERT INTO policy_version (sheet_id, version, setting, from_date) VALUES (?, "
+-                    + "(SELECT COALESCE(MAX(version), 0) + 1 FROM policy_version WHERE sheet_id = ?), ?, ?)",
+-                    sheetId, sheetId, key, from);
++            jdbc.update("INSERT INTO policy_version (sheet_id, version, setting, from_date, val) VALUES (?, "
++                    + "(SELECT COALESCE(MAX(version), 0) + 1 FROM policy_version WHERE sheet_id = ?), ?, ?, ?)",
++                    sheetId, sheetId, key, from, value);
+         }
+         return new Setting(sheetId, key, value == null ? "" : value, from == null ? null : from.toString());
+     }
+diff --git a/src/main/resources/db/migration/V105__policy_version_value.sql b/src/main/resources/db/migration/V105__policy_version_value.sql
+new file mode 100644
+index 000000000..2fe9bcb15
+--- /dev/null
++++ b/src/main/resources/db/migration/V105__policy_version_value.sql
+@@ -0,0 +1,9 @@
++-- Each policy version keeps the value its change set (null: blank).
++ALTER TABLE policy_version ADD COLUMN val VARCHAR(200);
++-- The versions already made take theirs from the n-th change to a policy setting, in the order made.
++UPDATE policy_version pv SET val = (
++    SELECT h.val FROM (
++        SELECT sheet_id, val, ROW_NUMBER() OVER (PARTITION BY sheet_id ORDER BY id) AS n
++        FROM setting_history
++        WHERE setting IN ('rounding', 'floor', 'cap', 'terms', 'late-pct', 'clerk-limit')
++    ) h WHERE h.sheet_id = pv.sheet_id AND h.n = pv.version);
