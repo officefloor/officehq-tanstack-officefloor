@@ -16,7 +16,7 @@ public class SheetRepository {
     }
 
     public Sheet find(String id) {
-        return new Sheet(id, today(id));
+        return new Sheet(id, today(id), archived(id));
     }
 
     /**
@@ -27,6 +27,21 @@ public class SheetRepository {
         List<LocalDate> found = jdbc.query("SELECT today FROM sheet WHERE id = ?",
                 (rs, n) -> rs.getObject(1, LocalDate.class), id);
         return found.isEmpty() ? LocalDate.now() : found.get(0);
+    }
+
+    /** Whether a steward archived the sheet: an archived sheet refuses every change. */
+    public boolean archived(String id) {
+        Integer found = jdbc.queryForObject("SELECT COUNT(*) FROM sheet_archived WHERE sheet_id = ?", Integer.class, id);
+        return found != null && found > 0;
+    }
+
+    /** Archives the sheet; false when it was already archived. */
+    public boolean archive(String id, String by) {
+        if (archived(id)) {
+            return false;
+        }
+        jdbc.update("INSERT INTO sheet_archived (sheet_id, archived_by) VALUES (?, ?)", id, by);
+        return true;
     }
 
     public void saveToday(String id, LocalDate today) {

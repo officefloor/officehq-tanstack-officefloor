@@ -17,6 +17,7 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -26,8 +27,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 /**
  * A viewer changes nothing: every change to a sheet (any non-GET request under {@code /api/sheets/<id>/}) made
  * by a user whose role on that sheet is viewer is refused (403) before it reaches its endpoint, so nothing is
- * stored and nothing audited. A bulk action instead goes through with nothing done: 0 done, every selected claim
- * refused.
+ * stored and nothing audited. So is every change, by anyone, to a sheet a steward archived. A bulk action instead goes
+ * through with nothing done: 0 done, every selected claim refused.
  */
 @Configuration
 public class ViewerGuard {
@@ -36,8 +37,8 @@ public class ViewerGuard {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     @Bean
-    public FilterRegistrationBean<OncePerRequestFilter> viewerGuardFilter(RoleRepository roles) {
-        FilterRegistrationBean<OncePerRequestFilter> registration = new FilterRegistrationBean<>(new Filter(roles));
+    public FilterRegistrationBean<OncePerRequestFilter> viewerGuardFilter(RoleRepository roles, SheetRepository sheets) {
+        FilterRegistrationBean<OncePerRequestFilter> registration = new FilterRegistrationBean<>(new Filter(roles, sheets));
         registration.addUrlPatterns("/api/*");
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
         return registration;
@@ -45,9 +46,11 @@ public class ViewerGuard {
 
     private static final class Filter extends OncePerRequestFilter {
         private final RoleRepository roles;
+        private final SheetRepository sheets;
 
-        Filter(RoleRepository roles) {
+        Filter(RoleRepository roles, SheetRepository sheets) {
             this.roles = roles;
+            this.sheets = sheets;
         }
 
         @Override
@@ -64,7 +67,9 @@ public class ViewerGuard {
             byte[] body = request.getInputStream().readAllBytes();
             JsonNode json = parse(body);
             String by = json != null && json.hasNonNull("by") ? json.get("by").asText().trim() : "";
-            if (!RoleRepository.VIEWER.equals(roles.roleOf(sheetId, by))) {
+            boolean viewer = RoleRepository.VIEWER.equals(roles.roleOf(sheetId, by));
+            boolean archived = sheets.archived(sheetId);
+            if (!viewer && !archived) {
                 chain.doFilter(new Replay(request, body), response);
                 return;
             }
@@ -81,7 +86,7 @@ public class ViewerGuard {
             }
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.setContentType("text/plain");
-            response.getWriter().write("A viewer cannot change the sheet");
+            response.getWriter().write(archived ? "The sheet is archived" : "A viewer cannot change the sheet");
         }
 
         private static JsonNode parse(byte[] body) {
