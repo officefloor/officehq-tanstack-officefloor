@@ -4,12 +4,13 @@ import { live, useClaims } from '../claims/claims';
 import { STATUSES, useStatusCounts } from '../header/totals';
 import { GRADES, gradeOn, usePeople } from '../people/people';
 import { periodDue, usePeriods } from '../periods/periods';
-import { personDue, sum, useRates } from '../rates/rates';
+import { difference, personDue, sum, useRates } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../settings/settings';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 
 /** The sheet's summary, worked out from the same figures the lists show. Per grade: the people on it on the sheet's
- *  today (retired people excluded), their due-totals added up (skipping n/a) and how many of them are active. Per period: its due-total. Per
+ *  today (retired people excluded), their due-totals added up (skipping n/a) and how many of them are active. Per period: its due-total, and its
+ *  change from the period before it by start date (blank for the earliest). Per
  *  status: how many of the sheet's claims have it. Per void reason on the sheet's list: how many VOID claims were voided
  *  with it. */
 function Summary({ sheetId }: { sheetId: string }) {
@@ -29,6 +30,11 @@ function Summary({ sheetId }: { sheetId: string }) {
         personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap),
       ),
     );
+  const byStart = [...(periods.data ?? [])].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+  const dueOf = new Map(byStart.map((p) => [p.id, periodDue(p, claims.data, people.data, rates.data, floor, late)]));
+  const changeOf = new Map(
+    byStart.map((p, i) => [p.id, i === 0 ? '' : difference(dueOf.get(p.id)!, dueOf.get(byStart[i - 1].id)!)]),
+  );
   const withStatus = useStatusCounts(sheetId);
   const voidReasons = useVoidReasons(sheetId);
 
@@ -62,6 +68,7 @@ function Summary({ sheetId }: { sheetId: string }) {
           <tr>
             <th>Period</th>
             <th>Due total</th>
+            <th>Change</th>
           </tr>
         </thead>
         <tbody>
@@ -69,8 +76,9 @@ function Summary({ sheetId }: { sheetId: string }) {
             <tr key={p.id}>
               <td>{p.name}</td>
               <td data-testid={`summary-period-${p.name}-due-total`}>
-                {periodDue(p, claims.data, people.data, rates.data, floor, late)}
+                {dueOf.get(p.id)}
               </td>
+              <td data-testid={`summary-period-${p.name}-change`}>{changeOf.get(p.id)}</td>
             </tr>
           ))}
         </tbody>

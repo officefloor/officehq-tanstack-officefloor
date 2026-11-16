@@ -197,6 +197,11 @@ export function sum(values: string[]): string {
   return shown(values.filter((v) => v !== 'n/a').reduce((s, v) => s + hundredths(v), 0n));
 }
 
+/** One two-decimal value minus another, two decimals, a minus sign when below zero. */
+export function difference(value: string, less: string): string {
+  return shown(hundredths(value) - hundredths(less));
+}
+
 /** Two-decimal values added up, skipping 'n/a', leaving out the single highest and the single lowest when three
  *  or more are left. */
 export function trimmedSum(values: string[]): string {
