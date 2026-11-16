@@ -14,7 +14,7 @@ import net.officefloor.hq.app.setting.SettingRepository;
 
 /**
  * A sheet's rates and settings as they stood at the end of a date: every one stored while the sheet's today was on or
- * before it counts (a later one stored for the same grade or key and from-date replacing an earlier), every one stored
+ * before it counts (a later one stored for the same grade or key and from-date replacing an earlier, a rate as its next version), every one stored
  * later does not. The date stands in for the sheet's today.
  */
 public final class SheetAsOf {
@@ -32,7 +32,8 @@ public final class SheetAsOf {
     public static SheetAsOf read(String sheetId, LocalDate date, RateRepository rates, SettingRepository settings) {
         Map<String, Rate> byKey = new LinkedHashMap<>();
         for (Rate r : rates.storedBy(sheetId, date)) {
-            byKey.put(r.grade() + "@" + r.from(), r);
+            Rate older = byKey.get(r.grade() + "@" + r.from());
+            byKey.put(r.grade() + "@" + r.from(), r.withVersion(older == null ? 1 : older.version() + 1));
         }
         Map<String, Setting> byFrom = new LinkedHashMap<>();
         for (Setting s : settings.storedBy(sheetId, date)) {

@@ -67,7 +67,7 @@ public class CloneRepository {
     public void copy(String from, String to) {
         sheets.saveToday(to, sheets.today(from));
         sheets.markLoaded(to);
-        for (String table : List.of("setting", "setting_log", "user_role", "rate", "rate_log", "holiday", "void_reason",
+        for (String table : List.of("setting", "setting_log", "user_role", "rate", "rate_log", "rate_version", "holiday", "void_reason",
                 "claim_template")) {
             copy(table, "WHERE sheet_id = ?" + (hasColumn(table, "id") ? " ORDER BY id" : ""), from, to, Map.of());
         }
