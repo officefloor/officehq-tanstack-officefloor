@@ -1,0 +1,88 @@
+diff --git a/src/main/frontend/features/aging/aging.slot.tsx b/src/main/frontend/features/aging/aging.slot.tsx
+new file mode 100644
+index 000000000..2f7600223
+--- /dev/null
++++ b/src/main/frontend/features/aging/aging.slot.tsx
+@@ -0,0 +1,38 @@
++import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
++import { live, useClaims } from '../claims/claims';
++import { type Person } from '../people/people';
++import { useRates } from '../rates/rates';
++import { useFloor, useLate } from '../settings/settings';
++import { aged } from './aging';
++
++function AgingHead() {
++  return (
++    <>
++      <th>Due 0–30</th>
++      <th>Due 31–60</th>
++      <th>Due 61+</th>
++    </>
++  );
++}
++
++/** A person's due on their open claims that count, split by the claim's age (see aged). */
++function PersonAging({ sheetId, person }: { sheetId: string; person: Person }) {
++  const claims = useClaims(sheetId);
++  const rates = useRates(sheetId);
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++  const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person], late.today);
++  const a = aged(mine, rates.data, person, late, floor);
++  return (
++    <>
++      <td data-testid="person-aged-0-30">{a.d30}</td>
++      <td data-testid="person-aged-31-60">{a.d60}</td>
++      <td data-testid="person-aged-61">{a.d61}</td>
++    </>
++  );
++}
++
++export const contributions = [
++  PeopleHead.fill({ order: 21, Component: AgingHead }),
++  PersonRow.fill({ order: 21, Component: PersonAging }),
++];
+diff --git a/src/main/frontend/features/aging/aging.ts b/src/main/frontend/features/aging/aging.ts
+new file mode 100644
+index 000000000..dd0b24d1b
+--- /dev/null
++++ b/src/main/frontend/features/aging/aging.ts
+@@ -0,0 +1,25 @@
++import { isOpen, type Claim } from '../claims/claims';
++import { day, type Late } from '../overdue/late';
++import { gradeOn, type Person } from '../people/people';
++import { claimDue, rateFor, sum, type Rate } from '../rates/rates';
++import type { Dated } from '../settings/settings';
++
++/** A person's due split by age: the dues (late charge included, skipping n/a) of their open (OPEN or PENDING) claims
++ *  that count, by the days from the claim's date to the sheet's today — 0 to 30, 31 to 60, 61 or more (a claim dated
++ *  after today is 0 to 30). */
++export function aged(
++  claims: Claim[],
++  rates: Rate[] | undefined,
++  person: Person,
++  late: Late,
++  floor: Dated,
++): { d30: string; d60: string; d61: string } {
++  const buckets: [string[], string[], string[]] = [[], [], []];
++  for (const c of claims) {
++    if (!isOpen(c) || c.deferred) continue;
++    const age = late.today === '' ? 0 : day(late.today) - day(c.date);
++    const figure = claimDue(c, rateFor(rates, gradeOn(person, c.date), c.date), floor, late);
++    buckets[age <= 30 ? 0 : age <= 60 ? 1 : 2].push(figure);
++  }
++  return { d30: sum(buckets[0]), d60: sum(buckets[1]), d61: sum(buckets[2]) };
++}
+diff --git a/src/main/frontend/features/overdue/late.ts b/src/main/frontend/features/overdue/late.ts
+index f9bdd4050..cc605c0e4 100644
+--- a/src/main/frontend/features/overdue/late.ts
++++ b/src/main/frontend/features/overdue/late.ts
+@@ -11,7 +11,7 @@ export function roundsHalfUp(claim: Claim, late: Late | undefined): boolean {
+ }
+ 
+ /** Days since 1970-01-01 of a yyyy-MM-dd date. */
+-function day(date: string): number {
++export function day(date: string): number {
+   const [y, m, d] = date.split('-').map(Number);
+   return Date.UTC(y, m - 1, d) / 86_400_000;
+ }
