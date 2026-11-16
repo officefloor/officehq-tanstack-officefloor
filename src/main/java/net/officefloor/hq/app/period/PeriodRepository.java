@@ -8,6 +8,8 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.sheet.AsOf;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
@@ -19,9 +21,65 @@ public class PeriodRepository {
     private static final String COLUMNS = "id, sheet_id, name, from_date, to_date, closed, closed_total, soft_closed";
 
     private final JdbcTemplate jdbc;
+    private final SheetRepository sheets;
 
-    public PeriodRepository(JdbcTemplate jdbc) {
+    public PeriodRepository(JdbcTemplate jdbc, SheetRepository sheets) {
         this.jdbc = jdbc;
+        this.sheets = sheets;
+    }
+
+    /** A period as it stood at the end of a date: closed or soft-closed then, with the figures that fixed. */
+    public record StateAsOf(boolean closed, boolean soft, BigDecimal closedTotal, Map<Long, BigDecimal> personTotals) {
+    }
+
+    /** The sheet's periods as they stood at the end of the date, by from-date, each with its state then: one added while
+     *  the sheet's today was after it is left out; one never closed, soft-closed or reopened is as it is now. */
+    public Map<Period, StateAsOf> listAsOf(String sheetId, LocalDate date) {
+        Map<Long, LocalDate> added = new java.util.HashMap<>();
+        jdbc.query("SELECT id, added_on FROM period WHERE sheet_id = ?",
+                (ResultSet rs) -> {
+                    added.put(rs.getLong("id"), rs.getObject("added_on", LocalDate.class));
+                }, sheetId);
+        Map<Long, StateAsOf> states = new java.util.HashMap<>();
+        java.util.Set<Long> logged = new java.util.HashSet<>();
+        jdbc.query("SELECT period_id, closed, soft_closed, closed_total, person_totals, made_on FROM period_log"
+                + " WHERE sheet_id = ? ORDER BY id", (ResultSet rs) -> {
+                    long id = rs.getLong("period_id");
+                    logged.add(id);
+                    if (!AsOf.counts(rs.getObject("made_on", LocalDate.class), date)) {
+                        return;
+                    }
+                    BigDecimal total = rs.getBigDecimal("closed_total");
+                    Map<Long, BigDecimal> totals = new LinkedHashMap<>();
+                    String text = rs.getString("person_totals");
+                    if (text != null && !text.isEmpty()) {
+                        for (String part : text.split(";")) {
+                            int at = part.indexOf('=');
+                            totals.put(Long.parseLong(part.substring(0, at)), new BigDecimal(part.substring(at + 1)).setScale(2));
+                        }
+                    }
+                    states.put(id, new StateAsOf(rs.getBoolean("closed"), rs.getBoolean("soft_closed"),
+                            total == null ? null : total.setScale(2), totals));
+                }, sheetId);
+        Map<Period, StateAsOf> out = new LinkedHashMap<>();
+        for (Period p : list(sheetId)) {
+            if (!AsOf.counts(added.get(p.id()), date)) {
+                continue;
+            }
+            StateAsOf state = states.get(p.id());
+            if (state == null) {
+                state = logged.contains(p.id()) ? new StateAsOf(false, false, null, Map.of())
+                        : new StateAsOf(p.closed(), p.soft(), p.closedTotal(), p.closed() || p.soft() ? personTotals(p) : Map.of());
+            }
+            out.put(p, state);
+        }
+        return out;
+    }
+
+    /** Logs the period's new state with the sheet's today. */
+    private void log(Period period, boolean closed, boolean soft, BigDecimal total) {
+        jdbc.update("INSERT INTO period_log (sheet_id, period_id, closed, soft_closed, closed_total, made_on) VALUES (?, ?, ?, ?, ?, ?)",
+                period.sheetId(), period.id(), closed, soft, total, Date.valueOf(sheets.today(period.sheetId())));
     }
 
     /** The sheet's periods, by from-date. */
@@ -69,14 +127,22 @@ public class PeriodRepository {
  *  figures a soft close fixed; false when it was closed. */
     public boolean close(Period period, BigDecimal total) {
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_id = ?", period.sheetId(), period.id());
-        return jdbc.update("UPDATE period SET closed = TRUE, soft_closed = FALSE, closed_total = ? WHERE sheet_id = ? AND id = ? AND closed = FALSE",
+        boolean done = jdbc.update("UPDATE period SET closed = TRUE, soft_closed = FALSE, closed_total = ? WHERE sheet_id = ? AND id = ? AND closed = FALSE",
                 total, period.sheetId(), period.id()) == 1;
+        if (done) {
+            log(period, true, false, total);
+        }
+        return done;
     }
 
     /** Soft-closes the period with its fixed due-total, but only while it is open; false when it was not. */
     public boolean softClose(Period period, BigDecimal total) {
-        return jdbc.update("UPDATE period SET soft_closed = TRUE, closed_total = ? WHERE sheet_id = ? AND id = ? AND closed = FALSE "
+        boolean done = jdbc.update("UPDATE period SET soft_closed = TRUE, closed_total = ? WHERE sheet_id = ? AND id = ? AND closed = FALSE "
                 + "AND soft_closed = FALSE", total, period.sheetId(), period.id()) == 1;
+        if (done) {
+            log(period, false, true, total);
+        }
+        return done;
     }
 
     /** Whether a soft-closed period of the sheet contains the date. */
@@ -86,12 +152,16 @@ public class PeriodRepository {
         return n != null && n > 0;
     }
 
-    /** Fixes each person's due-total for the period, as it is closed. */
+    /** Fixes each person's due-total for the period, as it is closed (kept on its close's log line too). */
     public void fixPersonTotals(Period period, Map<Long, BigDecimal> totals) {
+        StringBuilder text = new StringBuilder();
         for (Map.Entry<Long, BigDecimal> e : totals.entrySet()) {
             jdbc.update("INSERT INTO period_person_total (sheet_id, period_id, person_id, total) VALUES (?, ?, ?, ?)",
                     period.sheetId(), period.id(), e.getKey(), e.getValue());
+            text.append(text.length() == 0 ? "" : ";").append(e.getKey()).append('=').append(e.getValue().toPlainString());
         }
+        jdbc.update("UPDATE period_log SET person_totals = ? WHERE id = (SELECT MAX(id) FROM period_log WHERE sheet_id = ?"
+                + " AND period_id = ?)", text.toString(), period.sheetId(), period.id());
     }
 
     /** The fixed due-total of each person for the closed period, by person id. */
@@ -107,21 +177,26 @@ public class PeriodRepository {
     /** Reopens the period, dropping its fixed due-totals, but only while it is closed or soft-closed; false when it was not. */
     public boolean reopen(Period period) {
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_id = ?", period.sheetId(), period.id());
-        return jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND id = ? "
+        boolean done = jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND id = ? "
                 + "AND (closed = TRUE OR soft_closed = TRUE)",
                 period.sheetId(), period.id()) == 1;
+        if (done) {
+            log(period, false, false, null);
+        }
+        return done;
     }
 
     /** Stores a new period and returns it with its id. */
     public Period add(String sheetId, String name, LocalDate from, LocalDate to) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update((con) -> {
-            var ps = con.prepareStatement("INSERT INTO period (sheet_id, name, from_date, to_date) VALUES (?, ?, ?, ?)",
+            var ps = con.prepareStatement("INSERT INTO period (sheet_id, name, from_date, to_date, added_on) VALUES (?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setDate(3, Date.valueOf(from));
             ps.setDate(4, Date.valueOf(to));
+            ps.setDate(5, Date.valueOf(sheets.today(sheetId)));
             return ps;
         }, keys);
         return new Period(keys.getKey().longValue(), sheetId, name, from, to, false, null, false);

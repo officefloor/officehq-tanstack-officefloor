@@ -19,6 +19,17 @@ public class SheetRepository {
         return new Sheet(id, today(id), archived(id));
     }
 
+    /** The sheet as it stood at the end of the date: the date stands in for its today, and it is archived only when it
+     *  was archived while its today was on or before it. */
+    public Sheet find(String id, LocalDate asOf) {
+        if (asOf == null) {
+            return find(id);
+        }
+        List<LocalDate> archivedOn = jdbc.query("SELECT archived_on FROM sheet_archived WHERE sheet_id = ?",
+                (rs, n) -> rs.getObject(1, LocalDate.class), id);
+        return new Sheet(id, asOf, !archivedOn.isEmpty() && AsOf.counts(archivedOn.get(0), asOf));
+    }
+
     /**
      * The sheet's today. Use this — never {@code LocalDate.now()} — for every decision or default
      * that depends on the date.
@@ -40,7 +51,7 @@ public class SheetRepository {
         if (archived(id)) {
             return false;
         }
-        jdbc.update("INSERT INTO sheet_archived (sheet_id, archived_by) VALUES (?, ?)", id, by);
+        jdbc.update("INSERT INTO sheet_archived (sheet_id, archived_by, archived_on) VALUES (?, ?, ?)", id, by, today(id));
         return true;
     }
 

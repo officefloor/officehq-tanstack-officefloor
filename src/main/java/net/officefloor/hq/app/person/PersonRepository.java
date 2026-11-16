@@ -177,6 +177,24 @@ public class PersonRepository {
                 retired.isEmpty() ? null : retired.get(0).toString(), List.copyOf(grades), holds, person.terms());
     }
 
+    /** The sheet's people as they stood at the end of the date (see #asOf), in the order added: one added while the
+     *  sheet's today was after it is left out. */
+    public List<Person> listAsOf(String sheetId, LocalDate date) {
+        Map<Long, LocalDate> added = new HashMap<>();
+        jdbc.query("SELECT id, added_on FROM person WHERE sheet_id = ?",
+                (ResultSet rs) -> {
+                    added.put(rs.getLong("id"), rs.getObject("added_on", LocalDate.class));
+                }, sheetId);
+        List<Person> people = new ArrayList<>();
+        for (Person p : list(sheetId)) {
+            LocalDate on = added.get(p.id());
+            if (on == null || !on.isAfter(date)) {
+                people.add(asOf(p, date));
+            }
+        }
+        return people;
+    }
+
     /** Retires the person from the date (replacing any earlier retirement date). */
     public void retire(String sheetId, long id, LocalDate from) {
         jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?", Date.valueOf(from), sheetId, id);

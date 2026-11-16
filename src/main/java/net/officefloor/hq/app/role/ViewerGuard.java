@@ -17,6 +17,7 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.sheet.AsOf;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -27,7 +28,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 /**
  * A viewer changes nothing: every change to a sheet (any non-GET request under {@code /api/sheets/<id>/}) made
  * by a user whose role on that sheet is viewer is refused (403) before it reaches its endpoint, so nothing is
- * stored and nothing audited. So is every change, by anyone, to a sheet a steward archived. A bulk action instead goes
+ * stored and nothing audited. So is every change, by anyone, to a sheet a steward archived, and every change made from
+ * a screen showing the sheet as of a date (it carries the {@code X-As-Of} header, see AsOf). A bulk action instead goes
  * through with nothing done: 0 done, every selected claim refused.
  */
 @Configuration
@@ -69,7 +71,9 @@ public class ViewerGuard {
             String by = json != null && json.hasNonNull("by") ? json.get("by").asText().trim() : "";
             boolean viewer = RoleRepository.VIEWER.equals(roles.roleOf(sheetId, by));
             boolean archived = sheets.archived(sheetId);
-            if (!viewer && !archived) {
+            String asOf = request.getHeader(AsOf.HEADER);
+            boolean viewingAsOf = asOf != null && !asOf.isBlank();
+            if (!viewer && !archived && !viewingAsOf) {
                 chain.doFilter(new Replay(request, body), response);
                 return;
             }
@@ -86,7 +90,8 @@ public class ViewerGuard {
             }
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.setContentType("text/plain");
-            response.getWriter().write(archived ? "The sheet is archived" : "A viewer cannot change the sheet");
+            response.getWriter().write(viewingAsOf ? "The sheet is shown as of " + asOf.trim() + "; it cannot be changed"
+                    : archived ? "The sheet is archived" : "A viewer cannot change the sheet");
         }
 
         private static JsonNode parse(byte[] body) {

@@ -31,8 +31,9 @@ function PersonStatements({ sheetId, user, person }: { sheetId: string; user: st
   const take = useMutation({
     mutationFn: (date: string) =>
       postJson(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/statements`, { by: user, asOf: date }),
+    // The date is cleared once taken or refused: the next press takes one now unless a date is typed again.
+    onSettled: () => setAsOf(''),
     onSuccess: () => {
-      setAsOf('');
       return Promise.all([
         queryClient.invalidateQueries({ queryKey: statementsKey(sheetId) }),
         queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),

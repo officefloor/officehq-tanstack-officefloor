@@ -48,4 +48,16 @@ public class StatementRepository {
                         rs.getDate("taken_on").toLocalDate().toString()),
                 sheetId);
     }
+
+    /** The summaries as they stood at the end of the date: only the statements taken while the sheet's today was on or
+     *  before it count. */
+    public List<StatementSummary> summaries(String sheetId, java.time.LocalDate asOf) {
+        return jdbc.query("SELECT s.person_id, c.n, s.due_total, s.taken_on FROM statement s"
+                + " JOIN (SELECT person_id, COUNT(*) n, MAX(id) last_id FROM statement WHERE sheet_id = ?"
+                + " AND COALESCE(made_on, taken_on) <= ? GROUP BY person_id) c"
+                + " ON s.id = c.last_id ORDER BY s.person_id",
+                (rs, n) -> new StatementSummary(rs.getLong("person_id"), rs.getInt("n"), rs.getString("due_total"),
+                        rs.getDate("taken_on").toLocalDate().toString()),
+                sheetId, Date.valueOf(asOf));
+    }
 }

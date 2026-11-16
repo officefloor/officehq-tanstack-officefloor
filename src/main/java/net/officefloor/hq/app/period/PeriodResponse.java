@@ -16,4 +16,15 @@ public record PeriodResponse(long id, String sheetId, String name, String from, 
                 period.to().toString(), period.closed(), period.soft(),
                 period.closedTotal() == null ? null : period.closedTotal().toPlainString(), totals);
     }
+
+    /** The period as it stood at the end of a date, in the state it had then (see PeriodRepository#listAsOf). */
+    public static PeriodResponse from(Period period, PeriodRepository.StateAsOf state) {
+        Map<String, String> totals = new LinkedHashMap<>();
+        if (state.closed() || state.soft()) {
+            state.personTotals().forEach((id, total) -> totals.put(String.valueOf(id), total.toPlainString()));
+        }
+        return new PeriodResponse(period.id(), period.sheetId(), period.name(), period.from().toString(),
+                period.to().toString(), state.closed(), state.soft(),
+                state.closedTotal() == null ? null : state.closedTotal().toPlainString(), totals);
+    }
 }

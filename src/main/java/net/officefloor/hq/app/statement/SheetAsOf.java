@@ -45,6 +45,22 @@ public final class SheetAsOf {
         return date;
     }
 
+    /** The rates as they stood, by grade, then from-date (one with none first), as RateRepository#list orders them. */
+    public List<Rate> rates() {
+        List<Rate> sorted = new ArrayList<>(rates);
+        sorted.sort(java.util.Comparator.comparing(Rate::grade).thenComparing(Rate::from,
+                java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())));
+        return sorted;
+    }
+
+    /** The settings as they stood, by key, then from-date (an undated one first), as SettingRepository#list orders them. */
+    public List<Setting> settings() {
+        List<Setting> sorted = new ArrayList<>(settings);
+        sorted.sort(java.util.Comparator.comparing(Setting::key).thenComparing(Setting::from,
+                java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())));
+        return sorted;
+    }
+
     /** The grade's rate in force on a date (see RateRepository#find); null when none applies. */
     public Rate rate(String grade, LocalDate on) {
         Rate found = null;
