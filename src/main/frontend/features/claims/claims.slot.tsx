@@ -15,6 +15,7 @@ import { claimsKey, commentLine, live, logLine, total, useClaims, type Claim } f
 import { useSelectedClaims } from './selection';
 import { useSheetToday } from '../session/session';
 import { useVoidReasons } from '../voidreasons/voidreasons';
+import { useTemplates } from '../templates/templates';
 
 type Values = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
 const EMPTY: Values = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
@@ -658,18 +659,34 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
     onSettled: submit.end,
   });
 
+  // A DRAFT claim with the chosen template's amount and note as they are now, no date: added by the claim form's rules,
+  // its refusal shown in the form's error.
+  const templates = useTemplates(sheetId).data ?? [];
+  const [template, setTemplate] = useState('');
+  const fromTemplate = useMutation({
+    mutationFn: (name: string) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/template-claims`, { template: name, by: user }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onSettled: submit.end,
+  });
+
   const change = (v: Partial<Values>) => {
     setValues((was) => ({ ...was, ...v }));
     save.reset();
+    fromTemplate.reset();
   };
   const openEditor = (c: Claim) => {
     save.reset();
+    fromTemplate.reset();
     if (editingId !== undefined && editingId !== c.id) unlock.mutate(editingId);
     setValues({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '', ref: c.ref ?? '', tags: c.tags.join(', ') });
     setEditingId(c.id);
   };
   const cancel = () => {
     save.reset();
+    fromTemplate.reset();
     if (editingId !== undefined) unlock.mutate(editingId);
     setValues(EMPTY);
     setEditingId(undefined);
@@ -695,6 +712,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
             e.preventDefault();
             if (!submit.begin()) return;
             save.reset();
+            fromTemplate.reset();
             save.mutate({ ...values, id: editingId });
           }}
         >
@@ -719,7 +737,36 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
             {editingId === undefined ? 'Add claim' : 'Save claim'}
           </button>
-          {save.isError && (
+          <select
+            data-testid="claim-template-select"
+            value={template}
+            onChange={(e) => {
+              setTemplate(e.target.value);
+              save.reset();
+              fromTemplate.reset();
+            }}
+          >
+            <option value="">Template…</option>
+            {templates.map((t) => (
+              <option key={t.name} value={t.name}>
+                {t.name}
+              </option>
+            ))}
+          </select>{' '}
+          <button
+            type="button"
+            data-testid="claim-template-add"
+            disabled={fromTemplate.isPending}
+            onClick={() => {
+              if (!submit.begin()) return;
+              save.reset();
+              fromTemplate.reset();
+              fromTemplate.mutate(template);
+            }}
+          >
+            Add from template
+          </button>
+          {(save.isError || fromTemplate.isError) && (
             <span data-testid="claim-form-error">
               The amount must have up to two decimals, and be 0.00 or more unless it corrects, by number, a settled claim of this person; its due-by not inside a closed period, the date not after the person's retirement date, the reference not one already used on the sheet, and only a draft claim can be edited.
             </span>
