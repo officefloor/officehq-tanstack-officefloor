@@ -1,0 +1,58 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java
+index 64b5d1dff..b12c88c2b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java
+@@ -10,7 +10,8 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+  * The number a claim receives as it is opened. While the sheet's period-numbering-from setting is a date and the
+  * sheet's today is on or after it, the claim is numbered within the period containing its due-by, {@code <period>-<n>}
+  * counting from 1 in each period, or {@code X-<n>} in its own sequence when no period contains it. Otherwise it takes
+- * the sheet-wide next number (1, 2, ...), which continues where it left off.
++ * the next number of the sheet's tree (1, 2, ...): one more than the last number given on any sheet of the tree, so
++ * the sheets of a tree share one sequence.
+  */
+ public final class ClaimNumbering {
+ 
+@@ -21,7 +22,7 @@ public final class ClaimNumbering {
+             SheetRepository sheets) {
+         String sheet = claim.sheetId();
+         if (!perPeriod(sheet, settings, sheets)) {
+-            return String.valueOf(claims.nextNumber(sheet));
++            return String.valueOf(claims.nextNumber(sheet, settings.tree(sheet)));
+         }
+         Period period = periods.containing(sheet, claim.dueBy());
+         String key = period == null ? "X" : period.name();
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index a9f7ec84b..5c1e86f1a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -379,14 +379,23 @@ public class ClaimRepository {
+     }
+ 
+     /**
+-     * The sheet's next claim number: 1 for the first, then one more each time. The sheet's counter row stays locked
+-     * until the transaction ends, so two claims opened at once get different numbers, and a rolled back opening gives
+-     * its number back.
++     * The next claim number of the sheet's tree (the sheet and the other sheets of its tree): one more than the last
++     * number given on any of them, 1 for the first. The counter rows of the whole tree stay locked until the
++     * transaction ends (taken in sheet order, so two openings never wait on each other), so two claims opened at once
++     * anywhere in the tree get different numbers, and a rolled back opening gives its number back.
+      */
+-    public long nextNumber(String sheetId) {
+-        ensureNumberRow(sheetId);
+-        jdbc.update("UPDATE claim_number_seq SET last_number = last_number + 1 WHERE sheet_id = ?", sheetId);
+-        return jdbc.queryForObject("SELECT last_number FROM claim_number_seq WHERE sheet_id = ?", Long.class, sheetId);
++    public long nextNumber(String sheetId, List<String> tree) {
++        Set<String> all = new TreeSet<>(tree);
++        all.add(sheetId);
++        long last = 0;
++        for (String s : all) {
++            ensureNumberRow(s);
++            jdbc.update("UPDATE claim_number_seq SET last_number = last_number WHERE sheet_id = ?", s);
++            last = Math.max(last, jdbc.queryForObject("SELECT last_number FROM claim_number_seq WHERE sheet_id = ?",
++                    Long.class, s));
++        }
++        jdbc.update("UPDATE claim_number_seq SET last_number = ? WHERE sheet_id = ?", last + 1, sheetId);
++        return last + 1;
+     }
+ 
+     /**
