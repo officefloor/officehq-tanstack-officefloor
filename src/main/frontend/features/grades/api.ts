@@ -19,3 +19,12 @@ export function listGrades(sheetId: string): Promise<SheetGrade[]> {
 export function retireGrade(sheetId: string, by: string, grade: string): Promise<SheetGrade[]> {
   return postJson<SheetGrade[]>(`${sheetBase(sheetId)}/grade-retire?by=${encodeURIComponent(by)}`, { grade });
 }
+
+/** How many people a grade merge gave the other grade. */
+export type GradeMerged = { merged: number };
+
+/** Merge a grade into another: everyone on it today is given the other from the sheet's today.
+ *  Refused (rejects) for the same grade twice, or for anyone but a steward. */
+export function mergeGrade(sheetId: string, by: string, from: string, into: string): Promise<GradeMerged> {
+  return postJson<GradeMerged>(`${sheetBase(sheetId)}/grade-merge?by=${encodeURIComponent(by)}`, { from, into });
+}
