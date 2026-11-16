@@ -52,6 +52,9 @@ public class SettingRepository {
     /** The date from which an opened claim is numbered within its period (see ClaimNumbering); blank: off. */
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
 
+    /** The days after a period's to-date before a change of the sheet's today closes it; blank for off (undated). */
+    public static final String GRACE_DAYS = "grace-days";
+
     /** The prefix of an action's permission: perm-open, perm-settle, perm-void, perm-reassign, perm-close or
      *  perm-reopen, its value the roles that may take it, comma separated; blank: the standing rule (see PERMISSIONS). */
     public static final String PERM_PREFIX = "perm-";
@@ -161,6 +164,12 @@ public class SettingRepository {
     public LocalDate periodNumberingFrom(String sheetId) {
         String value = value(sheetId, PERIOD_NUMBERING_FROM);
         return value == null ? null : LocalDate.parse(value);
+    }
+
+    /** The sheet's grace days, or null when it is blank (off). */
+    public Integer graceDays(String sheetId) {
+        String value = value(sheetId, GRACE_DAYS);
+        return value == null ? null : Integer.valueOf(value);
     }
 
     /** Whether the role may take the action (open, settle, void, reassign, close or reopen) on the sheet: the roles its
