@@ -7,7 +7,9 @@ import { SheetPage } from '../../slots/defs/sheetPage';
 import { usePeople, type Person } from '../people/people';
 import { periodOf, usePeriods } from '../periods/periods';
 import { claimDue, rateFor, useRates } from '../rates/rates';
-import { useFloor } from '../settings/settings';
+import { dueBy, isOverdue } from '../overdue/overdue';
+import { useSheetToday } from '../session/session';
+import { useFloor, useTerms } from '../settings/settings';
 import { claimsKey, live, total, useClaims, type Claim } from './claims';
 
 type Values = { amount: string; date: string; note: string };
@@ -24,7 +26,7 @@ function ClaimsHead() {
 
 type Action = 'open' | 'settle' | 'void';
 
-/** One claim: its values, status, due and the period its date falls in, with the buttons that edit it or change its status. An action
+/** One claim: its values, status, due, due-by (its date plus the sheet's terms), whether it is overdue, and the period its date falls in, with the buttons that edit it or change its status. An action
  *  the status does not allow, or settling a claim the user opened, is refused by the server and shows the claim's
  *  error. Only a DRAFT can be edited: Edit on any other claim shows the claim's error instead of opening the editor. */
 function ClaimRow({
@@ -48,6 +50,8 @@ function ClaimRow({
 }) {
   const queryClient = useQueryClient();
   const periods = usePeriods(sheetId);
+  const terms = useTerms(sheetId);
+  const today = useSheetToday(sheetId);
   const status = useMutation({
     mutationFn: (action: Action) =>
       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/status`, { action, by: user }),
@@ -66,6 +70,8 @@ function ClaimRow({
       <span data-testid="claim-amount">{c.amount}</span> <span data-testid="claim-date">{c.date}</span>{' '}
       <span data-testid="claim-note">{c.note}</span>{' '}
       <span data-testid="claim-due">{claimDue(c, rate, floor)}</span>{' '}
+      <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
+      <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
       <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}

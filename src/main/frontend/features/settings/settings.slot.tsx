@@ -3,18 +3,20 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
-import { DEFAULT_FLOOR, settingsKey, useSettings, type Setting } from './settings';
+import { DEFAULT_FLOOR, DEFAULT_TERMS, settingsKey, useSettings, type Setting } from './settings';
 
-type Key = 'clerk-limit' | 'floor';
-const KEYS: Key[] = ['clerk-limit', 'floor'];
+type Key = 'clerk-limit' | 'floor' | 'terms';
+const KEYS: Key[] = ['clerk-limit', 'floor', 'terms'];
+const BLANK: Record<Key, string> = { 'clerk-limit': '', floor: '', terms: '' };
 
 /** The sheet's settings: the clerk limit (the most a clerk may settle a claim's due for; blank for no limit) and the
- *  floor (the least a claim's live due may be; 1.00 until set). Saving stores the fields entered since the last save
+ *  floor (the least a claim's live due may be; 1.00 until set) and the terms (the days from a claim's date to its
+ *  due-by; 14 until set). Saving stores the fields entered since the last save
  *  (a field focused counts, so a blank typed over a blank still saves), the clerk limit when none was. */
 function Settings({ sheetId, user }: { sheetId: string; user: string }) {
   const settings = useSettings(sheetId);
   const queryClient = useQueryClient();
-  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '' });
+  const [values, setValues] = useState<Record<Key, string>>(BLANK);
   const touched = useRef(new Set<Key>());
 
   const submit = useSubmitOnce();
@@ -25,7 +27,7 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
       }
     },
     onSuccess: () => {
-      setValues({ 'clerk-limit': '', floor: '' });
+      setValues(BLANK);
       touched.current.clear();
     },
     onSettled: () => {
@@ -35,12 +37,12 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
   });
   const current = (key: Key) => settings.data?.find((s) => s.key === key)?.value ?? '';
 
-  const field = (key: Key, label: string) => (
+  const field = (key: Key, label: string, inputMode: 'decimal' | 'numeric' = 'decimal') => (
     <label>
       {label}{' '}
       <input
         data-testid={`setting-${key}`}
-        inputMode="decimal"
+        inputMode={inputMode}
         value={values[key]}
         onFocus={() => touched.current.add(key)}
         onChange={(e) => {
@@ -67,13 +69,14 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         }}
       >
         {field('clerk-limit', 'Clerk limit')} {field('floor', 'Floor')}{' '}
+        {field('terms', 'Terms (days)', 'numeric')}{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
         {save.isError && (
           <span data-testid="settings-error">
             The clerk limit must be an amount with up to two decimals, or blank; the floor an amount with up to two
-            decimals.
+            decimals; the terms a whole number of days, 0 or more.
           </span>
         )}
       </form>
@@ -83,6 +86,9 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
       </p>
       <p>
         Floor in force <span data-testid="setting-floor-current">{current('floor') || DEFAULT_FLOOR}</span>
+      </p>
+      <p>
+        Terms in force <span data-testid="setting-terms-current">{current('terms') || DEFAULT_TERMS}</span>
       </p>
     </section>
   );

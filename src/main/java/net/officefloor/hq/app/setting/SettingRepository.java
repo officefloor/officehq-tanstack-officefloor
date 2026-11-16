@@ -20,6 +20,12 @@ public class SettingRepository {
     /** The floor a sheet has until one is set. */
     public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
 
+    /** The days a claim has from its date until it is due by; 14 until set. */
+    public static final String TERMS = "terms";
+
+    /** The terms a sheet has until they are set. */
+    public static final int DEFAULT_TERMS = 14;
+
     private final JdbcTemplate jdbc;
 
     public SettingRepository(JdbcTemplate jdbc) {
@@ -49,6 +55,12 @@ public class SettingRepository {
     public BigDecimal floor(String sheetId) {
         String value = value(sheetId, FLOOR);
         return value == null ? DEFAULT_FLOOR : new BigDecimal(value);
+    }
+
+    /** The sheet's terms: the days a claim has from its date until it is due by. */
+    public int terms(String sheetId) {
+        String value = value(sheetId, TERMS);
+        return value == null ? DEFAULT_TERMS : Integer.parseInt(value);
     }
 
     /** Stores the setting, replacing the value it had. */

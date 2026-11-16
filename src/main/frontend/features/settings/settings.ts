@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-/** A sheet setting: `value` is text (clerk-limit, floor: an amount with two decimals), null when blank. */
+/** A sheet setting: `value` is text (clerk-limit, floor: an amount with two decimals; terms: a whole number of days), null when blank. */
 export type Setting = { sheetId: string; key: string; value: string | null };
 
 export const settingsKey = (sheetId: string) => ['sheet', sheetId, 'settings'];
@@ -21,4 +21,13 @@ export const DEFAULT_FLOOR = '1.00';
 export function useFloor(sheetId: string): string {
   const settings = useSettings(sheetId);
   return settings.data?.find((s) => s.key === 'floor')?.value ?? DEFAULT_FLOOR;
+}
+
+/** The terms a sheet has until they are set. */
+export const DEFAULT_TERMS = '14';
+
+/** The sheet's terms: the days from a claim's date to its due-by. */
+export function useTerms(sheetId: string): number {
+  const settings = useSettings(sheetId);
+  return Number(settings.data?.find((s) => s.key === 'terms')?.value ?? DEFAULT_TERMS);
 }
