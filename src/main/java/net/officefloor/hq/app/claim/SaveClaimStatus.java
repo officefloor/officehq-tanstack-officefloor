@@ -26,6 +26,7 @@ public class SaveClaimStatus {
             case OPEN -> ClaimStatus.DRAFT;
             case SETTLE -> ClaimStatus.OPEN;
             case APPROVE, REJECT -> ClaimStatus.PENDING;
+            case RESETTLE -> ClaimStatus.SETTLED;
             case VOID -> null;
         };
         boolean stored = from != null ? claims.updateStatus(toSave, from)

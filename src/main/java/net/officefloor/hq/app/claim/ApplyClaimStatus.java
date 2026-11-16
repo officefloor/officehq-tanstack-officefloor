@@ -22,16 +22,19 @@ import net.officefloor.plugin.variable.Val;
  * clerk limit, if it has one, makes it PENDING instead (its due left live, not bound by a statement); a due of n/a is
  * within any limit. A steward settles anything. Only a steward approves a PENDING claim (fixing its live figure, late
  * charge included, at that moment) or rejects it (OPEN again, bound again by its statement if one bound it).
+ * Only a steward re-settles a SETTLED claim (not one dated inside a closed period): its due is fixed again at the figure
+ * it would have today as an OPEN claim bound by no statement (today's rates, grades, floor and late charge).
  */
 public class ApplyClaimStatus {
     public void apply(@Val Claim claim, @Val ClaimStatusChange change, PersonRepository people, RateRepository rates,
-            PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, Out<Claim> changed, Out<ClaimNumber> number) throws InvalidClaimStatusException {
+            PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, Out<Claim> changed, Out<ClaimNumber> number, Out<PreviousDue> previous) throws InvalidClaimStatusException {
         boolean allowed = switch (change.action()) {
             case OPEN -> claim.status() == ClaimStatus.DRAFT;
             case SETTLE -> claim.status() == ClaimStatus.OPEN;
             case APPROVE, REJECT -> claim.status() == ClaimStatus.PENDING;
             case VOID -> claim.status() == ClaimStatus.DRAFT || claim.status() == ClaimStatus.OPEN
                     || claim.status() == ClaimStatus.PENDING;
+            case RESETTLE -> claim.status() == ClaimStatus.SETTLED;
         };
         if (!allowed) {
             throw new InvalidClaimStatusException("A " + claim.status() + " claim cannot be made " + change.to());
@@ -47,9 +50,20 @@ public class ApplyClaimStatus {
         if ((change.action() == ClaimAction.APPROVE || change.action() == ClaimAction.REJECT) && !steward) {
             throw new InvalidClaimStatusException("Only a steward approves or rejects a pending claim");
         }
+        if (change.action() == ClaimAction.RESETTLE && !steward) {
+            throw new InvalidClaimStatusException("Only a steward re-settles a claim");
+        }
         ClaimStatus to = change.to();
         LateCharge late = LateCharge.of(claim.sheetId(), sheets, settings, claims);
-        BigDecimal settledDue = to == ClaimStatus.SETTLED ? late.add(claim, due(claim, people, rates, settings, late.rounding())) : claim.due();
+        BigDecimal settledDue;
+        if (change.action() == ClaimAction.RESETTLE) {
+            Claim asOpen = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
+                    claim.note(), ClaimStatus.OPEN, claim.number(), null, claim.openedBy(), false, null,
+                    claim.corrects(), claim.dueBy());
+            settledDue = late.add(asOpen, due(asOpen, people, rates, settings, late.rounding()));
+        } else {
+            settledDue = to == ClaimStatus.SETTLED ? late.add(claim, due(claim, people, rates, settings, late.rounding())) : claim.due();
+        }
         if (change.action() == ClaimAction.SETTLE && settledDue != null && !steward) {
             BigDecimal limit = settings.clerkLimit(claim.sheetId());
             if (limit != null && settledDue.compareTo(limit) > 0) {
@@ -58,6 +72,7 @@ public class ApplyClaimStatus {
             }
         }
         number.set(new ClaimNumber(claim.number()));
+        previous.set(new PreviousDue(claim.due()));
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                 claim.note(), to, claim.number(), settledDue,
                 change.action() == ClaimAction.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy()));

@@ -56,16 +56,17 @@ public class SettleClaims {
             Claim[] changed = new Claim[1];
             Claim[] stored = new Claim[1];
             ClaimNumber[] number = new ClaimNumber[1];
+            PreviousDue[] previous = new PreviousDue[1];
             try {
                 apply.apply(claim, change, people, rates, periods, settings, roles, sheets, claims,
-                        (c) -> changed[0] = c, (n) -> number[0] = n);
+                        (c) -> changed[0] = c, (n) -> number[0] = n, (p) -> previous[0] = p);
                 save.save(changed[0], change, claims, periods, settings, sheets, log, (c) -> stored[0] = c,
                         (n) -> number[0] = n);
             } catch (InvalidClaimStatusException refused) {
                 continue;
             }
             settled++;
-            record.record(stored[0], change, number[0], people, before, rollup, audit);
+            record.record(stored[0], change, number[0], previous[0], people, before, rollup, audit);
         }
         result.set(new BulkSettleResult(settled, selected.size() - settled));
     }

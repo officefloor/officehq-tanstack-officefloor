@@ -24,12 +24,12 @@ function ClaimsHead() {
   );
 }
 
-type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void';
+type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
 
 /** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, its status log (oldest first), due-by (fixed when it was added), whether it is overdue, and the period its date falls in, with the buttons that edit it or change its status. A clerk's settle above the clerk limit makes it PENDING; a
  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
- *  shows the claim's error. A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
+ *  shows the claim's error. A steward re-settles a SETTLED claim (its due fixed again at today's figure). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
  *  with the claim's error, for anyone else or any other claim). Only a DRAFT can be edited: Edit on any other claim shows the claim's error instead of opening the editor. */
 function ClaimRow({
   sheetId,
@@ -150,6 +150,9 @@ function ClaimRow({
       <button type="button" data-testid="claim-void" disabled={status.isPending} onClick={() => act('void')}>
         Void
       </button>
+      <button type="button" data-testid="claim-resettle" disabled={status.isPending} onClick={() => act('resettle')}>
+        Re-settle
+      </button>
       <select
         data-testid="claim-reassign-to"
         aria-label="Move to"
@@ -187,9 +190,9 @@ function ClaimRow({
       {status.isError && (
         <span data-testid="claim-error">
           {' '}
-          {(c.status === 'OPEN' || c.status === 'PENDING') && c.openedBy === user && status.variables !== 'reject' && status.variables !== 'void'
+          {(c.status === 'OPEN' || c.status === 'PENDING') && c.openedBy === user && status.variables !== 'reject' && status.variables !== 'void' && status.variables !== 'resettle'
             ? 'You opened this claim, so someone else must settle or approve it.'
-            : `A ${c.status} claim cannot be changed that way, nor one dated inside a closed period; only a steward approves or rejects a pending claim, and a rejection needs a reason.`}
+            : `A ${c.status} claim cannot be changed that way, nor one dated inside a closed period; only a steward approves or rejects a pending claim or re-settles a settled one, and a rejection needs a reason.`}
         </span>
       )}
       {reassign.isError && (
