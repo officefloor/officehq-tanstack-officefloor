@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.period;
 
+import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -13,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PeriodRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, from_date, to_date";
+    private static final String COLUMNS = "id, sheet_id, name, from_date, to_date, closed, closed_total";
 
     private final JdbcTemplate jdbc;
 
@@ -41,6 +42,26 @@ public class PeriodRepository {
         return n != null && n > 0;
     }
 
+    /** A period of the sheet by id, or null when it has none. */
+    public Period find(String sheetId, long id) {
+        List<Period> found = jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ? AND id = ?",
+                PeriodRepository::map, sheetId, id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** Whether a closed period of the sheet contains the date. */
+    public boolean closedOn(String sheetId, LocalDate date) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM period WHERE sheet_id = ? AND closed = TRUE "
+                + "AND from_date <= ? AND to_date >= ?", Integer.class, sheetId, Date.valueOf(date), Date.valueOf(date));
+        return n != null && n > 0;
+    }
+
+    /** Closes the period with its fixed due-total, but only while it is still open; false when it was not. */
+    public boolean close(Period period, BigDecimal total) {
+        return jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet_id = ? AND id = ? AND closed = FALSE",
+                total, period.sheetId(), period.id()) == 1;
+    }
+
     /** Stores a new period and returns it with its id. */
     public Period add(String sheetId, String name, LocalDate from, LocalDate to) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
@@ -53,11 +74,12 @@ public class PeriodRepository {
             ps.setDate(4, Date.valueOf(to));
             return ps;
         }, keys);
-        return new Period(keys.getKey().longValue(), sheetId, name, from, to);
+        return new Period(keys.getKey().longValue(), sheetId, name, from, to, false, null);
     }
 
     private static Period map(ResultSet rs, int n) throws SQLException {
+        BigDecimal total = rs.getBigDecimal("closed_total");
         return new Period(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
-                rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate());
+                rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate(), rs.getBoolean("closed"), total == null ? null : total.setScale(2));
     }
 }

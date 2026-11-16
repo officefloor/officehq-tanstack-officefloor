@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
+import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -12,11 +13,12 @@ import net.officefloor.plugin.variable.Val;
  * claim's number; the number it had is kept for the audit line. Settling fixes the claim's due: its amount at its
  * person's grade's rate in force on the claim's date, rounded half to even to two decimals (left live when no rate applies),
  * or the figure a statement bound it to.
- * Opening records who opened the claim; that user cannot settle it (four eyes).
+ * Opening records who opened the claim; that user cannot settle it (four eyes). A claim dated inside a closed
+ * period cannot change status.
  */
 public class ApplyClaimStatus {
     public void apply(@Val Claim claim, @Val ClaimStatusChange change, PersonRepository people, RateRepository rates,
-            Out<Claim> changed, Out<ClaimNumber> number) throws InvalidClaimStatusException {
+            PeriodRepository periods, Out<Claim> changed, Out<ClaimNumber> number) throws InvalidClaimStatusException {
         boolean allowed = switch (change.to()) {
             case OPEN -> claim.status() == ClaimStatus.DRAFT;
             case SETTLED -> claim.status() == ClaimStatus.OPEN;
@@ -25,6 +27,9 @@ public class ApplyClaimStatus {
         };
         if (!allowed) {
             throw new InvalidClaimStatusException("A " + claim.status() + " claim cannot be made " + change.to());
+        }
+        if (periods.closedOn(claim.sheetId(), claim.date())) {
+            throw new InvalidClaimStatusException("The claim's date is inside a closed period");
         }
         if (change.to() == ClaimStatus.SETTLED && change.by().equals(claim.openedBy())) {
             throw new InvalidClaimStatusException("The user who opened a claim cannot settle it");

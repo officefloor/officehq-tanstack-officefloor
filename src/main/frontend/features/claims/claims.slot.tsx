@@ -94,7 +94,7 @@ function ClaimRow({
           {' '}
           {c.status === 'OPEN' && c.openedBy === user
             ? 'You opened this claim, so someone else must settle it.'
-            : `A ${c.status} claim cannot be changed that way.`}
+            : `A ${c.status} claim cannot be changed that way, nor one dated inside a closed period.`}
         </span>
       )}
     </li>
@@ -169,7 +169,9 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
             {editingId === undefined ? 'Add claim' : 'Save claim'}
           </button>
           {save.isError && (
-            <span data-testid="claim-form-error">The amount must be 0.00 or more, with up to two decimals.</span>
+            <span data-testid="claim-form-error">
+              The amount must be 0.00 or more, with up to two decimals, and the date not inside a closed period.
+            </span>
           )}
         </form>
         <ul data-testid="claim-list">

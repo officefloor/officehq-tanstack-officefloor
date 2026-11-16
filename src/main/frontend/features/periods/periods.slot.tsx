@@ -12,7 +12,8 @@ type Values = { name: string; from: string; to: string };
 const EMPTY: Values = { name: '', from: '', to: '' };
 
 /** The sheet's periods: the form that adds one, and each period with its due-total — the figures of the claims
- *  that count whose date falls in it, added up (skipping n/a). */
+ *  that count whose date falls in it, added up (skipping n/a); a closed period shows the due-total fixed when it
+ *  was closed. */
 function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const periods = usePeriods(sheetId);
   const people = usePeople(sheetId);
@@ -83,7 +84,11 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid="period-name">{p.name}</td>
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
-              <td data-testid="period-due-total">{dueTotal(p)}</td>
+              <td data-testid="period-due-total">{p.closed && p.closedTotal !== null ? p.closedTotal : dueTotal(p)}</td>
+              <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+              <td>
+                <PeriodClose sheetId={sheetId} user={user} period={p} />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -93,3 +98,34 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
 }
 
 export const contribution = SheetPage.fill({ order: 7, Component: Periods });
+
+/** Closes a period: its due-total is fixed as it is now. Closing one already closed shows the period's error. */
+function PeriodClose({ sheetId, user, period }: { sheetId: string; user: string; period: Period }) {
+  const queryClient = useQueryClient();
+  const close = useMutation({
+    mutationFn: () =>
+      postJson<Period>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/periods/${period.id}/close`,
+        { by: user },
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+  });
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="period-close"
+        disabled={close.isPending}
+        onClick={() => {
+          close.reset();
+          close.mutate();
+        }}
+      >
+        Close
+      </button>
+      {close.isError && <span data-testid="period-error"> This period is already closed.</span>}
+    </>
+  );
+}
