@@ -5,11 +5,11 @@ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
-import { useSheetDueTotal } from '../header/totals';
+import { useSheetDueTotal, useSheetSplit } from '../header/totals';
 import { GRADES, type Person } from '../people/people';
 import { useSheetToday } from '../session/session';
 import { useCap, useFloor, useLate } from '../settings/settings';
-import { personDue, personExcess, rateFor, ratesKey, useRates, type Rate } from './rates';
+import { personDue, personExcess, personSplit, rateFor, ratesKey, useRates, type Rate } from './rates';
 
 /** The sheet's rates: the form that sets one (from an optional from-date, through an optional to-date), each grade's rate in force on the
  *  sheet's today, and every rate set. */
@@ -144,6 +144,8 @@ function DueHead() {
     <>
       <th>Due total</th>
       <th>Excess</th>
+      <th>Settled total</th>
+      <th>Open total</th>
     </>
   );
 }
@@ -157,19 +159,25 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }
   const floor = useFloor(sheetId);
   const cap = useCap(sheetId);
   const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person], late.today);
+  const split = personSplit(mine, rates.data, person, late, floor);
   return (
     <>
       <td data-testid="person-due-total">{personDue(mine, rates.data, person, late, floor, cap)}</td>
       <td data-testid="person-excess">{personExcess(mine, rates.data, person, late, floor, cap)}</td>
+      <td data-testid="person-settled-total">{split.settled}</td>
+      <td data-testid="person-open-total">{split.open}</td>
     </>
   );
 }
 
-/** The sheet's due-total: everyone's due-total added up, skipping n/a. */
+/** The sheet's due-total: everyone's due-total added up, skipping n/a; and its settled-total and open-total. */
 function DueTotal({ sheetId }: { sheetId: string }) {
+  const split = useSheetSplit(sheetId);
   return (
     <p>
       Due total <span data-testid="rollup-due-total">{useSheetDueTotal(sheetId)}</span>
+      {' '}Settled total <span data-testid="rollup-settled-total">{split.settled}</span>
+      {' '}Open total <span data-testid="rollup-open-total">{split.open}</span>
     </p>
   );
 }

@@ -1,7 +1,7 @@
 import { live, useClaims, type ClaimStatus } from '../claims/claims';
 import { overdue } from '../overdue/overdue';
 import { usePeople } from '../people/people';
-import { personDue, trimmedSum, useRates } from '../rates/rates';
+import { personDue, personSplit, sum, trimmedSum, useRates } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../settings/settings';
 
 // The sheet-wide figures shown in more than one place (the rollups, the summary and the header), worked out once
@@ -24,6 +24,19 @@ export function useSheetDueTotal(sheetId: string): string {
       personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap),
     ),
   );
+}
+
+/** The sheet's settled-total and open-total: everyone's added up (not trimmed). */
+export function useSheetSplit(sheetId: string): { settled: string; open: string } {
+  const people = usePeople(sheetId);
+  const claims = useClaims(sheetId);
+  const rates = useRates(sheetId);
+  const late = useLate(sheetId);
+  const floor = useFloor(sheetId);
+  const all = (people.data ?? []).map((p) =>
+    personSplit(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor),
+  );
+  return { settled: sum(all.map((s) => s.settled)), open: sum(all.map((s) => s.open)) };
 }
 
 /** The sheet's overdue count and overdue-total: everyone's added up (the total leaving out the single highest and

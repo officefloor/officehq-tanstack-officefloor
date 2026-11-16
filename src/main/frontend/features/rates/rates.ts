@@ -92,6 +92,18 @@ function personFigures(claims: Claim[], rates: Rate[] | undefined, person: Perso
   return sum(figures);
 }
 
+/** A person's settled-total and open-total: the figures (see personFigures) of their SETTLED claims that count
+ *  (frozen when settled, corrections included), and of their OPEN and PENDING ones, each added up, skipping n/a.
+ *  Together they make the sum of their figures, before the cap. */
+export function personSplit(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated): { settled: string; open: string } {
+  const figure = (c: Claim) => claimDue(c, rateFor(rates, gradeOn(person, c.date), c.date), floor, late);
+  const counted = claims.filter(counts);
+  return {
+    settled: sum(counted.filter((c) => c.status === 'SETTLED').map(figure)),
+    open: sum(counted.filter((c) => c.status !== 'SETTLED').map(figure)),
+  };
+}
+
 /** A person's due-total: the sum of their figures (see personFigures), at most the sheet's cap (null: none); 'n/a'
  *  is not capped. */
 export function personDue(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, cap: string | null): string {
