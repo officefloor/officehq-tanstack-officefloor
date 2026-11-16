@@ -1,0 +1,515 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index 758a44e90..9af7c2ecf 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -14,8 +14,8 @@ export function viewAsOf(): string {
+   return /^"?(\d{4}-\d{2}-\d{2})"?$/.exec(raw)?.[1] ?? '';
+ }
+ 
+-async function send<T>(path: string, init?: RequestInit): Promise<T> {
+-  const asOf = viewAsOf();
++async function send<T>(path: string, init?: RequestInit, now = false): Promise<T> {
++  const asOf = now ? '' : viewAsOf();
+   if (asOf !== '' && path.startsWith('/api/sheets/')) {
+     if ((init?.method ?? 'GET') === 'GET') {
+       path = `${path}${path.includes('?') ? '&' : '?'}asOf=${asOf}`;
+@@ -30,8 +30,9 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
+   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+ }
+ 
+-export function getJson<T>(path: string): Promise<T> {
+-  return send<T>(path);
++/** A read; `now` asks for the sheet as it is now, whatever the as-of date (see query/readNow). */
++export function getJson<T>(path: string, now = false): Promise<T> {
++  return send<T>(path, undefined, now);
+ }
+ 
+ export function postJson<T>(path: string, body: unknown): Promise<T> {
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index a6f2ad726..55d333173 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import { nowKey, useReadNow } from '../../query/readNow';
+ import { heldOn, retiredOn, type Person } from '../people/people';
+ 
+ /** A claim's status: DRAFT when added, then OPEN and SETTLED; a clerk settling above the clerk limit makes it PENDING
+@@ -74,9 +75,10 @@ export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'];
+ 
+ /** Every claim on the sheet, newest first. */
+ export function useClaims(sheetId: string) {
++  const now = useReadNow();
+   return useQuery({
+-    queryKey: claimsKey(sheetId),
+-    queryFn: () => getJson<Claim[]>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`),
++    queryKey: nowKey(claimsKey(sheetId), now),
++    queryFn: () => getJson<Claim[]>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`, now),
+   });
+ }
+ 
+diff --git a/src/main/frontend/features/clashing/clashing.slot.tsx b/src/main/frontend/features/clashing/clashing.slot.tsx
+new file mode 100644
+index 000000000..5d98a582d
+--- /dev/null
++++ b/src/main/frontend/features/clashing/clashing.slot.tsx
+@@ -0,0 +1,16 @@
++import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
++import type { Person } from '../people/people';
++
++function ClashingHead() {
++  return <th>Clashing</th>;
++}
++
++/** Whether the person's name or an alias is used on another sheet of the sheet's tree (decided by the server). */
++function PersonClashing({ person }: { sheetId: string; user: string; person: Person }) {
++  return <td data-testid="person-clashing">{person.clashing ? 'yes' : 'no'}</td>;
++}
++
++export const contributions = [
++  PeopleHead.fill({ order: 6, Component: ClashingHead }),
++  PersonRow.fill({ order: 6, Component: PersonClashing }),
++];
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+index c0b336bcb..d4b50bcc2 100644
+--- a/src/main/frontend/features/consolidated/consolidated.slot.tsx
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -1,6 +1,7 @@
+ import { useCallback, useEffect, useState } from 'react';
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import { ReadNow } from '../../query/readNow';
+ import { SheetPage } from '../../slots/defs/sheetPage';
+ import { useSheetDueTotal, useSheetOverdue } from '../header/totals';
+ import { usePeople } from '../people/people';
+@@ -27,7 +28,8 @@ function SheetFigures({ sheetId, report }: { sheetId: string; report: (sheetId:
+ }
+ 
+ /** The consolidated figures over the sheet and all its descendants: their people counted, and each sheet's
+- *  due-total and overdue-total (as that sheet shows it) added up. A sheet with no children shows its own. */
++ *  due-total and overdue-total (as that sheet shows it) added up. A sheet with no children shows its own. They are
++ *  always the figures as the sheets are now: an as-of date (see features/asof) leaves them as they are. */
+ function Consolidated({ sheetId }: { sheetId: string }) {
+   const descendants = useDescendants(sheetId);
+   const sheets = [sheetId, ...(descendants.data ?? [])];
+@@ -40,9 +42,11 @@ function Consolidated({ sheetId }: { sheetId: string }) {
+ 
+   return (
+     <section data-testid="consolidated">
+-      {sheets.map((id) => (
+-        <SheetFigures key={id} sheetId={id} report={report} />
+-      ))}
++      <ReadNow.Provider value={true}>
++        {sheets.map((id) => (
++          <SheetFigures key={id} sheetId={id} report={report} />
++        ))}
++      </ReadNow.Provider>
+       Consolidated: people <span data-testid="consolidated-people-count">{counted.reduce((n, f) => n + f.people, 0)}</span>
+       {' · '}Due total <span data-testid="consolidated-due-total">{sum(counted.map((f) => f.due))}</span>
+       {' · '}Overdue total <span data-testid="consolidated-overdue-total">{sum(counted.map((f) => f.overdue))}</span>
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 30f0e0ef9..d224f4953 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import { nowKey, useReadNow } from '../../query/readNow';
+ import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
+ 
+ export const GRADES = ['A', 'B', 'C'] as const;
+@@ -17,7 +18,9 @@ export type PersonGrade = { grade: string; from: string | null };
+  *  their grade's and the sheet's when a claim is added), null when they have none. `contact` is the person's contact
+  *  (unique on the sheet; without surrounding spaces, lower-cased), null when none. `aliases` are the person's aliases,
+  *  sorted as names are compared: no alias equals (case ignored) any name or alias on the sheet, and the quick-add bar and
+- *  the paste box find a person by one as by the name. */
++ *  the paste box find a person by one as by the name. `clashing` is whether their name or an alias is used as a name or
++ *  alias on another sheet of the sheet's tree (people added before the rule): every edit of them is refused until it
++ *  renames them clear. */
+ export type Person = {
+   id: number;
+   sheetId: string;
+@@ -31,6 +34,7 @@ export type Person = {
+   terms: number | null;
+   contact: string | null;
+   aliases: string[];
++  clashing: boolean;
+ };
+ 
+ /** A hold on a person from a date until a date (yyyy-MM-dd, both included); a null `to` is open-ended. */
+@@ -59,9 +63,10 @@ export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'];
+ 
+ /** The sheet's people, in the order they were added. */
+ export function usePeople(sheetId: string) {
++  const now = useReadNow();
+   return useQuery({
+-    queryKey: peopleKey(sheetId),
+-    queryFn: () => getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheetId)}/people`),
++    queryKey: nowKey(peopleKey(sheetId), now),
++    queryFn: () => getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheetId)}/people`, now),
+   });
+ }
+ 
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 6936c1d53..9ad936365 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import { nowKey, useReadNow } from '../../query/readNow';
+ import { counts, isOpen, type Claim } from '../claims/claims';
+ import { lateBoundaries, roundsHalfUp, type Late } from '../overdue/late';
+ import { gradeOn, type Person } from '../people/people';
+@@ -14,9 +15,10 @@ export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'];
+ 
+ /** The sheet's rates, by grade then from-date, then those of its parent, the parent's parent ... (see Rate.level). */
+ export function useRates(sheetId: string) {
++  const now = useReadNow();
+   return useQuery({
+-    queryKey: ratesKey(sheetId),
+-    queryFn: () => getJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`),
++    queryKey: nowKey(ratesKey(sheetId), now),
++    queryFn: () => getJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`, now),
+   });
+ }
+ 
+diff --git a/src/main/frontend/features/session/session.ts b/src/main/frontend/features/session/session.ts
+index 523e6a257..d16674153 100644
+--- a/src/main/frontend/features/session/session.ts
++++ b/src/main/frontend/features/session/session.ts
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import { nowKey, useReadNow } from '../../query/readNow';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+ 
+ // Who is signed in and which sheet is active live in the URL (`user`, `sheet`), so any feature
+@@ -14,9 +15,10 @@ export type Sheet = { id: string; today: string; archived: boolean; parent: stri
+ 
+ /** The active sheet as the store holds it. Keyed ['sheet', id]: every per-sheet key starts so. */
+ export function useSheet(sheetId: string) {
++  const now = useReadNow();
+   return useQuery({
+-    queryKey: ['sheet', sheetId],
+-    queryFn: () => getJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}`),
++    queryKey: nowKey(['sheet', sheetId], now),
++    queryFn: () => getJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}`, now),
+     enabled: sheetId !== '',
+   });
+ }
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index c7d3da71a..2047fcd0c 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import { nowKey, useReadNow } from '../../query/readNow';
+ import type { Late } from '../overdue/late';
+ import { gradeOn, usePeople } from '../people/people';
+ import { useSheetToday } from '../session/session';
+@@ -13,9 +14,10 @@ export const settingsKey = (sheetId: string) => ['sheet', sheetId, 'settings'];
+ 
+ /** The sheet's settings: every value recorded, by key then from-date. */
+ export function useSettings(sheetId: string) {
++  const now = useReadNow();
+   return useQuery({
+-    queryKey: settingsKey(sheetId),
+-    queryFn: () => getJson<Setting[]>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`),
++    queryKey: nowKey(settingsKey(sheetId), now),
++    queryFn: () => getJson<Setting[]>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, now),
+   });
+ }
+ 
+diff --git a/src/main/frontend/query/readNow.ts b/src/main/frontend/query/readNow.ts
+new file mode 100644
+index 000000000..5e446c6e6
+--- /dev/null
++++ b/src/main/frontend/query/readNow.ts
+@@ -0,0 +1,11 @@
++import { createContext, useContext } from 'react';
++
++/** Whether the reads below ask for the sheet as it is now, whatever as-of date the screen shows (see features/asof):
++ *  the sheet, its people, claims, rates and settings are read so. Off everywhere but where a feature turns it on. */
++export const ReadNow = createContext(false);
++
++export const useReadNow = () => useContext(ReadNow);
++
++/** The key a read is kept under: a read of the sheet as it is now is kept apart (under the same prefix, so whatever
++ *  invalidates the sheet's own read invalidates it too). */
++export const nowKey = (key: unknown[], now: boolean) => (now ? [...key, 'now'] : key);
+diff --git a/src/main/java/net/officefloor/hq/app/person/CheckNewPersonName.java b/src/main/java/net/officefloor/hq/app/person/CheckNewPersonName.java
+index 83411bfe7..de76a44eb 100644
+--- a/src/main/java/net/officefloor/hq/app/person/CheckNewPersonName.java
++++ b/src/main/java/net/officefloor/hq/app/person/CheckNewPersonName.java
+@@ -3,11 +3,11 @@ package net.officefloor.hq.app.person;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** A person being added may not take a name already on the sheet. */
++/** A person being added may not take a name already on the sheet, or used as a name or alias on another sheet of its tree. */
+ public class CheckNewPersonName {
+     public void check(@PathVariable("sheetId") String sheetId, @Val PersonValues values, PersonRepository people)
+             throws DuplicatePersonNameException {
+-        if (people.nameTaken(sheetId.trim(), values.name(), 0)) {
++        if (people.nameTaken(sheetId.trim(), values.name(), 0) || people.treeTaken(sheetId.trim(), values.name())) {
+             throw new DuplicatePersonNameException(values.name());
+         }
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/CheckPersonRename.java b/src/main/java/net/officefloor/hq/app/person/CheckPersonRename.java
+index 0476f3a61..4d1dbdd8e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/CheckPersonRename.java
++++ b/src/main/java/net/officefloor/hq/app/person/CheckPersonRename.java
+@@ -2,12 +2,22 @@ package net.officefloor.hq.app.person;
+ 
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** A person being edited may not take a name another person on the sheet already has. */
++/** A person being edited may not take a name another person on the sheet already has, nor be left with a name or alias
++ *  used on another sheet of the sheet's tree: a person who clashes is refused every edit until it renames them clear. */
+ public class CheckPersonRename {
+     public void check(@Val Person person, @Val PersonValues values, PersonRepository people)
+             throws DuplicatePersonNameException {
+         if (people.nameTaken(person.sheetId(), values.name(), person.id())) {
+             throw new DuplicatePersonNameException(values.name());
+         }
++        java.util.Set<String> tree = people.treeKeys(person.sheetId());
++        if (tree.contains(PersonRepository.key(values.name()))) {
++            throw new DuplicatePersonNameException(values.name());
++        }
++        for (String alias : person.aliases()) {
++            if (tree.contains(PersonRepository.key(alias))) {
++                throw new DuplicatePersonNameException(alias);
++            }
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 8c1de4793..514b27ff6 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -12,9 +12,17 @@ import java.util.List;
+  *  a statement, counts in no live total. {@code held} is whether they have any hold. {@code terms} are the person's own
+  *  terms (days a claim of theirs has until it is due by, ahead of their grade's and the sheet's), null when none. {@code contact} is the person's contact (unique on the sheet; kept without
+  *  surrounding spaces, lower-cased), null when none. {@code aliases} are the person's aliases, sorted as names are compared
+- *  (each kept without surrounding spaces; no alias equals, case ignored, any name or alias on the sheet). */
++ *  (each kept without surrounding spaces; no alias equals, case ignored, any name or alias on the sheet). {@code clashing}
++ *  is whether their name or an alias is used as a name or alias on another sheet of the sheet's tree (see
++ *  PersonRepository#treeKeys): set only on the people listed, false elsewhere. */
+ public record Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
+-        List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases) {
++        List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases,
++        boolean clashing) {
++
++    public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
++            List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases) {
++        this(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, false);
++    }
+ 
+     public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom,
+             List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases) {
+@@ -26,6 +34,16 @@ public record Person(long id, String sheetId, String name, String grade, long ve
+         this(id, sheetId, name, grade, version, retiredFrom, grades, holds, terms, contact, List.of());
+     }
+ 
++    /** The person with whether they clash in the sheet's tree. */
++    public Person withClashing(boolean clashing) {
++        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing);
++    }
++
++    /** Whether the person's name or any alias is among the name keys (lower-cased names and aliases). */
++    public boolean usesAny(java.util.Set<String> keys) {
++        return keys.contains(PersonRepository.key(name)) || aliases.stream().anyMatch((a) -> keys.contains(PersonRepository.key(a)));
++    }
++
+     /** Whether a hold of the person covers the date. */
+     public boolean heldOn(LocalDate date) {
+         return holds.stream().anyMatch((h) -> h.covers(date));
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 61139faf3..84b32a0cf 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -9,6 +9,7 @@ import java.util.ArrayList;
+ import java.util.HashMap;
+ import java.util.List;
+ import java.util.Map;
++import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import org.springframework.dao.DuplicateKeyException;
+ import org.springframework.jdbc.core.JdbcTemplate;
+@@ -25,10 +26,39 @@ public class PersonRepository {
+ 
+     private final JdbcTemplate jdbc;
+     private final SheetRepository sheets;
++    private final SettingRepository settings;
+ 
+-    public PersonRepository(JdbcTemplate jdbc, SheetRepository sheets) {
++    public PersonRepository(JdbcTemplate jdbc, SheetRepository sheets, SettingRepository settings) {
+         this.jdbc = jdbc;
+         this.sheets = sheets;
++        this.settings = settings;
++    }
++
++    /** A name or alias as names are compared: lower-cased (as the name_key and alias_key columns are). */
++    public static String key(String name) {
++        return name.toLowerCase(java.util.Locale.ROOT);
++    }
++
++    /** The names and aliases (as compared, see #key) used on the other sheets of the sheet's tree (see
++     *  SettingRepository#tree): none may be taken on the sheet. */
++    public java.util.Set<String> treeKeys(String sheetId) {
++        java.util.Set<String> keys = new java.util.HashSet<>();
++        for (String other : settings.tree(sheetId)) {
++            keys.addAll(jdbc.queryForList("SELECT name_key FROM person WHERE sheet_id = ?", String.class, other));
++            keys.addAll(jdbc.queryForList("SELECT alias_key FROM person_alias WHERE sheet_id = ?", String.class, other));
++        }
++        return keys;
++    }
++
++    /** Whether the name is used as a name or alias on another sheet of the sheet's tree, case ignored. */
++    public boolean treeTaken(String sheetId, String name) {
++        return treeKeys(sheetId).contains(key(name));
++    }
++
++    /** The people, each marked with whether their name or an alias is used on another sheet of the sheet's tree. */
++    public List<Person> withClashing(String sheetId, List<Person> people) {
++        java.util.Set<String> keys = treeKeys(sheetId);
++        return people.stream().map((p) -> p.withClashing(p.usesAny(keys))).toList();
+     }
+ 
+     public List<Person> list(String sheetId) {
+@@ -109,10 +139,10 @@ public class PersonRepository {
+         return n != null && n > 0;
+     }
+ 
+-    /** Gives the person the alias: refused when it equals, case ignored, any name or alias on the sheet (the unique
+-     *  (sheet_id, alias_key) index refuses one taken by a concurrent add). */
++    /** Gives the person the alias: refused when it equals, case ignored, any name or alias on the sheet or on another
++     *  sheet of its tree (the unique (sheet_id, alias_key) index refuses one taken by a concurrent add). */
+     public void addAlias(String sheetId, long personId, String alias) throws DuplicatePersonNameException {
+-        if (nameTaken(sheetId, alias, 0)) {
++        if (nameTaken(sheetId, alias, 0) || treeTaken(sheetId, alias)) {
+             throw new DuplicatePersonNameException(alias);
+         }
+         try {
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+index c6c2d728a..02980e032 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+@@ -6,12 +6,14 @@ import net.officefloor.hq.app.sheet.AsOf;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** The sheet's people, in the order they were added; read as of a date (see AsOf), as they stood then. */
++/** The sheet's people, in the order they were added; read as of a date (see AsOf), as they stood then. Each is marked
++ *  with whether they clash (see PersonRepository#withClashing). */
+ public class RespondWithPeople {
+     public void respond(@PathVariable("sheetId") String sheetId,
+             @RequestParam(value = "asOf", required = false) String asOf, PersonRepository people,
+             ObjectResponse<List<Person>> response) {
+         java.time.LocalDate date = AsOf.parse(asOf);
+-        response.send(date == null ? people.list(sheetId.trim()) : people.listAsOf(sheetId.trim(), date));
++        String sheet = sheetId.trim();
++        response.send(people.withClashing(sheet, date == null ? people.list(sheet) : people.listAsOf(sheet, date)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddPerson.java b/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddPerson.java
+index a64c30310..d7cc0898c 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddPerson.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddPerson.java
+@@ -12,7 +12,8 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** The person on the sheet with the name (case ignored); when there is none, adds them, writing PERSON_ADDED and the
++/** The person on the sheet with the name (case ignored); when there is none, adds them (refused when the name is used on
++ *  another sheet of the sheet's tree), writing PERSON_ADDED and the
+  *  figures it moved just as adding a person does. Publishes the person and the figures before the claim is added. */
+ public class FindOrAddPerson {
+     public void find(@PathVariable("sheetId") String sheetId, @Val PersonValues values, PersonRepository people,
+@@ -21,6 +22,9 @@ public class FindOrAddPerson {
+         String sheet = sheetId.trim();
+         Person found = people.findByName(sheet, values.name());
+         if (found == null) {
++            if (people.treeTaken(sheet, values.name())) {
++                throw new DuplicatePersonNameException(values.name());
++            }
+             RollupBefore was = rollup.take(sheet);
+             found = people.add(sheet, values.name(), values.grade(), values.terms(), values.contact());
+             audit.record("PERSON_ADDED sheet=" + found.sheetId() + " by=" + values.by() + " name=" + found.name()
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 453fd8a1c..8d7550559 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -281,6 +281,18 @@ public class SettingRepository {
+         return found;
+     }
+ 
++    /** The other sheets of the sheet's tree that exist: its topmost ancestor (itself when it has no parent) and all of
++     *  that sheet's descendants, the sheet itself left out. */
++    public List<String> tree(String sheetId) {
++        List<String> up = ancestors(sheetId, Integer.MAX_VALUE);
++        String root = up.isEmpty() ? sheetId : up.get(up.size() - 1);
++        List<String> found = new java.util.ArrayList<>();
++        found.add(root);
++        found.addAll(descendants(root));
++        found.removeIf((s) -> s.equals(sheetId) || !sheets.exists(s));
++        return found;
++    }
++
+     /** Whether the sheet has the other as an ancestor, at any level. */
+     public boolean hasAncestor(String sheetId, String ancestor) {
+         return ancestors(sheetId, Integer.MAX_VALUE).contains(ancestor);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index 685a72cef..8a5a3cfa6 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,6 +1,6 @@
+ # POST /api/sheets/{sheetId}/people — add a person. An empty name or a grade other than A, B or C is
+-# a 400; a name already on the sheet (case and outer spaces ignored), or a contact another person
+-# has, is a 409; neither writes anything. The name is stored without its outer spaces, the contact
++# a 400; a name already on the sheet (case and outer spaces ignored) or used as a name or alias on
++# another sheet of its tree, or a contact another person has, is a 409; neither writes anything. The name is stored without its outer spaces, the contact
+ # without them and lower-cased (blank: none). Responds 201 with the person as stored.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index 4b52e6987..248f776eb 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -1,6 +1,7 @@
+ # PUT /api/sheets/{sheetId}/people/{personId} — edit a person's name and grade. Invalid values are a
+-# 400 and a name another person on the sheet has (case and outer spaces ignored), or a contact
+-# another person has, a 409, neither writing anything; a person not on the sheet is a 404. The body's version is the one the edit was made
++# 400 and a name another person on the sheet has (case and outer spaces ignored), a person left with a
++# name or alias used on another sheet of the sheet's tree (one who clashes, until renamed clear), or a
++# contact another person has, a 409, neither writing anything; a person not on the sheet is a 404. The body's version is the one the edit was made
+ # from: when someone has saved the person since, the edit is a 412 and writes nothing. Responds with the person as stored.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/aliases.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/aliases.POST.yml
+index 0bf356289..40344c66f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/aliases.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/aliases.POST.yml
+@@ -1,5 +1,6 @@
+ # POST /api/sheets/{sheetId}/people/{personId}/aliases — give a person an alias. A blank alias is a 400, a person not on
+-# the sheet a 404, and an alias equal (case and outer spaces ignored) to any name or alias on the sheet a 409; none
++# the sheet a 404, and an alias equal (case and outer spaces ignored) to any name or alias on the sheet, or on another
++# sheet of its tree, a 409; none
+ # writes anything. The alias is stored without its outer spaces. Responds with the person as stored.
+ validate:
+   class: net.officefloor.hq.app.person.ValidateAlias
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+index 7e5aa04f6..a4edb4771 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+@@ -1,5 +1,6 @@
+ # POST /api/sheets/{sheetId}/quick-add — add a DRAFT claim of the amount, dated the sheet's entry date (else its today) with an empty note,
+-# to the person with the name (case and outer spaces ignored); a name not on the sheet adds that person first, grade A.
++# to the person with the name (case and outer spaces ignored); a name not on the sheet adds that person first, grade A
++# (a 409 when the name is used as a name or alias on another sheet of the sheet's tree).
+ # The person and claim rules apply: an empty name or an amount that is not a number 0.00 or more with up to two
+ # decimals is a 400, and so is a today inside a closed period; none writes anything (no person, no audit).
+ # Responds 201 with the claim as stored.
