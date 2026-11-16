@@ -3,6 +3,6 @@ package net.officefloor.hq.app.plan;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-/** A plan's values once validated, and who adds it. */
-public record PlanValues(BigDecimal amount, LocalDate start, int every, LocalDate end, String by) {
+/** A plan's values once validated, and who adds it: exactly one of every N days and a day of the month is set. */
+public record PlanValues(BigDecimal amount, LocalDate start, Integer every, Integer day, LocalDate end, String by) {
 }

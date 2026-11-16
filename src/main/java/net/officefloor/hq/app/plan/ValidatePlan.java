@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /** Reads the body: the amount is one the claim form takes for a claim that corrects nothing (a number 0.00 or more
  *  with up to two decimals, see ClaimValues); the start and end are yyyy-MM-dd, the end not before the start; every N
- *  days is a whole number, at least 1. */
+ *  days is a whole number, at least 1 — or, instead, a day of the month is a whole number from 1 to 31 (not both). */
 public class ValidatePlan {
     public void validate(@RequestBody PlanRequest request, Out<PlanValues> values) throws InvalidPlanException {
         if (request == null) {
@@ -31,10 +31,21 @@ public class ValidatePlan {
             throw new InvalidPlanException("A plan's end must not be before its start");
         }
         String every = request.every() == null ? "" : request.every().trim();
+        String day = request.day() == null ? "" : request.day().trim();
+        if (!day.isEmpty()) {
+            if (!every.isEmpty()) {
+                throw new InvalidPlanException("A plan runs every N days or on a day of the month, not both");
+            }
+            if (!day.matches("\\d{1,2}") || Integer.parseInt(day) < 1 || Integer.parseInt(day) > 31) {
+                throw new InvalidPlanException("A plan's day of the month must be a whole number from 1 to 31");
+            }
+            values.set(new PlanValues(claim.amount(), start, null, Integer.parseInt(day), end, claim.by()));
+            return;
+        }
         if (!every.matches("\\d{1,6}") || Integer.parseInt(every) < 1) {
             throw new InvalidPlanException("A plan's interval must be a whole number of days, at least 1");
         }
-        values.set(new PlanValues(claim.amount(), start, Integer.parseInt(every), end, claim.by()));
+        values.set(new PlanValues(claim.amount(), start, Integer.parseInt(every), null, end, claim.by()));
     }
 
     private static LocalDate date(String typed, String what) throws InvalidPlanException {

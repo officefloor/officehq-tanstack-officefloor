@@ -12,11 +12,12 @@ function PlansHead() {
   return <th>Plans</th>;
 }
 
-type PlanForm = { amount: string; start: string; every: string; end: string };
-const EMPTY: PlanForm = { amount: '', start: '', every: '', end: '' };
+type PlanForm = { amount: string; start: string; every: string; day: string; end: string };
+const EMPTY: PlanForm = { amount: '', start: '', every: '', day: '', end: '' };
 
-/** A person's plans (amount, start, every N days, end, and how many claims each has made so far), in the order added,
- *  and the form that adds one. The server refuses a bad amount or interval, or an end before the start: the row's
+/** A person's plans (amount, start, every N days or monthly on a day of the month, end, and how many claims each has
+ *  made so far), in the order added, and the form that adds one (fill every N days or the day of the month, 1 to 31,
+ *  not both). The server refuses a bad amount, interval or day, or an end before the start: the row's
  *  plan error shows, until the form is changed or submitted again. */
 function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const plans = usePlans(sheetId);
@@ -45,7 +46,7 @@ function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string;
       <ul>
         {mine.map((p) => (
           <li key={p.id} data-testid={`plan-row-${p.id}`}>
-            {p.amount} every {p.every} days from {p.start} to {p.end}; made{' '}
+            {p.amount} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} from {p.start} to {p.end}; made{' '}
             <span data-testid="plan-generated">{p.generated}</span>
           </li>
         ))}
@@ -61,6 +62,7 @@ function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string;
         <input data-testid="plan-form-amount" placeholder="Amount" size={7} value={form.amount} onChange={change('amount')} />{' '}
         <input data-testid="plan-form-start" type="date" value={form.start} onChange={change('start')} />{' '}
         <input data-testid="plan-form-every" placeholder="Every N days" size={4} value={form.every} onChange={change('every')} />{' '}
+        <input data-testid="plan-form-day" placeholder="Or day of month" size={4} value={form.day} onChange={change('day')} />{' '}
         <input data-testid="plan-form-end" type="date" value={form.end} onChange={change('end')} />{' '}
         <button type="submit" data-testid="plan-form-submit" disabled={add.isPending}>
           Add plan
@@ -74,7 +76,8 @@ function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string;
 type Generated = { made: number };
 
 /** The generate button: for every plan on the sheet, in the order added, a DRAFT claim of the plan's amount for each
- *  plan date (the start, then every N days) up to its end and the sheet's today that it has made none for yet, by the
+ *  plan date (the start, then every N days; or its day in every month from the start's month, on or after the
+ *  start) up to its end and the sheet's today that it has made none for yet, by the
  *  claim form's rules (a date they refuse is skipped, and tried again next time). Shows how many were made; the count
  *  is cleared while a new press runs. */
 function GeneratePlans({ sheetId, user }: { sheetId: string; user: string }) {

@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.plan;
 
 import java.sql.Date;
+import java.sql.Types;
 import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.sheet.SheetRepository;
@@ -25,13 +26,13 @@ public class PlanRepository {
      *  date when one is given (only those added, and claims made, while the sheet's today was on or before it). */
     public List<Plan> list(String sheetId, LocalDate asOf) {
         Date until = asOf == null ? null : Date.valueOf(asOf);
-        return jdbc.query("SELECT p.id, p.person_id, p.amount, p.start_date, p.every_days, p.end_date,"
+        return jdbc.query("SELECT p.id, p.person_id, p.amount, p.start_date, p.every_days, p.month_day, p.end_date,"
                 + " (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id"
                 + " AND (CAST(? AS DATE) IS NULL OR c.made_on IS NULL OR c.made_on <= ?)) AS generated"
                 + " FROM plan p WHERE p.sheet_id = ? AND (CAST(? AS DATE) IS NULL OR p.added_on IS NULL OR p.added_on <= ?)"
                 + " ORDER BY p.id",
                 (rs, n) -> new Plan(rs.getLong("id"), rs.getLong("person_id"), rs.getBigDecimal("amount").setScale(2),
-                        rs.getObject("start_date", LocalDate.class), rs.getInt("every_days"),
+                        rs.getObject("start_date", LocalDate.class), rs.getObject("every_days", Integer.class), rs.getObject("month_day", Integer.class),
                         rs.getObject("end_date", LocalDate.class), rs.getInt("generated")),
                 until, until, sheetId, until, until);
     }
@@ -40,18 +41,20 @@ public class PlanRepository {
     public Plan add(String sheetId, long personId, PlanValues values) {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update((con) -> {
-            var ps = con.prepareStatement("INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, end_date, added_on)"
-                    + " VALUES (?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
+            var ps = con.prepareStatement("INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, month_day, end_date,"
+                    + " added_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
             ps.setBigDecimal(3, values.amount());
             ps.setDate(4, Date.valueOf(values.start()));
-            ps.setInt(5, values.every());
-            ps.setDate(6, Date.valueOf(values.end()));
-            ps.setDate(7, Date.valueOf(sheets.today(sheetId)));
+            ps.setObject(5, values.every(), Types.INTEGER);
+            ps.setObject(6, values.day(), Types.INTEGER);
+            ps.setDate(7, Date.valueOf(values.end()));
+            ps.setDate(8, Date.valueOf(sheets.today(sheetId)));
             return ps;
         }, key);
-        return new Plan(key.getKey().longValue(), personId, values.amount(), values.start(), values.every(), values.end(), 0);
+        return new Plan(key.getKey().longValue(), personId, values.amount(), values.start(), values.every(), values.day(),
+                values.end(), 0);
     }
 
     /** Whether the plan has made a claim for the date. */

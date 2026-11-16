@@ -8,7 +8,8 @@ import net.officefloor.plugin.variable.Val;
 public class RecordPlanAdded {
     public void record(@Val Person person, @Val PlanValues values, @Val Plan plan, Audit audit) {
         audit.record("PLAN_ADDED sheet=" + person.sheetId() + " by=" + values.by() + " name=" + person.name()
-                + " amount=" + plan.amount().toPlainString() + " start=" + plan.start() + " every=" + plan.every()
+                + " amount=" + plan.amount().toPlainString() + " start=" + plan.start()
+                + (plan.day() != null ? " day=" + plan.day() : " every=" + plan.every())
                 + " end=" + plan.end());
     }
 }

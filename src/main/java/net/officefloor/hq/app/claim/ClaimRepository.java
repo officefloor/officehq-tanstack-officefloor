@@ -204,11 +204,32 @@ public class ClaimRepository {
                 Date.valueOf(claim.date()), claim.number(), claim.sheetId(), claim.id(), Date.valueOf(was)) == 1;
     }
 
-    /** Stores the date the claim is deferred until, but only while it is still OPEN; false when it no longer is
-     *  (nothing is written). */
-    public boolean defer(Claim claim) {
-        return jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ? AND status = ?",
-                Date.valueOf(claim.deferredUntil()), claim.sheetId(), claim.id(), ClaimStatus.OPEN.name()) == 1;
+    /** Stores the date the claim is deferred until, logged as made on {@code today}, but only while it is still OPEN;
+     *  false when it no longer is (nothing is written). */
+    public boolean defer(Claim claim, LocalDate today) {
+        if (jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ? AND status = ?",
+                Date.valueOf(claim.deferredUntil()), claim.sheetId(), claim.id(), ClaimStatus.OPEN.name()) != 1) {
+            return false;
+        }
+        jdbc.update("INSERT INTO claim_defer_log (claim_id, until_date, made_on) VALUES (?, ?, ?)", claim.id(),
+                Date.valueOf(claim.deferredUntil()), Date.valueOf(today));
+        return true;
+    }
+
+    /** The date each claim of the sheet with a logged deferral was deferred until as it stood at the end of
+     *  {@code asOf}, by claim id: that of its last deferral made on or before it, null when all were made after. */
+    public Map<Long, LocalDate> deferredAsOf(String sheetId, LocalDate asOf) {
+        Map<Long, LocalDate> out = new HashMap<>();
+        jdbc.query("SELECT l.claim_id, l.until_date, l.made_on FROM claim_defer_log l JOIN claim c ON c.id = l.claim_id"
+                + " WHERE c.sheet_id = ? ORDER BY l.id", (rs) -> {
+                    long id = rs.getLong("claim_id");
+                    if (!rs.getObject("made_on", LocalDate.class).isAfter(asOf)) {
+                        out.put(id, rs.getObject("until_date", LocalDate.class));
+                    } else {
+                        out.putIfAbsent(id, null);
+                    }
+                }, sheetId);
+        return out;
     }
 
     /** Stores the claim's remaining amount after a split, unbound from any statement figure, but only while it is

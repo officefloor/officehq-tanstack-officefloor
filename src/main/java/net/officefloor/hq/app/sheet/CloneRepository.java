@@ -109,6 +109,7 @@ public class CloneRepository {
         }
         copy("claim_void_reason", "WHERE sheet_id = ?", from, to, ofClaim);
         copy("claim_proof_log", "WHERE claim_id IN (SELECT id FROM claim WHERE sheet_id = ?) ORDER BY id", from, null, ofClaim);
+        copy("claim_defer_log", "WHERE claim_id IN (SELECT id FROM claim WHERE sheet_id = ?) ORDER BY id", from, null, ofClaim);
 
         renumber(from, to, copied);
     }
