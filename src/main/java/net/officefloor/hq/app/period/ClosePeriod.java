@@ -29,14 +29,14 @@ public class ClosePeriod {
         Map<Long, Person> byId = people.list(period.sheetId()).stream()
                 .collect(Collectors.toMap(Person::id, (p) -> p));
         BigDecimal floor = settings.floor(period.sheetId());
-        LateCharge late = LateCharge.of(period.sheetId(), sheets, settings);
+        LateCharge late = LateCharge.of(period.sheetId(), sheets, settings, claims);
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         for (Claim c : claims.list(period.sheetId())) {
             Person person = byId.get(c.personId());
             if (!ClaimDue.countsLive(c, person != null && person.held()) || c.date().isBefore(period.from()) || c.date().isAfter(period.to())) {
                 continue;
             }
-            BigDecimal figure = person == null ? c.due() : late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, floor));
+            BigDecimal figure = person == null ? c.due() : late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, floor, late.rounding()));
             if (figure != null) {
                 total = total.add(figure);
             }

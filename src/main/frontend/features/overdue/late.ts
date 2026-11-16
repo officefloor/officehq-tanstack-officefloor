@@ -1,8 +1,14 @@
 import type { Claim } from '../claims/claims';
 
-/** What the late charge on a sheet depends on: its terms (days), its today (yyyy-MM-dd, '' while it loads) and its
- *  late percent (two decimals). */
-export type Late = { terms: number; today: string; pct: string };
+/** What the late charge on a sheet depends on: its terms (days), its today (yyyy-MM-dd, '' while it loads), its
+ *  late percent (two decimals) and its policy date (yyyy-MM-dd; its today while blank): a claim whose `roundsOn` is
+ *  before it rounds its live figures half up, one on or after it half to even. */
+export type Late = { terms: number; today: string; pct: string; policy: string };
+
+/** Whether the claim's live figures round half up (it rounds on a date before the policy date) rather than half to even. */
+export function roundsHalfUp(claim: Claim, late: Late | undefined): boolean {
+  return late !== undefined && late.policy !== '' && claim.roundsOn < late.policy;
+}
 
 /** Days since 1970-01-01 of a yyyy-MM-dd date. */
 function day(date: string): number {

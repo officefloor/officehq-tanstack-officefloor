@@ -8,6 +8,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class RespondWithClaims {
     public void respond(@PathVariable("sheetId") String sheetId, ClaimRepository claims,
             ObjectResponse<List<ClaimResponse>> response) {
-        response.send(claims.list(sheetId.trim()).stream().map(ClaimResponse::from).toList());
+        response.send(claims.list(sheetId.trim()).stream().map((c) -> ClaimResponse.from(c, claims)).toList());
     }
 }

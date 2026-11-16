@@ -51,7 +51,7 @@ public class Rollup {
     public RollupBefore take(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         BigDecimal floor = settings.floor(sheetId);
-        LateCharge late = LateCharge.of(sheetId, sheets, settings);
+        LateCharge late = LateCharge.of(sheetId, sheets, settings, claims);
         List<Claim> all = claims.list(sheetId);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         for (Person person : people.list(sheetId)) {
@@ -63,7 +63,7 @@ public class Rollup {
                     continue;
                 }
                 claimed = claimed.add(c.amount());
-                BigDecimal figure = late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, floor));
+                BigDecimal figure = late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, floor, late.rounding()));
                 figured |= figure != null;
                 if (figure != null) {
                     due = due.add(figure);

@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -8,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /** Reads the body: the key is clerk-limit, its value blank (no limit) or an amount 0.00 or more with up to two
  *  decimals; or floor or late-pct, its value such an amount (not blank), all kept with two decimals; or terms, its value a
- *  whole number of days 0 or more (not blank), kept without leading zeros. */
+ *  whole number of days 0 or more (not blank), kept without leading zeros; or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today). */
 public class ValidateSetting {
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
@@ -19,11 +21,24 @@ public class ValidateSetting {
         boolean floor = SettingRepository.FLOOR.equals(k);
         boolean terms = SettingRepository.TERMS.equals(k);
         boolean latePct = SettingRepository.LATE_PCT.equals(k);
-        if (!SettingRepository.CLERK_LIMIT.equals(k) && !floor && !terms && !latePct) {
+        boolean policyDate = SettingRepository.POLICY_DATE.equals(k);
+        if (!SettingRepository.CLERK_LIMIT.equals(k) && !floor && !terms && !latePct && !policyDate) {
             throw new InvalidSettingException("Unknown setting " + k);
         }
         String value = request == null || request.value() == null ? "" : request.value().trim();
         String by = request == null || request.by() == null ? "" : request.by().trim();
+        if (policyDate) {
+            if (value.isEmpty()) {
+                values.set(new SettingValues(k, null, by));
+                return;
+            }
+            try {
+                values.set(new SettingValues(k, LocalDate.parse(value).toString(), by));
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingException("The policy date must be yyyy-MM-dd, or blank");
+            }
+            return;
+        }
         if (terms) {
             if (!DAYS.matcher(value).matches()) {
                 throw new InvalidSettingException("The terms must be a whole number of days, 0 or more");

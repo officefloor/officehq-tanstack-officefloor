@@ -3,6 +3,7 @@ package net.officefloor.hq.app.setting;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -31,6 +32,9 @@ public class SettingRepository {
 
     /** The late percent a sheet has until one is set. */
     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
+
+    /** The date from which a claim's live figures round half to even (before it, half up); blank: the sheet's today. */
+    public static final String POLICY_DATE = "policy-date";
 
     private final JdbcTemplate jdbc;
 
@@ -73,6 +77,12 @@ public class SettingRepository {
     public BigDecimal latePct(String sheetId) {
         String value = value(sheetId, LATE_PCT);
         return value == null ? DEFAULT_LATE_PCT : new BigDecimal(value);
+    }
+
+    /** The sheet's policy date, or null when it is blank (the sheet's today applies). */
+    public LocalDate policyDate(String sheetId) {
+        String value = value(sheetId, POLICY_DATE);
+        return value == null ? null : LocalDate.parse(value);
     }
 
     /** Stores the setting, replacing the value it had. */

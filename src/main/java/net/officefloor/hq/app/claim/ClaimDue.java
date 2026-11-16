@@ -1,7 +1,6 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
 
@@ -22,14 +21,14 @@ public final class ClaimDue {
         return counts(claim) && !(held && claim.status() == ClaimStatus.OPEN);
     }
 
-    /** The claim's amount at the grade's rate in force on its date, rounded half to even to two decimals, and at
-     *  least the sheet's floor (a correction has no floor); null when no rate applies. */
-    public static BigDecimal live(Claim claim, String grade, RateRepository rates, BigDecimal floor) {
+    /** The claim's amount at the grade's rate in force on its date, rounded to two decimals by the claim's rounding
+     *  (see Rounding), and at least the sheet's floor (a correction has no floor); null when no rate applies. */
+    public static BigDecimal live(Claim claim, String grade, RateRepository rates, BigDecimal floor, Rounding rounding) {
         Rate rate = rates.find(claim.sheetId(), grade, claim.date());
         if (rate == null) {
             return null;
         }
-        BigDecimal due = claim.amount().multiply(rate.rate()).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+        BigDecimal due = claim.amount().multiply(rate.rate()).movePointLeft(2).setScale(2, rounding.mode(claim));
         return isCorrection(claim) ? due : due.max(floor);
     }
 
@@ -40,11 +39,12 @@ public final class ClaimDue {
 
     /** The figure the claim shows: fixed when settled, else the one a statement bound it to, else live; null when
      *  it has none (n/a). */
-    public static BigDecimal figure(Claim claim, String grade, RateRepository rates, BigDecimal floor) {
+    public static BigDecimal figure(Claim claim, String grade, RateRepository rates, BigDecimal floor,
+            Rounding rounding) {
         if (claim.due() != null) {
             return claim.due();
         }
-        return claim.stated() ? claim.statedDue() : live(claim, grade, rates, floor);
+        return claim.stated() ? claim.statedDue() : live(claim, grade, rates, floor, rounding);
     }
 
     /** Whether the claim keeps a figure whatever the rates are: fixed when settled, or bound by a statement. */
