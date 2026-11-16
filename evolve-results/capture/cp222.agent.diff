@@ -1,0 +1,87 @@
+diff --git a/src/main/frontend/features/sheet/SheetPicker.tsx b/src/main/frontend/features/sheet/SheetPicker.tsx
+index 191400b8c..916399d94 100644
+--- a/src/main/frontend/features/sheet/SheetPicker.tsx
++++ b/src/main/frontend/features/sheet/SheetPicker.tsx
+@@ -19,8 +19,9 @@ export function SheetPicker() {
+           setError(true);
+           return;
+         }
+-        // Loading a sheet re-reads it from the store, even when it was on screen before.
+-        queryClient.removeQueries({ queryKey: sheetKey(trimmed) });
++        // Loading a sheet re-reads it from the store, even when it was on screen before. Reset, not
++        // removed: whatever is on screen keeps watching the same queries and reads them afresh.
++        queryClient.resetQueries({ queryKey: sheetKey(trimmed) });
+         setSheetId(trimmed);
+       }}
+     >
+diff --git a/src/main/frontend/features/summary/Dashboard.tsx b/src/main/frontend/features/summary/Dashboard.tsx
+index 8b9527614..a2fa116af 100644
+--- a/src/main/frontend/features/summary/Dashboard.tsx
++++ b/src/main/frontend/features/summary/Dashboard.tsx
+@@ -1,22 +1,56 @@
+-import { useQuery } from '@tanstack/react-query';
++import { useEffect, useState } from 'react';
++import { useIsFetching, useQuery } from '@tanstack/react-query';
+ import { claimsKey, listClaims } from '../claims/api';
+ import { useOverdue } from '../rates/Overdue';
+ import { roleOf, roleOfKey } from '../settings/api';
++import { useAsOf } from '../sheet/AsOf';
++import { descendantsKey, listDescendants, liveKey } from '../sheet/api';
+ import { statusCount } from './Summary';
+ 
+-/** The steward's dashboard: how many of the sheet's claims are PENDING, how many REVIEW, and how many
+- *  of those that count are overdue (as the overdue line counts them). Blank for anyone not acting as a
+- *  steward; shown as of a date, the counts and the role are as they stood then. */
+-export function Dashboard({ sheetId, user }: { sheetId: string; user: string }) {
+-  const role = useQuery({ queryKey: roleOfKey(sheetId, user), queryFn: () => roleOf(sheetId, user) });
++/** A sheet's own dashboard counts. */
++type Counts = { pending: number; review: number; overdue: number };
++
++/** As the screen shows the sheet: as of its date while one is set, each sheet as it stood then. */
++function useCounts(sheetId: string, user: string): Counts | undefined {
+   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
+   const late = useOverdue(sheetId, user);
+-  const steward = role.data?.role === 'steward' && claims.data !== undefined;
++  if (claims.data === undefined) return undefined;
++  return { pending: statusCount(claims.data, 'PENDING'), review: statusCount(claims.data, 'REVIEW'), overdue: late.count };
++}
++
++/** Works out one descendant sheet's own counts and hands them up; shows nothing. */
++function Descendant({ sheetId, user, report }: { sheetId: string; user: string; report: (id: string, c: Counts) => void }) {
++  const c = useCounts(sheetId, user);
++  useEffect(() => { if (c) report(sheetId, c); }, [sheetId, JSON.stringify(c)]);
++  return null;
++}
++
++/** The steward's dashboard: over the sheet and all its descendants (its children, theirs, ...), how many
++ *  claims are PENDING, how many REVIEW, and how many of those that count are overdue (as each sheet's
++ *  overdue line counts them). Blank for anyone not acting as a steward of the sheet; shown as of a date,
++ *  the counts and the role are as they stood then, over the tree the sheets' parents make now. */
++export function Dashboard({ sheetId, user }: { sheetId: string; user: string }) {
++  const [asOf] = useAsOf();
++  // The tree is the one the sheets' parents make now, even while the screen shows a date.
++  const live = asOf !== '';
++  const role = useQuery({ queryKey: roleOfKey(sheetId, user), queryFn: () => roleOf(sheetId, user) });
++  const own = useCounts(sheetId, user);
++  const descendants = useQuery({ queryKey: liveKey(descendantsKey(sheetId), live), queryFn: () => listDescendants(sheetId, live) });
++  const ids = descendants.data ?? [];
++  const [reported, setReported] = useState<Record<string, Counts>>({});
++  const report = (id: string, c: Counts) => setReported((r) => ({ ...r, [id]: c }));
++  // A descendant's counts count once its own queries have been read afresh.
++  const fetching = useIsFetching({ predicate: (q) => q.queryKey[0] === 'sheet' && ids.includes(q.queryKey[1] as string) });
++  const ready = own !== undefined && descendants.isSuccess && fetching === 0 && ids.every((id) => reported[id] !== undefined);
++  const steward = role.data?.role === 'steward' && ready;
++  const all = [own!, ...ids.map((id) => reported[id])];
++  const total = (pick: (c: Counts) => number) => (steward ? all.reduce((t, c) => t + pick(c), 0) : '');
+   return (
+     <p>
+-      Steward's dashboard: pending <span data-testid="dash-pending-count">{steward ? statusCount(claims.data, 'PENDING') : ''}</span>
+-      {' · '}review <span data-testid="dash-review-count">{steward ? statusCount(claims.data, 'REVIEW') : ''}</span>
+-      {' · '}overdue <span data-testid="dash-overdue-count">{steward ? late.count : ''}</span>
++      {ids.map((id) => <Descendant key={id} sheetId={id} user={user} report={report} />)}
++      Steward's dashboard: pending <span data-testid="dash-pending-count">{total((c) => c.pending)}</span>
++      {' · '}review <span data-testid="dash-review-count">{total((c) => c.review)}</span>
++      {' · '}overdue <span data-testid="dash-overdue-count">{total((c) => c.overdue)}</span>
+     </p>
+   );
+ }
