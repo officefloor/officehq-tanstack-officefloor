@@ -93,7 +93,7 @@ function ClaimRow({
  *  being edited. A blank date takes the sheet's today (the server applies it). */
 function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const claims = useClaims(sheetId);
-  const rate = rateFor(useRates(sheetId).data, person.grade);
+  const rates = useRates(sheetId).data;
   const queryClient = useQueryClient();
   const mine = claims.data?.filter((c) => c.personId === person.id) ?? [];
   const [editingId, setEditingId] = useState<number | undefined>(undefined);
@@ -164,7 +164,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
               sheetId={sheetId}
               user={user}
               claim={c}
-              rate={rate}
+              rate={rateFor(rates, person.grade, c.date)}
               editing={editingId === c.id}
               onEdit={() => openEditor(c)}
               onCancel={cancel}

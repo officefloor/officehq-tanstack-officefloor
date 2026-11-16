@@ -5,23 +5,29 @@ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { total, useClaims } from '../claims/claims';
 import { GRADES, usePeople, type Person } from '../people/people';
+import { useSheetToday } from '../session/session';
 import { due, rateFor, ratesKey, sum, useRates, type Rate } from './rates';
 
-/** The sheet's rate for each grade: the form that sets one, and each grade's current rate. */
+/** The sheet's rates: the form that sets one (from an optional from-date), each grade's rate in force on the
+ *  sheet's today, and every rate set. */
 function Rates({ sheetId, user }: { sheetId: string; user: string }) {
   const rates = useRates(sheetId);
+  const today = useSheetToday(sheetId);
   const queryClient = useQueryClient();
   const [grade, setGrade] = useState<string>(GRADES[0]);
   const [pct, setPct] = useState('');
+  const [from, setFrom] = useState('');
 
   const save = useMutation({
-    mutationFn: (v: { grade: string; rate: string }) =>
+    mutationFn: (v: { grade: string; rate: string; from: string }) =>
       putJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates/${encodeURIComponent(v.grade)}`, {
         rate: v.rate,
+        from: v.from,
         by: user,
       }),
     onSuccess: () => {
       setPct('');
+      setFrom('');
       void queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
     },
   });
@@ -34,7 +40,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
         onSubmit={(e) => {
           e.preventDefault();
           save.reset();
-          save.mutate({ grade, rate: pct });
+          save.mutate({ grade, rate: pct, from });
         }}
       >
         <label>
@@ -66,25 +72,45 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          From{' '}
+          <input
+            type="date"
+            data-testid="rate-form-from"
+            value={from}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
         {save.isError && (
-          <span data-testid="rate-form-error">The rate must be a percent 0.00 or more, with up to two decimals.</span>
+          <span data-testid="rate-form-error">The rate must be a percent 0.00 or more, with up to two decimals, and the from-date a date.</span>
         )}
       </form>
       {rates.isError && <p data-testid="rates-load-error">Could not load rates.</p>}
+      <table data-testid="rates-current">
+        <tbody>
+          {GRADES.map((g) => (
+            <tr key={g}>
+              <td>{g}</td>
+              <td data-testid={`rate-current-${g}`}>{rateFor(rates.data, g, today) ?? 'n/a'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
       <table data-testid="rates-table">
         <tbody>
-          {GRADES.map((g) => {
-            const rate = rateFor(rates.data, g);
-            return (
-              <tr key={g} data-testid={rate === undefined ? undefined : `rate-row-${g}-start`}>
-                <td>{g}</td>
-                <td data-testid={`rate-current-${g}`}>{rate === undefined ? 'n/a' : <span data-testid="rate-pct">{rate}</span>}</td>
-              </tr>
-            );
-          })}
+          {(rates.data ?? []).map((r) => (
+            <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
+              <td>{r.grade}</td>
+              <td data-testid="rate-pct">{r.rate}</td>
+              <td data-testid="rate-from">{r.from ?? ''}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </section>
@@ -95,12 +121,13 @@ function DueHead() {
   return <th>Due total</th>;
 }
 
-/** A person's due-total: their claimed at their grade's rate. */
+/** A person's due-total: their claimed at their grade's rate in force on the sheet's today. */
 function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }) {
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
+  const today = useSheetToday(sheetId);
   const claimed = total(claims.data?.filter((c) => c.personId === person.id) ?? []);
-  return <td data-testid="person-due-total">{due(claimed, rateFor(rates.data, person.grade))}</td>;
+  return <td data-testid="person-due-total">{due(claimed, rateFor(rates.data, person.grade, today))}</td>;
 }
 
 /** The sheet's due-total: everyone's due-total added up, skipping n/a. */
@@ -108,8 +135,9 @@ function DueTotal({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
+  const today = useSheetToday(sheetId);
   const dues = (people.data ?? []).map((p) =>
-    due(total(claims.data?.filter((c) => c.personId === p.id) ?? []), rateFor(rates.data, p.grade)),
+    due(total(claims.data?.filter((c) => c.personId === p.id) ?? []), rateFor(rates.data, p.grade, today)),
   );
   return (
     <p>

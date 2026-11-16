@@ -1,14 +1,18 @@
 package net.officefloor.hq.app.rate;
 
+import java.sql.Date;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** The stored rates, one per grade per sheet. A grade with no row has no rate. */
+/** The stored rates, one per grade and from-date per sheet. A grade with no row has no rate. */
 @Repository
 public class RateRepository {
+
+    private static final String COLUMNS = "sheet_id, grade, rate, from_date";
 
     private final JdbcTemplate jdbc;
 
@@ -16,25 +20,34 @@ public class RateRepository {
         this.jdbc = jdbc;
     }
 
+    /** The sheet's rates, by grade, then from-date (one with none first). */
     public List<Rate> list(String sheetId) {
-        return jdbc.query("SELECT sheet_id, grade, rate FROM rate WHERE sheet_id = ? ORDER BY grade",
+        return jdbc.query("SELECT " + COLUMNS + " FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST",
                 RateRepository::map, sheetId);
     }
 
-    /** The sheet's rate for a grade, or null when the grade has none. */
-    public Rate find(String sheetId, String grade) {
-        List<Rate> found = jdbc.query("SELECT sheet_id, grade, rate FROM rate WHERE sheet_id = ? AND grade = ?",
-                RateRepository::map, sheetId, grade);
+    /** The grade's rate in force on a date — the latest from-date on or before it, a rate with none applying
+     *  from the beginning of time — or null when no rate applies. */
+    public Rate find(String sheetId, String grade, LocalDate on) {
+        List<Rate> found = jdbc.query("SELECT " + COLUMNS + " FROM rate WHERE sheet_id = ? AND grade = ?"
+                + " AND (from_date IS NULL OR from_date <= ?) ORDER BY from_date DESC NULLS LAST LIMIT 1",
+                RateRepository::map, sheetId, grade, Date.valueOf(on));
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** Stores the rate, replacing the one the grade had for the same from-date. */
     public Rate save(Rate rate) {
-        jdbc.update("MERGE INTO rate (sheet_id, grade, rate) KEY (sheet_id, grade) VALUES (?, ?, ?)",
-                rate.sheetId(), rate.grade(), rate.rate());
+        Date from = rate.from() == null ? null : Date.valueOf(rate.from());
+        jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
+                rate.sheetId(), rate.grade(), from);
+        jdbc.update("INSERT INTO rate (" + COLUMNS + ") VALUES (?, ?, ?, ?)",
+                rate.sheetId(), rate.grade(), rate.rate(), from);
         return rate;
     }
 
     private static Rate map(ResultSet rs, int n) throws SQLException {
-        return new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("rate").setScale(2));
+        Date from = rs.getDate("from_date");
+        return new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("rate").setScale(2),
+                from == null ? null : from.toLocalDate());
     }
 }

@@ -2,12 +2,13 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import type { Claim } from '../claims/claims';
 
-/** A grade's rate on the sheet: `rate` is a percent as text with two decimals (never a float). */
-export type Rate = { sheetId: string; grade: string; rate: string };
+/** A grade's rate on the sheet: `rate` is a percent as text with two decimals (never a float), in force from
+ *  `from` (yyyy-MM-dd; null: from the beginning of time). */
+export type Rate = { sheetId: string; grade: string; rate: string; from: string | null };
 
 export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'];
 
-/** The sheet's rate for each grade that has one. */
+/** The sheet's rates, by grade then from-date. */
 export function useRates(sheetId: string) {
   return useQuery({
     queryKey: ratesKey(sheetId),
@@ -15,9 +16,15 @@ export function useRates(sheetId: string) {
   });
 }
 
-/** The rate for a grade, or undefined when the grade has none. */
-export function rateFor(rates: Rate[] | undefined, grade: string): string | undefined {
-  return rates?.find((r) => r.grade === grade)?.rate;
+/** The grade's rate in force on a date (yyyy-MM-dd): the one with the latest from-date on or before it, a rate
+ *  with no from-date applying from the beginning of time; undefined when none applies. */
+export function rateFor(rates: Rate[] | undefined, grade: string, on: string): string | undefined {
+  let found: Rate | undefined;
+  for (const r of rates ?? []) {
+    if (r.grade !== grade || (r.from !== null && r.from > on)) continue;
+    if (found === undefined || (found.from ?? '') < (r.from ?? '')) found = r;
+  }
+  return found?.rate;
 }
 
 /** A two-decimal number ("12.34") in hundredths, exactly. */
@@ -43,7 +50,7 @@ export function due(amount: string, rate: string | undefined): string {
   return shown(p < 0n ? -r : r);
 }
 
-/** A claim's due: the figure fixed when it was settled, otherwise its amount at the current rate. */
+/** A claim's due: the figure fixed when it was settled, otherwise its amount at the rate in force on its date. */
 export function claimDue(claim: Claim, rate: string | undefined): string {
   return claim.due ?? due(claim.amount, rate);
 }

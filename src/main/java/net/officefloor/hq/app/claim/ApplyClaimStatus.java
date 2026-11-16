@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Moves the claim to its new status: DRAFT to OPEN, OPEN to SETTLED, DRAFT or OPEN to VOID. Voiding clears the
  * claim's number; the number it had is kept for the audit line. Settling fixes the claim's due: its amount at its
- * person's grade's rate now, rounded half up to two decimals (left live when the grade has no rate).
+ * person's grade's rate in force on the claim's date, rounded half up to two decimals (left live when no rate applies).
  */
 public class ApplyClaimStatus {
     public void apply(@Val Claim claim, @Val ClaimStatusChange change, PersonRepository people, RateRepository rates,
@@ -34,7 +34,7 @@ public class ApplyClaimStatus {
 
     private static BigDecimal due(Claim claim, PersonRepository people, RateRepository rates) {
         Person person = people.find(claim.sheetId(), claim.personId());
-        Rate rate = person == null ? null : rates.find(claim.sheetId(), person.grade());
+        Rate rate = person == null ? null : rates.find(claim.sheetId(), person.grade(), claim.date());
         return rate == null ? null
                 : claim.amount().multiply(rate.rate()).movePointLeft(2).setScale(2, RoundingMode.HALF_UP);
     }
