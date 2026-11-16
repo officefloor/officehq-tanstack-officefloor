@@ -242,8 +242,8 @@ export function useCap(sheetId: string, live = false): (date: string) => string 
 
 /** The policy settings (the rounding mode, the floor, the cap, the terms, the late percent and the clerk
  *  limit) are versioned together: every change to one of them is a new policy version, numbered from 1 in
- *  the order made, in force from its from-date (null: always). */
-export type PolicyVersion = { sheetId: string; version: number; key: string; from: string | null };
+ *  the order made, in force from its from-date (null: always), carrying the value its change set. */
+export type PolicyVersion = { sheetId: string; version: number; key: string; from: string | null; value: string };
 
 export const policyVersionsKey = (sheetId: string) => [...settingsKey(sheetId), 'policy-versions'] as const;
 

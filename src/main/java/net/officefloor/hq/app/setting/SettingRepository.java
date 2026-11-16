@@ -313,11 +313,11 @@ public class SettingRepository {
 
     /** The sheet's policy versions, oldest first. */
     public List<PolicyVersion> policyVersions(String sheetId) {
-        return jdbc.query("SELECT sheet_id, version, setting, from_date FROM policy_version WHERE sheet_id = ? "
+        return jdbc.query("SELECT sheet_id, version, setting, from_date, val FROM policy_version WHERE sheet_id = ? "
                 + "ORDER BY version", (rs, n) -> {
                     LocalDate from = rs.getObject("from_date", LocalDate.class);
                     return new PolicyVersion(rs.getString("sheet_id"), rs.getInt("version"), rs.getString("setting"),
-                            from == null ? null : from.toString());
+                            from == null ? null : from.toString(), rs.getString("val") == null ? "" : rs.getString("val"));
                 }, sheetId);
     }
 
@@ -405,9 +405,9 @@ public class SettingRepository {
         jdbc.update("INSERT INTO setting_history (sheet_id, setting, val, from_date, on_date) "
                 + "VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", sheetId, key, value, from, sheetId);
         if (POLICY_KEYS.contains(key)) {
-            jdbc.update("INSERT INTO policy_version (sheet_id, version, setting, from_date) VALUES (?, "
-                    + "(SELECT COALESCE(MAX(version), 0) + 1 FROM policy_version WHERE sheet_id = ?), ?, ?)",
-                    sheetId, sheetId, key, from);
+            jdbc.update("INSERT INTO policy_version (sheet_id, version, setting, from_date, val) VALUES (?, "
+                    + "(SELECT COALESCE(MAX(version), 0) + 1 FROM policy_version WHERE sheet_id = ?), ?, ?, ?)",
+                    sheetId, sheetId, key, from, value);
         }
         return new Setting(sheetId, key, value == null ? "" : value, from == null ? null : from.toString());
     }
