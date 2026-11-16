@@ -9,7 +9,7 @@ import net.officefloor.hq.app.rollup.RollupBefore;
 import net.officefloor.hq.app.watch.WatchRepository;
 import net.officefloor.plugin.variable.Val;
 
-/** Writes CLAIM_OPENED, CLAIM_SETTLED, CLAIM_PENDING, CLAIM_APPROVED, CLAIM_REJECTED, CLAIM_VOIDED or CLAIM_RESETTLED to the audit
+/** Writes CLAIM_OPENED, CLAIM_SETTLED, CLAIM_PENDING, CLAIM_APPROVED, CLAIM_REJECTED, CLAIM_VOIDED, CLAIM_RESETTLED, CLAIM_DELETED or CLAIM_RESTORED to the audit
  * file once the status is stored, ending with number=<number> when the claim has one; CLAIM_SETTLED and CLAIM_APPROVED
  * then end with the due they fixed (due=n/a when its grade had no rate), CLAIM_REJECTED with reason=<reason>, CLAIM_RESETTLED with old=<previous due> new=<new due>, and CLAIM_VOIDED of a SETTLED claim with reversed=<its frozen due>, and a CLAIM_VOIDED given a void reason with reason=<reason> last. Then writes the
  * figures the change moved (see Rollup). A settle, approve or re-settle that leaves the claim SETTLED first writes, after
@@ -25,6 +25,8 @@ public class RecordClaimStatusChanged {
             case REJECT -> "CLAIM_REJECTED";
             case VOID -> "CLAIM_VOIDED";
             case RESETTLE -> "CLAIM_RESETTLED";
+            case DELETE -> "CLAIM_DELETED";
+            case RESTORE -> "CLAIM_RESTORED";
         };
         Person person = people.find(claim.sheetId(), claim.personId());
         audit.record(event + " sheet=" + claim.sheetId() + " by=" + change.by() + " person="

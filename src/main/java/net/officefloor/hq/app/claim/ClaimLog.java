@@ -45,6 +45,17 @@ public class ClaimLog {
         return on;
     }
 
+    /** The sheet's today on the claim's latest DELETED line of its status log (null when it has none). */
+    public LocalDate deletedOn(Claim claim) {
+        LocalDate on = null;
+        for (ClaimLogLine line : log.of(claim.sheetId(), claim.id())) {
+            if (line.status() == ClaimStatus.DELETED) {
+                on = line.date();
+            }
+        }
+        return on;
+    }
+
     public void write(Claim claim, String by) {
         String sheetId = claim.sheetId();
         LateCharge late = LateCharge.of(sheetId, sheets, settings, claims);

@@ -28,6 +28,8 @@ public class SaveClaimStatus {
             case SETTLE -> ClaimStatus.OPEN;
             case APPROVE, REJECT -> ClaimStatus.PENDING;
             case RESETTLE -> ClaimStatus.SETTLED;
+            case DELETE -> ClaimStatus.DRAFT;
+            case RESTORE -> ClaimStatus.DELETED;
             case VOID -> null;
         };
         boolean stored = from != null ? claims.updateStatus(toSave, from)

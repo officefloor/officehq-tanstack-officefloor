@@ -36,6 +36,8 @@ import net.officefloor.plugin.variable.Val;
  * latest SETTLED line) by the sheet's today; its frozen figure is kept on it but, VOID, it leaves every total.
  * Only a steward re-settles a SETTLED claim (not one whose due-by falls inside a closed period): its due is fixed again at the figure
  * it would have today as an OPEN claim bound by no statement (today's rates, grades, floor and late charge).
+ * A DRAFT claim (not one whose due-by falls inside a closed period) is deleted (DELETED: it counts nowhere), and a DELETED
+ * one restored (DRAFT again), but only on the sheet's today it was deleted (its status log's latest DELETED line).
  */
 public class ApplyClaimStatus {
 
@@ -51,12 +53,17 @@ public class ApplyClaimStatus {
             case VOID -> claim.status() == ClaimStatus.DRAFT || claim.status() == ClaimStatus.OPEN
                     || claim.status() == ClaimStatus.PENDING || claim.status() == ClaimStatus.SETTLED;
             case RESETTLE -> claim.status() == ClaimStatus.SETTLED;
+            case DELETE -> claim.status() == ClaimStatus.DRAFT;
+            case RESTORE -> claim.status() == ClaimStatus.DELETED;
         };
         if (!allowed) {
             throw new InvalidClaimStatusException("A " + claim.status() + " claim cannot be made " + change.to());
         }
         if (periods.closedOn(claim.sheetId(), claim.dueBy())) {
             throw new InvalidClaimStatusException("The claim's due-by is inside a closed period");
+        }
+        if (change.action() == ClaimAction.RESTORE && !sheets.today(claim.sheetId()).equals(log.deletedOn(claim))) {
+            throw new InvalidClaimStatusException("A deleted claim can only be restored on the sheet-today it was deleted");
         }
         if (change.action() == ClaimAction.SETTLE && ClaimDue.deferred(claim, sheets.today(claim.sheetId()))) {
             throw new InvalidClaimStatusException("A deferred claim cannot be settled until the date it is deferred until");
