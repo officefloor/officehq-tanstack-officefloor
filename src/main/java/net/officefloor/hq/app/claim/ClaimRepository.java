@@ -190,6 +190,12 @@ public class ClaimRepository {
                 to, claim.sheetId(), claim.sheetId(), claim.id(), from) == 1;
     }
 
+    /** Stores the number a moved claim receives in place of its old one (see SaveReassign). */
+    public void renumber(Claim claim, String number) {
+        jdbc.update("UPDATE claim SET claim_number = ? WHERE sheet_id = ? AND id = ?", number, claim.sheetId(),
+                claim.id());
+    }
+
     /** Stores the claim's new date and number, but only while it is still OPEN or PENDING and dated {@code was}; false
      *  when another change got there first (nothing is written). */
     public boolean redate(Claim claim, LocalDate was) {

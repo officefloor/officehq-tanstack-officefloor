@@ -13,6 +13,7 @@ import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupBefore;
 import net.officefloor.hq.app.setting.SettingRepository;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,7 +28,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class ReassignClaims {
     public void reassign(@PathVariable("sheetId") String sheetId, @Val BulkReassignRequest request,
             ClaimRepository claims, PersonRepository people, RoleRepository roles, SettingRepository settings,
-            PeriodRepository periods, Rollup rollup, Audit audit, Out<BulkReassignResult> result) {
+            PeriodRepository periods, SheetRepository sheets, Rollup rollup, Audit audit, Out<BulkReassignResult> result) {
         String sheet = sheetId.trim();
         Set<Long> selected = new HashSet<>(request.claimIds());
         List<Person> listed = people.list(sheet);
@@ -53,7 +54,7 @@ public class ReassignClaims {
             ClaimReassignment reassignment;
             try {
                 reassignment = ApplyReassign.check(claim, move, people, roles, settings, periods, true);
-                save.save(claim, reassignment, claims, (c) -> stored[0] = c);
+                save.save(claim, reassignment, claims, periods, settings, sheets, (c) -> stored[0] = c);
             } catch (InvalidClaimStatusException refused) {
                 continue;
             }
