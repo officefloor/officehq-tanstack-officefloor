@@ -7,6 +7,7 @@ import { SheetPage } from '../../slots/defs/sheetPage';
 import { usePeople, type Person } from '../people/people';
 import { periodOf, usePeriods } from '../periods/periods';
 import { claimDue, rateFor, useRates } from '../rates/rates';
+import { useFloor } from '../settings/settings';
 import { claimsKey, live, total, useClaims, type Claim } from './claims';
 
 type Values = { amount: string; date: string; note: string };
@@ -31,6 +32,7 @@ function ClaimRow({
   user,
   claim: c,
   rate,
+  floor,
   editing,
   onEdit,
   onCancel,
@@ -39,6 +41,7 @@ function ClaimRow({
   user: string;
   claim: Claim;
   rate: string | undefined;
+  floor: string;
   editing: boolean;
   onEdit: () => void;
   onCancel: () => void;
@@ -62,7 +65,7 @@ function ClaimRow({
       <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
       <span data-testid="claim-amount">{c.amount}</span> <span data-testid="claim-date">{c.date}</span>{' '}
       <span data-testid="claim-note">{c.note}</span>{' '}
-      <span data-testid="claim-due">{claimDue(c, rate)}</span>{' '}
+      <span data-testid="claim-due">{claimDue(c, rate, floor)}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
       <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
@@ -116,6 +119,7 @@ function ClaimRow({
 function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId).data;
+  const floor = useFloor(sheetId);
   const queryClient = useQueryClient();
   const mine = claims.data?.filter((c) => c.personId === person.id) ?? [];
   const [editingId, setEditingId] = useState<number | undefined>(undefined);
@@ -192,6 +196,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
               user={user}
               claim={c}
               rate={rateFor(rates, person.grade, c.date)}
+              floor={floor}
               editing={editingId === c.id}
               onEdit={() => openEditor(c)}
               onCancel={cancel}

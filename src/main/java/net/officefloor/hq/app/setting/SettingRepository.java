@@ -14,6 +14,12 @@ public class SettingRepository {
     /** The most a clerk may settle a claim for; blank for no limit. */
     public static final String CLERK_LIMIT = "clerk-limit";
 
+    /** The least a claim's live due may be; 1.00 until set. */
+    public static final String FLOOR = "floor";
+
+    /** The floor a sheet has until one is set. */
+    public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
+
     private final JdbcTemplate jdbc;
 
     public SettingRepository(JdbcTemplate jdbc) {
@@ -37,6 +43,12 @@ public class SettingRepository {
     public BigDecimal clerkLimit(String sheetId) {
         String value = value(sheetId, CLERK_LIMIT);
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The sheet's floor: the least a claim's live due may be. */
+    public BigDecimal floor(String sheetId) {
+        String value = value(sheetId, FLOOR);
+        return value == null ? DEFAULT_FLOOR : new BigDecimal(value);
     }
 
     /** Stores the setting, replacing the value it had. */

@@ -22,21 +22,24 @@ public final class ClaimDue {
         return counts(claim) && !(held && claim.status() == ClaimStatus.OPEN);
     }
 
-    /** The claim's amount at the grade's rate in force on its date, rounded half to even to two decimals; null
-     *  when no rate applies. */
-    public static BigDecimal live(Claim claim, String grade, RateRepository rates) {
+    /** The claim's amount at the grade's rate in force on its date, rounded half to even to two decimals, and at
+     *  least the sheet's floor; null when no rate applies. */
+    public static BigDecimal live(Claim claim, String grade, RateRepository rates, BigDecimal floor) {
         Rate rate = rates.find(claim.sheetId(), grade, claim.date());
-        return rate == null ? null
-                : claim.amount().multiply(rate.rate()).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+        if (rate == null) {
+            return null;
+        }
+        BigDecimal due = claim.amount().multiply(rate.rate()).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+        return due.max(floor);
     }
 
     /** The figure the claim shows: fixed when settled, else the one a statement bound it to, else live; null when
      *  it has none (n/a). */
-    public static BigDecimal figure(Claim claim, String grade, RateRepository rates) {
+    public static BigDecimal figure(Claim claim, String grade, RateRepository rates, BigDecimal floor) {
         if (claim.due() != null) {
             return claim.due();
         }
-        return claim.stated() ? claim.statedDue() : live(claim, grade, rates);
+        return claim.stated() ? claim.statedDue() : live(claim, grade, rates, floor);
     }
 
     /** Whether the claim keeps a figure whatever the rates are: fixed when settled, or bound by a statement. */

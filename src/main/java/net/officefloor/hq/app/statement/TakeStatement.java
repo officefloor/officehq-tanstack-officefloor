@@ -7,6 +7,7 @@ import net.officefloor.hq.app.claim.ClaimDue;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
@@ -18,9 +19,10 @@ import net.officefloor.plugin.variable.Val;
  */
 public class TakeStatement {
     public void take(@Val Person person, @Val StatementTaker taker, ClaimRepository claims, RateRepository rates,
-            SheetRepository sheets, StatementRepository statements, Out<Statement> taken) {
+            SheetRepository sheets, SettingRepository settings, StatementRepository statements, Out<Statement> taken) {
         String sheetId = person.sheetId();
         var today = sheets.today(sheetId);
+        BigDecimal floor = settings.floor(sheetId);
         List<Claim> mine = claims.list(sheetId).stream().filter((c) -> c.personId() == person.id()).toList();
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean kept = false;
@@ -30,7 +32,7 @@ public class TakeStatement {
                 claims.bind(c, false, null);
                 continue;
             }
-            BigDecimal figure = ClaimDue.figure(c, person.grade(), rates);
+            BigDecimal figure = ClaimDue.figure(c, person.grade(), rates, floor);
             kept |= ClaimDue.kept(c);
             if (figure != null) {
                 total = total.add(figure);

@@ -13,6 +13,7 @@ import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.stereotype.Service;
 
@@ -32,20 +33,23 @@ public class Rollup {
     private final ClaimRepository claims;
     private final RateRepository rates;
     private final SheetRepository sheets;
+    private final SettingRepository settings;
     private final Audit audit;
 
     public Rollup(PersonRepository people, ClaimRepository claims, RateRepository rates, SheetRepository sheets,
-            Audit audit) {
+            SettingRepository settings, Audit audit) {
         this.people = people;
         this.claims = claims;
         this.rates = rates;
         this.sheets = sheets;
+        this.settings = settings;
         this.audit = audit;
     }
 
     /** Every person's figures on the sheet now, in the order they were added. */
     public RollupBefore take(String sheetId) {
         LocalDate today = sheets.today(sheetId);
+        BigDecimal floor = settings.floor(sheetId);
         List<Claim> all = claims.list(sheetId);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         for (Person person : people.list(sheetId)) {
@@ -58,7 +62,7 @@ public class Rollup {
                 }
                 claimed = claimed.add(c.amount());
                 kept |= ClaimDue.kept(c);
-                BigDecimal figure = ClaimDue.figure(c, person.grade(), rates);
+                BigDecimal figure = ClaimDue.figure(c, person.grade(), rates, floor);
                 if (figure != null) {
                     due = due.add(figure);
                 }

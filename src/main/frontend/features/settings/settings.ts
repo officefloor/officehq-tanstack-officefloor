@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-/** A sheet setting: `value` is text (clerk-limit: an amount with two decimals), null when blank. */
+/** A sheet setting: `value` is text (clerk-limit, floor: an amount with two decimals), null when blank. */
 export type Setting = { sheetId: string; key: string; value: string | null };
 
 export const settingsKey = (sheetId: string) => ['sheet', sheetId, 'settings'];
@@ -12,4 +12,13 @@ export function useSettings(sheetId: string) {
     queryKey: settingsKey(sheetId),
     queryFn: () => getJson<Setting[]>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`),
   });
+}
+
+/** The floor a sheet has until one is set. */
+export const DEFAULT_FLOOR = '1.00';
+
+/** The sheet's floor: the least a claim's live due may be (two decimals). */
+export function useFloor(sheetId: string): string {
+  const settings = useSettings(sheetId);
+  return settings.data?.find((s) => s.key === 'floor')?.value ?? DEFAULT_FLOOR;
 }

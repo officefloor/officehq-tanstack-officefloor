@@ -7,6 +7,7 @@ import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
 import { GRADES, usePeople, type Person } from '../people/people';
 import { useSheetToday } from '../session/session';
+import { useFloor } from '../settings/settings';
 import { personDue, rateFor, ratesKey, sum, useRates, type Rate } from './rates';
 
 /** The sheet's rates: the form that sets one (from an optional from-date), each grade's rate in force on the
@@ -130,8 +131,9 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
   const today = useSheetToday(sheetId);
+  const floor = useFloor(sheetId);
   const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person]);
-  return <td data-testid="person-due-total">{personDue(mine, rates.data, person.grade, today)}</td>;
+  return <td data-testid="person-due-total">{personDue(mine, rates.data, person.grade, today, floor)}</td>;
 }
 
 /** The sheet's due-total: everyone's due-total added up, skipping n/a. */
@@ -140,8 +142,9 @@ function DueTotal({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
   const today = useSheetToday(sheetId);
+  const floor = useFloor(sheetId);
   const dues = (people.data ?? []).map((p) =>
-    personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p.grade, today),
+    personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p.grade, today, floor),
   );
   return (
     <p>

@@ -6,6 +6,7 @@ import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { claimDue, rateFor, sum, useRates } from '../rates/rates';
+import { useFloor } from '../settings/settings';
 import { periodsKey, usePeriods, type Period } from './periods';
 
 type Values = { name: string; from: string; to: string };
@@ -19,6 +20,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
+  const floor = useFloor(sheetId);
   const queryClient = useQueryClient();
   const [values, setValues] = useState<Values>(EMPTY);
 
@@ -43,7 +45,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
     return sum(
       inPeriod.map((c) => {
         const grade = grades.get(c.personId);
-        return claimDue(c, grade === undefined ? undefined : rateFor(rates.data, grade, c.date));
+        return claimDue(c, grade === undefined ? undefined : rateFor(rates.data, grade, c.date), floor);
       }),
     );
   };

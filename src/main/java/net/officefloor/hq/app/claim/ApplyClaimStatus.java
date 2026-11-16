@@ -13,7 +13,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Moves the claim to its new status: DRAFT to OPEN, OPEN to SETTLED, DRAFT or OPEN to VOID. A voided claim keeps
  * its number (never given again). Settling fixes the claim's due: its amount at its
- * person's grade's rate in force on the claim's date, rounded half to even to two decimals (left live when no rate applies),
+ * person's grade's rate in force on the claim's date, rounded half to even to two decimals and at least the sheet's floor (left live when no rate applies),
  * or the figure a statement bound it to.
  * Opening records who opened the claim; that user cannot settle it (four eyes). A claim dated inside a closed
  * period cannot change status. A clerk (any user not made a steward) settles only a claim whose due is at or below the
@@ -37,7 +37,7 @@ public class ApplyClaimStatus {
         if (change.to() == ClaimStatus.SETTLED && change.by().equals(claim.openedBy())) {
             throw new InvalidClaimStatusException("The user who opened a claim cannot settle it");
         }
-        BigDecimal settledDue = change.to() == ClaimStatus.SETTLED ? due(claim, people, rates) : claim.due();
+        BigDecimal settledDue = change.to() == ClaimStatus.SETTLED ? due(claim, people, rates, settings) : claim.due();
         if (change.to() == ClaimStatus.SETTLED && settledDue != null
                 && !RoleRepository.STEWARD.equals(roles.roleOf(claim.sheetId(), change.by()))) {
             BigDecimal limit = settings.clerkLimit(claim.sheetId());
@@ -51,11 +51,11 @@ public class ApplyClaimStatus {
                 change.to() == ClaimStatus.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue()));
     }
 
-    private static BigDecimal due(Claim claim, PersonRepository people, RateRepository rates) {
+    private static BigDecimal due(Claim claim, PersonRepository people, RateRepository rates, SettingRepository settings) {
         if (claim.stated()) {
             return claim.statedDue();
         }
         Person person = people.find(claim.sheetId(), claim.personId());
-        return person == null ? null : ClaimDue.live(claim, person.grade(), rates);
+        return person == null ? null : ClaimDue.live(claim, person.grade(), rates, settings.floor(claim.sheetId()));
     }
 }
