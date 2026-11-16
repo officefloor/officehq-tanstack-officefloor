@@ -1,4 +1,5 @@
 import { SheetPage } from '../../slots/defs/sheetPage';
+import { isActive } from '../active/active';
 import { live, useClaims } from '../claims/claims';
 import { STATUSES, useStatusCounts } from '../header/totals';
 import { GRADES, gradeOn, usePeople } from '../people/people';
@@ -7,7 +8,7 @@ import { personDue, sum, useRates } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../settings/settings';
 
 /** The sheet's summary, worked out from the same figures the lists show. Per grade: the people on it on the sheet's
- *  today (retired people excluded) and their due-totals added up (skipping n/a). Per period: its due-total. Per
+ *  today (retired people excluded), their due-totals added up (skipping n/a) and how many of them are active. Per period: its due-total. Per
  *  status: how many of the sheet's claims have it. */
 function Summary({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId);
@@ -37,6 +38,7 @@ function Summary({ sheetId }: { sheetId: string }) {
             <th>Grade</th>
             <th>People</th>
             <th>Due total</th>
+            <th>Active</th>
           </tr>
         </thead>
         <tbody>
@@ -45,6 +47,9 @@ function Summary({ sheetId }: { sheetId: string }) {
               <td>{g}</td>
               <td data-testid={`summary-grade-${g}-count`}>{onGrade(g).length}</td>
               <td data-testid={`summary-grade-${g}-due-total`}>{gradeDue(g)}</td>
+              <td data-testid={`summary-grade-${g}-active`}>
+                {onGrade(g).filter((p) => isActive(p, claims.data, late.today)).length}
+              </td>
             </tr>
           ))}
         </tbody>

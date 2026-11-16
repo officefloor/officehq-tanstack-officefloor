@@ -34,7 +34,7 @@ export function lateSteps(claim: Claim, late: Late): number {
 }
 
 /** A yyyy-MM-dd date the given days after another. */
-function plusDays(date: string, days: number): string {
+export function plusDays(date: string, days: number): string {
   return new Date((day(date) + days) * 86_400_000).toISOString().slice(0, 10);
 }
 
