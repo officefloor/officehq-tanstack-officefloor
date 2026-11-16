@@ -1,0 +1,81 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 878fb9b25..cd1d33923 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -544,7 +544,7 @@ function ClaimRow({
+           {' '}
+           {(c.status === 'OPEN' || c.status === 'PENDING') && c.openedBy === user && status.variables !== 'reject' && status.variables !== 'void' && status.variables !== 'resettle'
+             ? 'You opened this claim, so someone else must settle or approve it.'
+-            : `A ${c.status} claim cannot be changed that way, nor one whose due-by is inside a closed period, nor a deferred one settled, nor one with no proofs settled or approved when its due is above the proof threshold, nor one with an empty note opened when its due is above the note threshold; only a steward approves or rejects a pending claim or re-settles a settled one, only a steward voids a settled claim and only within 7 days of its settlement, a void needs a reason from the sheet's list while it has any, a rejection needs a reason, and only a role the sheet lets open, settle or void a claim may do so.`}
++            : `A ${c.status} claim cannot be changed that way, nor one whose due-by is inside a closed period, nor a deferred one settled, nor one with no proofs settled or approved when its due is above the proof threshold, nor one with an empty note opened when its due is above the note threshold; the user who opened or last edited a claim cannot settle or approve it, only a steward approves or rejects a pending claim or re-settles a settled one, only a steward voids a settled claim and only within 7 days of its settlement, a void needs a reason from the sheet's list while it has any, a rejection needs a reason, and only a role the sheet lets open, settle or void a claim may do so.`}
+         </span>
+       )}
+       {reassign.isError && (
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 491b56af7..221fd19f8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -19,7 +19,8 @@ import net.officefloor.plugin.variable.Val;
+  * its number (never given again). Settling fixes the claim's due: its amount at its
+  * person's grade's rate in force on the claim's date, rounded by its rounding (see Rounding) and at least the sheet's floor (left live when no rate applies),
+  * or the figure a statement bound it to, with its late charge as of the sheet's today frozen in (see LateCharge).
+- * Opening records who opened the claim; that user cannot settle nor approve it (four eyes). A claim whose due is
++ * Opening records who opened the claim; that user cannot settle nor approve it (four eyes), nor can the user who last
++ * edited it (see ClaimRepository#editedBy). A claim whose due is
+  * above the sheet's proof threshold in force on its date (if it has one) cannot be settled nor approved while its proofs
+  * count is 0 (checked before the clerk limit, so it never goes PENDING); a due of n/a is within any threshold. A claim whose due-by falls inside a closed
+  * period cannot change status, nor can a deferred claim be settled (see ClaimDue#deferred). A clerk (any user not made a steward) settling a claim whose due is above the sheet's
+@@ -84,6 +85,10 @@ public class ApplyClaimStatus {
+                 && change.by().equals(claim.openedBy())) {
+             throw new InvalidClaimStatusException("The user who opened a claim cannot settle nor approve it");
+         }
++        if ((change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE)
++                && change.by().equals(claims.editedBy(claim))) {
++            throw new InvalidClaimStatusException("The user who last edited a claim cannot settle nor approve it");
++        }
+         if ((change.action() == ClaimAction.APPROVE || change.action() == ClaimAction.REJECT) && !steward) {
+             throw new InvalidClaimStatusException("Only a steward approves or rejects a pending claim");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index f4e080b08..5bb70f400 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -85,18 +85,26 @@ public class ClaimRepository {
+ 
+     /** Stores the claim's values and releases its lock, but only while it is still a DRAFT and no one but {@code by}
+      *  holds its lock; false otherwise (nothing is written). The values it had are kept with {@code today}, the sheet's
+-     *  today, so the claim can be shown as it stood before (see editedAfter). */
++     *  today, so the claim can be shown as it stood before (see editedAfter); {@code by} is kept as its last editor
++     *  (see editedBy). */
+     public boolean update(Claim claim, String by, LocalDate today) {
+         jdbc.update("INSERT INTO claim_edit (sheet_id, claim_id, amount, claim_date, note, corrects, ref, tags, made_on) "
+                 + "SELECT sheet_id, id, amount, claim_date, note, corrects, ref, tags, ? FROM claim WHERE sheet_id = ? AND id = ? AND status = ? "
+                 + "AND (locked_by IS NULL OR locked_by = ?)",
+                 Date.valueOf(today), claim.sheetId(), claim.id(), ClaimStatus.DRAFT.name(), by);
+-        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, ref_key = ?, tags = ?, locked_by = NULL WHERE sheet_id = ? AND id = ? AND status = ? "
++        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, ref_key = ?, tags = ?, locked_by = NULL, edited_by = ? WHERE sheet_id = ? AND id = ? AND status = ? "
+                 + "AND (locked_by IS NULL OR locked_by = ?)",
+-                claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.corrects(), claim.ref(), ClaimValues.refKey(claim.ref()), claim.tags(), claim.sheetId(), claim.id(),
++                claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.corrects(), claim.ref(), ClaimValues.refKey(claim.ref()), claim.tags(), by, claim.sheetId(), claim.id(),
+                 ClaimStatus.DRAFT.name(), by) == 1;
+     }
+ 
++    /** Who last edited the claim (see update); null when never edited. */
++    public String editedBy(Claim claim) {
++        List<String> found = jdbc.queryForList("SELECT edited_by FROM claim WHERE sheet_id = ? AND id = ?", String.class,
++                claim.sheetId(), claim.id());
++        return found.isEmpty() ? null : found.get(0);
++    }
++
+     /** Locks the claim for {@code by} (its editor is open), but only while it is still a DRAFT and no one else holds
+      *  it; false otherwise (nothing is written). */
+     public boolean lock(Claim claim, String by) {
+diff --git a/src/main/resources/db/migration/V49__claim_edited_by.sql b/src/main/resources/db/migration/V49__claim_edited_by.sql
+new file mode 100644
+index 000000000..acdf85cb0
+--- /dev/null
++++ b/src/main/resources/db/migration/V49__claim_edited_by.sql
+@@ -0,0 +1,3 @@
++-- Who last edited the claim (through its form or its row's amount entry); null when never edited. Like its opener,
++-- that user cannot settle nor approve it (four eyes).
++ALTER TABLE claim ADD COLUMN edited_by VARCHAR(200);
