@@ -66,7 +66,7 @@ public class PeriodCloser {
                     || ClaimDue.deferred(c, late.today())) {
                 continue;
             }
-            BigDecimal figure = person == null ? c.due() : late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, settings.floor(c.sheetId(), c.date()), late.rounding()));
+            BigDecimal figure = person == null ? c.due() : late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, late.rounding()), settings.floor(c.sheetId(), c.date()));
             if (figure != null) {
                 perPerson.merge(c.personId(), figure, BigDecimal::add);
             }

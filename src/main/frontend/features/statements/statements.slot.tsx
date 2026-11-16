@@ -18,7 +18,7 @@ function StatementsHead() {
 }
 
 /** A person's statement count, their last statement's due-total and date, and the button that takes one: it
- *  records their due-total now and binds each of their claims that counts to the figure it has now. */
+ *  records their due-total now and binds each of their claims that counts to its rate figure now (not floored). */
 function PersonStatements({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const statements = useStatements(sheetId);
   const queryClient = useQueryClient();

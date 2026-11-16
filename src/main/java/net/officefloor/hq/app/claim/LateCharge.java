@@ -12,6 +12,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
  * today) gains, for every full 30 days it is overdue, the late percent in force on that boundary date (its due-by plus 30,
  * 60, 90 ... days) of its figure, each rounded to two decimals by the claim's rounding (see Rounding), added up; a
  * boundary whose percent is 0.00 adds nothing. The charge is never bound by a statement (it follows today); settling freezes it into the claim's due.
+ * The floor is applied last: a claim's live due is the greater of the floor in force on its date and its figure plus its charge.
  */
 public record LateCharge(LocalDate today, Function<LocalDate, BigDecimal> pct, Rounding rounding) {
 
@@ -41,8 +42,13 @@ public record LateCharge(LocalDate today, Function<LocalDate, BigDecimal> pct, R
         return charge;
     }
 
-    /** The figure with its charge added on top; null when it has none. */
-    public BigDecimal add(Claim claim, BigDecimal figure) {
-        return figure == null ? null : figure.add(on(claim, figure));
+    /** The claim's due: the figure with its charge added on top, at least the floor (none for a correction, nor for a
+     *  settled figure, which stays frozen); null when it has none. */
+    public BigDecimal add(Claim claim, BigDecimal figure, BigDecimal floor) {
+        if (figure == null) {
+            return null;
+        }
+        BigDecimal due = figure.add(on(claim, figure));
+        return claim.due() != null || ClaimDue.isCorrection(claim) ? due : due.max(floor);
     }
 }

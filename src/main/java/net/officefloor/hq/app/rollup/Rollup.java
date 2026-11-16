@@ -66,7 +66,7 @@ public class Rollup {
                     continue;
                 }
                 claimed = claimed.add(c.amount());
-                BigDecimal figure = late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, settings.floor(sheetId, c.date()), late.rounding()));
+                BigDecimal figure = late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, late.rounding()), settings.floor(sheetId, c.date()));
                 figured |= figure != null;
                 if (figure != null) {
                     due = due.add(figure);

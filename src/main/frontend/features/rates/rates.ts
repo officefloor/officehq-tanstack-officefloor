@@ -48,13 +48,10 @@ function shown(h: bigint): string {
 }
 
 /** What is due on an amount at a rate: amount × rate / 100, rounded to two decimals (half to even, or half up when
- *  `halfUp`), and at least the floor (two decimals) unless it is a correction (a negative amount); 'n/a' when there
- *  is no rate. */
-export function due(amount: string, rate: string | undefined, floor: string, halfUp = false): string {
+ *  `halfUp`); 'n/a' when there is no rate. */
+export function due(amount: string, rate: string | undefined, halfUp = false): string {
   if (rate === undefined) return 'n/a';
-  const d = percentOf(amount, rate, 1, halfUp);
-  const f = hundredths(floor);
-  return shown(d < f && hundredths(amount) >= 0n ? f : d);
+  return shown(percentOf(amount, rate, 1, halfUp));
 }
 
 /** `times` × value × pct / 100 in hundredths, rounded to two decimals: half to even, or half up (away from zero)
@@ -69,18 +66,20 @@ function percentOf(value: string, pct: string, times: number, halfUp: boolean): 
 }
 
 /** A claim's due: the figure fixed when it was settled, otherwise the one its person's last statement bound it to (never while PENDING),
- *  otherwise its amount at the rate in force on its date, at least the sheet's floor in force on its date. Given the sheet's late
- *  charge, an overdue claim's figure gains, for every full 30 days overdue, the late percent in force on that boundary
- *  (its due-by plus 30, 60, 90 ... days) of it, each rounded like the claim and added up (never bound by a
- *  statement; frozen in when settled). Both round by the sheet's policy date (see Late). */
+ *  otherwise its amount at the rate in force on its date. Given the sheet's late charge, an overdue claim's figure gains,
+ *  for every full 30 days overdue, the late percent in force on that boundary (its due-by plus 30, 60, 90 ... days) of
+ *  it, each rounded like the claim and added up (never bound by a statement; frozen in when settled). Last, the live
+ *  due is at least the sheet's floor in force on its date (a correction has no floor). Both round by the sheet's
+ *  policy date (see Late). */
 export function claimDue(claim: Claim, rate: string | undefined, floor: Dated, late?: Late): string {
   if (claim.due !== null) return claim.due;
   const halfUp = roundsHalfUp(claim, late);
-  const figure = claim.stated && claim.status !== 'PENDING' ? (claim.statedDue ?? 'n/a') : due(claim.amount, rate, floor(claim.date), halfUp);
-  if (late === undefined || figure === 'n/a') return figure;
-  const boundaries = lateBoundaries(claim, late);
-  if (boundaries.length === 0) return figure;
-  return shown(hundredths(figure) + boundaries.reduce((t, b) => t + percentOf(figure, late.pct(b), 1, halfUp), 0n));
+  const figure = claim.stated && claim.status !== 'PENDING' ? (claim.statedDue ?? 'n/a') : due(claim.amount, rate, halfUp);
+  if (figure === 'n/a') return figure;
+  const boundaries = late === undefined ? [] : lateBoundaries(claim, late);
+  const charged = hundredths(figure) + boundaries.reduce((t, b) => t + percentOf(figure, late!.pct(b), 1, halfUp), 0n);
+  const f = hundredths(floor(claim.date));
+  return shown(charged < f && hundredths(claim.amount) >= 0n ? f : charged);
 }
 
 /** The sum of a person's figures: the figures of their claims that count (each at the rate, of the grade in force,
