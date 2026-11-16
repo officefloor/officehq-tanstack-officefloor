@@ -87,7 +87,7 @@ public class TakeStatement {
         Rounding rounding = new Rounding(policy == null ? date : policy, claims,
                 (on) -> sheet.value(SettingRepository.ROUNDING, on));
         LateCharge late = new LateCharge(date, sheet::latePct, rounding,
-                (c) -> sheet.grace(person.gradeOn(c.date()), c.date()));
+                (c) -> sheet.grace(person.gradeOn(c.date()), c.date()), LateCharge.waivedIn(claims.waived(sheetId, date)));
         Statement last = statements.last(sheetId, person.id());
         boolean boundThen = last != null && last.madeOn() != null && !last.madeOn().isAfter(date);
         Map<Long, List<ClaimLogLine>> logs = log.bySheet(sheetId);

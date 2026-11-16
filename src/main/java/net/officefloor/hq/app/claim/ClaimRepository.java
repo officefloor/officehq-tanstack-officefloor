@@ -225,6 +225,28 @@ public class ClaimRepository {
                 Date.valueOf(claim.date()), claim.number(), claim.sheetId(), claim.id(), Date.valueOf(was)) == 1;
     }
 
+    /** Stores the waiver of the claim's late charge, made on {@code today}, but only while it is still OPEN or PENDING
+     *  and not waived; false otherwise (nothing is written). */
+    public boolean waive(Claim claim, LocalDate today) {
+        return jdbc.update("UPDATE claim SET waived_on = ? WHERE sheet_id = ? AND id = ? AND status IN ('OPEN', 'PENDING')"
+                + " AND waived_on IS NULL", Date.valueOf(today), claim.sheetId(), claim.id()) == 1;
+    }
+
+    /** The sheet's today the claim's late charge was waived on; null when it was never waived. */
+    public LocalDate waivedOn(String sheetId, long id) {
+        List<LocalDate> found = jdbc.queryForList("SELECT waived_on FROM claim WHERE sheet_id = ? AND id = ?",
+                LocalDate.class, sheetId, id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The ids of the sheet's claims whose late charge was waived on or before the date (null: ever). */
+    public Set<Long> waived(String sheetId, LocalDate asOf) {
+        return new HashSet<>(asOf == null
+                ? jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND waived_on IS NOT NULL", Long.class, sheetId)
+                : jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND waived_on <= ?", Long.class, sheetId,
+                        Date.valueOf(asOf)));
+    }
+
     /** Stores the date the claim is deferred until, logged as made on {@code today}, but only while it is still OPEN;
      *  false when it no longer is (nothing is written). */
     public boolean defer(Claim claim, LocalDate today) {

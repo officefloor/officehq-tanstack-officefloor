@@ -12,10 +12,11 @@ import net.officefloor.hq.app.sheet.SheetRepository;
  * its grace before today; see lateFrom) gains, for every full 30 days it is overdue, the late percent in force on that boundary
  * date (its due-by plus its grace plus 30, 60, 90 ... days) of its figure plus the charges of the boundaries before it (compounding), each rounded to two decimals by the claim's rounding (see Rounding), added up; a
  * boundary whose percent is 0.00 adds nothing. The charge is never bound by a statement (it follows today); settling freezes it into the claim's due.
+ * A claim whose late charge a steward waived bears none (see ApplyWaive).
  * The floor is applied last: a claim's live due is the greater of the floor in force on its date and its figure plus its charge.
  */
 public record LateCharge(LocalDate today, Function<LocalDate, BigDecimal> pct, Rounding rounding,
-        Function<Claim, Integer> grace) {
+        Function<Claim, Integer> grace, java.util.function.Predicate<Claim> waived) {
 
     /** The days in each step of the charge. */
     public static final int DAYS = 30;
@@ -24,7 +25,13 @@ public record LateCharge(LocalDate today, Function<LocalDate, BigDecimal> pct, R
             ClaimRepository claims) {
         return new LateCharge(sheets.today(sheetId), (date) -> settings.latePct(sheetId, date),
                 Rounding.of(sheetId, sheets, settings, claims),
-                (claim) -> settings.graceOf(sheetId, claim.personId(), claim.date()));
+                (claim) -> settings.graceOf(sheetId, claim.personId(), claim.date()),
+                waivedIn(claims.waived(sheetId, null)));
+    }
+
+    /** Whether a claim is waived: its id is among the given ones. */
+    public static java.util.function.Predicate<Claim> waivedIn(java.util.Set<Long> ids) {
+        return (claim) -> ids.contains(claim.id());
     }
 
     /** The date a claim is late from: its due-by plus the grace of its person's grade in force on its date (none: its
@@ -34,10 +41,10 @@ public record LateCharge(LocalDate today, Function<LocalDate, BigDecimal> pct, R
     }
 
     /** The charge on the claim with the given figure: zero when it is not overdue a full 30 days, has no figure, is
-     *  a correction, or is deferred. */
+     *  a correction, is deferred, or is waived. */
     public BigDecimal on(Claim claim, BigDecimal figure) {
         if (figure == null || !ClaimDue.isOpen(claim) || claim.due() != null || ClaimDue.isCorrection(claim)
-                || ClaimDue.deferred(claim, today)) {
+                || ClaimDue.deferred(claim, today) || waived.test(claim)) {
             return BigDecimal.ZERO.setScale(2);
         }
         LocalDate from = lateFrom(claim);

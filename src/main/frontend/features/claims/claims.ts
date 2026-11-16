@@ -42,6 +42,8 @@ export type Claim = {
   dueBy: string;
   deferred: boolean;
   deferredUntil: string | null;
+  /** Whether a steward waived its late charge: from then on it bears none, whatever its overdue state. */
+  waived: boolean;
   proofs: number;
   splitFrom: string | null;
   log: ClaimLogLine[];

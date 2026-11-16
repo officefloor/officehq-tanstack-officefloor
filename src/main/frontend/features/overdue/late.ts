@@ -43,9 +43,9 @@ export function isOverdue(claim: Claim, late: Late): boolean {
 }
 
 /** How many full 30 days an overdue claim is overdue (0 when it is not overdue, its due is fixed by settling, or it is a
- *  correction, which bears no late charge). */
+ *  correction, which bears no late charge, or its late charge is waived). */
 export function lateSteps(claim: Claim, late: Late): number {
-  if (claim.due !== null || claim.amount.trim().startsWith('-') || !isOverdue(claim, late)) return 0;
+  if (claim.waived || claim.due !== null || claim.amount.trim().startsWith('-') || !isOverdue(claim, late)) return 0;
   return Math.floor((day(late.today) - day(lateFrom(claim, late))) / 30);
 }
 
