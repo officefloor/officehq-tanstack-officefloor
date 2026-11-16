@@ -36,7 +36,7 @@ public class ClosePeriod {
             if (!ClaimDue.countsLive(c, person != null && person.held()) || c.date().isBefore(period.from()) || c.date().isAfter(period.to())) {
                 continue;
             }
-            BigDecimal figure = person == null ? c.due() : late.add(c, ClaimDue.figure(c, person.grade(), rates, floor));
+            BigDecimal figure = person == null ? c.due() : late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, floor));
             if (figure != null) {
                 total = total.add(figure);
             }

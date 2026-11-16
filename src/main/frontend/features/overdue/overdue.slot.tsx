@@ -22,7 +22,7 @@ function PersonOverdue({ sheetId, person }: { sheetId: string; person: Person })
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person]);
-  const o = overdue(mine, rates.data, person.grade, late, floor);
+  const o = overdue(mine, rates.data, person, late, floor);
   return (
     <>
       <td data-testid="person-overdue-count">{o.count}</td>
@@ -39,7 +39,7 @@ function OverdueTotal({ sheetId }: { sheetId: string }) {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const all = (people.data ?? []).map((p) =>
-    overdue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p.grade, late, floor),
+    overdue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor),
   );
   return (
     <p>

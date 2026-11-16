@@ -11,6 +11,6 @@ public class HoldPerson {
             throw new InvalidPersonException(hold.held() ? "The person is already on hold" : "The person is not on hold");
         }
         held.set(new Person(person.id(), person.sheetId(), person.name(), person.grade(), person.version(),
-                person.retiredFrom(), hold.held()));
+                person.retiredFrom(), hold.held(), person.grades()));
     }
 }

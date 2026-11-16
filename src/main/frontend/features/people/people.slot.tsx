@@ -7,8 +7,10 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { claimsKey, type Claim } from '../claims/claims';
 import { GRADES, peopleKey, useEditingPerson, usePeople, useShowRetired, type Person } from './people';
 
-type Values = { name: string; grade: string };
-const EMPTY: Values = { name: '', grade: 'A' };
+/** The form's values. `gradeFrom` (yyyy-MM-dd) is the date the grade is given from; blank, the sheet's today. A
+ *  person's first grade applies from the beginning of time. */
+type Values = { name: string; grade: string; gradeFrom: string };
+const EMPTY: Values = { name: '', grade: 'A', gradeFrom: '' };
 
 type Quick = { name: string; amount: string };
 const NO_QUICK: Quick = { name: '', amount: '' };
@@ -99,7 +101,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
       const now = queryClient.getQueryData<Person[]>(peopleKey(sheetId))?.find((p) => p.id === id);
       if (now) {
-        setValues({ name: now.name, grade: now.grade });
+        setValues({ name: now.name, grade: now.grade, gradeFrom: '' });
         setVersion(now.version);
       }
     },
@@ -112,7 +114,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
   };
   const openEditor = (p: Person) => {
     save.reset();
-    setValues({ name: p.name, grade: p.grade });
+    setValues({ name: p.name, grade: p.grade, gradeFrom: '' });
     setVersion(p.version);
     setEditingId(String(p.id));
   };
@@ -148,6 +150,15 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
               </option>
             ))}
           </select>
+        </label>{' '}
+        <label>
+          From{' '}
+          <input
+            data-testid="person-form-grade-from"
+            placeholder="yyyy-mm-dd"
+            value={values.gradeFrom}
+            onChange={(e) => change({ gradeFrom: e.target.value })}
+          />
         </label>{' '}
         <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
           {editing ? 'Save' : 'Add person'}

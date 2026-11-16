@@ -4,7 +4,12 @@ import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
 
 export const GRADES = ['A', 'B', 'C'] as const;
 
-/** A person on the sheet. `name` is unique on the sheet (case ignored), kept without outer spaces; `grade` is A, B or C.
+/** A grade a person has from a date (yyyy-MM-dd) until their next one's; a null `from` applies from the beginning of
+ *  time (the first grade the person was given). */
+export type PersonGrade = { grade: string; from: string | null };
+
+/** A person on the sheet. `name` is unique on the sheet (case ignored), kept without outer spaces; `grades` are the
+ *  grades recorded, by from-date, and `grade` (A, B or C) the one in force on the sheet's today.
  *  `version` goes up by one on each stored edit; an edit sends the version it was made from. `retiredFrom` (yyyy-MM-dd)
  *  is the date the person is retired from, null when not retired: a person with one counts as retired at once. `held` is
  *  whether the person is on hold: their OPEN claims then count in no live total. */
@@ -16,7 +21,18 @@ export type Person = {
   version: number;
   retiredFrom: string | null;
   held: boolean;
+  grades: PersonGrade[];
 };
+
+/** The person's grade in force on a date (yyyy-MM-dd): the one with the latest from-date on or before it. */
+export function gradeOn(person: Pick<Person, 'grade' | 'grades'>, on: string): string {
+  let found: PersonGrade | undefined;
+  for (const g of person.grades ?? []) {
+    if (g.from !== null && g.from > on) continue;
+    if (found === undefined || found.from === null || (g.from !== null && g.from > found.from)) found = g;
+  }
+  return found?.grade ?? person.grade;
+}
 
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'];
 

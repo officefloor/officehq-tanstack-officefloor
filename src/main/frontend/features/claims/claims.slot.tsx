@@ -4,7 +4,7 @@ import { postJson, putJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
-import { usePeople, type Person } from '../people/people';
+import { gradeOn, usePeople, type Person } from '../people/people';
 import { periodOf, usePeriods } from '../periods/periods';
 import { claimDue, rateFor, useRates } from '../rates/rates';
 import { dueBy, isOverdue } from '../overdue/overdue';
@@ -199,7 +199,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
               sheetId={sheetId}
               user={user}
               claim={c}
-              rate={rateFor(rates, person.grade, c.date)}
+              rate={rateFor(rates, gradeOn(person, c.date), c.date)}
               floor={floor}
               editing={editingId === c.id}
               onEdit={() => openEditor(c)}

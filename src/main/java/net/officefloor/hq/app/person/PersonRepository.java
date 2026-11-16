@@ -5,38 +5,71 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
-/** The stored people, kept per sheet. Ids are assigned in the order people are added. */
+/** The stored people, kept per sheet. Ids are assigned in the order people are added. A person's grades are kept
+ *  dated in person_grade; a person read carries them all, and the grade in force on the sheet's today. */
 @Repository
 public class PersonRepository {
 
-    private final JdbcTemplate jdbc;
+    private static final String COLUMNS = "id, sheet_id, name, version, retired_from, held";
 
-    public PersonRepository(JdbcTemplate jdbc) {
+    private final JdbcTemplate jdbc;
+    private final SheetRepository sheets;
+
+    public PersonRepository(JdbcTemplate jdbc, SheetRepository sheets) {
         this.jdbc = jdbc;
+        this.sheets = sheets;
     }
 
     public List<Person> list(String sheetId) {
-        return jdbc.query("SELECT id, sheet_id, name, grade, version, retired_from, held FROM person WHERE sheet_id = ? ORDER BY id",
-                PersonRepository::map, sheetId);
+        return withGrades(sheetId, jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY id",
+                PersonRepository::map, sheetId));
     }
 
     public Person find(String sheetId, long id) {
-        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade, version, retired_from, held FROM person WHERE sheet_id = ? AND id = ?",
-                PersonRepository::map, sheetId, id);
-        return found.isEmpty() ? null : found.get(0);
+        return first(sheetId, jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ?",
+                PersonRepository::map, sheetId, id));
     }
 
     /** The person on the sheet with this name, case ignored; null when there is none. */
     public Person findByName(String sheetId, String name) {
-        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade, version, retired_from, held FROM person WHERE sheet_id = ? AND name_key = LOWER(?)",
-                PersonRepository::map, sheetId, name);
-        return found.isEmpty() ? null : found.get(0);
+        return first(sheetId, jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND name_key = LOWER(?)",
+                PersonRepository::map, sheetId, name));
+    }
+
+    private Person first(String sheetId, List<Person> found) {
+        return found.isEmpty() ? null : withGrades(sheetId, found).get(0);
+    }
+
+    /** The people with their grades, and the grade in force on the sheet's today. */
+    private List<Person> withGrades(String sheetId, List<Person> found) {
+        if (found.isEmpty()) {
+            return found;
+        }
+        Map<Long, List<PersonGrade>> grades = new HashMap<>();
+        jdbc.query("SELECT person_id, from_date, grade FROM person_grade WHERE sheet_id = ? ORDER BY person_id, from_date NULLS FIRST",
+                (ResultSet rs) -> {
+                    Date from = rs.getDate("from_date");
+                    grades.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())
+                            .add(new PersonGrade(rs.getString("grade"), from == null ? null : from.toLocalDate()));
+                }, sheetId);
+        LocalDate today = sheets.today(sheetId);
+        List<Person> people = new ArrayList<>();
+        for (Person p : found) {
+            List<PersonGrade> mine = List.copyOf(grades.getOrDefault(p.id(), List.of()));
+            people.add(new Person(p.id(), p.sheetId(), p.name(), Person.gradeOn(mine, today), p.version(), p.retiredFrom(),
+                    p.held(), mine));
+        }
+        return people;
     }
 
     /** Whether a person on the sheet other than {@code exceptId} (0: anyone) has this name, case ignored. */
@@ -62,21 +95,28 @@ public class PersonRepository {
         } catch (DuplicateKeyException e) {
             throw new DuplicatePersonNameException(name);
         }
-        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0, null, false);
+        long id = keys.getKey().longValue();
+        jdbc.update("INSERT INTO person_grade (sheet_id, person_id, from_date, grade) VALUES (?, ?, NULL, ?)", sheetId, id, grade);
+        return new Person(id, sheetId, name, grade, 0, null, false, List.of(new PersonGrade(grade, null)));
     }
 
-    /** Stores the person as its new version, only while the stored one is still {@code fromVersion}: a save
-     *  that lands in between refuses this one. */
+    /** Stores the person as its new version, with its grades, only while the stored one is still {@code fromVersion}:
+     *  a save that lands in between refuses this one. */
     public void update(Person person, long fromVersion) throws DuplicatePersonNameException, StalePersonException {
         int n;
         try {
-            n = jdbc.update("UPDATE person SET name = ?, grade = ?, version = ? WHERE sheet_id = ? AND id = ? AND version = ?",
-                    person.name(), person.grade(), person.version(), person.sheetId(), person.id(), fromVersion);
+            n = jdbc.update("UPDATE person SET name = ?, version = ? WHERE sheet_id = ? AND id = ? AND version = ?",
+                    person.name(), person.version(), person.sheetId(), person.id(), fromVersion);
         } catch (DuplicateKeyException e) {
             throw new DuplicatePersonNameException(person.name());
         }
         if (n == 0) {
             throw new StalePersonException(person.id());
+        }
+        jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", person.sheetId(), person.id());
+        for (PersonGrade g : person.grades()) {
+            jdbc.update("INSERT INTO person_grade (sheet_id, person_id, from_date, grade) VALUES (?, ?, ?, ?)",
+                    person.sheetId(), person.id(), g.from() == null ? null : Date.valueOf(g.from()), g.grade());
         }
     }
 
@@ -93,7 +133,7 @@ public class PersonRepository {
 
     private static Person map(ResultSet rs, int n) throws SQLException {
         Date retired = rs.getDate("retired_from");
-        return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
-                retired == null ? null : retired.toLocalDate().toString(), rs.getBoolean("held"));
+        return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
+                retired == null ? null : retired.toLocalDate().toString(), rs.getBoolean("held"), List.of());
     }
 }

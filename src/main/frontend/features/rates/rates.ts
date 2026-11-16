@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { counts, type Claim } from '../claims/claims';
 import { lateSteps, type Late } from '../overdue/late';
+import { gradeOn, type Person } from '../people/people';
 
 /** A grade's rate on the sheet: `rate` is a percent as text with two decimals (never a float), in force from
  *  `from` (yyyy-MM-dd; null: from the beginning of time). */
@@ -72,16 +73,14 @@ export function claimDue(claim: Claim, rate: string | undefined, floor: string, 
   return steps === 0 ? figure : shown(hundredths(figure) + percentOf(figure, late.pct, steps));
 }
 
-/** Whether a claim keeps its figure whatever the rates are: fixed when settled, or bound by a statement. */
-const kept = (c: Claim) => c.due !== null || (c.stated && c.statedDue !== null);
-
-/** A person's due-total: the figures of their claims that count (each at the rate in force on its date, with its
- *  late charge) added up; 'n/a' when their grade has no rate today, unless a settled or stated claim keeps a
+/** A person's due-total: the figures of their claims that count (each at the rate, of the grade in force, on its
+ *  date, with its late charge) added up; 'n/a' when their grade has no rate today and none of those claims has a
  *  figure. */
-export function personDue(claims: Claim[], rates: Rate[] | undefined, grade: string, late: Late, floor: string): string {
+export function personDue(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: string): string {
   const counted = claims.filter(counts);
-  if (rateFor(rates, grade, late.today) === undefined && !counted.some(kept)) return 'n/a';
-  return sum(counted.map((c) => claimDue(c, rateFor(rates, grade, c.date), floor, late)));
+  const figures = counted.map((c) => claimDue(c, rateFor(rates, gradeOn(person, c.date), c.date), floor, late));
+  if (rateFor(rates, gradeOn(person, late.today), late.today) === undefined && figures.every((f) => f === 'n/a')) return 'n/a';
+  return sum(figures);
 }
 
 /** Two-decimal values added up, skipping 'n/a'. */

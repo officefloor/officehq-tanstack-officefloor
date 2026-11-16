@@ -4,7 +4,7 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
-import { usePeople } from '../people/people';
+import { gradeOn, usePeople } from '../people/people';
 import { claimDue, rateFor, sum, useRates } from '../rates/rates';
 import { useFloor, useLate } from '../settings/settings';
 import { periodsKey, usePeriods, type Period } from './periods';
@@ -41,12 +41,12 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   };
 
   const dueTotal = (p: Period) => {
-    const grades = new Map((people.data ?? []).map((person) => [person.id, person.grade]));
+    const byId = new Map((people.data ?? []).map((person) => [person.id, person]));
     const inPeriod = live(claims.data ?? [], people.data).filter((c) => p.from <= c.date && c.date <= p.to);
     return sum(
       inPeriod.map((c) => {
-        const grade = grades.get(c.personId);
-        return claimDue(c, grade === undefined ? undefined : rateFor(rates.data, grade, c.date), floor, late);
+        const person = byId.get(c.personId);
+        return claimDue(c, person === undefined ? undefined : rateFor(rates.data, gradeOn(person, c.date), c.date), floor, late);
       }),
     );
   };

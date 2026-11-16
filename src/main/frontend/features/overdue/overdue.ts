@@ -1,4 +1,5 @@
 import type { Claim } from '../claims/claims';
+import { gradeOn, type Person } from '../people/people';
 import { claimDue, rateFor, sum, type Rate } from '../rates/rates';
 import { isOverdue, type Late } from './late';
 
@@ -9,10 +10,10 @@ export { dueBy, isOverdue } from './late';
 export function overdue(
   claims: Claim[],
   rates: Rate[] | undefined,
-  grade: string,
+  person: Person,
   late: Late,
   floor: string,
 ): { count: number; total: string } {
   const over = claims.filter((c) => isOverdue(c, late.terms, late.today));
-  return { count: over.length, total: sum(over.map((c) => claimDue(c, rateFor(rates, grade, c.date), floor, late))) };
+  return { count: over.length, total: sum(over.map((c) => claimDue(c, rateFor(rates, gradeOn(person, c.date), c.date), floor, late))) };
 }

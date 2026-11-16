@@ -21,7 +21,7 @@ import org.springframework.stereotype.Service;
 /**
  * The sheet's figures as the screen shows them: each person's claimed (their claims that count added up; a held person's OPEN claims do not) and
  * due-total (the figures of those claims, each with its late charge, added up; n/a when their grade has no rate today and no counting claim
- * keeps a figure), and the sheet's claimed-total and due-total (everyone's added up, skipping n/a).
+ * has a figure, kept or at the grade in force on its date), and the sheet's claimed-total and due-total (everyone's added up, skipping n/a).
  *
  * A change takes the figures before it ({@link #take}) and, after its own audit lines, writes ROLLUP for every
  * person whose figures moved (a person new to the sheet counts as moved), then TOTALS when the sheet's totals
@@ -57,19 +57,19 @@ public class Rollup {
         for (Person person : people.list(sheetId)) {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
-            boolean kept = false;
+            boolean figured = false;
             for (Claim c : all) {
                 if (c.personId() != person.id() || !ClaimDue.countsLive(c, person.held())) {
                     continue;
                 }
                 claimed = claimed.add(c.amount());
-                kept |= ClaimDue.kept(c);
-                BigDecimal figure = late.add(c, ClaimDue.figure(c, person.grade(), rates, floor));
+                BigDecimal figure = late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, floor));
+                figured |= figure != null;
                 if (figure != null) {
                     due = due.add(figure);
                 }
             }
-            String dueTotal = rates.find(sheetId, person.grade(), today) == null && !kept ? "n/a"
+            String dueTotal = rates.find(sheetId, person.gradeOn(today), today) == null && !figured ? "n/a"
                     : due.toPlainString();
             figures.put(person.id(), new Figures(person.name(), claimed.toPlainString(), dueTotal));
         }

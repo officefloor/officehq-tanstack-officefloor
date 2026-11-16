@@ -50,7 +50,7 @@ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: strin
   const names = mine.map((p) => p.name).sort((a, b) => a.localeCompare(b));
   const backing = sum(
     mine.map((p) =>
-      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p.grade, late, floor),
+      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor),
     ),
   );
   const others = (people.data ?? []).filter((p) => p.id !== person.id);

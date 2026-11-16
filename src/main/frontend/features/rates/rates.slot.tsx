@@ -133,7 +133,7 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
   const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person]);
-  return <td data-testid="person-due-total">{personDue(mine, rates.data, person.grade, late, floor)}</td>;
+  return <td data-testid="person-due-total">{personDue(mine, rates.data, person, late, floor)}</td>;
 }
 
 /** The sheet's due-total: everyone's due-total added up, skipping n/a. */
@@ -144,7 +144,7 @@ function DueTotal({ sheetId }: { sheetId: string }) {
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
   const dues = (people.data ?? []).map((p) =>
-    personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p.grade, late, floor),
+    personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor),
   );
   return (
     <p>

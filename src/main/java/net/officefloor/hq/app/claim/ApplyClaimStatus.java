@@ -57,6 +57,6 @@ public class ApplyClaimStatus {
             return claim.statedDue();
         }
         Person person = people.find(claim.sheetId(), claim.personId());
-        return person == null ? null : ClaimDue.live(claim, person.grade(), rates, settings.floor(claim.sheetId()));
+        return person == null ? null : ClaimDue.live(claim, person.gradeOn(claim.date()), rates, settings.floor(claim.sheetId()));
     }
 }
