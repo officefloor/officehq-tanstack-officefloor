@@ -1,0 +1,59 @@
+diff --git a/src/main/frontend/features/auditview/auditview.slot.tsx b/src/main/frontend/features/auditview/auditview.slot.tsx
+index df0729e4c..10495e792 100644
+--- a/src/main/frontend/features/auditview/auditview.slot.tsx
++++ b/src/main/frontend/features/auditview/auditview.slot.tsx
+@@ -4,7 +4,7 @@ import { getJson } from '../../api/http';
+ import { SheetPage } from '../../slots/defs/sheetPage';
+ 
+ /** The audit viewer: the sheet's audit lines as the file holds them, newest first, read when Show is pressed; with a
+- *  name in the filter, only the lines about that person (name=<it> or person=<it>, compared as names are). */
++ *  name in the filter, only the lines about that person (name=<it> or person=<it>, compared as names are), then the matching lines of the sheet's descendants. */
+ function AuditView({ sheetId }: { sheetId: string }) {
+   const [filter, setFilter] = useState('');
+   const show = useMutation({
+diff --git a/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java b/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
+index 775762092..c441860fb 100644
+--- a/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
++++ b/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
+@@ -5,6 +5,7 @@ import java.util.List;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+@@ -12,14 +13,19 @@ import org.springframework.web.bind.annotation.RequestParam;
+ /** The sheet's audit lines exactly as the file holds them, newest first; with a name, only those about that person
+  *  (see Audit#lines). Read from the file: the viewer is not a second record. When the name is of a person transferred
+  *  here, the lines about them on the sheet they came from follow, newest first, from the transfer that brought them
+- *  here back (see Audit#history). */
++ *  here back (see Audit#history). With a name, the lines about them on each of the sheet's descendants come between
++ *  the two: each sheet's newest first, the sheets in order of id. */
+ public class RespondWithAuditLines {
+     public void respond(@PathVariable("sheetId") String sheetId,
+             @RequestParam(value = "name", required = false) String name, Audit audit, PersonRepository people,
++            SettingRepository settings,
+             ObjectResponse<List<String>> response) {
+         String sheet = sheetId.trim();
+         String filter = name == null ? "" : name;
+         List<String> lines = new ArrayList<>(audit.lines(sheet, filter));
++        if (!filter.isBlank()) {
++            settings.descendants(sheet).stream().sorted().forEach((d) -> lines.addAll(audit.lines(d, filter)));
++        }
+         Person person = filter.isBlank() ? null : people.findByName(sheet, filter.trim());
+         if (person != null && person.origin() != null) {
+             lines.addAll(audit.history(person.origin(), person.name(), sheet));
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml
+index 16c2a6e56..c4c89a72d 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml
+@@ -1,6 +1,7 @@
+ # GET /api/sheets/{sheetId}/audit?name= — the sheet's audit lines as the file holds them, newest first;
+ # with a name, only the lines carrying name=<it> or person=<it> (compared as names are), followed, for a person
+-# transferred here, by the lines about them on the sheet they came from.
++# transferred here, by the lines about them on the sheet they came from; between the two, the lines about them on
++# each of the sheet's descendants (each newest first, the sheets by id).
+ respond:
+   class: net.officefloor.hq.app.audit.RespondWithAuditLines
+   govern: [ readonly-transaction ]
