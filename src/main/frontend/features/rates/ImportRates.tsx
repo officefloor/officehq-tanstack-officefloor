@@ -44,7 +44,7 @@ export function ImportRates({ sheetId, user }: { sheetId: string; user: string }
         </>
       )}
       {run.isError && (
-        <span data-testid="import-rates-error">Every line needs a grade of A, B or C, a rate of 0.00 or more with up to two decimals, and a from-date and to-date that are dates or blank, the to-date not before the from-date: nothing was set.</span>
+        <span data-testid="import-rates-error">Every line needs a grade of the sheet, a rate of 0.00 or more with up to two decimals, and a from-date and to-date that are dates or blank, the to-date not before the from-date: nothing was set.</span>
       )}
     </form>
   );

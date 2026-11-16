@@ -7,7 +7,6 @@ import { formatCents, hundredths, trimmedSum } from '../rates/api';
 import { useAsOf } from '../sheet/AsOf';
 import { descendantsKey, listDescendants, liveKey } from '../sheet/api';
 import { Fig } from '../session/Fig';
-import { GRADES } from '../people/api';
 import { claimsKey, listClaims } from '../claims/api';
 import { STATUSES, statusCount, useGradeDues } from './Summary';
 
@@ -69,6 +68,8 @@ export function Consolidated({ sheetId, user }: { sheetId: string; user: string 
   const fetching = useIsFetching({ predicate: (q) => q.queryKey[0] === 'sheet' && ids.includes(q.queryKey[1] as string) });
   const ready = descendants.isSuccess && fetching === 0 && ids.every((id) => reported[id] !== undefined);
   const all = [own, ...ids.map((id) => reported[id]).filter((f): f is Figures => f !== undefined)];
+  // Every grade of any sheet of the tree: this sheet's, then those only the others have.
+  const grades = [...new Set(all.flatMap((f) => Object.keys(f.grades)))];
   const sum = (pick: (f: Figures) => string) => formatCents(all.reduce((t, f) => t + hundredths(pick(f)), 0n));
   return (
     <p>
@@ -76,9 +77,9 @@ export function Consolidated({ sheetId, user }: { sheetId: string; user: string 
       Consolidated: people <span data-testid="consolidated-people-count">{ready ? distinctPeople(all.flatMap((f) => f.names)) : ''}</span>
       {' · '}due <span data-testid="consolidated-due-total"><Fig>{ready ? trimmedSum(all.flatMap((f) => f.dues)) : ''}</Fig></span>
       {' · '}overdue <span data-testid="consolidated-overdue-total"><Fig>{ready ? trimmedSum(all.flatMap((f) => f.overdues)) : ''}</Fig></span>
-      {GRADES.map((g) => (
+      {grades.map((g) => (
         <span key={g}>{' · '}grade {g} due <span data-testid={`consolidated-grade-${g}-due-total`}>
-          <Fig>{ready ? sum((f) => f.grades[g]) : ''}</Fig></span></span>
+          <Fig>{ready ? sum((f) => f.grades[g] ?? '0.00') : ''}</Fig></span></span>
       ))}
       {STATUSES.map((s) => (
         <span key={s}>{' · '}{s} <span data-testid={`consolidated-status-${s}-count`}>

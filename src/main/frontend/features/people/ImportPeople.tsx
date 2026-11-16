@@ -46,7 +46,7 @@ export function ImportPeople({ sheetId, user }: { sheetId: string; user: string 
         </>
       )}
       {imported.isError && (
-        <span data-testid="import-error">Every line needs a name not repeated (a name or alias on the sheet updates that person, once), a contact (if any) not used by anyone else nor repeated, a grade of A, B or C, and terms (if any) a whole number of days: nothing was imported.</span>
+        <span data-testid="import-error">Every line needs a name not repeated (a name or alias on the sheet updates that person, once), a contact (if any) not used by anyone else nor repeated, a grade of the sheet, and terms (if any) a whole number of days: nothing was imported.</span>
       )}
     </form>
   );

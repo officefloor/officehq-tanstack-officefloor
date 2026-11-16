@@ -1,7 +1,7 @@
 import { useState } from 'react';
+import { useGradeCodes } from '../grades/api';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
-import { GRADES } from '../people/api';
 import { useSheetToday } from '../sheet/api';
 import { ImportRates } from './ImportRates';
 import { listRates, previewRate, rateByGrade, rateOn, ratesKey, setRate, type RateInput } from './api';
@@ -16,6 +16,7 @@ const EMPTY: RateInput = { grade: 'A', pct: '', from: '', to: '' };
  *  each grade's rate in force on the sheet's today, a calendar of each grade's rate in force on the
  *  first day of each month of the sheet's today's year, and every rate by grade and from-date. */
 export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
+  const gradeCodes = useGradeCodes(sheetId);
   const queryClient = useQueryClient();
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
   const today = useSheetToday(sheetId, user);
@@ -60,7 +61,7 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
         <label>
           Grade{' '}
           <select data-testid="rate-form-grade" value={form.grade} onChange={(e) => change({ grade: e.target.value })}>
-            {GRADES.map((g) => (
+            {gradeCodes.map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>
@@ -99,7 +100,7 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
           Preview grade{' '}
           <select data-testid="rate-preview-grade" value={candidate.grade}
             onChange={(e) => changeCandidate({ grade: e.target.value })}>
-            {GRADES.map((g) => (
+            {gradeCodes.map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>
@@ -127,7 +128,7 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
       <ImportRates sheetId={sheetId} user={user} />
       <table>
         <tbody>
-          {GRADES.map((g) => (
+          {gradeCodes.map((g) => (
             <tr key={g}>
               <td>{g}</td>
               <td data-testid={`rate-current-${g}`}>
@@ -145,7 +146,7 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => (
+          {gradeCodes.map((g) => (
             <tr key={g}>
               <td>{g}</td>
               {months.map((m) => {

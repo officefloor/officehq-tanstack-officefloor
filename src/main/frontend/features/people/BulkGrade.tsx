@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import { useGradeCodes } from '../grades/api';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { claimsKey } from '../claims/api';
-import { GRADES, bulkGradePeople, peopleKey } from './api';
+import { bulkGradePeople, peopleKey } from './api';
 
 /** A grade, a from-date (blank: the sheet's today) and a button that gives the selected people that
  *  grade together, and how many it changed. The count is cleared while it runs; the selection is
@@ -10,6 +11,7 @@ import { GRADES, bulkGradePeople, peopleKey } from './api';
 export function BulkGrade({ sheetId, user, selected, onDone }: {
   sheetId: string; user: string; selected: number[]; onDone: () => void;
 }) {
+  const gradeCodes = useGradeCodes(sheetId);
   const queryClient = useQueryClient();
   const runOnce = useSubmitOnce();
   const [grade, setGrade] = useState<string>('A');
@@ -30,7 +32,7 @@ export function BulkGrade({ sheetId, user, selected, onDone }: {
       <label>
         Grade{' '}
         <select data-testid="bulk-grade" value={grade} onChange={(e) => { setGrade(e.target.value); bulk.reset(); }}>
-          {GRADES.map((g) => (
+          {gradeCodes.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>

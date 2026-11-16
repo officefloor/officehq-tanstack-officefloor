@@ -37,7 +37,7 @@ public class TransferPerson {
             @Val TransferRequest request, @Val Person person, PersonRepository people,
             ClaimRepository claims, PeriodRepository periods, RateRepository rates,
             SettingRepository settings, PoolRepository pools, SheetRepository sheets, RoleRepository roles,
-            Out<Transfer> transferred) throws InvalidPersonException {
+            net.officefloor.hq.app.grade.GradeRepository grades, Out<Transfer> transferred) throws InvalidPersonException {
         String user = by == null ? "" : by;
         String sheetId = person.getSheetId();
         String to = request.to();
@@ -71,6 +71,8 @@ public class TransferPerson {
             throw new InvalidPersonException("The contact is already on " + to);
         }
         sheets.open(to, user);
+        // A grade added on this sheet they were given comes with them, added to the other sheet.
+        grades.ensure(to, person.getGrades().stream().map(GradeFrom::grade).toList(), user);
         Rollup before = Rollup.of(to, people, claims, rates, sheets, settings, pools);
         for (long id : claims.transferAll(sheetId, person.getId(), to)) {
             Claim claim = claims.find(to, id);

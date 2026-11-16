@@ -2,7 +2,9 @@ import { getJson, postJson, putJson } from '../../api/http';
 import { sheetKey } from '../sheet/api';
 import type { Claim } from '../claims/api';
 
-export type Grade = 'A' | 'B' | 'C';
+/** A grade's code: A, B, C, or one added to the sheet (one to three capital letters). */
+export type Grade = string;
+/** The grades every sheet has; a sheet's added grades follow them (see `useGradeCodes`). */
 export const GRADES: Grade[] = ['A', 'B', 'C'];
 
 /** A grade a person was given, in force from its from-date (yyyy-MM-dd; null: from the beginning of time). */

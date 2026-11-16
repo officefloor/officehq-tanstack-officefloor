@@ -8,7 +8,9 @@ import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.claim.ProofKind;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.plugin.variable.Out;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateSetting {
@@ -21,14 +23,14 @@ public class ValidateSetting {
     /** A whole number, which may be negative. */
     private static final Pattern WHOLE = Pattern.compile("-?\\d{1,6}");
 
-    /** The grades that may have their own terms and grace days. */
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
-
     /** The roles a permission may name. */
     private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD);
 
-    public void validate(@RequestBody SettingRequest request, Out<SettingRequest> body)
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingRequest request,
+            GradeRepository grades, Out<SettingRequest> body)
             throws InvalidSettingException {
+        // The grades that may have their own limits, thresholds, terms and grace days, or be the default.
+        List<String> gradeCodes = grades.codes(sheetId.trim());
         String key = request == null || request.key() == null ? "" : request.key().trim();
         String value = request == null || request.value() == null ? "" : request.value().trim();
         String from = request == null || request.from() == null || !SettingRepository.isDated(key)
@@ -46,7 +48,7 @@ public class ValidateSetting {
                 throw new InvalidSettingException("The clerk limit is blank or 0.00 or more with up to two decimals");
             }
         } else if (key.startsWith(SettingRepository.CLERK_LIMIT_OF_GRADE)
-                && GRADES.contains(key.substring(SettingRepository.CLERK_LIMIT_OF_GRADE.length()))) {
+                && gradeCodes.contains(key.substring(SettingRepository.CLERK_LIMIT_OF_GRADE.length()))) {
             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("A grade's clerk limit is blank or 0.00 or more with up to two decimals");
             }
@@ -55,7 +57,7 @@ public class ValidateSetting {
                 throw new InvalidSettingException("The proof threshold is blank or 0.00 or more with up to two decimals");
             }
         } else if (key.startsWith(SettingRepository.PROOF_THRESHOLD_OF_GRADE)
-                && GRADES.contains(key.substring(SettingRepository.PROOF_THRESHOLD_OF_GRADE.length()))) {
+                && gradeCodes.contains(key.substring(SettingRepository.PROOF_THRESHOLD_OF_GRADE.length()))) {
             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("A grade's proof threshold is blank or 0.00 or more with up to two decimals");
             }
@@ -112,7 +114,7 @@ public class ValidateSetting {
             body.set(new SettingRequest(key, String.valueOf(Integer.parseInt(value)), given));
             return;
         } else if (key.startsWith(SettingRepository.TERMS_OF_GRADE)
-                && GRADES.contains(key.substring(SettingRepository.TERMS_OF_GRADE.length()))) {
+                && gradeCodes.contains(key.substring(SettingRepository.TERMS_OF_GRADE.length()))) {
             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
                 throw new InvalidSettingException("A grade's terms are blank or a whole number of days, 0 or more");
             }
@@ -155,7 +157,7 @@ public class ValidateSetting {
             body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null));
             return;
         } else if (key.startsWith(SettingRepository.GRACE_OF_GRADE)
-                && GRADES.contains(key.substring(SettingRepository.GRACE_OF_GRADE.length()))) {
+                && gradeCodes.contains(key.substring(SettingRepository.GRACE_OF_GRADE.length()))) {
             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
                 throw new InvalidSettingException("A grade's grace days are blank or a whole number of days, 0 or more");
             }
@@ -181,8 +183,8 @@ public class ValidateSetting {
             body.set(new SettingRequest(key, String.valueOf(month), null));
             return;
         } else if (SettingRepository.DEFAULT_GRADE.equals(key)) {
-            if (!value.isEmpty() && !GRADES.contains(value)) {
-                throw new InvalidSettingException("The default grade is blank, A, B or C");
+            if (!value.isEmpty() && !gradeCodes.contains(value)) {
+                throw new InvalidSettingException("The default grade is blank or a grade of the sheet");
             }
             body.set(new SettingRequest(key, value.isEmpty() ? null : value, null));
             return;

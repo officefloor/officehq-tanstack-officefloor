@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
+import { useGradeCodes } from '../grades/api';
 import { claimsKey, isActive, listClaims, listVoidReasons, liveClaims, voidReasonsKey, type Claim } from '../claims/api';
 import { useCapOf } from '../pools/cap';
-import { GRADES, gradeOn, listPeople, peopleKey } from '../people/api';
+import { gradeOn, listPeople, peopleKey } from '../people/api';
 import { listPeriods, periodDueTotal, periodsKey } from '../periods/api';
 import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
 import { heldOf } from '../rates/shares';
@@ -20,6 +21,7 @@ export function statusCount(claims: Claim[] | undefined, status: (typeof STATUSE
 /** Per grade, the due-totals of the people not retired on it added up (n/a ones skipped), as the
  *  sheet's summary shows them. */
 export function useGradeDues(sheetId: string, user: string): Record<string, string> {
+  const gradeCodes = useGradeCodes(sheetId);
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
@@ -33,7 +35,7 @@ export function useGradeDues(sheetId: string, user: string): Record<string, stri
   const dueOf = (p: (typeof active)[number]) => personDue(liveClaims(all.filter((c) => c.personId === p.id), [p]),
     rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, capOf(p.id),
     heldOf(p.id, all, people.data, rates.data, floor, charges));
-  return Object.fromEntries(GRADES.map((g) => [g, sumDues(active.filter((p) => p.grade === g).map(dueOf))]));
+  return Object.fromEntries(gradeCodes.map((g) => [g, sumDues(active.filter((p) => p.grade === g).map(dueOf))]));
 }
 
 /** A period's due-total minus the previous one's, two decimals, a minus sign when lower. */
@@ -59,6 +61,7 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
   const active = (people.data ?? []).filter((p) => !p.retired);
   const liveOf = (p: (typeof active)[number]) => liveClaims(all.filter((c) => c.personId === p.id), [p]);
   const gradeDues = useGradeDues(sheetId, user);
+  const gradeCodes = useGradeCodes(sheetId);
   const byStart = [...(periods.data ?? [])].sort((a, b) => a.from.localeCompare(b.from));
   const periodDues = byStart.map((p) => periodDueTotal(p, all, people.data, rates.data, floor, charges));
 
@@ -67,7 +70,7 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
       <h3>Summary</h3>
       <table>
         <tbody>
-          {GRADES.map((g) => {
+          {gradeCodes.map((g) => {
             const on = active.filter((p) => p.grade === g);
             return (
               <tr key={g}>

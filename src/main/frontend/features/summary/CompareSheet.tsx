@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { claimsKey, listClaims } from '../claims/api';
-import { GRADES, listPeople, peopleKey } from '../people/api';
+import { listPeople, peopleKey } from '../people/api';
 import { listRates, ratesKey } from '../rates/api';
 import { listSettings, settingsKey } from '../settings/api';
 import { sheetKey, useSheetToday } from '../sheet/api';
@@ -61,7 +61,7 @@ export function CompareSheet({ sheetId, user }: { sheetId: string; user: string 
   };
 
   const lines = run !== null && run.id !== null && theirs !== null
-    ? GRADES.map((g) => `${g} ${mine[g]} ${theirs[g] ?? '0.00'}`)
+    ? Object.keys(mine).map((g) => `${g} ${mine[g]} ${theirs[g] ?? '0.00'}`)
     : [];
 
   return (

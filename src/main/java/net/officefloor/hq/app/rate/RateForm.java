@@ -3,24 +3,23 @@ package net.officefloor.hq.app.rate;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.util.Set;
+import java.util.Collection;
 import java.util.regex.Pattern;
 
 /** The rate form's rules, applied to the rate form and to each line of a rate import. */
 public final class RateForm {
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
-
     /** 0 or more, with up to two decimals. */
     private static final Pattern PCT = Pattern.compile("(\\d+(\\.\\d{0,2})?|\\.\\d{1,2})");
 
     private RateForm() {
     }
 
-    public static ValidRate check(RateRequest request) throws InvalidRateException {
+    /** The rate form's rules; the grade must be one of the sheet's grades. */
+    public static ValidRate check(RateRequest request, Collection<String> grades) throws InvalidRateException {
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
         String pct = request == null || request.pct() == null ? "" : request.pct().trim();
-        if (!GRADES.contains(grade)) {
-            throw new InvalidRateException("Grade must be A, B or C");
+        if (!grades.contains(grade)) {
+            throw new InvalidRateException("Not a grade of the sheet: " + grade);
         }
         if (!PCT.matcher(pct).matches()) {
             throw new InvalidRateException("A percent of 0.00 or more with up to two decimals is required");

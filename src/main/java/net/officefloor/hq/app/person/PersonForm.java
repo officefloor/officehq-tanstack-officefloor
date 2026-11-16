@@ -2,24 +2,23 @@ package net.officefloor.hq.app.person;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.util.Set;
+import java.util.Collection;
 
 /** The person form's own rules, shared by the form and the import box. */
 public final class PersonForm {
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
-
     private PersonForm() {
     }
 
-    /** The person form's rules: the request trimmed and normalised, or refused. */
-    public static PersonRequest check(PersonRequest request) throws InvalidPersonException {
+    /** The person form's rules: the request trimmed and normalised, or refused; the grade must be one
+     *  of the sheet's grades. */
+    public static PersonRequest check(PersonRequest request, Collection<String> grades) throws InvalidPersonException {
         String name = request == null || request.name() == null ? "" : request.name().trim();
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
         if (name.isEmpty()) {
             throw new InvalidPersonException("A name is required");
         }
-        if (!GRADES.contains(grade)) {
-            throw new InvalidPersonException("Grade must be A, B or C");
+        if (!grades.contains(grade)) {
+            throw new InvalidPersonException("Not a grade of the sheet: " + grade);
         }
         String from = request.gradeFrom() == null ? "" : request.gradeFrom().trim();
         if (!from.isEmpty()) {

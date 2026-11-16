@@ -1,4 +1,5 @@
 import { Fragment, useState } from 'react';
+import { useGradeCodes } from '../grades/api';
 import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
@@ -27,7 +28,7 @@ import { QuickAdd } from './QuickAdd';
 import { ColumnChooser, useColumns } from './Columns';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { SortBy, sortPeople, useSortBy } from './SortBy';
-import { GRADES, addAlias, addPatron, addPerson, cancelStatement, flagPerson, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, setApprover, shownName, takeStatement, transferPerson, undoTransfer, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+import { addAlias, addPatron, addPerson, cancelStatement, flagPerson, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, setApprover, shownName, takeStatement, transferPerson, undoTransfer, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 import { Fig } from '../session/Fig';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFrom: '', contact: '', tags: '' };
@@ -67,6 +68,7 @@ function snapshotOn(p: Person, day: string): string {
  *  each `<name> <then> <now>` (trimmed): their SNAPSHOT due-total for the from-date and for the to-date
  *  (see `snapshotOn`), or for a blank to-date their due-total now. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
+  const gradeCodes = useGradeCodes(sheetId);
   const queryClient = useQueryClient();
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
@@ -505,7 +507,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
         <label>
           Grade{' '}
           <select data-testid="person-form-grade" value={form.grade} onChange={(e) => change({ grade: e.target.value })}>
-            {GRADES.map((g) => (
+            {gradeCodes.map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>
@@ -629,7 +631,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                       setGradePicks((d) => ({ ...d, [p.id]: e.target.value }));
                       grading.reset();
                     }}>
-                    {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
+                    {gradeCodes.map((g) => <option key={g} value={g}>{g}</option>)}
                   </select>{' '}
                   <button type="button" data-testid="person-inline-grade-save" disabled={grading.isPending}
                     onClick={() => grade(p)}>

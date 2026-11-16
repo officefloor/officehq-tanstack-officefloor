@@ -78,7 +78,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
                 : key === 'review-threshold' ? 'Review threshold'
                 : key === 'parent' ? 'Parent sheet'
                 : key === 'fiscal-start-month' ? 'Fiscal year start month (1 to 12)'
-                : key === 'default-grade' ? 'Default grade (A, B or C)'
+                : key === 'default-grade' ? 'Default grade (a grade of the sheet)'
                 : key.startsWith('perm-') ? `Who may ${key.slice('perm-'.length)} (roles)`
                 : key.startsWith('clerk-limit-') ? `Clerk limit for grade ${key.slice('clerk-limit-'.length)}`
                 : key.startsWith('proof-threshold-') ? `Proof threshold for grade ${key.slice('proof-threshold-'.length)}`
@@ -109,7 +109,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {save.isError && (
           <span data-testid="settings-error">
             The clerk limit, a grade's clerk limit, the cap, the pot, the proof threshold, a grade's proof threshold, the note threshold and the review threshold must be blank, and the floor given, as 0.00 or more with up to two decimals;
-            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the rounding mode blank, half-up or half-even; the policy date, period numbering date and entry date blank or a date; the grace days, a grade's grace days and the review SLA blank or a whole number of days; the most open claims per person blank or a whole number, 0 or more; a score threshold blank or a whole number; the score log blank or on; a permission blank or a comma separated list of clerk and steward; the proof kinds blank or a comma separated list of receipt and photo; the parent sheet blank or a sheet that has been loaded, not this one nor one with this one above it; the fiscal year start month a whole number from 1 to 12; the default grade blank, A, B or C; a from-date blank or a date.
+            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the rounding mode blank, half-up or half-even; the policy date, period numbering date and entry date blank or a date; the grace days, a grade's grace days and the review SLA blank or a whole number of days; the most open claims per person blank or a whole number, 0 or more; a score threshold blank or a whole number; the score log blank or on; a permission blank or a comma separated list of clerk and steward; the proof kinds blank or a comma separated list of receipt and photo; the parent sheet blank or a sheet that has been loaded, not this one nor one with this one above it; the fiscal year start month a whole number from 1 to 12; the default grade blank or a grade of the sheet; a from-date blank or a date.
           </span>
         )}
       </form>
