@@ -1,0 +1,115 @@
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+new file mode 100644
+index 000000000..c0b336bcb
+--- /dev/null
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -0,0 +1,53 @@
++import { useCallback, useEffect, useState } from 'react';
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { SheetPage } from '../../slots/defs/sheetPage';
++import { useSheetDueTotal, useSheetOverdue } from '../header/totals';
++import { usePeople } from '../people/people';
++import { sum } from '../rates/rates';
++
++/** The ids of the sheet's descendants: the sheets naming it as their parent, then theirs, and so on. */
++function useDescendants(sheetId: string) {
++  return useQuery({
++    queryKey: ['sheet', sheetId, 'descendants'],
++    queryFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/descendants`),
++  });
++}
++
++/** One sheet's own figures, as its header shows them. */
++type Figures = { people: number; due: string; overdue: string };
++
++/** Works out one sheet's figures with the same hooks as its header, and reports them. Shows nothing. */
++function SheetFigures({ sheetId, report }: { sheetId: string; report: (sheetId: string, f: Figures) => void }) {
++  const people = (usePeople(sheetId).data ?? []).length;
++  const due = useSheetDueTotal(sheetId);
++  const overdue = useSheetOverdue(sheetId).total;
++  useEffect(() => report(sheetId, { people, due, overdue }), [report, sheetId, people, due, overdue]);
++  return null;
++}
++
++/** The consolidated figures over the sheet and all its descendants: their people counted, and each sheet's
++ *  due-total and overdue-total (as that sheet shows it) added up. A sheet with no children shows its own. */
++function Consolidated({ sheetId }: { sheetId: string }) {
++  const descendants = useDescendants(sheetId);
++  const sheets = [sheetId, ...(descendants.data ?? [])];
++  const [figures, setFigures] = useState<Record<string, Figures>>({});
++  const report = useCallback(
++    (id: string, f: Figures) => setFigures((all) => ({ ...all, [id]: f })),
++    [],
++  );
++  const counted = sheets.map((id) => figures[id]).filter((f): f is Figures => f !== undefined);
++
++  return (
++    <section data-testid="consolidated">
++      {sheets.map((id) => (
++        <SheetFigures key={id} sheetId={id} report={report} />
++      ))}
++      Consolidated: people <span data-testid="consolidated-people-count">{counted.reduce((n, f) => n + f.people, 0)}</span>
++      {' · '}Due total <span data-testid="consolidated-due-total">{sum(counted.map((f) => f.due))}</span>
++      {' · '}Overdue total <span data-testid="consolidated-overdue-total">{sum(counted.map((f) => f.overdue))}</span>
++    </section>
++  );
++}
++
++export const contribution = SheetPage.fill({ order: -9, Component: Consolidated });
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithDescendants.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithDescendants.java
+new file mode 100644
+index 000000000..99a69d82d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithDescendants.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.setting;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** The ids of the sheet's descendants (see SettingRepository#descendants). */
++public class RespondWithDescendants {
++    public void respond(@PathVariable("sheetId") String sheetId, SettingRepository settings,
++            ObjectResponse<List<String>> response) {
++        response.send(settings.descendants(sheetId.trim()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 96397bb40..453fd8a1c 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -265,6 +265,22 @@ public class SettingRepository {
+         return found;
+     }
+ 
++    /** The sheet's descendants: the sheets naming it as their parent, then theirs, and so on (each once, the sheet
++     *  itself never), in the order found. */
++    public List<String> descendants(String sheetId) {
++        List<String> found = new java.util.ArrayList<>();
++        for (int i = -1; i < found.size(); i++) {
++            String at = i < 0 ? sheetId : found.get(i);
++            for (String child : jdbc.queryForList("SELECT sheet_id FROM setting WHERE setting_key = ? AND from_date = ?"
++                    + " AND setting_value = ? ORDER BY sheet_id", String.class, PARENT, UNDATED, at)) {
++                if (!child.equals(sheetId) && !found.contains(child)) {
++                    found.add(child);
++                }
++            }
++        }
++        return found;
++    }
++
+     /** Whether the sheet has the other as an ancestor, at any level. */
+     public boolean hasAncestor(String sheetId, String ancestor) {
+         return ancestors(sheetId, Integer.MAX_VALUE).contains(ancestor);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+new file mode 100644
+index 000000000..55b91b992
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+@@ -0,0 +1,4 @@
++# GET /api/sheets/{sheetId}/descendants — the ids of the sheets naming it as their parent, then theirs, and so on.
++respond:
++  class: net.officefloor.hq.app.setting.RespondWithDescendants
++  govern: [ readonly-transaction ]
