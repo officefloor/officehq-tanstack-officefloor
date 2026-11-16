@@ -1,0 +1,108 @@
+diff --git a/src/main/frontend/features/header/totals.ts b/src/main/frontend/features/header/totals.ts
+index 3cb5ba8cf..d41227862 100644
+--- a/src/main/frontend/features/header/totals.ts
++++ b/src/main/frontend/features/header/totals.ts
+@@ -26,6 +26,22 @@ export function useSheetDueTotal(sheetId: string): string {
+   );
+ }
+ 
++/** Each person's due-total as their row shows it (two decimals, or n/a), by person id. */
++export function usePeopleDue(sheetId: string): Map<number, string> {
++  const people = usePeople(sheetId);
++  const claims = useClaims(sheetId);
++  const rates = useRates(sheetId);
++  const late = useLate(sheetId);
++  const floor = useFloor(sheetId);
++  const cap = useCap(sheetId);
++  return new Map(
++    (people.data ?? []).map((p) => [
++      p.id,
++      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap),
++    ]),
++  );
++}
++
+ /** The sheet's settled-total and open-total: everyone's added up (not trimmed). */
+ export function useSheetSplit(sheetId: string): { settled: string; open: string } {
+   const people = usePeople(sheetId);
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 19f0438e5..091c6479a 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -6,7 +6,8 @@ import { SheetPage } from '../../slots/defs/sheetPage';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { claimsKey, type Claim } from '../claims/claims';
+ import { tagsKey } from '../tags/tags';
+-import { GRADES, peopleKey, useEditingPerson, usePeople, useShowRetired, type Person } from './people';
++import { usePeopleDue } from '../header/totals';
++import { GRADES, peopleKey, SORT_KEYS, sortPeople, useEditingPerson, usePeople, useShowRetired, useSortBy, type Person } from './people';
+ 
+ /** The form's values. `gradeFrom` (yyyy-MM-dd) is the date the grade is given from; blank, the sheet's today. A
+  *  person's first grade applies from the beginning of time. `terms` are the person's own terms in days; blank, none. `contact` is the person's contact, kept by the server
+@@ -91,6 +92,8 @@ function QuickAdd({ sheetId, user }: { sheetId: string; user: string }) {
+ function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const people = usePeople(sheetId);
+   const [showRetired, setShowRetired] = useShowRetired();
++  const [sortBy, setSortBy] = useSortBy();
++  const due = usePeopleDue(sheetId);
+   const queryClient = useQueryClient();
+   const [editingId, setEditingId] = useEditingPerson();
+   const editing = people.data?.find((p) => String(p.id) === editingId);
+@@ -234,6 +237,16 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
+           onChange={(e) => setShowRetired(e.target.checked || undefined)}
+         />{' '}
+         Show retired
++      </label>{' '}
++      <label>
++        Sort by{' '}
++        <select data-testid="sort-by" value={sortBy || 'added'} onChange={(e) => setSortBy(e.target.value === 'added' ? undefined : e.target.value)}>
++          {SORT_KEYS.map((k) => (
++            <option key={k} value={k}>
++              {k}
++            </option>
++          ))}
++        </select>
+       </label>
+       {people.isError && <p data-testid="people-load-error">Could not load people.</p>}
+       <table data-testid="people-table">
+@@ -249,7 +262,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
+           </tr>
+         </thead>
+         <tbody>
+-          {people.data?.filter((p) => showRetired || p.retiredFrom === null).map((p) => (
++          {sortPeople(people.data?.filter((p) => showRetired || p.retiredFrom === null) ?? [], sortBy, due).map((p) => (
+             <tr key={p.id} data-testid={`person-row-${p.id}`}>
+               <td data-testid="person-name">{p.name}</td>
+               <td data-testid="person-grade">{p.grade}</td>
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 2faf16d3c..283316831 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -85,3 +85,27 @@ export const useEditingPerson = () => useSearchParam('person', asString);
+ 
+ /** Whether retired people are listed. Off when the screen is first opened; loading a sheet leaves it as it is. */
+ export const useShowRetired = () => useSearchParam('retired', asFlag);
++
++/** What the people list is sorted by on this screen: list order (added), name (as names are compared: case ignored),
++ *  grade, or due-total (n/a last). Equal keys keep list order. Only the screen's order changes: every action in list
++ *  order, and the rollups, still go by list order. */
++export const SORT_KEYS = ['added', 'name', 'grade', 'due-total'] as const;
++export const useSortBy = () => useSearchParam('sort', asString);
++
++/** The people in the order the sort key gives; `due` is each person's due-total (two decimals, or n/a) by id. */
++export function sortPeople(people: Person[], key: string, due: Map<number, string>): Person[] {
++  const nameKey = (p: Person) => p.name.toLowerCase();
++  const dueKey = (p: Person) => {
++    const d = due.get(p.id);
++    return d === undefined || d === 'n/a' ? Infinity : Number(d);
++  };
++  const cmp: ((a: Person, b: Person) => number) | undefined =
++    key === 'name'
++      ? (a, b) => (nameKey(a) < nameKey(b) ? -1 : nameKey(a) > nameKey(b) ? 1 : 0)
++      : key === 'grade'
++        ? (a, b) => (a.grade < b.grade ? -1 : a.grade > b.grade ? 1 : 0)
++        : key === 'due-total'
++          ? (a, b) => (dueKey(a) === dueKey(b) ? 0 : dueKey(a) < dueKey(b) ? -1 : 1)
++          : undefined;
++  return cmp === undefined ? people : [...people].sort(cmp); // Array.sort is stable: equal keys keep list order
++}
