@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -26,9 +27,11 @@ import org.springframework.web.bind.annotation.PathVariable;
  * Settles each selected claim, in list order (people in the order they were added, a person's claims newest first),
  * through the very steps of the single settle: ApplyClaimStatus (its rules, a clerk's settle above the clerk limit
  * making it PENDING), SaveClaimStatus (its status log line) and RecordClaimStatusChanged (CLAIM_SETTLED or
- * CLAIM_PENDING and the figures it moved). A claim made PENDING counts as settled. Each that the single settle would
- * refuse, or is not on the sheet, is left as it is and counted refused. When at least one is settled the settle is the
- * sheet's next batch, marked on each claim it settled.
+ * CLAIM_PENDING and the figures it moved). A claim made PENDING counts as settled. All or nothing: when any selected
+ * claim is one the single settle would refuse, or is not on the sheet, none is settled, every one counts refused and
+ * nothing is written. When at least one is settled the settle is the sheet's next batch, marked on each claim it
+ * settled, and after the claims' own lines BATCH_SETTLED batch=<number> count=<claims in it> total=<the frozen figures
+ * of those SETTLED, added up> is written.
  */
 public class SettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId, @Val BulkSettleRequest request, ClaimRepository claims,
@@ -50,7 +53,13 @@ public class SettleClaims {
         ApplyClaimStatus apply = new ApplyClaimStatus();
         SaveClaimStatus save = new SaveClaimStatus();
         RecordClaimStatusChanged record = new RecordClaimStatusChanged();
+        if (chosen.size() < selected.size() || !chosen.stream().allMatch((c) -> settles(c, change, apply, people,
+                rates, periods, settings, roles, sheets, claims, log, voidReasons))) {
+            result.set(new BulkSettleResult(0, selected.size()));
+            return;
+        }
         List<Long> settled = new ArrayList<>();
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
         for (Claim listedClaim : chosen) {
             Claim claim = claims.find(sheet, listedClaim.id());
             if (claim == null) {
@@ -70,11 +79,29 @@ public class SettleClaims {
                 continue;
             }
             settled.add(stored[0].id());
+            if (stored[0].status() == ClaimStatus.SETTLED && stored[0].due() != null) {
+                total = total.add(stored[0].due());
+            }
             record.record(stored[0], change, number[0], previous[0], people, watches, before, rollup, audit);
         }
         if (!settled.isEmpty()) {
-            claims.batch(sheet, settled, sheets.today(sheet));
+            int batch = claims.batch(sheet, settled, sheets.today(sheet));
+            audit.record("BATCH_SETTLED sheet=" + sheet + " by=" + request.by() + " batch=" + batch + " count="
+                    + settled.size() + " total=" + total.toPlainString());
         }
         result.set(new BulkSettleResult(settled.size(), selected.size() - settled.size()));
+    }
+
+    /** Whether the single settle would take the claim (to SETTLED or PENDING); checks only, writes nothing. */
+    private static boolean settles(Claim claim, ClaimStatusChange change, ApplyClaimStatus apply, PersonRepository people,
+            RateRepository rates, PeriodRepository periods, SettingRepository settings, RoleRepository roles,
+            SheetRepository sheets, ClaimRepository claims, ClaimLog log, VoidReasonRepository voidReasons) {
+        try {
+            apply.apply(claim, change, people, rates, periods, settings, roles, sheets, claims, log, voidReasons,
+                    (c) -> { }, (n) -> { }, (p) -> { });
+            return true;
+        } catch (InvalidClaimStatusException refused) {
+            return false;
+        }
     }
 }
