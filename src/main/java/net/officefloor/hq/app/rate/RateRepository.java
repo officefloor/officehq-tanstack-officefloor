@@ -138,7 +138,8 @@ public class RateRepository {
     private List<Rate> ownAsOf(String sheetId, LocalDate asOf) {
         return withPriors(jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date, version, claims_after FROM rate_history h WHERE h.sheet_id = ? "
                 + "AND h.id = (SELECT MAX(h2.id) FROM rate_history h2 WHERE h2.sheet_id = h.sheet_id AND h2.grade = h.grade "
-                + "AND h2.from_key = h.from_key AND (h2.on_date IS NULL OR h2.on_date <= ?)) ORDER BY grade, from_key",
+                + "AND h2.from_key = h.from_key AND (h2.on_date IS NULL OR h2.on_date <= ?)) AND h.withdrawn = FALSE "
+                + "ORDER BY grade, from_key",
                 ROW, sheetId, asOf));
     }
 
@@ -192,5 +193,33 @@ public class RateRepository {
                 sheetId, grade, pct, from, to, sheetId, version, claimsAfter);
         return new Rate(sheetId, grade, pct.toPlainString(), from == null ? null : from.toString(),
                 to == null ? null : to.toString(), 0, version, claimsAfter, null);
+    }
+
+    /** Whether the sheet has a rate of its own for the grade from the from-date (null: the beginning of time). */
+    public boolean has(String sheetId, String grade, LocalDate from) {
+        return !jdbc.queryForList("SELECT version FROM rate WHERE sheet_id = ? AND grade = ? AND from_key = "
+                + "COALESCE(CAST(? AS DATE), DATE '0001-01-01')", Integer.class, sheetId, grade, from).isEmpty();
+    }
+
+    /** Withdraw the newest version of the grade's rate from the from-date (null: the beginning of time): the
+     *  version before it, when there is one, is in force again; with none the rate is gone. */
+    public void withdraw(String sheetId, String grade, LocalDate from) {
+        String match = "sheet_id = ? AND grade = ? AND from_key = COALESCE(CAST(? AS DATE), DATE '0001-01-01')";
+        jdbc.update("DELETE FROM rate WHERE " + match, sheetId, grade, from);
+        Long older = jdbc.queryForList("SELECT id FROM rate_version WHERE " + match + " ORDER BY version DESC, id DESC",
+                Long.class, sheetId, grade, from).stream().findFirst().orElse(null);
+        if (older == null) {
+            jdbc.update("INSERT INTO rate_history (sheet_id, grade, pct, from_date, to_date, on_date, version, withdrawn) "
+                    + "VALUES (?, ?, 0, ?, NULL, (SELECT today FROM sheet WHERE id = ?), 0, TRUE)",
+                    sheetId, grade, from, sheetId);
+            return;
+        }
+        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, set_by, set_at, version, claims_after) "
+                + "SELECT sheet_id, grade, pct, from_date, to_date, set_by, set_at, version, claims_after "
+                + "FROM rate_version WHERE id = ?", older);
+        jdbc.update("INSERT INTO rate_history (sheet_id, grade, pct, from_date, to_date, on_date, version, claims_after) "
+                + "SELECT sheet_id, grade, pct, from_date, to_date, (SELECT today FROM sheet WHERE id = ?), version, "
+                + "claims_after FROM rate_version WHERE id = ?", sheetId, older);
+        jdbc.update("DELETE FROM rate_version WHERE id = ?", older);
     }
 }

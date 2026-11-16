@@ -41,6 +41,13 @@ export function setRate(sheetId: string, by: string, input: RateInput): Promise<
   return postJson<Rate>(`${base(sheetId)}?by=${encodeURIComponent(by)}`, input);
 }
 
+/** Withdraw the newest version of the sheet's own rate for a grade from a from-date (null: from the beginning
+ *  of time): the version before it applies again; with none the rate is gone. Refused (rejects) for anyone but
+ *  a steward. */
+export function withdrawRate(sheetId: string, by: string, grade: string, from: string | null): Promise<unknown> {
+  return postJson<unknown>(`${base(sheetId)}/withdraw?by=${encodeURIComponent(by)}`, { grade, from: from ?? '' });
+}
+
 /** How many rates an import set. */
 export type ImportRatesResult = { set: number };
 

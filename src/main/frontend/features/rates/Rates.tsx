@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { useSheetToday } from '../sheet/api';
 import { ImportRates } from './ImportRates';
-import { listRates, previewRate, rateByGrade, rateOn, ratesKey, setRate, type RateInput } from './api';
+import { listRates, previewRate, rateByGrade, rateOn, ratesKey, setRate, withdrawRate, type Rate, type RateInput } from './api';
 import { Fig } from '../session/Fig';
 
 const MONTHS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
@@ -32,6 +32,11 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
     },
   });
 
+  const withdraw = useMutation({
+    mutationFn: (r: Rate) => withdrawRate(sheetId, user, r.grade, r.from),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) }),
+  });
+
   const submitOnce = useSubmitOnce();
 
   const [candidate, setCandidate] = useState({ grade: 'A', pct: '' });
@@ -44,6 +49,7 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
   const change = (patch: Partial<RateInput>) => {
     setForm((f) => ({ ...f, ...patch }));
     save.reset();
+    withdraw.reset();
   };
 
   return (
@@ -54,6 +60,7 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
           e.preventDefault();
           submitOnce(() => {
             save.reset();
+            withdraw.reset();
             return save.mutateAsync(form);
           });
         }}
@@ -85,6 +92,9 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
+        {withdraw.isError && (
+          <span data-testid="rate-form-error">Only a steward can withdraw a rate.</span>
+        )}
         {save.isError && (
           <span data-testid="rate-form-error">A rate needs a percent of 0.00 or more with up to two decimals, and a from-date and to-date that are dates or blank, the to-date not before the from-date.</span>
         )}
@@ -175,6 +185,16 @@ export function Rates({ sheetId, user }: { sheetId: string; user: string }) {
               </td>
               <td>
                 v<span data-testid="rate-version">{r.version}</span>
+              </td>
+              <td>
+                <button type="button" data-testid="rate-withdraw" disabled={withdraw.isPending}
+                  onClick={() => {
+                    save.reset();
+                    withdraw.reset();
+                    withdraw.mutate(r);
+                  }}>
+                  Withdraw
+                </button>
               </td>
             </tr>
           ))}
