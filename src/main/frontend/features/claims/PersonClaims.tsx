@@ -6,7 +6,7 @@ import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import { isPendingLate, isReviewLate, useNoteThreshold, usePendingSla, useProofKinds, useProofThreshold, useReviewSla, type DatedOn } from '../settings/api';
 import { claimFromTemplate, listTemplates, templatesKey } from '../templates/api';
-import { addClaim, addClaimLine, claimTimeline, addProof, PROOF_KINDS, proofsOf, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, remindClaim, waiveClaim, assignReview, holdClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, shareClaim, showShares, showTags, splitClaim, settlePartClaim, unlockClaim, updateClaim, type Claim, type ProofKind, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
+import { addClaim, addClaimLine, claimTimeline, addProof, PROOF_KINDS, proofsOf, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, setClaimDueBy, remindClaim, waiveClaim, assignReview, holdClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, shareClaim, showShares, showTags, splitClaim, settlePartClaim, unlockClaim, updateClaim, type Claim, type ProofKind, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
 import { Fig } from '../session/Fig';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
@@ -170,6 +170,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       assigning.reset();
       holding.reset();
       redating.reset();
+      dueSetting.reset();
       proof.reset();
       commenting.reset();
       lining.reset();
@@ -198,6 +199,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       assigning.reset();
       holding.reset();
       redating.reset();
+      dueSetting.reset();
       proof.reset();
       commenting.reset();
       lining.reset();
@@ -235,6 +237,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       assigning.reset();
       holding.reset();
       redating.reset();
+      dueSetting.reset();
       proof.reset();
       commenting.reset();
       lining.reset();
@@ -263,6 +266,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       assigning.reset();
       holding.reset();
       redating.reset();
+      dueSetting.reset();
       proof.reset();
       commenting.reset();
       lining.reset();
@@ -286,6 +290,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       assigning.reset();
       holding.reset();
       redating.reset();
+      dueSetting.reset();
       proof.reset();
       commenting.reset();
       lining.reset();
@@ -326,6 +331,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       assigning.reset();
       holding.reset();
       redating.reset();
+      dueSetting.reset();
       proof.reset();
       commenting.reset();
       lining.reset();
@@ -335,6 +341,39 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       setEditRefused(null);
       locking.reset();
       return redating.mutateAsync({ id, date });
+    });
+  };
+
+  // The due-by typed for each claim to set it to.
+  const [dueBys, setDueBys] = useState<Record<number, string>>({});
+
+  const dueSetting = useMutation({
+    mutationFn: (v: { id: number; date: string }) => setClaimDueBy(sheetId, user, v.id, v.date),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
+
+  const setDueBy = (id: number) => {
+    const date = (dueBys[id] ?? '').trim();
+    actOnce(() => {
+      move.reset();
+      reassign.reset();
+      sharing.reset();
+      deferral.reset();
+      reminder.reset();
+      waiver.reset();
+      assigning.reset();
+      holding.reset();
+      redating.reset();
+      dueSetting.reset();
+      proof.reset();
+      commenting.reset();
+      lining.reset();
+      division.reset();
+      partSettling.reset();
+      inline.reset();
+      setEditRefused(null);
+      locking.reset();
+      return dueSetting.mutateAsync({ id, date });
     });
   };
 
@@ -372,6 +411,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       assigning.reset();
       holding.reset();
       redating.reset();
+      dueSetting.reset();
       proof.reset();
       commenting.reset();
       lining.reset();
@@ -396,6 +436,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       assigning.reset();
       holding.reset();
       redating.reset();
+      dueSetting.reset();
       proof.reset();
       commenting.reset();
       lining.reset();
@@ -431,6 +472,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       assigning.reset();
       holding.reset();
       redating.reset();
+      dueSetting.reset();
       proof.reset();
       commenting.reset();
       lining.reset();
@@ -465,6 +507,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       assigning.reset();
       holding.reset();
       redating.reset();
+      dueSetting.reset();
       proof.reset();
       commenting.reset();
       lining.reset();
@@ -500,6 +543,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       assigning.reset();
       holding.reset();
       redating.reset();
+      dueSetting.reset();
       proof.reset();
       commenting.reset();
       lining.reset();
@@ -536,6 +580,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       assigning.reset();
       holding.reset();
       redating.reset();
+      dueSetting.reset();
       proof.reset();
       commenting.reset();
       lining.reset();
@@ -599,6 +644,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       assigning.reset();
       holding.reset();
       redating.reset();
+      dueSetting.reset();
       proof.reset();
       commenting.reset();
       lining.reset();
@@ -623,6 +669,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       assigning.reset();
       holding.reset();
       redating.reset();
+      dueSetting.reset();
       proof.reset();
       commenting.reset();
       lining.reset();
@@ -646,6 +693,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       assigning.reset();
       holding.reset();
       redating.reset();
+      dueSetting.reset();
       proof.reset();
       commenting.reset();
       lining.reset();
@@ -687,6 +735,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       assigning.reset();
       holding.reset();
       redating.reset();
+      dueSetting.reset();
       proof.reset();
       commenting.reset();
       lining.reset();
@@ -708,6 +757,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     assigning.reset();
     holding.reset();
     redating.reset();
+    dueSetting.reset();
     proof.reset();
     commenting.reset();
     lining.reset();
@@ -996,6 +1046,15 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                   onClick={() => redate(c.id)}>
                   Re-date
                 </button>{' '}
+                <input type="date" data-testid="claim-due-by-new" value={dueBys[c.id] ?? ''}
+                  onChange={(e) => {
+                    setDueBys((d) => ({ ...d, [c.id]: e.target.value }));
+                    if (dueSetting.variables?.id === c.id) dueSetting.reset();
+                  }} />{' '}
+                <button type="button" data-testid="claim-set-due-by" disabled={dueSetting.isPending}
+                  onClick={() => setDueBy(c.id)}>
+                  Set due-by
+                </button>{' '}
                 <select data-testid="claim-reassign-to" value={targets[c.id] ?? String(others[0]?.id ?? '')}
                   onChange={(e) => {
                     setTargets((t) => ({ ...t, [c.id]: e.target.value }));
@@ -1129,6 +1188,15 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     : c.status === 'OPEN' || c.status === 'PENDING'
                     ? 'Only a steward can re-date a claim.'
                     : `A ${c.status} claim cannot be re-dated.`}</span>
+                )}
+                {dueSetting.isError && dueSetting.variables?.id === c.id && (
+                  <span data-testid="claim-error">{dueSetting.error instanceof HttpError && dueSetting.error.status === 423
+                    ? 'A claim due by a day inside a closed period cannot have its due-by set.'
+                    : dueSetting.error instanceof HttpError && dueSetting.error.status === 400
+                    ? 'A due-by needs to be a date.'
+                    : c.status === 'DRAFT' || c.status === 'OPEN' || c.status === 'PENDING'
+                    ? 'Only a steward can set a claim\'s due-by.'
+                    : `A ${c.status} claim's due-by cannot be set.`}</span>
                 )}
                 {division.isError && division.variables?.id === c.id && (
                   <span data-testid="claim-error">{division.error instanceof HttpError && division.error.status === 423

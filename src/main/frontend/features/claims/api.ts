@@ -181,6 +181,11 @@ export function remindClaim(sheetId: string, by: string, id: number): Promise<Cl
 /** A steward re-dates an OPEN or PENDING claim to `date`: its due-by and any bound figure stay, and
  *  so do its period (the one its due-by falls in) and its number. Refused (rejects) for anyone else, any other status, a date after its person's
  *  retirement, or a claim due by a day in a closed period. */
+/** A steward sets a DRAFT, OPEN or PENDING claim's due-by directly (yyyy-MM-dd); it stays as set. */
+export function setClaimDueBy(sheetId: string, by: string, id: number, date: string): Promise<Claim> {
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/due-by?by=${encodeURIComponent(by)}&date=${encodeURIComponent(date)}`, {});
+}
+
 export function redateClaim(sheetId: string, by: string, id: number, date: string): Promise<Claim> {
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/redate?by=${encodeURIComponent(by)}&date=${encodeURIComponent(date)}`, {});
 }

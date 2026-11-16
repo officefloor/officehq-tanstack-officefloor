@@ -293,13 +293,20 @@ public class ClaimRepository {
         snapshot(claim.getSheetId(), claim.getId());
     }
 
+    /** Save a claim's due-by set directly: it stays as set (see {@link #refixDueBys}). */
+    public void setDueBy(Claim claim) {
+        jdbc.update("UPDATE claim SET due_by = ?, due_by_set = TRUE WHERE sheet_id = ? AND id = ?",
+                LocalDate.parse(claim.getDueBy()), claim.getSheetId(), claim.getId());
+        snapshot(claim.getSheetId(), claim.getId());
+    }
+
     /** Work out again, after a holiday was added, the due-by of every claim on the sheet that is not
      *  SETTLED or VOID and is due by the holiday or later: from its date, with the terms it was fixed
-     *  with, past the sheet's holidays now. A claim whose due-by moves is kept in its history. */
+     *  with, past the sheet's holidays now. A claim whose due-by a steward set directly keeps it. A claim whose due-by moves is kept in its history. */
     public void refixDueBys(String sheetId, LocalDate holiday) {
         Set<LocalDate> holidays = holidays(sheetId);
         jdbc.query("SELECT id, claim_date, terms, due_by FROM claim WHERE sheet_id = ? "
-                + "AND status NOT IN ('SETTLED', 'VOID', 'DELETED') AND due_by >= ? ORDER BY id", (rs) -> {
+                + "AND status NOT IN ('SETTLED', 'VOID', 'DELETED') AND NOT due_by_set AND due_by >= ? ORDER BY id", (rs) -> {
                     long id = rs.getLong("id");
                     LocalDate dueBy = BusinessDays.dueBy(rs.getObject("claim_date", LocalDate.class),
                             rs.getInt("terms"), holidays);
