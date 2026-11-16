@@ -1,0 +1,457 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index c67d0fb00..2d587c0aa 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -180,7 +180,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
+           </button>
+           {save.isError && (
+             <span data-testid="claim-form-error">
+-              The amount must be 0.00 or more, with up to two decimals, the date not inside a closed period, and only a draft claim can be edited.
++              The amount must be 0.00 or more, with up to two decimals, the date not inside a closed period nor after the person's retirement date, and only a draft claim can be edited.
+             </span>
+           )}
+         </form>
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 24bd81cc4..bb884e37a 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -5,7 +5,7 @@ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
+ import { SheetPage } from '../../slots/defs/sheetPage';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { claimsKey, type Claim } from '../claims/claims';
+-import { GRADES, peopleKey, useEditingPerson, usePeople, type Person } from './people';
++import { GRADES, peopleKey, useEditingPerson, usePeople, useShowRetired, type Person } from './people';
+ 
+ type Values = { name: string; grade: string };
+ const EMPTY: Values = { name: '', grade: 'A' };
+@@ -62,7 +62,7 @@ function QuickAdd({ sheetId, user }: { sheetId: string; user: string }) {
+           {' '}
+           {values.name.trim() === ''
+             ? 'A name is required.'
+-            : 'The amount must be 0.00 or more, with up to two decimals, and today not inside a closed period.'}
++            : "The amount must be 0.00 or more, with up to two decimals, today not inside a closed period, and not after the person's retirement date."}
+         </span>
+       )}
+     </form>
+@@ -74,6 +74,7 @@ function QuickAdd({ sheetId, user }: { sheetId: string; user: string }) {
+  *  (412) shows the error and puts the current values, and their version, in the form. */
+ function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const people = usePeople(sheetId);
++  const [showRetired, setShowRetired] = useShowRetired();
+   const queryClient = useQueryClient();
+   const [editingId, setEditingId] = useEditingPerson();
+   const editing = people.data?.find((p) => String(p.id) === editingId);
+@@ -169,6 +170,15 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
+         )}
+       </form>
+       <QuickAdd sheetId={sheetId} user={user} />
++      <label>
++        <input
++          type="checkbox"
++          data-testid="show-retired"
++          checked={showRetired}
++          onChange={(e) => setShowRetired(e.target.checked || undefined)}
++        />{' '}
++        Show retired
++      </label>
+       {people.isError && <p data-testid="people-load-error">Could not load people.</p>}
+       <table data-testid="people-table">
+         <thead>
+@@ -180,7 +190,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
+           </tr>
+         </thead>
+         <tbody>
+-          {people.data?.map((p) => (
++          {people.data?.filter((p) => showRetired || p.retiredFrom === null).map((p) => (
+             <tr key={p.id} data-testid={`person-row-${p.id}`}>
+               <td data-testid="person-name">{p.name}</td>
+               <td data-testid="person-grade">{p.grade}</td>
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index a33671d51..e6c1b85b0 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -1,12 +1,13 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { asString, useSearchParam } from '../../url/useSearchParam';
++import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
+ 
+ export const GRADES = ['A', 'B', 'C'] as const;
+ 
+ /** A person on the sheet. `name` is unique on the sheet (case ignored), kept without outer spaces; `grade` is A, B or C.
+- *  `version` goes up by one on each stored edit; an edit sends the version it was made from. */
+-export type Person = { id: number; sheetId: string; name: string; grade: string; version: number };
++ *  `version` goes up by one on each stored edit; an edit sends the version it was made from. `retiredFrom` (yyyy-MM-dd)
++ *  is the date the person is retired from, null when not retired: a person with one counts as retired at once. */
++export type Person = { id: number; sheetId: string; name: string; grade: string; version: number; retiredFrom: string | null };
+ 
+ export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'];
+ 
+@@ -20,3 +21,6 @@ export function usePeople(sheetId: string) {
+ 
+ /** The id of the person whose editor is open (in the person form), or '' when the form adds. */
+ export const useEditingPerson = () => useSearchParam('person', asString);
++
++/** Whether retired people are listed. Off when the screen is first opened; loading a sheet leaves it as it is. */
++export const useShowRetired = () => useSearchParam('retired', asFlag);
+diff --git a/src/main/frontend/features/retire/retire.slot.tsx b/src/main/frontend/features/retire/retire.slot.tsx
+new file mode 100644
+index 000000000..0efbbe57e
+--- /dev/null
++++ b/src/main/frontend/features/retire/retire.slot.tsx
+@@ -0,0 +1,70 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { peopleKey, type Person } from '../people/people';
++
++function RetireHead() {
++  return (
++    <>
++      <th>Retired</th>
++      <th>Retired from</th>
++      <th />
++    </>
++  );
++}
++
++/** Whether the person is retired and from when, and the date and button that retire them (a blank date: the sheet's
++ *  today). A person with a retirement date counts as retired at once, whatever the date; no claim of theirs may be
++ *  dated after it. A refused retirement shows the row's error. */
++function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
++  const queryClient = useQueryClient();
++  const [from, setFrom] = useState('');
++  const submit = useSubmitOnce();
++  const retire = useMutation({
++    mutationFn: (date: string) =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/retire`, { from: date, by: user }),
++    onSuccess: () => {
++      setFrom('');
++      return queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
++    },
++    onSettled: submit.end,
++  });
++
++  return (
++    <>
++      <td data-testid="person-retired">{person.retiredFrom !== null ? 'yes' : 'no'}</td>
++      <td data-testid="person-retired-from">{person.retiredFrom ?? ''}</td>
++      <td>
++        <input
++          data-testid="person-retire-date"
++          placeholder="yyyy-MM-dd"
++          value={from}
++          onChange={(e) => {
++            setFrom(e.target.value);
++            retire.reset();
++          }}
++        />{' '}
++        <button
++          type="button"
++          data-testid="person-retire"
++          disabled={retire.isPending}
++          onClick={() => {
++            if (!submit.begin()) return;
++            retire.reset();
++            retire.mutate(from.trim());
++          }}
++        >
++          Retire
++        </button>
++        {retire.isError && <span data-testid="person-error"> Could not retire this person.</span>}
++      </td>
++    </>
++  );
++}
++
++export const contributions = [
++  PeopleHead.fill({ order: 40, Component: RetireHead }),
++  PersonRow.fill({ order: 40, Component: PersonRetire }),
++];
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddClaim.java b/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
+index 7baf4d00b..4883e1cd1 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
+@@ -8,7 +8,7 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Adds the claim to the person; a claim given no date is dated the sheet's today. A claim dated inside a closed
+- *  period is refused. */
++ *  period, or after the person's retirement date, is refused. */
+ public class AddClaim {
+     public void add(@Val Person person, @Val ClaimValues values, SheetRepository sheets, ClaimRepository claims,
+             PeriodRepository periods, Out<Claim> claim) throws InvalidClaimException {
+@@ -16,6 +16,9 @@ public class AddClaim {
+         if (periods.closedOn(person.sheetId(), date)) {
+             throw new InvalidClaimException("The claim's date is inside a closed period");
+         }
++        if (!person.mayClaimOn(date)) {
++            throw new InvalidClaimException("The claim's date is after the person's retirement date");
++        }
+         claim.set(claims.add(person.sheetId(), person.id(), values.amount(), date, values.note()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index d0b555026..127166c96 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -2,15 +2,17 @@ package net.officefloor.hq.app.claim;
+ 
+ import java.time.LocalDate;
+ import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Applies the edited values; only a DRAFT claim can be edited (an open claim is voided and a new one added instead),
+- * and a claim dated inside a closed period, or moved into one, is refused. */
++ * and a claim dated inside a closed period, or moved into one, or moved after its person's retirement date, is refused. */
+ public class ApplyClaim {
+     public void apply(@Val Claim claim, @Val ClaimValues values, SheetRepository sheets, PeriodRepository periods,
+-            Out<Claim> changed) throws InvalidClaimException {
++            PersonRepository people, Out<Claim> changed) throws InvalidClaimException {
+         if (claim.status() != ClaimStatus.DRAFT) {
+             throw new InvalidClaimException("Only a DRAFT claim can be edited");
+         }
+@@ -18,6 +20,10 @@ public class ApplyClaim {
+         if (periods.closedOn(claim.sheetId(), claim.date()) || periods.closedOn(claim.sheetId(), date)) {
+             throw new InvalidClaimException("The claim's date is inside a closed period");
+         }
++        Person person = people.find(claim.sheetId(), claim.personId());
++        if (person != null && !date.equals(claim.date()) && !person.mayClaimOn(date)) {
++            throw new InvalidClaimException("The claim's date is after the person's retirement date");
++        }
+         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), values.amount(), date, values.note(), claim.status(),
+                 claim.number(), claim.due(), claim.openedBy(), claim.stated(), claim.statedDue()));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index f3a23fd21..f49297889 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -5,6 +5,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ public class ApplyPerson {
+     public void apply(@Val Person person, @Val PersonValues values, Out<Person> changed) {
+-        changed.set(new Person(person.id(), person.sheetId(), values.name(), values.grade(), person.version() + 1));
++        changed.set(new Person(person.id(), person.sheetId(), values.name(), values.grade(), person.version() + 1,
++                person.retiredFrom()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 4baf7e638..d4742e479 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -1,6 +1,16 @@
+ package net.officefloor.hq.app.person;
+ 
+ /** A person on a sheet: a name (unique on the sheet, case ignored; kept without surrounding spaces) and a grade, one of A, B or C.
+- *  The version is 0 when added and goes up by one on each stored edit. */
+-public record Person(long id, String sheetId, String name, String grade, long version) {
++ *  The version is 0 when added and goes up by one on each stored edit. {@code retiredFrom} (yyyy-MM-dd) is the date the
++ *  person is retired from, null when not retired; a person with one counts as retired at once, whatever the date. */
++public record Person(long id, String sheetId, String name, String grade, long version, String retiredFrom) {
++
++    public boolean retired() {
++        return retiredFrom != null;
++    }
++
++    /** Whether a claim of the person may be dated {@code date}: not after their retirement date. */
++    public boolean mayClaimOn(java.time.LocalDate date) {
++        return retiredFrom == null || !date.isAfter(java.time.LocalDate.parse(retiredFrom));
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 4a3151ce8..bef7753a5 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -1,8 +1,10 @@
+ package net.officefloor.hq.app.person;
+ 
++import java.sql.Date;
+ import java.sql.PreparedStatement;
+ import java.sql.ResultSet;
+ import java.sql.SQLException;
++import java.time.LocalDate;
+ import java.util.List;
+ import org.springframework.dao.DuplicateKeyException;
+ import org.springframework.jdbc.core.JdbcTemplate;
+@@ -20,19 +22,19 @@ public class PersonRepository {
+     }
+ 
+     public List<Person> list(String sheetId) {
+-        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? ORDER BY id",
++        return jdbc.query("SELECT id, sheet_id, name, grade, version, retired_from FROM person WHERE sheet_id = ? ORDER BY id",
+                 PersonRepository::map, sheetId);
+     }
+ 
+     public Person find(String sheetId, long id) {
+-        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? AND id = ?",
++        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade, version, retired_from FROM person WHERE sheet_id = ? AND id = ?",
+                 PersonRepository::map, sheetId, id);
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
+     /** The person on the sheet with this name, case ignored; null when there is none. */
+     public Person findByName(String sheetId, String name) {
+-        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? AND name_key = LOWER(?)",
++        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade, version, retired_from FROM person WHERE sheet_id = ? AND name_key = LOWER(?)",
+                 PersonRepository::map, sheetId, name);
+         return found.isEmpty() ? null : found.get(0);
+     }
+@@ -60,7 +62,7 @@ public class PersonRepository {
+         } catch (DuplicateKeyException e) {
+             throw new DuplicatePersonNameException(name);
+         }
+-        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0);
++        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0, null);
+     }
+ 
+     /** Stores the person as its new version, only while the stored one is still {@code fromVersion}: a save
+@@ -78,7 +80,14 @@ public class PersonRepository {
+         }
+     }
+ 
++    /** Retires the person from the date (replacing any earlier retirement date). */
++    public void retire(String sheetId, long id, LocalDate from) {
++        jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?", Date.valueOf(from), sheetId, id);
++    }
++
+     private static Person map(ResultSet rs, int n) throws SQLException {
+-        return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"));
++        Date retired = rs.getDate("retired_from");
++        return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
++                retired == null ? null : retired.toLocalDate().toString());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordPersonRetired.java b/src/main/java/net/officefloor/hq/app/person/RecordPersonRetired.java
+new file mode 100644
+index 000000000..96b28b6a5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RecordPersonRetired.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Writes PERSON_RETIRED to the audit file once the retirement is stored. Retiring moves no figure: a retired
++ *  person's claims keep counting in every total. */
++public class RecordPersonRetired {
++    public void record(@Val Person person, @Val Retirement retirement, Audit audit) {
++        audit.record("PERSON_RETIRED sheet=" + person.sheetId() + " by=" + retirement.by() + " name=" + person.name()
++                + " from=" + person.retiredFrom());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/RetirePerson.java b/src/main/java/net/officefloor/hq/app/person/RetirePerson.java
+new file mode 100644
+index 000000000..eb70d6551
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RetirePerson.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.person;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/** Retires the person from the date; a retirement given no date is from the sheet's today. */
++public class RetirePerson {
++    public void retire(@Val Person person, @Val Retirement retirement, SheetRepository sheets, PersonRepository people,
++            Out<Person> retired) {
++        LocalDate from = retirement.from() != null ? retirement.from() : sheets.today(person.sheetId());
++        people.retire(person.sheetId(), person.id(), from);
++        retired.set(new Person(person.id(), person.sheetId(), person.name(), person.grade(), person.version(), from.toString()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/RetireRequest.java b/src/main/java/net/officefloor/hq/app/person/RetireRequest.java
+new file mode 100644
+index 000000000..9e2aaa15a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RetireRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** Body of retiring a person: the date they are retired from (blank: the sheet's today), and who retires them. */
++public record RetireRequest(String from, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Retirement.java b/src/main/java/net/officefloor/hq/app/person/Retirement.java
+new file mode 100644
+index 000000000..6bff170d2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/Retirement.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.person;
++
++import java.time.LocalDate;
++
++/** A retirement once validated: the date (null when none was given, so the sheet's today) and who gives it. */
++public record Retirement(LocalDate from, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateRetire.java b/src/main/java/net/officefloor/hq/app/person/ValidateRetire.java
+new file mode 100644
+index 000000000..eb3eb1764
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateRetire.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app.person;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Reads the body: the date is blank or yyyy-MM-dd. */
++public class ValidateRetire {
++    public void validate(@RequestBody RetireRequest request, Out<Retirement> retirement) throws InvalidPersonException {
++        String from = request == null || request.from() == null ? "" : request.from().trim();
++        LocalDate parsed = null;
++        if (!from.isEmpty()) {
++            try {
++                parsed = LocalDate.parse(from);
++            } catch (DateTimeParseException e) {
++                throw new InvalidPersonException("The retirement date must be yyyy-MM-dd");
++            }
++        }
++        retirement.set(new Retirement(parsed, request == null || request.by() == null ? "" : request.by().trim()));
++    }
++}
+diff --git a/src/main/resources/db/migration/V15__person_retired.sql b/src/main/resources/db/migration/V15__person_retired.sql
+new file mode 100644
+index 000000000..64a6e921f
+--- /dev/null
++++ b/src/main/resources/db/migration/V15__person_retired.sql
+@@ -0,0 +1,3 @@
++-- A person can be retired from a date. A person with a retirement date counts as retired at once, whatever the date;
++-- no claim of theirs can be dated after it. NULL: not retired.
++ALTER TABLE person ADD COLUMN retired_from DATE;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+new file mode 100644
+index 000000000..230f324c3
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+@@ -0,0 +1,20 @@
++# POST /api/sheets/{sheetId}/people/{personId}/retire — retire a person from a date (blank: the sheet's today). A date
++# that is not yyyy-MM-dd is a 400 and a person not on the sheet a 404, neither writing anything. The person counts as
++# retired at once, whatever the date; no claim of theirs may then be dated after it. Responds with the person as stored.
++validate:
++  class: net.officefloor.hq.app.person.ValidateRetire
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: retire
++retire:
++  class: net.officefloor.hq.app.person.RetirePerson
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.RecordPersonRetired
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
