@@ -350,6 +350,13 @@ public class PersonRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** The sheet's today when the person last arrived on the sheet by a transfer; null when they never did. */
+    public LocalDate arrivedOn(String sheetId, long id) {
+        List<LocalDate> found = jdbc.query("SELECT arrived_on FROM person WHERE sheet_id = ? AND id = ?",
+                (rs, n) -> rs.getObject(1, LocalDate.class), sheetId, id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     /** The person as they stood at the end of the date: the grades last stored, the holds and aliases added, and the
      *  retirement date last given (or unretirement made) and the past retirements ended while the sheet's today was on or before it (a part never stored by then: none; grades never
      *  logged: those they have now). */

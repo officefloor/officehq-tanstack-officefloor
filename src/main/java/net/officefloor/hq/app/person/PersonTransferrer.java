@@ -25,7 +25,7 @@ public class PersonTransferrer {
 
     /**
      * Moves the person to the other sheet with their grades (and from-dates), terms, contact and aliases, added there on
-     * its today (the sheet they left kept as their origin) at the end of its list; and their claims with their status, dates, notes, tags, frozen figures, logs, comments and reminders,
+     * its today (the sheet they left kept as their origin, and that today as the day they arrived) at the end of its list; and their claims with their status, dates, notes, tags, frozen figures, logs, comments and reminders,
      * listed there as its newest claims in the order they were listed, each keeping the figure a statement bound it to,
      * without its reference, lock or settle batch; and their statements. Their holds, watchers, patron links (either way), pool memberships,
      * period totals and retirement log are dropped: they leave this sheet entirely. Returns the ids of the moved claims
@@ -65,8 +65,8 @@ public class PersonTransferrer {
                 "person_retirement")) {
             jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, from, id);
         }
-        jdbc.update("UPDATE person SET sheet_id = ?, added_on = ?, origin = ? WHERE sheet_id = ? AND id = ?", to,
-                Date.valueOf(sheets.today(to)), from, from, id);
+        jdbc.update("UPDATE person SET sheet_id = ?, added_on = ?, arrived_on = ?, origin = ? WHERE sheet_id = ? AND id = ?", to,
+                Date.valueOf(sheets.today(to)), Date.valueOf(sheets.today(to)), from, from, id);
         people.toEnd(to, id);
         return numbered;
     }
