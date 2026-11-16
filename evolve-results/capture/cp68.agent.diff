@@ -1,0 +1,56 @@
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index 74a79af00..39a939bc5 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -3,10 +3,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+-import { live, useClaims } from '../claims/claims';
++import { useClaims } from '../claims/claims';
++import { plusDays } from '../overdue/late';
+ import { usePeople, type Person } from '../people/people';
+-import { personDue, sum, useRates } from '../rates/rates';
+-import { useCap, useFloor, useLate } from '../settings/settings';
++import { useSheetToday } from '../session/session';
++import { sum } from '../rates/rates';
+ import { patronsKey, usePatrons, type Patron } from './patrons';
+ 
+ function PatronsHead() {
+@@ -19,17 +20,14 @@ function PatronsHead() {
+   );
+ }
+ 
+-/** A person's patrons (names, sorted), their backing (their patrons' due-totals added up, skipping n/a; 0.00 with no
+- *  patrons), and the picker that names another person on the sheet as a patron. A refused add shows the row's
++/** A person's patrons (names, sorted), their backing (the dues fixed when settled of their patrons' SETTLED claims dated
++ *  within the 90 days up to and including the sheet's today, added up; 0.00 with none), and the picker that names another person on the sheet as a patron. A refused add shows the row's
+  *  patron error. */
+ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+   const people = usePeople(sheetId);
+   const patrons = usePatrons(sheetId);
+   const claims = useClaims(sheetId);
+-  const rates = useRates(sheetId);
+-  const late = useLate(sheetId);
+-  const floor = useFloor(sheetId);
+-  const cap = useCap(sheetId);
++  const today = useSheetToday(sheetId);
+   const queryClient = useQueryClient();
+   const [chosen, setChosen] = useState('');
+ 
+@@ -49,10 +47,12 @@ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: strin
+     .map((p) => people.data?.find((q) => q.id === p.patronId))
+     .filter((p): p is Person => p !== undefined);
+   const names = mine.map((p) => p.name).sort((a, b) => a.localeCompare(b));
++  const since = today === '' ? '' : plusDays(today, -89);
++  const patronIds = new Set(mine.map((p) => p.id));
+   const backing = sum(
+-    mine.map((p) =>
+-      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor, cap),
+-    ),
++    (claims.data ?? [])
++      .filter((c) => patronIds.has(c.personId) && c.status === 'SETTLED' && c.date >= since && c.date <= today)
++      .map((c) => c.due ?? 'n/a'),
+   );
+   const others = (people.data ?? []).filter((p) => p.id !== person.id);
+ 
