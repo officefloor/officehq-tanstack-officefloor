@@ -1,0 +1,134 @@
+diff --git a/src/main/frontend/features/plans/plans.slot.tsx b/src/main/frontend/features/plans/plans.slot.tsx
+index e851c2e49..91897f023 100644
+--- a/src/main/frontend/features/plans/plans.slot.tsx
++++ b/src/main/frontend/features/plans/plans.slot.tsx
+@@ -15,8 +15,8 @@ function PlansHead() {
+ type PlanForm = { amount: string; start: string; every: string; day: string; end: string };
+ const EMPTY: PlanForm = { amount: '', start: '', every: '', day: '', end: '' };
+ 
+-/** A person's plans (amount, start, every N days or monthly on a day of the month, end, and how many claims each has
+- *  made so far), in the order added, and the form that adds one (fill every N days or the day of the month, 1 to 31,
++/** A person's plans (amount, start, every N days or monthly on a day of the month, end, how many claims each has
++ *  made so far, and its next five dates), in the order added, and the form that adds one (fill every N days or the day of the month, 1 to 31,
+  *  not both). The server refuses a bad amount, interval or day, or an end before the start: the row's
+  *  plan error shows, until the form is changed or submitted again. */
+ function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+@@ -47,7 +47,8 @@ function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string;
+         {mine.map((p) => (
+           <li key={p.id} data-testid={`plan-row-${p.id}`}>
+             {p.amount} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} from {p.start} to {p.end}; made{' '}
+-            <span data-testid="plan-generated">{p.generated}</span>
++            <span data-testid="plan-generated">{p.generated}</span>; next{' '}
++            <span data-testid="plan-next-dates">{p.nextDates}</span>
+           </li>
+         ))}
+       </ul>
+diff --git a/src/main/frontend/features/plans/plans.ts b/src/main/frontend/features/plans/plans.ts
+index 68f6e61c9..3a6cae131 100644
+--- a/src/main/frontend/features/plans/plans.ts
++++ b/src/main/frontend/features/plans/plans.ts
+@@ -3,7 +3,8 @@ import { getJson } from '../../api/http';
+ 
+ /** A person's plan: a claim of the amount every `every` days from `start` up to `end` — or, with a `day` (1 to 31)
+  *  instead, on that day of every month (the month's last day when it is shorter) — and how many claims it has made so
+- *  far. Exactly one of `every` and `day` is set. */
++ *  far, and its next dates: its first five dates after the sheet's today and on or before `end`, comma and space
++ *  separated. Exactly one of `every` and `day` is set. */
+ export type Plan = {
+   id: number;
+   personId: number;
+@@ -13,6 +14,7 @@ export type Plan = {
+   day: number | null;
+   end: string;
+   generated: number;
++  nextDates: string;
+ };
+ 
+ export const plansKey = (sheetId: string) => ['sheet', sheetId, 'plans'];
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanDates.java b/src/main/java/net/officefloor/hq/app/plan/PlanDates.java
+index fbe8c2262..8ad4aff5d 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/PlanDates.java
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanDates.java
+@@ -26,4 +26,18 @@ public final class PlanDates {
+         }
+         return dates;
+     }
++
++    /** The plan's first {@code count} dates after the day and on or before its end. */
++    public static List<LocalDate> after(Plan plan, LocalDate day, int count) {
++        List<LocalDate> next = new ArrayList<>();
++        for (LocalDate date : upTo(plan, plan.end())) {
++            if (next.size() == count) {
++                break;
++            }
++            if (date.isAfter(day)) {
++                next.add(date);
++            }
++        }
++        return next;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanView.java b/src/main/java/net/officefloor/hq/app/plan/PlanView.java
+new file mode 100644
+index 000000000..e3eb9fc97
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanView.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.plan;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.util.stream.Collectors;
++
++/** A plan as listed: the plan and its next dates — its first five dates after the sheet's today and on or before its
++ *  end (see PlanDates), comma and space separated. */
++public record PlanView(long id, long personId, BigDecimal amount, LocalDate start, Integer every, Integer day,
++        LocalDate end, int generated, String nextDates) {
++
++    public static PlanView of(Plan plan, LocalDate today) {
++        String next = PlanDates.after(plan, today, 5).stream().map(LocalDate::toString)
++                .collect(Collectors.joining(", "));
++        return new PlanView(plan.id(), plan.personId(), plan.amount(), plan.start(), plan.every(), plan.day(),
++                plan.end(), plan.generated(), next);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+index 87da85234..2ed124e85 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
++++ b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+@@ -3,16 +3,20 @@ package net.officefloor.hq.app.plan;
+ import java.time.LocalDate;
+ import java.util.List;
+ import net.officefloor.hq.app.sheet.AsOf;
++import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** Every plan on the sheet in the order added; read as of a date (see AsOf), as they stood then. */
++/** Every plan on the sheet in the order added, each with its next dates after the sheet's today (see PlanView); read
++ *  as of a date (see AsOf), as they stood then. */
+ public class RespondWithPlans {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, PlanRepository plans,
+-            ObjectResponse<List<Plan>> response) {
++            @RequestParam(value = "asOf", required = false) String asOf, PlanRepository plans, SheetRepository sheets,
++            ObjectResponse<List<PlanView>> response) {
++        String sheet = sheetId.trim();
+         LocalDate date = AsOf.parse(asOf);
+-        response.send(plans.list(sheetId.trim(), date));
++        LocalDate today = sheets.today(sheet);
++        response.send(plans.list(sheet, date).stream().map((p) -> PlanView.of(p, today)).toList());
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans.GET.yml
+index 766bd15aa..ae06c66e8 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans.GET.yml
+@@ -1,5 +1,5 @@
+ # GET /api/sheets/{sheetId}/plans — every plan on the sheet in the order added: its person, amount, start, every N
+-# days, end, and how many claims it has made so far.
++# days, end, how many claims it has made so far, and its next five dates after the sheet's today.
+ respond:
+   class: net.officefloor.hq.app.plan.RespondWithPlans
+   govern: [ readonly-transaction ]
