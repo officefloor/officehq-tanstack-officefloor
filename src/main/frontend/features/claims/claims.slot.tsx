@@ -5,6 +5,7 @@ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import type { Person } from '../people/people';
+import { periodOf, usePeriods } from '../periods/periods';
 import { claimDue, rateFor, useRates } from '../rates/rates';
 import { claimsKey, total, useClaims, type Claim } from './claims';
 
@@ -22,7 +23,7 @@ function ClaimsHead() {
 
 type Action = 'open' | 'settle' | 'void';
 
-/** One claim: its values, status and due, with the buttons that edit it or change its status. An action
+/** One claim: its values, status, due and the period its date falls in, with the buttons that edit it or change its status. An action
  *  the status does not allow, or settling a claim the user opened, is refused by the server and shows the claim's
  *  error. */
 function ClaimRow({
@@ -43,6 +44,7 @@ function ClaimRow({
   onCancel: () => void;
 }) {
   const queryClient = useQueryClient();
+  const periods = usePeriods(sheetId);
   const status = useMutation({
     mutationFn: (action: Action) =>
       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/status`, { action, by: user }),
@@ -62,6 +64,7 @@ function ClaimRow({
       <span data-testid="claim-status">{c.status}</span>{' '}
       <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</span>{' '}
       <button
         type="button"
         data-testid="claim-edit"
