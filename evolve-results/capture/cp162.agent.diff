@@ -1,0 +1,181 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 290e4620b..f1962e52e 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -1,6 +1,6 @@
+ import { useEffect, useRef, useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+-import { HttpError, postJson, putJson } from '../../api/http';
++import { getJson, HttpError, postJson, putJson } from '../../api/http';
+ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { SheetPage } from '../../slots/defs/sheetPage';
+@@ -48,7 +48,9 @@ type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | '
+  *  viewer shows the claim's error instead and takes no lock. The row's own amount entry and Save amount change a DRAFT's amount
+  *  exactly as the editor's save would (same rules, CLAIM_EDITED), keeping its date and note; a refusal shows the claim's error. Add line adds the label, quantity and unit amount typed
+  *  beside it to a DRAFT's lines, shown as `<label> <qty> x <unit>`; its amount becomes their total and another amount
+- *  typed in an edit is refused (the same rules as an edit, else the claim's error). */
++ *  typed in an edit is refused (the same rules as an edit, else the claim's error). Timeline lists the audit lines
++ *  about the claim, newest first, as the file holds them: those carrying its number, or for a claim with no number
++ *  those naming its person, amount and date together. */
+ function ClaimRow({
+   sheetId,
+   user,
+@@ -138,6 +140,10 @@ function ClaimRow({
+     mutationFn: () => postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/remind`, { by: user }),
+     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+   });
++  // the claim's timeline: its audit lines as the file holds them, newest first, read afresh each time Timeline is pressed
++  const timeline = useMutation({
++    mutationFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/timeline`),
++  });
+   const [commentText, setCommentText] = useState('');
+   const comment = useMutation({
+     mutationFn: (text: string) =>
+@@ -706,6 +712,25 @@ function ClaimRow({
+             : 'Only a draft claim whose due-by is not inside a closed period, that no one else is editing and that has no lines, can have its amount changed, to one with up to two decimals, 0.00 or more unless it corrects a settled claim.'}
+         </span>
+       )}
++      <button
++        type="button"
++        data-testid="claim-timeline"
++        disabled={timeline.isPending}
++        onClick={() => {
++          timeline.reset();
++          timeline.mutate();
++        }}
++      >
++        Timeline
++      </button>
++      {timeline.isError && <span data-testid="claim-timeline-error"> Could not read the claim's timeline.</span>}
++      <ol data-testid="claim-timeline-lines">
++        {(timeline.data ?? []).map((line, i) => (
++          <li key={i} data-testid="claim-timeline-line">
++            {line}
++          </li>
++        ))}
++      </ol>
+       <ol data-testid="claim-log">
+         {c.log.map((l, i) => (
+           <li key={i} data-testid="claim-log-line">
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index 0e4dfbdb0..dab62ddbf 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -2,10 +2,12 @@ package net.officefloor.hq.app;
+ 
+ import java.io.IOException;
+ import java.io.UncheckedIOException;
++import java.math.BigDecimal;
+ import java.nio.charset.StandardCharsets;
+ import java.nio.file.Files;
+ import java.nio.file.Path;
+ import java.nio.file.StandardOpenOption;
++import java.time.LocalDate;
+ import java.util.ArrayList;
+ import java.util.Collections;
+ import java.util.List;
+@@ -36,6 +38,9 @@ public class Audit {
+     /** A name= or person= field: its value runs to the next field (a space then key=) or the end of the line. */
+     private static final Pattern ABOUT = Pattern.compile(" (?:name|person)=(.*?)(?= [^\\s=]+=|$)");
+ 
++    /** Any field: its key, and its value running to the next field (a space then key=) or the end of the line. */
++    private static final Pattern FIELD = Pattern.compile(" ([^\\s=]+)=(.*?)(?= [^\\s=]+=|$)");
++
+     private final Path file;
+     private final ObjectProvider<DelegationRepository> delegations;
+ 
+@@ -119,6 +124,53 @@ public class Audit {
+         return false;
+     }
+ 
++    /** The claim's timeline: the sheet's lines about one claim exactly as the file holds them, newest first. For a claim
++     *  with a number, the lines carrying number=<it>; for one without, the lines carrying no number that name its person
++     *  (compared as names are), amount and date together. */
++    public synchronized List<String> claimLines(String sheetId, String number, String person, BigDecimal amount,
++            LocalDate date) {
++        String key = person.trim().toLowerCase(Locale.ROOT);
++        List<String> found = new ArrayList<>();
++        for (String line : lines(sheetId, "")) {
++            List<String> numbers = values(line, "number");
++            if (number != null) {
++                if (numbers.contains(number)) {
++                    found.add(line);
++                }
++                continue;
++            }
++            if (!numbers.isEmpty()) {
++                continue;
++            }
++            boolean named = values(line, "person").stream()
++                    .anyMatch((v) -> v.trim().toLowerCase(Locale.ROOT).equals(key));
++            boolean dated = values(line, "date").contains(date.toString());
++            boolean amounted = values(line, "amount").stream().anyMatch((v) -> {
++                try {
++                    return new BigDecimal(v).compareTo(amount) == 0;
++                } catch (NumberFormatException e) {
++                    return false;
++                }
++            });
++            if (named && dated && amounted) {
++                found.add(line);
++            }
++        }
++        return found;
++    }
++
++    /** The values of the line's fields named {@code key}; each runs to the next field or the end of the line. */
++    private static List<String> values(String line, String key) {
++        List<String> found = new ArrayList<>();
++        Matcher m = FIELD.matcher(line);
++        while (m.find()) {
++            if (m.group(1).equals(key)) {
++                found.add(m.group(2));
++            }
++        }
++        return found;
++    }
++
+     /** Remove the audit file. */
+     public synchronized void clear() {
+         try {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaimTimeline.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaimTimeline.java
+new file mode 100644
+index 000000000..450b0872d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaimTimeline.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/** The claim's timeline: the audit lines about it exactly as the file holds them, newest first (see Audit#claimLines),
++ *  read from the file: the viewer is not a second record. */
++public class RespondWithClaimTimeline {
++    public void respond(@Val Claim claim, PersonRepository people, Audit audit, ObjectResponse<List<String>> response) {
++        Person person = people.find(claim.sheetId(), claim.personId());
++        response.send(audit.claimLines(claim.sheetId(), claim.number(), person == null ? "" : person.name(),
++                claim.amount(), claim.date()));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml
+new file mode 100644
+index 000000000..fc876085f
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml
+@@ -0,0 +1,10 @@
++# GET /api/sheets/{sheetId}/claims/{claimId}/timeline — the audit lines about the claim as the file holds them, newest
++# first: those carrying number=<its number>, or for a claim with no number those (carrying no number) naming its
++# person, amount and date together. An unknown claim is a 404.
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaimTimeline
++  govern: [ readonly-transaction ]
