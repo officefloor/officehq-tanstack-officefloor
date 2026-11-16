@@ -14,12 +14,12 @@ import java.util.List;
  *  today (yyyy-MM-dd) then, and its due as shown at that moment (two decimals, or n/a); lockedBy is who has its editor
  *  open (null when no one does); lateEntry is whether it was added while its period was soft-closed; reminded (yyyy-MM-dd) is the last day a
  *  reminder was written for it, null when none; ref is its external reference, null when none; tags are its tags, sorted (empty when none); comments are its comments in the order written, each with who wrote it and
- *  the sheet's today (yyyy-MM-dd) then. */
+ *  the sheet's today (yyyy-MM-dd) then; batch is the number of the bulk settle batch that settled it, null when none did. */
 public record ClaimResponse(long id, String sheetId, long personId, String amount, String date, String note,
         String status, String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
         String roundsOn, String dueBy, boolean deferred, String deferredUntil, int proofs, String splitFrom, List<LogLine> log,
         String lockedBy, boolean lateEntry, String reminded, String ref, List<String> tags,
-        List<Comment> comments) {
+        List<Comment> comments, Integer batch) {
 
     /** One comment on a claim as sent to the screen. */
     public record Comment(String by, String date, String text) {
@@ -36,11 +36,11 @@ public record ClaimResponse(long id, String sheetId, long personId, String amoun
     public static ClaimResponse from(Claim claim, ClaimRepository claims, List<ClaimLogLine> log, LocalDate today) {
         return from(claim, claims, log, today, claims.lockedBy(claim.sheetId(), claim.id()),
                 claims.lateEntry(claim.sheetId(), claim.id()), claims.remindedOn(claim.sheetId(), claim.id()),
-                claims.comments(claim.sheetId(), claim.id()));
+                claims.comments(claim.sheetId(), claim.id()), claims.batchOf(claim.sheetId(), claim.id()));
     }
 
     public static ClaimResponse from(Claim claim, ClaimRepository claims, List<ClaimLogLine> log, LocalDate today, String lockedBy,
-            boolean lateEntry, LocalDate reminded, List<ClaimComment> comments) {
+            boolean lateEntry, LocalDate reminded, List<ClaimComment> comments, Integer batch) {
         boolean deferred = ClaimDue.deferred(claim, today);
         return new ClaimResponse(claim.id(), claim.sheetId(), claim.personId(), claim.amount().toPlainString(),
                 claim.date().toString(), claim.note(), claim.status().name(), claim.number(),
@@ -51,6 +51,6 @@ public record ClaimResponse(long id, String sheetId, long personId, String amoun
                 log.stream().map((l) -> new LogLine(l.status().name(), l.by(), l.date().toString(), l.due())).toList(),
                 lockedBy, lateEntry, reminded == null ? null : reminded.toString(), claim.ref(),
                 claim.tags() == null ? List.of() : List.of(claim.tags().split(",")),
-                comments.stream().map((m) -> new Comment(m.by(), m.date().toString(), m.text())).toList());
+                comments.stream().map((m) -> new Comment(m.by(), m.date().toString(), m.text())).toList(), batch);
     }
 }

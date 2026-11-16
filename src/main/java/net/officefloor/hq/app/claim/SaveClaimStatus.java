@@ -10,7 +10,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Stores the new status. Opening gives the claim its number (see ClaimNumbering). A change another user made first (the
  * stored status is no longer the one this change started from) is refused, and the transaction gives back the number.
- * A void given a reason keeps it (see VoidReasonRepository). A stored change adds its line to the claim's status log (see ClaimLog).
+ * A settle forgets any settle batch the claim had (a bulk settle then marks its own; see SettleClaims). A void given a reason keeps it (see VoidReasonRepository). A stored change adds its line to the claim's status log (see ClaimLog).
  */
 public class SaveClaimStatus {
     public void save(@Val Claim claim, @Val ClaimStatusChange change, ClaimRepository claims, PeriodRepository periods,
@@ -39,6 +39,9 @@ public class SaveClaimStatus {
         }
         if (change.action() == ClaimAction.VOID && !change.reason().isEmpty()) {
             voidReasons.voided(toSave.sheetId(), toSave.id(), change.reason());
+        }
+        if (change.action() == ClaimAction.SETTLE) {
+            claims.unbatch(toSave);
         }
         log.write(toSave, change.by());
         saved.set(toSave);

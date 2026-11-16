@@ -53,6 +53,8 @@ export type Claim = {
   tags: string[];
   /** Its comments, in the order written. */
   comments: ClaimComment[];
+  /** The number of the bulk settle batch that settled it; null when none did (settled one at a time, or not settled). */
+  batch: number | null;
 };
 
 /** A comment on a claim: who wrote it, the sheet's today (yyyy-MM-dd) when it was written, and its text. */

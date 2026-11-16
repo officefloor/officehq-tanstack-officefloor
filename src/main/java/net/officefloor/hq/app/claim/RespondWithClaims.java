@@ -30,6 +30,7 @@ public class RespondWithClaims {
         Set<Long> late = claims.lateEntries(sheet);
         Map<Long, LocalDate> reminded = claims.reminders(sheet, date);
         Map<Long, List<ClaimComment>> comments = claims.comments(sheet, date);
+        Map<Long, Integer> batches = claims.batches(sheet, date);
         Map<Long, Claim> edited = date == null ? Map.of() : claims.editedAfter(sheet, date);
         List<ClaimResponse> out = new ArrayList<>();
         for (Claim c : claims.list(sheet)) {
@@ -43,7 +44,8 @@ public class RespondWithClaims {
                 shown = asItStood(c, edited.get(c.id()), lines, date, statements);
             }
             out.add(ClaimResponse.from(shown, claims, lines, today, date == null ? locks.get(c.id()) : null,
-                    late.contains(c.id()), reminded.get(c.id()), comments.getOrDefault(c.id(), List.of())));
+                    late.contains(c.id()), reminded.get(c.id()), comments.getOrDefault(c.id(), List.of()),
+                    batches.get(c.id())));
         }
         response.send(out);
     }

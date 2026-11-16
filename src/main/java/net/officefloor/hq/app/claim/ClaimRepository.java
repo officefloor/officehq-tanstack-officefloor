@@ -280,6 +280,49 @@ public class ClaimRepository {
         return out;
     }
 
+    /** Makes the sheet's next settle batch (1 for the first, then one more each time) on {@code today}, marking each of
+     *  the claims as settled by it; returns its number. */
+    public int batch(String sheetId, List<Long> claimIds, LocalDate today) {
+        int batch = lastBatch(sheetId, null) + 1;
+        jdbc.update("INSERT INTO settle_batch (sheet_id, batch, made_on) VALUES (?, ?, ?)", sheetId, batch, today);
+        for (long id : claimIds) {
+            jdbc.update("DELETE FROM claim_batch WHERE sheet_id = ? AND claim_id = ?", sheetId, id);
+            jdbc.update("INSERT INTO claim_batch (sheet_id, claim_id, batch) VALUES (?, ?, ?)", sheetId, id, batch);
+        }
+        return batch;
+    }
+
+    /** Forgets the batch that settled the claim (it is being settled one at a time). */
+    public void unbatch(Claim claim) {
+        jdbc.update("DELETE FROM claim_batch WHERE sheet_id = ? AND claim_id = ?", claim.sheetId(), claim.id());
+    }
+
+    /** The batch that settled the claim; null when none did. */
+    public Integer batchOf(String sheetId, long id) {
+        List<Integer> found = jdbc.queryForList("SELECT batch FROM claim_batch WHERE sheet_id = ? AND claim_id = ?",
+                Integer.class, sheetId, id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The batch that settled each claim of the sheet so settled, made on or before {@code asOf} (null: any day), by
+     *  claim id. */
+    public Map<Long, Integer> batches(String sheetId, LocalDate asOf) {
+        Map<Long, Integer> out = new HashMap<>();
+        jdbc.query("SELECT cb.claim_id, cb.batch FROM claim_batch cb JOIN settle_batch sb ON sb.sheet_id = cb.sheet_id "
+                + "AND sb.batch = cb.batch WHERE cb.sheet_id = ? AND (CAST(? AS DATE) IS NULL OR sb.made_on <= ?)",
+                (rs) -> { out.put(rs.getLong("claim_id"), rs.getInt("batch")); }, sheetId,
+                asOf == null ? null : Date.valueOf(asOf), asOf == null ? null : Date.valueOf(asOf));
+        return out;
+    }
+
+    /** The number of the sheet's last settle batch made on or before {@code asOf} (null: any day); 0 when none. */
+    public int lastBatch(String sheetId, LocalDate asOf) {
+        Integer last = jdbc.queryForObject("SELECT MAX(batch) FROM settle_batch WHERE sheet_id = ? "
+                + "AND (CAST(? AS DATE) IS NULL OR made_on <= ?)", Integer.class, sheetId,
+                asOf == null ? null : Date.valueOf(asOf), asOf == null ? null : Date.valueOf(asOf));
+        return last == null ? 0 : last;
+    }
+
     /** For each claim of the sheet edited after {@code date} (while the sheet's today was later), the values it had
      *  before its first such edit, by claim id: the claim as it stood at the end of the date. */
     public Map<Long, Claim> editedAfter(String sheetId, LocalDate date) {

@@ -7,6 +7,7 @@ import { SheetPage } from '../../slots/defs/sheetPage';
 import { gradeOn, usePeople, type Person } from '../people/people';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useRoles } from '../roles/roles';
+import { useDelegations } from '../delegation/delegation';
 import { claimDue, rateFor, useRates } from '../rates/rates';
 import { dueBy, isOverdue } from '../overdue/overdue';
 import { useFloor, useLate, type Dated } from '../settings/settings';
@@ -63,7 +64,12 @@ function ClaimRow({
   onCancel: () => void;
 }) {
   const roles = useRoles(sheetId);
-  const viewer = roles.data?.find((r) => r.user === user)?.role === 'viewer';
+  const delegations = useDelegations(sheetId);
+  const today = useSheetToday(sheetId);
+  // a viewer acting for a steward who delegated to them (the sheet's today inside its range) is not a viewer then
+  const viewer =
+    roles.data?.find((r) => r.user === user)?.role === 'viewer' &&
+    !delegations.data?.some((d) => d.user === user && d.from <= today && today <= d.to);
   const queryClient = useQueryClient();
   const periods = usePeriods(sheetId);
   const late = useLate(sheetId);
@@ -206,6 +212,7 @@ function ClaimRow({
       <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
       <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-reminded">{c.reminded ?? ''}</span>{' '}
+      <span data-testid="claim-batch">{c.batch ?? ''}</span>{' '}
       <span data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</span>{' '}
       <button
         type="button"

@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -26,7 +27,8 @@ import org.springframework.web.bind.annotation.PathVariable;
  * through the very steps of the single settle: ApplyClaimStatus (its rules, a clerk's settle above the clerk limit
  * making it PENDING), SaveClaimStatus (its status log line) and RecordClaimStatusChanged (CLAIM_SETTLED or
  * CLAIM_PENDING and the figures it moved). A claim made PENDING counts as settled. Each that the single settle would
- * refuse, or is not on the sheet, is left as it is and counted refused.
+ * refuse, or is not on the sheet, is left as it is and counted refused. When at least one is settled the settle is the
+ * sheet's next batch, marked on each claim it settled.
  */
 public class SettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId, @Val BulkSettleRequest request, ClaimRepository claims,
@@ -48,7 +50,7 @@ public class SettleClaims {
         ApplyClaimStatus apply = new ApplyClaimStatus();
         SaveClaimStatus save = new SaveClaimStatus();
         RecordClaimStatusChanged record = new RecordClaimStatusChanged();
-        int settled = 0;
+        List<Long> settled = new ArrayList<>();
         for (Claim listedClaim : chosen) {
             Claim claim = claims.find(sheet, listedClaim.id());
             if (claim == null) {
@@ -67,9 +69,12 @@ public class SettleClaims {
             } catch (InvalidClaimStatusException refused) {
                 continue;
             }
-            settled++;
+            settled.add(stored[0].id());
             record.record(stored[0], change, number[0], previous[0], people, watches, before, rollup, audit);
         }
-        result.set(new BulkSettleResult(settled, selected.size() - settled));
+        if (!settled.isEmpty()) {
+            claims.batch(sheet, settled, sheets.today(sheet));
+        }
+        result.set(new BulkSettleResult(settled.size(), selected.size() - settled.size()));
     }
 }
