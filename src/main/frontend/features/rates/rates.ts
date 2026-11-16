@@ -113,3 +113,11 @@ export function personExcess(claims: Claim[], rates: Rate[] | undefined, person:
 export function sum(values: string[]): string {
   return shown(values.filter((v) => v !== 'n/a').reduce((s, v) => s + hundredths(v), 0n));
 }
+
+/** Two-decimal values added up, skipping 'n/a', leaving out the single highest and the single lowest when three
+ *  or more are left. */
+export function trimmedSum(values: string[]): string {
+  const figures = values.filter((v) => v !== 'n/a').map(hundredths).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const kept = figures.length >= 3 ? figures.slice(1, -1) : figures;
+  return shown(kept.reduce((s, v) => s + v, 0n));
+}

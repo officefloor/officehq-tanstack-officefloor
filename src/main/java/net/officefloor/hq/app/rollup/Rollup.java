@@ -22,7 +22,8 @@ import org.springframework.stereotype.Service;
  * The sheet's figures as the screen shows them: each person's claimed (their claims that count added up; a person's OPEN or PENDING claims dated within a hold of theirs, not bound by a statement, do not, nor do deferred claims) and
  * due-total (the figures of those claims, each with its late charge, added up; n/a when their grade has no rate today and no counting claim
  * has a figure, kept or at the grade in force on its date; at most the sheet's cap), overdue-total (the figures, late charge included, of those claims that are overdue — open, their due-by before
- * today — added up, skipping n/a; not capped), and the sheet's claimed-total, due-total and overdue-total (everyone's added up, skipping n/a).
+ * today — added up, skipping n/a; not capped), and the sheet's claimed-total, due-total and overdue-total (everyone's added up, skipping n/a; the due-total and
+ * overdue-total leave out the single highest and the single lowest figure when three or more people have one).
  *
  * A change takes the figures before it ({@link #take}) and, after its own audit lines, writes ROLLUP for every
  * person whose figures (claimed, due-total or overdue-total) moved (a person new to the sheet counts as moved), then
@@ -113,13 +114,19 @@ public class Rollup {
     }
 
     private static String overdueTotal(Map<Long, Figures> figures) {
-        return figures.values().stream().map((f) -> new BigDecimal(f.overdueTotal()))
-                .reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add).toPlainString();
+        return trimmedTotal(figures.values().stream().map(Figures::overdueTotal).toList());
     }
 
     private static String dueTotal(Map<Long, Figures> figures) {
-        return figures.values().stream().filter((f) -> !f.dueTotal().equals("n/a"))
-                .map((f) -> new BigDecimal(f.dueTotal())).reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add)
-                .toPlainString();
+        return trimmedTotal(figures.values().stream().map(Figures::dueTotal).toList());
+    }
+
+    /** The figures added up, skipping n/a, leaving out the single highest and the single lowest when three or more are left. */
+    private static String trimmedTotal(List<String> values) {
+        List<BigDecimal> figures = values.stream().filter((v) -> !v.equals("n/a")).map(BigDecimal::new).sorted().toList();
+        if (figures.size() >= 3) {
+            figures = figures.subList(1, figures.size() - 1);
+        }
+        return figures.stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add).toPlainString();
     }
 }
