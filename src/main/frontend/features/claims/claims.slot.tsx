@@ -26,10 +26,10 @@ function ClaimsHead() {
 
 type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
 
-/** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, its status log (oldest first), due-by (fixed when it was added), whether it is overdue, whether it is deferred and until when, and the period its date falls in, with the buttons that edit it or change its status. A clerk's settle above the clerk limit makes it PENDING; a
+/** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, its status log (oldest first), due-by (fixed when it was added), whether it is overdue, whether it is deferred and until when, its proofs count, and the period its date falls in, with the buttons that edit it or change its status. A clerk's settle above the clerk limit makes it PENDING; a
  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
- *  shows the claim's error. An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). A steward re-settles a SETTLED claim (its due fixed again at today's figure). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
+ *  shows the claim's error. An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one dated inside a closed period); a claim with no proofs whose due is above the proof threshold on its date cannot be settled nor approved. A steward re-settles a SETTLED claim (its due fixed again at today's figure). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
  *  with the claim's error, for anyone else or any other claim). Only a DRAFT can be edited: Edit on any other claim shows the claim's error instead of opening the editor. */
 function ClaimRow({
   sheetId,
@@ -85,12 +85,17 @@ function ClaimRow({
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
   });
+  const proof = useMutation({
+    mutationFn: () => postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/proofs`, { by: user }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
   const [editRefused, setEditRefused] = useState(false);
   const [selected, setSelected] = useSelectedClaims();
   const act = (action: Action) => {
     setEditRefused(false);
     reassign.reset();
     defer.reset();
+    proof.reset();
     status.reset();
     status.mutate(action);
   };
@@ -116,6 +121,7 @@ function ClaimRow({
       <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
       <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
+      <span data-testid="claim-proofs">{c.proofs}</span>{' '}
       <span data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</span>{' '}
       <button
         type="button"
@@ -124,6 +130,7 @@ function ClaimRow({
           status.reset();
           reassign.reset();
           defer.reset();
+          proof.reset();
           if (c.status !== 'DRAFT') {
             setEditRefused(true);
             return;
@@ -166,6 +173,21 @@ function ClaimRow({
       <button type="button" data-testid="claim-resettle" disabled={status.isPending} onClick={() => act('resettle')}>
         Re-settle
       </button>
+      <button
+        type="button"
+        data-testid="claim-proof"
+        disabled={proof.isPending}
+        onClick={() => {
+          setEditRefused(false);
+          status.reset();
+          reassign.reset();
+          defer.reset();
+          proof.reset();
+          proof.mutate();
+        }}
+      >
+        Add proof
+      </button>
       <input
         type="date"
         data-testid="claim-defer-date"
@@ -174,6 +196,7 @@ function ClaimRow({
         onChange={(e) => {
           setDeferUntil(e.target.value);
           defer.reset();
+          proof.reset();
         }}
       />
       <button
@@ -185,6 +208,7 @@ function ClaimRow({
           status.reset();
           reassign.reset();
           defer.reset();
+          proof.reset();
           defer.mutate(deferUntil.trim());
         }}
       >
@@ -217,6 +241,7 @@ function ClaimRow({
           status.reset();
           reassign.reset();
           defer.reset();
+          proof.reset();
           reassign.mutate(Number(moveTo));
         }}
       >
@@ -230,7 +255,7 @@ function ClaimRow({
           {' '}
           {(c.status === 'OPEN' || c.status === 'PENDING') && c.openedBy === user && status.variables !== 'reject' && status.variables !== 'void' && status.variables !== 'resettle'
             ? 'You opened this claim, so someone else must settle or approve it.'
-            : `A ${c.status} claim cannot be changed that way, nor one dated inside a closed period, nor a deferred one settled; only a steward approves or rejects a pending claim or re-settles a settled one, and a rejection needs a reason.`}
+            : `A ${c.status} claim cannot be changed that way, nor one dated inside a closed period, nor a deferred one settled, nor one with no proofs settled or approved when its due is above the proof threshold; only a steward approves or rejects a pending claim or re-settles a settled one, and a rejection needs a reason.`}
         </span>
       )}
       {reassign.isError && (
@@ -245,6 +270,9 @@ function ClaimRow({
           {' '}
           Only an open claim, not dated inside a closed period, can be deferred, and only to a date after today.
         </span>
+      )}
+      {proof.isError && (
+        <span data-testid="claim-error"> A settled or void claim, or one dated inside a closed period, takes no more proofs.</span>
       )}
       <ol data-testid="claim-log">
         {c.log.map((l, i) => (

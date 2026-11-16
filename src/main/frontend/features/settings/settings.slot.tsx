@@ -8,17 +8,18 @@ import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, inForce, settingsKey, u
 
 const GRADES = ['A', 'B', 'C'] as const;
 type GradeTerms = `terms-${(typeof GRADES)[number]}`;
-type Key = 'clerk-limit' | 'cap' | 'floor' | 'terms' | GradeTerms | 'late-pct' | 'policy-date' | 'period-numbering-from';
-const KEYS: Key[] = ['clerk-limit', 'cap', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'period-numbering-from'];
+type Key = 'clerk-limit' | 'cap' | 'proof-threshold' | 'floor' | 'terms' | GradeTerms | 'late-pct' | 'policy-date' | 'period-numbering-from';
+const KEYS: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'period-numbering-from'];
 const BLANK: Record<Key, string> = {
-  'clerk-limit': '', cap: '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '',
+  'clerk-limit': '', cap: '', 'proof-threshold': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '',
 };
 /** The keys whose values are dated: each saved from a from-date (blank: the sheet's today). */
-const DATED: Key[] = ['clerk-limit', 'cap', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct'];
+const DATED: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct'];
 const dated = (key: Key) => DATED.includes(key);
 
 /** The sheet's settings: the clerk limit (the most a clerk may settle a claim's due for; blank for no limit) and the
- *  cap (the most a person's due-total may be; blank for none) and the floor (the least a claim's live due may be; 1.00 until set) and the terms (the days from a claim's date to its
+ *  cap (the most a person's due-total may be; blank for none) and the proof threshold (a claim whose due is above
+ *  the one in force on its date cannot be settled nor approved while it has no proofs; blank for none) and the floor (the least a claim's live due may be; 1.00 until set) and the terms (the days from a claim's date to its
  *  due-by, fixed when the claim is added; 14 until set) and each grade's own terms (a grade without its own has the
  *  sheet's) and the late percent (what an overdue claim gains of its figure for every full 30 days
  *  overdue; 0.00 until set) and the policy date (yyyy-MM-dd; blank: the sheet's today — a claim dated before it rounds
@@ -26,7 +27,7 @@ const dated = (key: Key) => DATED.includes(key);
  *  today is on or after it, a claim opened is numbered within its period). Every setting but the policy date and the
  *  period numbering from-date is dated: saved with its from-date (blank: the sheet's today) it keeps the values from
  *  other dates, and what shows in force is the value on the sheet's today (a claim takes its floor, late percent and
- *  terms from its own date). Saving stores the fields entered since the last save
+ *  terms, and proof threshold, from its own date). Saving stores the fields entered since the last save
  *  (a field focused counts, so a blank typed over a blank still saves), the clerk limit when none was. */
 function Settings({ sheetId, user }: { sheetId: string; user: string }) {
   const settings = useSettings(sheetId);
@@ -104,7 +105,7 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
           save.mutate((keys.length > 0 ? keys : (['clerk-limit'] as Key[])).map((k) => [k, values[k], froms[k]]));
         }}
       >
-        {field('clerk-limit', 'Clerk limit')} {field('cap', 'Cap')} {field('floor', 'Floor')}{' '}
+        {field('clerk-limit', 'Clerk limit')} {field('cap', 'Cap')} {field('proof-threshold', 'Proof threshold')} {field('floor', 'Floor')}{' '}
         {field('terms', 'Terms (days)', 'numeric')}{' '}
         {GRADES.map((g) => (
           <span key={g}>{field(`terms-${g}`, `Terms grade ${g} (days)`, 'numeric')} </span>
@@ -117,7 +118,7 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="settings-error">
-            The from-date must be yyyy-MM-dd, or blank; the clerk limit must be an amount with up to two decimals, or blank; the cap likewise; the floor an amount with up to two
+            The from-date must be yyyy-MM-dd, or blank; the clerk limit must be an amount with up to two decimals, or blank; the cap and the proof threshold likewise; the floor an amount with up to two
             decimals; the terms, and a grade's terms, a whole number of days, 0 or more; the late percent a percent with up to two decimals; the policy date yyyy-MM-dd, or blank; the period numbering from-date yyyy-MM-dd, or blank.
           </span>
         )}
@@ -128,6 +129,9 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
       </p>
       <p>
         Cap in force <span data-testid="setting-cap-current">{current('cap')}</span>
+      </p>
+      <p>
+        Proof threshold in force <span data-testid="setting-proof-threshold-current">{current('proof-threshold')}</span>
       </p>
       <p>
         Floor in force <span data-testid="setting-floor-current">{current('floor') || DEFAULT_FLOOR}</span>

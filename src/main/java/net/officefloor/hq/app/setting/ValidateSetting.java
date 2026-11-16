@@ -13,8 +13,8 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  decimals; or floor or late-pct, its value such an amount (not blank), all kept with two decimals; or terms, its value a
  *  whole number of days 0 or more (not blank), kept without leading zeros, and so is terms-A, terms-B or terms-C (a
  *  grade's own terms); or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today); or
- *  period-numbering-from, its value a date yyyy-MM-dd or blank (off); or cap, its value blank (none) or an amount
- *  like the clerk limit. Every key but policy-date and period-numbering-from is dated: its from-date is blank (the
+ *  period-numbering-from, its value a date yyyy-MM-dd or blank (off); or cap or proof-threshold, its value blank (none) or
+ *  an amount like the clerk limit. Every key but policy-date and period-numbering-from is dated: its from-date is blank (the
  *  sheet's today) or a date yyyy-MM-dd. */
 public class ValidateSetting {
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
@@ -31,7 +31,8 @@ public class ValidateSetting {
         boolean policyDate = SettingRepository.POLICY_DATE.equals(k);
         boolean numberingFrom = SettingRepository.PERIOD_NUMBERING_FROM.equals(k);
         boolean cap = SettingRepository.CAP.equals(k);
-        if (!SettingRepository.CLERK_LIMIT.equals(k) && !cap && !floor && !terms && !latePct && !policyDate && !numberingFrom) {
+        boolean proofThreshold = SettingRepository.PROOF_THRESHOLD.equals(k);
+        if (!SettingRepository.CLERK_LIMIT.equals(k) && !cap && !proofThreshold && !floor && !terms && !latePct && !policyDate && !numberingFrom) {
             throw new InvalidSettingException("Unknown setting " + k);
         }
         String value = request == null || request.value() == null ? "" : request.value().trim();
@@ -74,6 +75,7 @@ public class ValidateSetting {
         if (!value.isEmpty() && !AMOUNT.matcher(value).matches()) {
             throw new InvalidSettingException(floor ? "The floor must be an amount with up to two decimals"
                     : cap ? "The cap must be an amount with up to two decimals, or blank"
+                    : proofThreshold ? "The proof threshold must be an amount with up to two decimals, or blank"
                     : "The clerk limit must be an amount with up to two decimals, or blank");
         }
         values.set(new SettingValues(k, value.isEmpty() ? null : new BigDecimal(value).setScale(2).toPlainString(),

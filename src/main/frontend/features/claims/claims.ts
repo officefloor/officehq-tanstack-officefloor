@@ -15,8 +15,9 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  is the date that decides how its live figures round: the corrected claim's date for a correction, else its own;
  *  `dueBy` (yyyy-MM-dd) is its due-by, fixed when it was added from the terms of its person's grade on its date;
  *  `deferred` is whether it is deferred on the sheet's today (an OPEN claim deferred until a date after it: it counts in no
- *  total, is not overdue and cannot be settled) and `deferredUntil` (yyyy-MM-dd) the date it is deferred until (null
- *  when it is not deferred); `log` is its status log, oldest first. */
+ *  total, is not overdue and cannot be settled) and `deferredUntil` (yyyy-MM-dd) the date it was last deferred until (shown
+ *  even once that date has passed; null when never deferred); `proofs` is its proofs count (a claim whose due is above the sheet's proof threshold
+ *  on its date cannot be settled nor approved while it is 0); `log` is its status log, oldest first. */
 export type Claim = {
   id: number;
   sheetId: string;
@@ -35,6 +36,7 @@ export type Claim = {
   dueBy: string;
   deferred: boolean;
   deferredUntil: string | null;
+  proofs: number;
   log: ClaimLogLine[];
 };
 
