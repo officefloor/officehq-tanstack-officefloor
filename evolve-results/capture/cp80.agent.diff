@@ -1,0 +1,765 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 3f9aadd0c..5e4f528fd 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -26,18 +26,18 @@ function ClaimsHead() {
+   );
+ }
+ 
+-const DRAFT_ONLY = 'Only a draft claim not dated inside a closed period can be edited; void it and add a new one instead.';
++const DRAFT_ONLY = 'Only a draft claim whose due-by is not inside a closed period can be edited; void it and add a new one instead.';
+ const VIEWER_REFUSED = 'A viewer cannot change the sheet.';
+ const LOCK_REFUSED = 'Someone else is editing this claim; it can be edited once they save or cancel.';
+-const EDIT_REFUSED = 'This claim cannot be edited: only a draft not dated inside a closed period, and not while someone else is editing it.';
++const EDIT_REFUSED = 'This claim cannot be edited: only a draft whose due-by is not inside a closed period, and not while someone else is editing it.';
+ 
+ type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
+ 
+-/** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, its status log (oldest first), due-by (fixed when it was added), whether it is overdue, whether it is deferred and until when, its proofs count, and the period its date falls in, with the buttons that edit it or change its status. A clerk's settle above the clerk limit makes it PENDING; a
++/** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, its status log (oldest first), due-by (fixed when it was added), whether it is overdue, whether it is deferred and until when, its proofs count, and the period its due-by falls in, with the buttons that edit it or change its status. A clerk's settle above the clerk limit makes it PENDING; a
+  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
+  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
+- *  shows the claim's error. An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one dated inside a closed period); a claim with no proofs whose due is above the proof threshold on its date cannot be settled nor approved; a claim with an empty note whose due is above the note threshold on its date cannot be opened (alone or in bulk). A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). A steward re-dates an OPEN or PENDING claim to the date typed beside Re-date (its due-by and any statement figure stay; refused, with the claim's error, for anyone else, any other claim, or a date inside a closed period or after the person's retirement). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
+- *  with the claim's error, for anyone else or any other claim). Split takes the amount typed beside it off an OPEN claim (not deferred nor dated inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Only a DRAFT not dated inside a closed period can be edited: Edit opens the editor and locks the claim for the user until it
++ *  shows the claim's error. An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one whose due-by is inside a closed period); a claim with no proofs whose due is above the proof threshold on its date cannot be settled nor approved; a claim with an empty note whose due is above the note threshold on its date cannot be opened (alone or in bulk). A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). A steward re-dates an OPEN or PENDING claim to the date typed beside Re-date (its due-by and any statement figure stay; refused, with the claim's error, for anyone else, any other claim, or a date after the person's retirement). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
++ *  with the claim's error, for anyone else or any other claim). Split takes the amount typed beside it off an OPEN claim (not deferred, nor with its due-by inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Only a DRAFT whose due-by is not inside a closed period can be edited: Edit opens the editor and locks the claim for the user until it
+  *  is saved or cancelled (Cancel) or the sheet's today changes; Edit on any other claim, on a claim another user holds, or by a
+  *  viewer shows the claim's error instead and takes no lock. */
+ function ClaimRow({
+@@ -164,7 +164,7 @@ function ClaimRow({
+       <span data-testid="claim-proofs">{c.proofs}</span>{' '}
+       <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
+       <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
+-      <span data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</span>{' '}
++      <span data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</span>{' '}
+       <button
+         type="button"
+         data-testid="claim-edit"
+@@ -178,7 +178,7 @@ function ClaimRow({
+           lock.reset();
+           setEditRefused(null);
+           // refused at once when the screen already knows the claim cannot be edited; else the server decides
+-          if (c.status !== 'DRAFT' || periodOf(periods.data, c.date)?.closed) {
++          if (c.status !== 'DRAFT' || periodOf(periods.data, c.dueBy)?.closed) {
+             setEditRefused(DRAFT_ONLY);
+             return;
+           }
+@@ -375,36 +375,36 @@ function ClaimRow({
+           {' '}
+           {(c.status === 'OPEN' || c.status === 'PENDING') && c.openedBy === user && status.variables !== 'reject' && status.variables !== 'void' && status.variables !== 'resettle'
+             ? 'You opened this claim, so someone else must settle or approve it.'
+-            : `A ${c.status} claim cannot be changed that way, nor one dated inside a closed period, nor a deferred one settled, nor one with no proofs settled or approved when its due is above the proof threshold, nor one with an empty note opened when its due is above the note threshold; only a steward approves or rejects a pending claim or re-settles a settled one, only a steward voids a settled claim and only within 7 days of its settlement, a rejection needs a reason, and only a role the sheet lets open, settle or void a claim may do so.`}
++            : `A ${c.status} claim cannot be changed that way, nor one whose due-by is inside a closed period, nor a deferred one settled, nor one with no proofs settled or approved when its due is above the proof threshold, nor one with an empty note opened when its due is above the note threshold; only a steward approves or rejects a pending claim or re-settles a settled one, only a steward voids a settled claim and only within 7 days of its settlement, a rejection needs a reason, and only a role the sheet lets open, settle or void a claim may do so.`}
+         </span>
+       )}
+       {reassign.isError && (
+         <span data-testid="claim-error">
+           {' '}
+-          Only a role the sheet lets reassign (a steward unless set) moves a claim, and only a draft, open or pending one (not a correction, nor one dated inside a
++          Only a role the sheet lets reassign (a steward unless set) moves a claim, and only a draft, open or pending one (not a correction, nor one whose due-by is inside a
+           closed period) to another person not retired before its date.
+         </span>
+       )}
+       {defer.isError && (
+         <span data-testid="claim-error">
+           {' '}
+-          Only an open claim, not dated inside a closed period, can be deferred, and only to a date after today.
++          Only an open claim whose due-by is not inside a closed period can be deferred, and only to a date after today.
+         </span>
+       )}
+       {redate.isError && (
+         <span data-testid="claim-error">
+           {' '}
+-          Only a steward re-dates a claim, and only an open or pending one not dated inside a closed period, to a date
+-          neither inside a closed period nor after the person's retirement.
++          Only a steward re-dates a claim, and only an open or pending one whose due-by is not inside a closed period, to a date
++          not after the person's retirement.
+         </span>
+       )}
+       {proof.isError && (
+-        <span data-testid="claim-error"> A settled or void claim, or one dated inside a closed period, takes no more proofs.</span>
++        <span data-testid="claim-error"> A settled or void claim, or one whose due-by is inside a closed period, takes no more proofs.</span>
+       )}
+       {split.isError && (
+         <span data-testid="claim-error">
+           {' '}
+-          Only an open claim, not deferred nor dated inside a closed period, can be split, by an amount more than 0.00 and less than
++          Only an open claim, not deferred, nor with its due-by inside a closed period, can be split, by an amount more than 0.00 and less than
+           its amount, and only by a role the sheet lets open a claim.
+         </span>
+       )}
+@@ -513,7 +513,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
+           </button>
+           {save.isError && (
+             <span data-testid="claim-form-error">
+-              The amount must have up to two decimals, and be 0.00 or more unless it corrects, by number, a settled claim of this person; the date not inside a closed period nor after the person's retirement date, and only a draft claim can be edited.
++              The amount must have up to two decimals, and be 0.00 or more unless it corrects, by number, a settled claim of this person; its due-by not inside a closed period, the date not after the person's retirement date, and only a draft claim can be edited.
+             </span>
+           )}
+         </form>
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 7c3a81df9..b69927b2b 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -64,7 +64,7 @@ function QuickAdd({ sheetId, user }: { sheetId: string; user: string }) {
+           {' '}
+           {values.name.trim() === ''
+             ? 'A name is required.'
+-            : "The amount must be 0.00 or more, with up to two decimals, today not inside a closed period, and not after the person's retirement date."}
++            : "The amount must be 0.00 or more, with up to two decimals, its due-by not inside a closed period, and not after the person's retirement date."}
+         </span>
+       )}
+     </form>
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index 658d53616..f305a02e5 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -14,7 +14,7 @@ type Values = { name: string; from: string; to: string };
+ const EMPTY: Values = { name: '', from: '', to: '' };
+ 
+ /** The sheet's periods: the form that adds one, and each period with its due-total — the figures of the claims
+- *  that count, each with its late charge (a person's OPEN or PENDING claims dated within a hold of theirs, not bound by a statement, do not) whose date falls in it, added up (skipping n/a); a closed period
++ *  that count, each with its late charge (a person's OPEN or PENDING claims dated within a hold of theirs, not bound by a statement, do not) whose due-by falls in it, added up (skipping n/a); a closed period
+  *  shows the due-total fixed when it was closed, a soft-closed one that fixed when it was soft-closed. */
+ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
+   const periods = usePeriods(sheetId);
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index 590ea5740..6e1b40d41 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -46,7 +46,7 @@ export function statusAsOf(claim: Claim, day: string): ClaimStatus | undefined {
+ }
+ 
+ /** A person's due-total for a period: the figures (each due as shown now, with its late charge) of their claims
+- *  whose date falls in it and that counted by the status each had at the end of the period's last day (see
++ *  whose due-by falls in it and that counted by the status each had at the end of the period's last day (see
+  *  statusAsOf; a claim added after it does not count), the live rules otherwise applying (a deferred claim does
+  *  not count, nor a claim open now dated within a hold of its person, or of a person whose retirement date is reached,
+  *  not bound by a statement), added up (skipping
+@@ -61,7 +61,7 @@ export function personPeriodDue(
+ ): string {
+   if (period.closed || period.soft) return period.personTotals?.[String(person.id)] ?? '0.00';
+   const mine = (claims ?? []).filter((c) => {
+-    if (c.personId !== person.id || c.date < period.from || period.to < c.date) return false;
++    if (c.personId !== person.id || c.dueBy < period.from || period.to < c.dueBy) return false;
+     const status = statusAsOf(c, period.to);
+     return status !== undefined && counts({ ...c, status }) && !(isOpen(c) && !bound(c) && (heldOn(person, c.date) || retiredOn(person, late.today)));
+   });
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddClaim.java b/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
+index c38ec241c..6c52e1e28 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
+@@ -7,10 +7,10 @@ import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Adds the claim to the person; a claim given no date is dated the sheet's entry date, else its today. A claim dated inside a closed
+- *  period, or after the person's retirement date, is refused, as is a
++/** Adds the claim to the person; a claim given no date is dated the sheet's entry date, else its today. A claim whose due-by falls inside
++ *  a closed period, or dated after the person's retirement date, is refused, as is a
+  *  negative amount that does not correct a SETTLED claim of the person (see Corrections). Its due-by is fixed here: its
+- *  date plus the person's own terms, else the terms of their grade in force on that date. A claim dated inside a soft-closed period is
++ *  date plus the person's own terms, else the terms of their grade in force on that date. A claim whose due-by falls inside a soft-closed period is
+  *  marked a late entry. Its status log starts with its DRAFT line (see ClaimLog). */
+ public class AddClaim {
+     public void add(@Val Person person, @Val ClaimValues values, ClaimRepository claims,
+@@ -18,9 +18,9 @@ public class AddClaim {
+         ClaimRules.Checked checked = ClaimRules.check(person, values, settings, periods, claims);
+         LocalDate date = checked.date();
+         Claim added = claims.add(person.sheetId(), person.id(), values.amount(), date, values.note(), checked.corrects(),
+-                date.plusDays(settings.terms(person.sheetId(), person.terms(), person.gradeOn(date), date)));
++                checked.dueBy());
+         log.write(added, values.by());
+-        if (periods.softClosedOn(added.sheetId(), date)) {
++        if (periods.softClosedOn(added.sheetId(), checked.dueBy())) {
+             claims.markLateEntry(added);
+         }
+         claim.set(added);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+index 030b33b16..3d1cebac4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+@@ -23,11 +23,11 @@ public class AddPastedClaims {
+             LocalDate date = c.checked().date();
+             String sheet = c.person().sheetId();
+             Claim added = claims.add(sheet, c.person().id(), c.values().amount(), date, c.values().note(),
+-                    c.checked().corrects(), date.plusDays(settings.terms(sheet, c.person().terms(), c.person().gradeOn(date), date)));
++                    c.checked().corrects(), c.checked().dueBy());
+             log.write(added, pasted.by());
+             lines.add("CLAIM_ADDED sheet=" + added.sheetId() + " by=" + pasted.by() + " person=" + c.person().name()
+                     + " amount=" + added.amount().toPlainString() + " date=" + added.date());
+-            if (periods.softClosedOn(sheet, date)) {
++            if (periods.softClosedOn(sheet, c.checked().dueBy())) {
+                 claims.markLateEntry(added);
+                 lines.add("LATE_ENTRY sheet=" + added.sheetId() + " by=" + pasted.by() + " person=" + c.person().name()
+                         + " amount=" + added.amount().toPlainString() + " date=" + added.date());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index bbc8d9395..23e209441 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -9,7 +9,8 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Applies the edited values; only a DRAFT claim can be edited (an open claim is voided and a new one added instead),
+- * and a claim dated inside a closed period, or moved into one, or left or moved after its person's retirement date, is refused. */
++ * and a claim whose due-by (which an edit leaves as it is) falls inside a closed period, or left or moved after its person's retirement date,
++ * is refused. */
+ public class ApplyClaim {
+     public void apply(@Val Claim claim, @Val ClaimValues values, SheetRepository sheets, PeriodRepository periods,
+             PersonRepository people, ClaimRepository claims, Out<Claim> changed) throws InvalidClaimException {
+@@ -17,8 +18,8 @@ public class ApplyClaim {
+             throw new InvalidClaimException("Only a DRAFT claim can be edited");
+         }
+         LocalDate date = values.date() != null ? values.date() : sheets.today(claim.sheetId());
+-        if (periods.closedOn(claim.sheetId(), claim.date()) || periods.closedOn(claim.sheetId(), date)) {
+-            throw new InvalidClaimException("The claim's date is inside a closed period");
++        if (periods.closedOn(claim.sheetId(), claim.dueBy())) {
++            throw new InvalidClaimException("The claim's due-by is inside a closed period");
+         }
+         Person person = people.find(claim.sheetId(), claim.personId());
+         if (person != null && !person.mayClaimOn(date)) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 47fd23ccc..7fdc396c0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -20,7 +20,7 @@ import net.officefloor.plugin.variable.Val;
+  * or the figure a statement bound it to, with its late charge as of the sheet's today frozen in (see LateCharge).
+  * Opening records who opened the claim; that user cannot settle nor approve it (four eyes). A claim whose due is
+  * above the sheet's proof threshold in force on its date (if it has one) cannot be settled nor approved while its proofs
+- * count is 0 (checked before the clerk limit, so it never goes PENDING); a due of n/a is within any threshold. A claim dated inside a closed
++ * count is 0 (checked before the clerk limit, so it never goes PENDING); a due of n/a is within any threshold. A claim whose due-by falls inside a closed
+  * period cannot change status, nor can a deferred claim be settled (see ClaimDue#deferred). A clerk (any user not made a steward) settling a claim whose due is above the sheet's
+  * clerk limit, if it has one, makes it PENDING instead (its due left live, not bound by a statement); a due of n/a is
+  * within any limit. A steward settles anything. Only a steward approves a PENDING claim (fixing its live figure, late
+@@ -31,7 +31,7 @@ import net.officefloor.plugin.variable.Val;
+  * Opening, settling and voiding are each taken only by the roles the sheet's permission allows (see SettingRepository#permits).
+  * Only a steward voids a SETTLED claim, and only within 7 days of its settlement (the sheet's today on its status log's
+  * latest SETTLED line) by the sheet's today; its frozen figure is kept on it but, VOID, it leaves every total.
+- * Only a steward re-settles a SETTLED claim (not one dated inside a closed period): its due is fixed again at the figure
++ * Only a steward re-settles a SETTLED claim (not one whose due-by falls inside a closed period): its due is fixed again at the figure
+  * it would have today as an OPEN claim bound by no statement (today's rates, grades, floor and late charge).
+  */
+ public class ApplyClaimStatus {
+@@ -52,8 +52,8 @@ public class ApplyClaimStatus {
+         if (!allowed) {
+             throw new InvalidClaimStatusException("A " + claim.status() + " claim cannot be made " + change.to());
+         }
+-        if (periods.closedOn(claim.sheetId(), claim.date())) {
+-            throw new InvalidClaimStatusException("The claim's date is inside a closed period");
++        if (periods.closedOn(claim.sheetId(), claim.dueBy())) {
++            throw new InvalidClaimStatusException("The claim's due-by is inside a closed period");
+         }
+         if (change.action() == ClaimAction.SETTLE && ClaimDue.deferred(claim, sheets.today(claim.sheetId()))) {
+             throw new InvalidClaimStatusException("A deferred claim cannot be settled until the date it is deferred until");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyDefer.java b/src/main/java/net/officefloor/hq/app/claim/ApplyDefer.java
+index 3ca786c73..098d5d718 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyDefer.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyDefer.java
+@@ -7,7 +7,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * Defers the claim until the given date (see ClaimDue#deferred). Only an OPEN claim is deferred, only to a date after
+- * the sheet's today; a claim dated inside a closed period is refused.
++ * the sheet's today; a claim whose due-by falls inside a closed period is refused.
+  */
+ public class ApplyDefer {
+     public void apply(@Val Claim claim, @Val ClaimDeferral deferral, SheetRepository sheets, PeriodRepository periods,
+@@ -18,8 +18,8 @@ public class ApplyDefer {
+         if (!deferral.until().isAfter(sheets.today(claim.sheetId()))) {
+             throw new InvalidClaimStatusException("A claim is deferred only to a date after today");
+         }
+-        if (periods.closedOn(claim.sheetId(), claim.date())) {
+-            throw new InvalidClaimStatusException("The claim's date is inside a closed period");
++        if (periods.closedOn(claim.sheetId(), claim.dueBy())) {
++            throw new InvalidClaimStatusException("The claim's due-by is inside a closed period");
+         }
+         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
+                 claim.note(), claim.status(), claim.number(), claim.due(), claim.openedBy(), claim.stated(),
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyLock.java b/src/main/java/net/officefloor/hq/app/claim/ApplyLock.java
+index 453c4b6f2..e05e3a25a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyLock.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyLock.java
+@@ -3,14 +3,14 @@ package net.officefloor.hq.app.claim;
+ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Checks the claim's editor may be opened: only a DRAFT claim not dated inside a closed period can be edited. */
++/** Checks the claim's editor may be opened: only a DRAFT claim not whose due-by falls inside a closed period can be edited. */
+ public class ApplyLock {
+     public void apply(@Val Claim claim, PeriodRepository periods) throws InvalidClaimStatusException {
+         if (claim.status() != ClaimStatus.DRAFT) {
+             throw new InvalidClaimStatusException("Only a DRAFT claim can be edited");
+         }
+-        if (periods.closedOn(claim.sheetId(), claim.date())) {
+-            throw new InvalidClaimStatusException("The claim's date is inside a closed period");
++        if (periods.closedOn(claim.sheetId(), claim.dueBy())) {
++            throw new InvalidClaimStatusException("The claim's due-by is inside a closed period");
+         }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyProof.java b/src/main/java/net/officefloor/hq/app/claim/ApplyProof.java
+index 98949c521..012c389f2 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyProof.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyProof.java
+@@ -4,15 +4,15 @@ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+- * Checks a proof may be added to the claim: not to a SETTLED or VOID claim, nor to one dated inside a closed period.
++ * Checks a proof may be added to the claim: not to a SETTLED or VOID claim, nor to one whose due-by falls inside a closed period.
+  */
+ public class ApplyProof {
+     public void apply(@Val Claim claim, PeriodRepository periods) throws InvalidClaimStatusException {
+         if (claim.status() == ClaimStatus.SETTLED || claim.status() == ClaimStatus.VOID) {
+             throw new InvalidClaimStatusException("A " + claim.status() + " claim takes no more proofs");
+         }
+-        if (periods.closedOn(claim.sheetId(), claim.date())) {
+-            throw new InvalidClaimStatusException("The claim's date is inside a closed period");
++        if (periods.closedOn(claim.sheetId(), claim.dueBy())) {
++            throw new InvalidClaimStatusException("The claim's due-by is inside a closed period");
+         }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+index f3fe4836d..c340b9b45 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+@@ -10,7 +10,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * Checks a move of a claim to another person on the sheet. Only a role the sheet's reassign permission allows (a steward while it is blank) moves a claim, and only a DRAFT, OPEN or
+- * PENDING one: a SETTLED or VOID claim stays. A claim dated inside a closed period, a correction (it belongs with the
++ * PENDING one: a SETTLED or VOID claim stays. A claim whose due-by falls inside a closed period, a correction (it belongs with the
+  * claim it corrects), a move to the claim's own person, to a person not on the sheet, or to one retired before the
+  * claim's date, is refused.
+  */
+@@ -27,8 +27,8 @@ public class ApplyReassign {
+         if (claim.corrects() != null) {
+             throw new InvalidClaimStatusException("A correction stays with the claim it corrects");
+         }
+-        if (periods.closedOn(claim.sheetId(), claim.date())) {
+-            throw new InvalidClaimStatusException("The claim's date is inside a closed period");
++        if (periods.closedOn(claim.sheetId(), claim.dueBy())) {
++            throw new InvalidClaimStatusException("The claim's due-by is inside a closed period");
+         }
+         Person from = people.find(claim.sheetId(), claim.personId());
+         Person to = people.find(claim.sheetId(), request.personId());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyRedate.java b/src/main/java/net/officefloor/hq/app/claim/ApplyRedate.java
+index bb1950735..6bcb8083e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyRedate.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyRedate.java
+@@ -1,6 +1,5 @@
+ package net.officefloor.hq.app.claim;
+ 
+-import net.officefloor.hq.app.period.Period;
+ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+@@ -12,10 +11,8 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * Re-dates an OPEN or PENDING claim, by a steward. Its due-by stays as it was fixed and a figure a statement bound it
+- * to stays bound; its period follows the new date. While per-period numbering is on (see ClaimNumbering) and the new
+- * date falls in another period's sequence than the old one, the claim takes the next number of its new sequence (its
+- * old number is never given again). Anyone but a steward, any other claim, a claim dated inside a closed period, a new
+- * date inside one, or a new date after the person's retirement, is refused.
++ * to stays bound; so do its period and number, which follow its due-by. Anyone but a steward, any other claim, a claim whose
++ * due-by falls inside a closed period, or a new date after the person's retirement, is refused.
+  */
+ public class ApplyRedate {
+     public void apply(@Val Claim claim, @Val ClaimRedating request, RoleRepository roles, PersonRepository people,
+@@ -28,31 +25,17 @@ public class ApplyRedate {
+         if (claim.status() != ClaimStatus.OPEN && claim.status() != ClaimStatus.PENDING) {
+             throw new InvalidClaimStatusException("A " + claim.status() + " claim cannot be re-dated");
+         }
+-        if (periods.closedOn(sheet, claim.date())) {
+-            throw new InvalidClaimStatusException("The claim's date is inside a closed period");
+-        }
+-        if (periods.closedOn(sheet, request.date())) {
+-            throw new InvalidClaimStatusException("The new date is inside a closed period");
++        if (periods.closedOn(sheet, claim.dueBy())) {
++            throw new InvalidClaimStatusException("The claim's due-by is inside a closed period");
+         }
+         Person person = people.find(sheet, claim.personId());
+         if (person == null || !person.mayClaimOn(request.date())) {
+             throw new InvalidClaimStatusException("The new date is after the person's retirement");
+         }
+-        Claim redated = new Claim(claim.id(), sheet, claim.personId(), claim.amount(), request.date(), claim.note(),
+-                claim.status(), claim.number(), claim.due(), claim.openedBy(), claim.stated(), claim.statedDue(),
+-                claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom());
+         String number = claim.number();
+-        if (ClaimNumbering.perPeriod(sheet, settings, sheets)
+-                && !keyOf(periods.containing(sheet, claim.date())).equals(keyOf(periods.containing(sheet, request.date())))) {
+-            number = ClaimNumbering.next(redated, claims, periods, settings, sheets);
+-        }
+         changed.set(new Claim(claim.id(), sheet, claim.personId(), claim.amount(), request.date(), claim.note(),
+                 claim.status(), number, claim.due(), claim.openedBy(), claim.stated(), claim.statedDue(),
+                 claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom()));
+         redating.set(new ClaimRedating(request.date(), request.by(), claim.date()));
+     }
+-
+-    private static String keyOf(Period period) {
+-        return period == null ? "X" : period.name();
+-    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java b/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
+index 8b35f2de6..4f5fdf65c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
+@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * Takes the split amount off the claim: it keeps the rest of its amount and loses any figure a statement bound it to.
+- * Only an OPEN claim that is not deferred (see ClaimDue#deferred) nor dated inside a closed period is split, only by
++ * Only an OPEN claim that is not deferred (see ClaimDue#deferred) nor whose due-by falls inside a closed period is split, only by
+  * an amount more than 0.00 and less than its amount, and only by a user whose role the sheet lets open a claim (the
+  * new claim is theirs to open; see SettingRepository#permits).
+  */
+@@ -22,8 +22,8 @@ public class ApplySplit {
+         if (ClaimDue.deferred(claim, sheets.today(claim.sheetId()))) {
+             throw new InvalidClaimStatusException("A deferred claim cannot be split");
+         }
+-        if (periods.closedOn(claim.sheetId(), claim.date())) {
+-            throw new InvalidClaimStatusException("The claim's date is inside a closed period");
++        if (periods.closedOn(claim.sheetId(), claim.dueBy())) {
++            throw new InvalidClaimStatusException("The claim's due-by is inside a closed period");
+         }
+         if (split.amount().signum() <= 0 || split.amount().compareTo(claim.amount()) >= 0) {
+             throw new InvalidClaimStatusException("A split takes more than 0.00 and less than the claim's amount");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java
+index 7737beacd..64b5d1dff 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java
+@@ -8,7 +8,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ 
+ /**
+  * The number a claim receives as it is opened. While the sheet's period-numbering-from setting is a date and the
+- * sheet's today is on or after it, the claim is numbered within the period containing its date, {@code <period>-<n>}
++ * sheet's today is on or after it, the claim is numbered within the period containing its due-by, {@code <period>-<n>}
+  * counting from 1 in each period, or {@code X-<n>} in its own sequence when no period contains it. Otherwise it takes
+  * the sheet-wide next number (1, 2, ...), which continues where it left off.
+  */
+@@ -23,7 +23,7 @@ public final class ClaimNumbering {
+         if (!perPeriod(sheet, settings, sheets)) {
+             return String.valueOf(claims.nextNumber(sheet));
+         }
+-        Period period = periods.containing(sheet, claim.date());
++        Period period = periods.containing(sheet, claim.dueBy());
+         String key = period == null ? "X" : period.name();
+         return key + "-" + claims.nextPeriodNumber(sheet, key);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 386970622..00e5d2bdf 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -97,7 +97,7 @@ public class ClaimRepository {
+         jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND locked_by IS NOT NULL", sheetId);
+     }
+ 
+-    /** Marks the claim a late entry: added while the period its date falls in was soft-closed. */
++    /** Marks the claim a late entry: added while the period its due-by falls in was soft-closed. */
+     public void markLateEntry(Claim claim) {
+         jdbc.update("UPDATE claim SET late_entry = TRUE WHERE sheet_id = ? AND id = ?", claim.sheetId(), claim.id());
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRules.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRules.java
+index 16b8d0b34..05adb8efe 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRules.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRules.java
+@@ -11,21 +11,29 @@ public final class ClaimRules {
+     private ClaimRules() {
+     }
+ 
+-    /** The claim's date (the sheet's entry date, else its today, when none was given); a date inside a closed period or after the person's
+-     *  retirement date is refused, as is a negative amount that does not correct a SETTLED claim (see Corrections). */
++    /** The claim's date (the sheet's entry date, else its today, when none was given) and the due-by it would be fixed with (see dueBy);
++     *  a due-by inside a closed period or a date after the person's retirement date is refused, as is a negative amount that does not
++     *  correct a SETTLED claim (see Corrections). */
+     public static Checked check(Person person, ClaimValues values, SettingRepository settings, PeriodRepository periods,
+             ClaimRepository claims) throws InvalidClaimException {
+         LocalDate date = values.date() != null ? values.date() : settings.claimDate(person.sheetId());
+-        if (periods.closedOn(person.sheetId(), date)) {
+-            throw new InvalidClaimException("The claim's date is inside a closed period");
++        LocalDate dueBy = dueBy(person, date, settings);
++        if (periods.closedOn(person.sheetId(), dueBy)) {
++            throw new InvalidClaimException("The claim's due-by is inside a closed period");
+         }
+         if (!person.mayClaimOn(date)) {
+             throw new InvalidClaimException("The claim's date is after the person's retirement date");
+         }
+-        return new Checked(date, Corrections.check(person.sheetId(), person.id(), values, claims));
++        return new Checked(date, Corrections.check(person.sheetId(), person.id(), values, claims), dueBy);
+     }
+ 
+-    /** A claim's date and the number it corrects (null when none), once its rules are kept. */
+-    public record Checked(LocalDate date, String corrects) {
++    /** The due-by a claim of the person dated the date is fixed with as it is added: its date plus the person's own terms, else the
++     *  terms of their grade in force on that date. */
++    public static LocalDate dueBy(Person person, LocalDate date, SettingRepository settings) {
++        return date.plusDays(settings.terms(person.sheetId(), person.terms(), person.gradeOn(date), date));
++    }
++
++    /** A claim's date, the number it corrects (null when none) and its due-by, once its rules are kept. */
++    public record Checked(LocalDate date, String corrects, LocalDate dueBy) {
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+index 7ecbaa63d..b872f2669 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ /**
+  * Opens each selected claim that can be opened, in list order (people in the order they were added, a person's
+- * claims newest first): as the single open does, it must be a DRAFT not dated inside a closed period, nor one with an empty note whose due is above the note threshold
++ * claims newest first): as the single open does, it must be a DRAFT whose due-by is not inside a closed period, nor one with an empty note whose due is above the note threshold
+  * (see ApplyClaimStatus#needsNote), takes its
+  * number (see ClaimNumbering) and records who opened it, adds its OPEN line to its status log (see ClaimLog), then writes CLAIM_OPENED and the figures it moved (see Rollup).
+  * A user whose role the sheet does not permit to open opens none. Each that cannot, or is not on the sheet, is left as it is and counted refused.
+@@ -49,7 +49,7 @@ public class OpenClaims {
+             chosen = List.of();
+         }
+         for (Claim claim : chosen) {
+-            if (claim.status() != ClaimStatus.DRAFT || periods.closedOn(sheet, claim.date())
++            if (claim.status() != ClaimStatus.DRAFT || periods.closedOn(sheet, claim.dueBy())
+                     || ApplyClaimStatus.needsNote(claim, people, rates, settings, late)) {
+                 continue;
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java b/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
+index 7a7353370..a9a072802 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
+@@ -12,7 +12,8 @@ import net.officefloor.plugin.variable.Val;
+  * Stores the claim's remaining amount, but only while it is still OPEN with the amount the split started from (a
+  * change another user made first is refused), then adds the new claim: the split-off amount, the same person, date
+  * and note, its due-by fixed now from the person's own terms, else those of their grade in force on its date, OPEN with the sheet's next
+- * number (see ClaimNumbering), opened by the user who split, and the original's number as split-from. The new claim's
++ * number (see ClaimNumbering), opened by the user who split, and the original's number as split-from; a late entry when its
++ * due-by falls inside a soft-closed period. The new claim's
+  * status log starts with its OPEN line (see ClaimLog).
+  */
+ public class SaveSplit {
+@@ -26,6 +27,9 @@ public class SaveSplit {
+         String grade = person == null ? null : person.gradeOn(claim.date());
+         Claim added = claims.add(claim.sheetId(), claim.personId(), split.amount(), claim.date(), claim.note(), null,
+                 claim.date().plusDays(settings.terms(claim.sheetId(), person == null ? null : person.terms(), grade, claim.date())));
++        if (periods.softClosedOn(added.sheetId(), added.dueBy())) {
++            claims.markLateEntry(added);
++        }
+         String number = ClaimNumbering.next(added, claims, periods, settings, sheets);
+         Claim opened = new Claim(added.id(), added.sheetId(), added.personId(), added.amount(), added.date(),
+                 added.note(), ClaimStatus.OPEN, number, null, split.by(), false, null, null, added.dueBy(), null, 0,
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index b31a69201..df47a19dd 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -6,7 +6,7 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Closes an open period, fixing its due-total as it is now: the figures (each due as shown now, with its late charge)
+- *  of the claims whose date falls in it and that counted by the status each had at the end of the period's last day,
++ *  of the claims whose due-by falls in it and that counted by the status each had at the end of the period's last day,
+  *  as its status log records it (a claim added after it does not count), the live rules otherwise applying (a
+  *  person's claims OPEN or PENDING now and dated within a hold of theirs, not bound by a statement, do not, nor do deferred
+  *  claims), added up (skipping n/a). Each person's own due-total for the period is fixed
+diff --git a/src/main/java/net/officefloor/hq/app/period/Period.java b/src/main/java/net/officefloor/hq/app/period/Period.java
+index 6f8509aeb..bbc6a35f8 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Period.java
++++ b/src/main/java/net/officefloor/hq/app/period/Period.java
+@@ -5,7 +5,7 @@ import java.time.LocalDate;
+ 
+ /** A period of a sheet: a name unique on the sheet and its from and to dates, both inclusive. A closed period keeps
+  *  the due-total fixed when it was closed; a soft-closed one ({@code soft}, not closed) keeps the due-total fixed when it
+- *  was soft-closed, while claims dated inside it can still change. */
++ *  was soft-closed, while claims whose due-by falls inside it can still change. */
+ public record Period(long id, String sheetId, String name, LocalDate from, LocalDate to, boolean closed,
+         BigDecimal closedTotal, boolean soft) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+index 0a8e69e80..140a00fba 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+@@ -84,7 +84,7 @@ public class PeriodCloser {
+         }
+         for (Claim c : claims.list(period.sheetId())) {
+             Person person = byId.get(c.personId());
+-            if (c.date().isBefore(period.from()) || c.date().isAfter(period.to())) {
++            if (c.dueBy().isBefore(period.from()) || c.dueBy().isAfter(period.to())) {
+                 continue;
+             }
+             ClaimStatus status = ClaimDue.statusAsOf(logs.getOrDefault(c.id(), List.of()), period.to());
+diff --git a/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
+index ecc7421f3..2fb0753e9 100644
+--- a/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
+@@ -6,7 +6,7 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Soft-closes an open period: its due-total and each person's are fixed as a close fixes them (see ClosePeriod), but
+- *  claims dated inside it can still be added, edited, opened, settled and voided. Soft-closing a period closed or
++ *  claims whose due-by falls inside it can still be added, edited, opened, settled and voided. Soft-closing a period closed or
+  *  soft-closed already is refused, and so is soft-closing by a role the sheet's close permission does not allow. */
+ public class SoftClosePeriod {
+     public void close(@Val Period period, @Val PeriodCloseRequest request, PeriodCloser closer,
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java b/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java
+index d4779b63a..c7b637b54 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java
+@@ -1,18 +1,29 @@
+ package net.officefloor.hq.app.quickadd;
+ 
++import java.time.LocalDate;
++import net.officefloor.hq.app.claim.ClaimRules;
+ import net.officefloor.hq.app.claim.InvalidClaimException;
+ import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.person.PersonValues;
+ import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** The claim is dated the sheet's entry date, else its today, which may not be inside a closed period. Checked before a new person is
+- *  added, so a refused claim leaves no person and no audit record behind. */
++/** The claim is dated the sheet's entry date, else its today; the due-by it would be fixed with (by the named person's terms, else a
++ *  new person's: grade A's) may not be inside a closed period. Checked before a new person is added, so a refused claim leaves no
++ *  person and no audit record behind. */
+ public class CheckQuickAddDate {
+-    public void check(@PathVariable("sheetId") String sheetId, SettingRepository settings, PeriodRepository periods)
+-            throws InvalidClaimException {
++    public void check(@PathVariable("sheetId") String sheetId, @Val PersonValues values, SettingRepository settings,
++            PeriodRepository periods, PersonRepository people) throws InvalidClaimException {
+         String sheet = sheetId.trim();
+-        if (periods.closedOn(sheet, settings.claimDate(sheet))) {
+-            throw new InvalidClaimException("The claim's date is inside a closed period");
++        LocalDate date = settings.claimDate(sheet);
++        Person found = people.findByName(sheet, values.name());
++        LocalDate dueBy = found != null ? ClaimRules.dueBy(found, date, settings)
++                : date.plusDays(settings.terms(sheet, values.terms(), values.grade(), date));
++        if (periods.closedOn(sheet, dueBy)) {
++            throw new InvalidClaimException("The claim's due-by is inside a closed period");
+         }
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml
+index 055182167..9da0477a2 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml
+@@ -1,5 +1,5 @@
+ # POST /api/sheets/{sheetId}/bulk-open — open the selected claims together. Each selected claim that can be opened
+-# (a DRAFT not dated inside a closed period) is opened as the single open does, in list order: people in the order
++# (a DRAFT whose due-by is not inside a closed period) is opened as the single open does, in list order: people in the order
+ # they were added, a person's claims newest first, so each takes the sheet's next number in that order and writes
+ # its own CLAIM_OPENED, ROLLUP and TOTALS lines. Each that cannot (or is not on the sheet) is left as it is and
+ # counted refused. Responds with how many were opened and how many refused.
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/date.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/date.PUT.yml
+index ebc86ed59..063776c56 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/date.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/date.PUT.yml
+@@ -1,8 +1,7 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/date — re-date an OPEN or PENDING claim, by a steward. Its due-by stays as
+-# it was fixed, a figure a statement bound it to stays bound, and its period follows the new date: while per-period
+-# numbering is on and the period changes, it takes the next number of its new period's sequence (its old number is
+-# never given again). Anyone but a steward, any other claim, a claim dated inside a closed period, a new date inside
+-# one, after the person's retirement or not a date, is a 409 and a claim not on the sheet a 404, neither writing
++# it was fixed, a figure a statement bound it to stays bound, and so do its period and number (they follow its due-by).
++# Anyone but a steward, any other claim, a claim whose due-by falls inside a closed period, a new date after the
++# person's retirement or not a date, is a 409 and a claim not on the sheet a 404, neither writing
+ # anything. Responds with the claim as stored.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateRedate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.PUT.yml
+index 35c41a1a4..ad6c435a8 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.PUT.yml
+@@ -1,6 +1,6 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/defer — defer an OPEN claim until a date after the sheet's today: until
+ # the sheet's today reaches that date the claim counts in no total, is not overdue, cannot be settled and is left
+-# unbound by a statement. A claim that is not OPEN, a date not after today (or not a date), or a claim dated inside a
++# unbound by a statement. A claim that is not OPEN, a date not after today (or not a date), or a claim whose due-by falls inside a
+ # closed period, is a 409 and a claim not on the sheet a 404, neither writing anything. Responds with the claim as
+ # stored.
+ validate:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/lock.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/lock.PUT.yml
+index fb4d293e2..3574a156e 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/lock.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/lock.PUT.yml
+@@ -1,6 +1,6 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/lock — open a claim's editor: locks the claim for the user until its edit
+ # is saved, the editor is cancelled (PUT .../unlock) or the sheet's today changes. A claim that is not a DRAFT, one
+-# dated inside a closed period, or one another user holds is a 409 and a claim not on the sheet a 404, neither
++# whose due-by falls inside a closed period, or one another user holds is a 409 and a claim not on the sheet a 404, neither
+ # writing anything (a viewer is refused before, see ViewerGuard). Responds with the claim as stored.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateLock
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
+index 1bc4ef5ce..50aeaae2c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
+@@ -1,6 +1,6 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/person — move a DRAFT, OPEN or PENDING claim to another person on the
+ # sheet, by a steward. The claim keeps its number and date, loses any figure a statement bound it to, and is listed as
+-# its new person's newest claim. A clerk, a SETTLED or VOID claim, a correction, a claim dated inside a closed period,
++# its new person's newest claim. A clerk, a SETTLED or VOID claim, a correction, a claim whose due-by falls inside a closed period,
+ # a move to its own person, to no person on the sheet or to one retired before its date, is a 409 and a claim not on
+ # the sheet a 404, neither writing anything. Responds with the claim as stored.
+ validate:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proofs.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proofs.POST.yml
+index e802ede77..300065668 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proofs.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proofs.POST.yml
+@@ -1,5 +1,5 @@
+ # POST /api/sheets/{sheetId}/claims/{claimId}/proofs — raise a claim's proofs count by one. A SETTLED or VOID claim, or
+-# a claim dated inside a closed period, is a 409 and a claim not on the sheet a 404, neither writing anything. Responds
++# a claim whose due-by falls inside a closed period, is a 409 and a claim not on the sheet a 404, neither writing anything. Responds
+ # with the claim as stored.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateProof
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/split.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/split.POST.yml
+index 5c4d23975..cab8181f1 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/split.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/split.POST.yml
+@@ -2,7 +2,7 @@
+ # off an OPEN claim: the claim keeps the rest, unbound from any statement figure, and a new OPEN claim of the same person
+ # with the split-off amount, date and note, the sheet's next number, opened by the user and with its due-by fixed now
+ # from the terms in force on its date, records the original's number as split-from. A claim that is not OPEN, a
+-# deferred one, one dated inside a closed period, an amount out of range (or not a number with up to two decimals), or
++# deferred one, one whose due-by falls inside a closed period, an amount out of range (or not a number with up to two decimals), or
+ # a user whose role may not open a claim, is a 409 and a claim not on the sheet a 404, neither writing anything.
+ # Responds 201 with the new claim as stored.
+ validate:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml
+index 828e21323..ce42cfec2 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml
+@@ -2,7 +2,7 @@
+ # (DRAFT to OPEN), settle (OPEN to SETTLED, or to PENDING when a clerk settles a claim whose due is above the sheet's
+ # clerk limit), approve (PENDING to SETTLED) or reject with a reason (PENDING back to OPEN), both by a steward, or void
+ # (DRAFT, OPEN or PENDING to VOID, or SETTLED to VOID by a steward within 7 days of its settlement), or resettle by a steward (SETTLED again, its due fixed anew at today's figure as
+-# an open claim bound by no statement). An action the claim's status does not allow, a claim dated inside a closed period,
++# an open claim bound by no statement). An action the claim's status does not allow, a claim whose due-by falls inside a closed period,
+ # settling or approving by the user who opened the claim, settling or approving a claim with no proofs whose due is above
+ # the proof threshold in force on its date (checked before the clerk limit), approving, rejecting or re-settling by a clerk, a rejection without a
+ # reason, or an unknown action, is a 409 and a claim not on the sheet a 404, neither writing anything. Opening gives
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/close.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/close.POST.yml
+index d9e720b75..8e5d41af8 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/close.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/close.POST.yml
+@@ -1,6 +1,6 @@
+ # POST /api/sheets/{sheetId}/periods/{periodId}/close — close a period, fixing its due-total as it is now (later
+ # rate changes do not alter it). A period not on the sheet or already closed is a 400 and writes nothing. Once
+-# closed, no claim dated inside it can be added, edited, opened, settled or voided. Responds with the period as
++# closed, no claim whose due-by falls inside it can be added, edited, opened, settled or voided. Responds with the period as
+ # stored.
+ validate:
+   class: net.officefloor.hq.app.period.ValidatePeriodClose
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/soft-close.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/soft-close.POST.yml
+index 75f408e25..c94e32c88 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/soft-close.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/soft-close.POST.yml
+@@ -1,5 +1,5 @@
+ # POST /api/sheets/{sheetId}/periods/{periodId}/soft-close — soft-close an open period, fixing its due-total and each
+-# person's as a close does, while claims dated inside it can still be added, edited, opened, settled and voided. A
++# person's as a close does, while claims whose due-by falls inside it can still be added, edited, opened, settled and voided. A
+ # period not on the sheet, closed or soft-closed already, or a user the close permission does not allow, is a 400 and
+ # writes nothing. Responds with the period as stored.
+ validate:
