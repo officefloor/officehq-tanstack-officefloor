@@ -3,11 +3,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
-import { live, useClaims } from '../claims/claims';
-import { gradeOn, usePeople } from '../people/people';
-import { claimDue, rateFor, sum, useRates } from '../rates/rates';
+import { useClaims } from '../claims/claims';
+import { usePeople } from '../people/people';
+import { useRates } from '../rates/rates';
 import { useFloor, useLate } from '../settings/settings';
-import { periodsKey, usePeriods, type Period } from './periods';
+import { periodDue, periodsKey, usePeriods, type Period } from './periods';
 
 type Values = { name: string; from: string; to: string };
 const EMPTY: Values = { name: '', from: '', to: '' };
@@ -38,17 +38,6 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const change = (v: Partial<Values>) => {
     setValues((was) => ({ ...was, ...v }));
     save.reset();
-  };
-
-  const dueTotal = (p: Period) => {
-    const byId = new Map((people.data ?? []).map((person) => [person.id, person]));
-    const inPeriod = live(claims.data ?? [], people.data).filter((c) => p.from <= c.date && c.date <= p.to);
-    return sum(
-      inPeriod.map((c) => {
-        const person = byId.get(c.personId);
-        return claimDue(c, person === undefined ? undefined : rateFor(rates.data, gradeOn(person, c.date), c.date), floor, late);
-      }),
-    );
   };
 
   return (
@@ -87,7 +76,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid="period-name">{p.name}</td>
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
-              <td data-testid="period-due-total">{p.closed && p.closedTotal !== null ? p.closedTotal : dueTotal(p)}</td>
+              <td data-testid="period-due-total">{periodDue(p, claims.data, people.data, rates.data, floor, late)}</td>
               <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
               <td>
                 <PeriodClose sheetId={sheetId} user={user} period={p} />
