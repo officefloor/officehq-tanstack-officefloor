@@ -9,7 +9,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
  *  when the claim is opened (null for a draft or a voided claim); `due` is the due fixed when it was settled (null
  *  while its due is live, worked out from its grade's current rate); `openedBy` is who opened it (null when never
  *  opened); `stated` is whether its person's last statement bound it to the figure `statedDue` (null when it had
- *  none), which it shows while its due is not fixed. */
+ *  none), which it shows while its due is not fixed; `corrects` is, for a correction (a negative amount),
+ *  the number of the SETTLED claim of the same person it corrects (null for any other claim). */
 export type Claim = {
   id: number;
   sheetId: string;
@@ -23,6 +24,7 @@ export type Claim = {
   openedBy: string | null;
   stated: boolean;
   statedDue: string | null;
+  corrects: number | null;
 };
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'];

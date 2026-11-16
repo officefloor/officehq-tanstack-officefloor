@@ -31,8 +31,11 @@ export function rateFor(rates: Rate[] | undefined, grade: string, on: string): s
 
 /** A two-decimal number ("12.34") in hundredths, exactly. */
 function hundredths(value: string): bigint {
-  const [whole, frac = ''] = value.trim().split('.');
-  return BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2));
+  const t = value.trim();
+  const negative = t.startsWith('-');
+  const [whole, frac = ''] = (negative ? t.slice(1) : t).split('.');
+  const h = BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2));
+  return negative ? -h : h;
 }
 
 /** Hundredths shown with two decimals. */
@@ -43,12 +46,12 @@ function shown(h: bigint): string {
 }
 
 /** What is due on an amount at a rate: amount × rate / 100, rounded half to even to two decimals, and at least
- *  the floor (two decimals); 'n/a' when there is no rate. */
+ *  the floor (two decimals) unless it is a correction (a negative amount); 'n/a' when there is no rate. */
 export function due(amount: string, rate: string | undefined, floor: string): string {
   if (rate === undefined) return 'n/a';
   const d = percentOf(amount, rate, 1);
   const f = hundredths(floor);
-  return shown(d < f ? f : d);
+  return shown(d < f && hundredths(amount) >= 0n ? f : d);
 }
 
 /** `times` × value × pct / 100 in hundredths, rounded half to even to two decimals. */

@@ -21,9 +21,10 @@ public record LateCharge(LocalDate today, int terms, BigDecimal pct) {
         return new LateCharge(sheets.today(sheetId), settings.terms(sheetId), settings.latePct(sheetId));
     }
 
-    /** The charge on the claim with the given figure: zero when it is not overdue a full 30 days or has no figure. */
+    /** The charge on the claim with the given figure: zero when it is not overdue a full 30 days, has no figure, or
+     *  is a correction. */
     public BigDecimal on(Claim claim, BigDecimal figure) {
-        if (figure == null || claim.status() != ClaimStatus.OPEN || claim.due() != null) {
+        if (figure == null || claim.status() != ClaimStatus.OPEN || claim.due() != null || ClaimDue.isCorrection(claim)) {
             return BigDecimal.ZERO.setScale(2);
         }
         long overdue = ChronoUnit.DAYS.between(claim.date().plusDays(terms), today);

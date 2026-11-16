@@ -23,14 +23,19 @@ public final class ClaimDue {
     }
 
     /** The claim's amount at the grade's rate in force on its date, rounded half to even to two decimals, and at
-     *  least the sheet's floor; null when no rate applies. */
+     *  least the sheet's floor (a correction has no floor); null when no rate applies. */
     public static BigDecimal live(Claim claim, String grade, RateRepository rates, BigDecimal floor) {
         Rate rate = rates.find(claim.sheetId(), grade, claim.date());
         if (rate == null) {
             return null;
         }
         BigDecimal due = claim.amount().multiply(rate.rate()).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
-        return due.max(floor);
+        return isCorrection(claim) ? due : due.max(floor);
+    }
+
+    /** Whether the claim is a correction: its amount is negative. */
+    public static boolean isCorrection(Claim claim) {
+        return claim.amount().signum() < 0;
     }
 
     /** The figure the claim shows: fixed when settled, else the one a statement bound it to, else live; null when

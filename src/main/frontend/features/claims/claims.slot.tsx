@@ -11,8 +11,8 @@ import { dueBy, isOverdue } from '../overdue/overdue';
 import { useFloor, useLate } from '../settings/settings';
 import { claimsKey, live, total, useClaims, type Claim } from './claims';
 
-type Values = { amount: string; date: string; note: string };
-const EMPTY: Values = { amount: '', date: '', note: '' };
+type Values = { amount: string; date: string; note: string; corrects: string };
+const EMPTY: Values = { amount: '', date: '', note: '', corrects: '' };
 
 function ClaimsHead() {
   return (
@@ -73,6 +73,7 @@ function ClaimRow({
       <span data-testid="claim-status">{c.status}</span>{' '}
       <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
       <span data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</span>{' '}
       <button
         type="button"
@@ -152,7 +153,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
   };
   const openEditor = (c: Claim) => {
     save.reset();
-    setValues({ amount: c.amount, date: c.date, note: c.note });
+    setValues({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects === null ? '' : String(c.corrects) });
     setEditingId(c.id);
   };
   const cancel = () => {
@@ -183,12 +184,19 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
           />{' '}
           <input type="date" data-testid="claim-form-date" value={values.date} onChange={(e) => change({ date: e.target.value })} />{' '}
           <input data-testid="claim-form-note" placeholder="Note" value={values.note} onChange={(e) => change({ note: e.target.value })} />{' '}
+          <input
+            data-testid="claim-form-corrects"
+            placeholder="Corrects no."
+            inputMode="numeric"
+            value={values.corrects}
+            onChange={(e) => change({ corrects: e.target.value })}
+          />{' '}
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
             {editingId === undefined ? 'Add claim' : 'Save claim'}
           </button>
           {save.isError && (
             <span data-testid="claim-form-error">
-              The amount must be 0.00 or more, with up to two decimals, the date not inside a closed period nor after the person's retirement date, and only a draft claim can be edited.
+              The amount must have up to two decimals, and be 0.00 or more unless it corrects, by number, a settled claim of this person; the date not inside a closed period nor after the person's retirement date, and only a draft claim can be edited.
             </span>
           )}
         </form>

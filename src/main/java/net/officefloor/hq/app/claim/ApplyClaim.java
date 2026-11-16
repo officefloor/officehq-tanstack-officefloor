@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Val;
  * and a claim dated inside a closed period, or moved into one, or moved after its person's retirement date, is refused. */
 public class ApplyClaim {
     public void apply(@Val Claim claim, @Val ClaimValues values, SheetRepository sheets, PeriodRepository periods,
-            PersonRepository people, Out<Claim> changed) throws InvalidClaimException {
+            PersonRepository people, ClaimRepository claims, Out<Claim> changed) throws InvalidClaimException {
         if (claim.status() != ClaimStatus.DRAFT) {
             throw new InvalidClaimException("Only a DRAFT claim can be edited");
         }
@@ -25,6 +25,7 @@ public class ApplyClaim {
             throw new InvalidClaimException("The claim's date is after the person's retirement date");
         }
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), values.amount(), date, values.note(), claim.status(),
-                claim.number(), claim.due(), claim.openedBy(), claim.stated(), claim.statedDue()));
+                claim.number(), claim.due(), claim.openedBy(), claim.stated(), claim.statedDue(),
+                Corrections.check(claim.sheetId(), claim.personId(), values, claims)));
     }
 }

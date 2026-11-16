@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects";
 
     private final JdbcTemplate jdbc;
     private final DataSource dataSource;
@@ -39,26 +39,34 @@ public class ClaimRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note) {
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, Long corrects) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects) VALUES (?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
             ps.setBigDecimal(3, amount);
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
+            ps.setObject(6, corrects, java.sql.Types.BIGINT);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null);
+        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects);
+    }
+
+    /** The person's claim with the given number on the sheet; null when there is none. */
+    public Claim findByNumber(String sheetId, long personId, long number) {
+        List<Claim> found = jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? AND claim_number = ?",
+                ClaimRepository::map, sheetId, personId, number);
+        return found.isEmpty() ? null : found.get(0);
     }
 
     /** Stores the claim's values, but only while it is still a DRAFT; false when it no longer is (nothing is written). */
     public boolean update(Claim claim) {
-        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE sheet_id = ? AND id = ? AND status = ?",
-                claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.sheetId(), claim.id(),
+        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE sheet_id = ? AND id = ? AND status = ?",
+                claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.corrects(), claim.sheetId(), claim.id(),
                 ClaimStatus.DRAFT.name()) == 1;
     }
 
@@ -113,6 +121,7 @@ public class ClaimRepository {
                 rs.getBigDecimal("amount").setScale(2), rs.getObject("claim_date", LocalDate.class),
                 rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
                 rs.getObject("claim_number", Long.class), due == null ? null : due.setScale(2),
-                rs.getString("opened_by"), rs.getBoolean("stated"), statedDue == null ? null : statedDue.setScale(2));
+                rs.getString("opened_by"), rs.getBoolean("stated"), statedDue == null ? null : statedDue.setScale(2),
+                rs.getObject("corrects", Long.class));
     }
 }

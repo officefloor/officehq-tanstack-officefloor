@@ -18,6 +18,6 @@ public class ValidateQuickAdd {
         String amount = request == null ? null : request.amount();
         String by = request == null ? null : request.by();
         person.set(PersonValues.from(new PersonRequest(name, "A", by, null, null)));
-        claim.set(ClaimValues.from(new ClaimRequest(amount, "", "", by)));
+        claim.set(ClaimValues.from(new ClaimRequest(amount, "", "", "", by)));
     }
 }

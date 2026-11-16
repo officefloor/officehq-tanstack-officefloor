@@ -49,7 +49,7 @@ public class ApplyClaimStatus {
         number.set(new ClaimNumber(claim.number()));
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                 claim.note(), change.to(), claim.number(), settledDue,
-                change.to() == ClaimStatus.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue()));
+                change.to() == ClaimStatus.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects()));
     }
 
     private static BigDecimal due(Claim claim, PersonRepository people, RateRepository rates, SettingRepository settings) {
