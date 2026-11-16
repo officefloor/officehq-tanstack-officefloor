@@ -1,0 +1,181 @@
+diff --git a/src/main/frontend/features/snapshots/snapshots.slot.tsx b/src/main/frontend/features/snapshots/snapshots.slot.tsx
+new file mode 100644
+index 000000000..6adbdd0f9
+--- /dev/null
++++ b/src/main/frontend/features/snapshots/snapshots.slot.tsx
+@@ -0,0 +1,27 @@
++import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
++import type { Person } from '../people/people';
++import { useSnapshots } from './snapshots';
++
++function SnapshotsHead() {
++  return <th>Snapshots</th>;
++}
++
++/** A person's snapshot lines: one per SNAPSHOT written for them, oldest first, as "<the day being left> <due-total>". */
++function PersonSnapshots({ sheetId, person }: { sheetId: string; person: Person }) {
++  const snapshots = useSnapshots(sheetId);
++  const mine = (snapshots.data ?? []).filter((s) => s.personId === person.id);
++  return (
++    <td>
++      {mine.map((s, i) => (
++        <div key={i} data-testid="person-snapshot-line">
++          {`${s.day} ${s.dueTotal}`}
++        </div>
++      ))}
++    </td>
++  );
++}
++
++export const contributions = [
++  PeopleHead.fill({ order: 95, Component: SnapshotsHead }),
++  PersonRow.fill({ order: 95, Component: PersonSnapshots }),
++];
+diff --git a/src/main/frontend/features/snapshots/snapshots.ts b/src/main/frontend/features/snapshots/snapshots.ts
+new file mode 100644
+index 000000000..c37da6147
+--- /dev/null
++++ b/src/main/frontend/features/snapshots/snapshots.ts
+@@ -0,0 +1,15 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++/** A SNAPSHOT written for the person `personId`: the day being left and their due-total on it. */
++export type Snapshot = { personId: number; day: string; dueTotal: string };
++
++export const snapshotsKey = (sheetId: string) => ['sheet', sheetId, 'snapshots'];
++
++/** Every snapshot written on the sheet, oldest first. */
++export function useSnapshots(sheetId: string) {
++  return useQuery({
++    queryKey: snapshotsKey(sheetId),
++    queryFn: () => getJson<Snapshot[]>(`/api/sheets/${encodeURIComponent(sheetId)}/snapshots`),
++  });
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RecordSnapshot.java b/src/main/java/net/officefloor/hq/app/sheet/RecordSnapshot.java
+index 461712653..9747e0d42 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/RecordSnapshot.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/RecordSnapshot.java
+@@ -8,13 +8,16 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Before a new today takes effect, writes SNAPSHOT for every person, in list order, with their due-total as it stood
+  *  on the day being left — ahead of any period it closes and the figures it moves. A today equal to the stored one
+- *  changes nothing and writes nothing. */
++ *  changes nothing and writes nothing. Each is also stored (see SnapshotRepository). */
+ public class RecordSnapshot {
+-    public void record(@Val Sheet sheet, @Val LocalDate today, @Val TodayBy by, @Val RollupBefore before, Audit audit) {
++    public void record(@Val Sheet sheet, @Val LocalDate today, @Val TodayBy by, @Val RollupBefore before, Audit audit,
++            SnapshotRepository snapshots) {
+         if (today.equals(sheet.today())) {
+             return;
+         }
+-        for (Figures f : before.figures().values()) {
++        for (java.util.Map.Entry<Long, Figures> e : before.figures().entrySet()) {
++            Figures f = e.getValue();
++            snapshots.add(sheet.id(), e.getKey(), sheet.today(), f.dueTotal());
+             audit.record("SNAPSHOT sheet=" + sheet.id() + " by=" + by.by() + " name=" + f.name() + " due-total="
+                     + f.dueTotal());
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSnapshots.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSnapshots.java
+new file mode 100644
+index 000000000..bbb1f617d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSnapshots.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.sheet;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Every snapshot written on the sheet, oldest first; read as of a date (see AsOf), as they stood then. */
++public class RespondWithSnapshots {
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(value = "asOf", required = false) String asOf, SnapshotRepository snapshots,
++            ObjectResponse<List<Snapshot>> response) {
++        java.time.LocalDate date = AsOf.parse(asOf);
++        response.send(date == null ? snapshots.list(sheetId.trim()) : snapshots.listAsOf(sheetId.trim(), date));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Snapshot.java b/src/main/java/net/officefloor/hq/app/sheet/Snapshot.java
+new file mode 100644
+index 000000000..681712db1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/Snapshot.java
+@@ -0,0 +1,6 @@
++package net.officefloor.hq.app.sheet;
++
++/** A SNAPSHOT written for the person {@code personId}: the day being left (yyyy-MM-dd) and their due-total on it (two
++ *  decimals, or n/a). */
++public record Snapshot(long personId, String day, String dueTotal) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SnapshotRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SnapshotRepository.java
+new file mode 100644
+index 000000000..767489420
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SnapshotRepository.java
+@@ -0,0 +1,36 @@
++package net.officefloor.hq.app.sheet;
++
++import java.time.LocalDate;
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** The stored snapshots, kept per sheet, in the order written. */
++@Repository
++public class SnapshotRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public SnapshotRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    public void add(String sheetId, long personId, LocalDate day, String dueTotal) {
++        jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, left_on, due_total) VALUES (?, ?, ?, ?)", sheetId, personId,
++                java.sql.Date.valueOf(day), dueTotal);
++    }
++
++    /** Every snapshot on the sheet, oldest first. */
++    public List<Snapshot> list(String sheetId) {
++        return jdbc.query("SELECT person_id, left_on, due_total FROM person_snapshot WHERE sheet_id = ? ORDER BY id",
++                (rs, n) -> new Snapshot(rs.getLong("person_id"), rs.getDate("left_on").toLocalDate().toString(),
++                        rs.getString("due_total")), sheetId);
++    }
++
++    /** As they stood at the end of the date: only those written while the sheet's today was on or before it. */
++    public List<Snapshot> listAsOf(String sheetId, LocalDate date) {
++        return jdbc.query("SELECT person_id, left_on, due_total FROM person_snapshot WHERE sheet_id = ? AND left_on <= ? ORDER BY id",
++                (rs, n) -> new Snapshot(rs.getLong("person_id"), rs.getDate("left_on").toLocalDate().toString(),
++                        rs.getString("due_total")), sheetId, java.sql.Date.valueOf(date));
++    }
++}
+diff --git a/src/main/resources/db/migration/V75__person_snapshot.sql b/src/main/resources/db/migration/V75__person_snapshot.sql
+new file mode 100644
+index 000000000..d87f1b8fd
+--- /dev/null
++++ b/src/main/resources/db/migration/V75__person_snapshot.sql
+@@ -0,0 +1,10 @@
++-- Every SNAPSHOT written for a person, in the order written: the day being left and their due-total on it (two
++-- decimals, or n/a), so each person shows their snapshot lines.
++CREATE TABLE person_snapshot (
++    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id   VARCHAR(200) NOT NULL,
++    person_id  BIGINT       NOT NULL,
++    left_on    DATE         NOT NULL,
++    due_total  VARCHAR(20)  NOT NULL
++);
++CREATE INDEX person_snapshot_sheet ON person_snapshot (sheet_id, id);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/snapshots.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/snapshots.GET.yml
+new file mode 100644
+index 000000000..f0b7f8d1f
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/snapshots.GET.yml
+@@ -0,0 +1,5 @@
++# GET /api/sheets/{sheetId}/snapshots — every SNAPSHOT written on the sheet, oldest first: the person, the day being
++# left and their due-total on it.
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSnapshots
++  govern: [ readonly-transaction ]
