@@ -281,6 +281,18 @@ public class SettingRepository {
         return found;
     }
 
+    /** The other sheets of the sheet's tree that exist: its topmost ancestor (itself when it has no parent) and all of
+     *  that sheet's descendants, the sheet itself left out. */
+    public List<String> tree(String sheetId) {
+        List<String> up = ancestors(sheetId, Integer.MAX_VALUE);
+        String root = up.isEmpty() ? sheetId : up.get(up.size() - 1);
+        List<String> found = new java.util.ArrayList<>();
+        found.add(root);
+        found.addAll(descendants(root));
+        found.removeIf((s) -> s.equals(sheetId) || !sheets.exists(s));
+        return found;
+    }
+
     /** Whether the sheet has the other as an ancestor, at any level. */
     public boolean hasAncestor(String sheetId, String ancestor) {
         return ancestors(sheetId, Integer.MAX_VALUE).contains(ancestor);

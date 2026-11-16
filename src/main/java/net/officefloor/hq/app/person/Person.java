@@ -12,9 +12,17 @@ import java.util.List;
  *  a statement, counts in no live total. {@code held} is whether they have any hold. {@code terms} are the person's own
  *  terms (days a claim of theirs has until it is due by, ahead of their grade's and the sheet's), null when none. {@code contact} is the person's contact (unique on the sheet; kept without
  *  surrounding spaces, lower-cased), null when none. {@code aliases} are the person's aliases, sorted as names are compared
- *  (each kept without surrounding spaces; no alias equals, case ignored, any name or alias on the sheet). */
+ *  (each kept without surrounding spaces; no alias equals, case ignored, any name or alias on the sheet). {@code clashing}
+ *  is whether their name or an alias is used as a name or alias on another sheet of the sheet's tree (see
+ *  PersonRepository#treeKeys): set only on the people listed, false elsewhere. */
 public record Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
-        List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases) {
+        List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases,
+        boolean clashing) {
+
+    public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
+            List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases) {
+        this(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, false);
+    }
 
     public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom,
             List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases) {
@@ -24,6 +32,16 @@ public record Person(long id, String sheetId, String name, String grade, long ve
     public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom,
             List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact) {
         this(id, sheetId, name, grade, version, retiredFrom, grades, holds, terms, contact, List.of());
+    }
+
+    /** The person with whether they clash in the sheet's tree. */
+    public Person withClashing(boolean clashing) {
+        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing);
+    }
+
+    /** Whether the person's name or any alias is among the name keys (lower-cased names and aliases). */
+    public boolean usesAny(java.util.Set<String> keys) {
+        return keys.contains(PersonRepository.key(name)) || aliases.stream().anyMatch((a) -> keys.contains(PersonRepository.key(a)));
     }
 
     /** Whether a hold of the person covers the date. */

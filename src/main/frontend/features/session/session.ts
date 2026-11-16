@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { nowKey, useReadNow } from '../../query/readNow';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 
 // Who is signed in and which sheet is active live in the URL (`user`, `sheet`), so any feature
@@ -14,9 +15,10 @@ export type Sheet = { id: string; today: string; archived: boolean; parent: stri
 
 /** The active sheet as the store holds it. Keyed ['sheet', id]: every per-sheet key starts so. */
 export function useSheet(sheetId: string) {
+  const now = useReadNow();
   return useQuery({
-    queryKey: ['sheet', sheetId],
-    queryFn: () => getJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}`),
+    queryKey: nowKey(['sheet', sheetId], now),
+    queryFn: () => getJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}`, now),
     enabled: sheetId !== '',
   });
 }

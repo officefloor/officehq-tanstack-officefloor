@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { nowKey, useReadNow } from '../../query/readNow';
 import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
 
 export const GRADES = ['A', 'B', 'C'] as const;
@@ -17,7 +18,9 @@ export type PersonGrade = { grade: string; from: string | null };
  *  their grade's and the sheet's when a claim is added), null when they have none. `contact` is the person's contact
  *  (unique on the sheet; without surrounding spaces, lower-cased), null when none. `aliases` are the person's aliases,
  *  sorted as names are compared: no alias equals (case ignored) any name or alias on the sheet, and the quick-add bar and
- *  the paste box find a person by one as by the name. */
+ *  the paste box find a person by one as by the name. `clashing` is whether their name or an alias is used as a name or
+ *  alias on another sheet of the sheet's tree (people added before the rule): every edit of them is refused until it
+ *  renames them clear. */
 export type Person = {
   id: number;
   sheetId: string;
@@ -31,6 +34,7 @@ export type Person = {
   terms: number | null;
   contact: string | null;
   aliases: string[];
+  clashing: boolean;
 };
 
 /** A hold on a person from a date until a date (yyyy-MM-dd, both included); a null `to` is open-ended. */
@@ -59,9 +63,10 @@ export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'];
 
 /** The sheet's people, in the order they were added. */
 export function usePeople(sheetId: string) {
+  const now = useReadNow();
   return useQuery({
-    queryKey: peopleKey(sheetId),
-    queryFn: () => getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheetId)}/people`),
+    queryKey: nowKey(peopleKey(sheetId), now),
+    queryFn: () => getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheetId)}/people`, now),
   });
 }
 

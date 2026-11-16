@@ -14,8 +14,8 @@ export function viewAsOf(): string {
   return /^"?(\d{4}-\d{2}-\d{2})"?$/.exec(raw)?.[1] ?? '';
 }
 
-async function send<T>(path: string, init?: RequestInit): Promise<T> {
-  const asOf = viewAsOf();
+async function send<T>(path: string, init?: RequestInit, now = false): Promise<T> {
+  const asOf = now ? '' : viewAsOf();
   if (asOf !== '' && path.startsWith('/api/sheets/')) {
     if ((init?.method ?? 'GET') === 'GET') {
       path = `${path}${path.includes('?') ? '&' : '?'}asOf=${asOf}`;
@@ -30,8 +30,9 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
-export function getJson<T>(path: string): Promise<T> {
-  return send<T>(path);
+/** A read; `now` asks for the sheet as it is now, whatever the as-of date (see query/readNow). */
+export function getJson<T>(path: string, now = false): Promise<T> {
+  return send<T>(path, undefined, now);
 }
 
 export function postJson<T>(path: string, body: unknown): Promise<T> {

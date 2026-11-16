@@ -12,7 +12,8 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** The person on the sheet with the name (case ignored); when there is none, adds them, writing PERSON_ADDED and the
+/** The person on the sheet with the name (case ignored); when there is none, adds them (refused when the name is used on
+ *  another sheet of the sheet's tree), writing PERSON_ADDED and the
  *  figures it moved just as adding a person does. Publishes the person and the figures before the claim is added. */
 public class FindOrAddPerson {
     public void find(@PathVariable("sheetId") String sheetId, @Val PersonValues values, PersonRepository people,
@@ -21,6 +22,9 @@ public class FindOrAddPerson {
         String sheet = sheetId.trim();
         Person found = people.findByName(sheet, values.name());
         if (found == null) {
+            if (people.treeTaken(sheet, values.name())) {
+                throw new DuplicatePersonNameException(values.name());
+            }
             RollupBefore was = rollup.take(sheet);
             found = people.add(sheet, values.name(), values.grade(), values.terms(), values.contact());
             audit.record("PERSON_ADDED sheet=" + found.sheetId() + " by=" + values.by() + " name=" + found.name()

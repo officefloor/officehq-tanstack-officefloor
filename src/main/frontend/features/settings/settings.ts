@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { nowKey, useReadNow } from '../../query/readNow';
 import type { Late } from '../overdue/late';
 import { gradeOn, usePeople } from '../people/people';
 import { useSheetToday } from '../session/session';
@@ -13,9 +14,10 @@ export const settingsKey = (sheetId: string) => ['sheet', sheetId, 'settings'];
 
 /** The sheet's settings: every value recorded, by key then from-date. */
 export function useSettings(sheetId: string) {
+  const now = useReadNow();
   return useQuery({
-    queryKey: settingsKey(sheetId),
-    queryFn: () => getJson<Setting[]>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`),
+    queryKey: nowKey(settingsKey(sheetId), now),
+    queryFn: () => getJson<Setting[]>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, now),
   });
 }
 

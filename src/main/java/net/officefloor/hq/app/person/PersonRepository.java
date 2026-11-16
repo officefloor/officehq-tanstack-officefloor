@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -25,10 +26,39 @@ public class PersonRepository {
 
     private final JdbcTemplate jdbc;
     private final SheetRepository sheets;
+    private final SettingRepository settings;
 
-    public PersonRepository(JdbcTemplate jdbc, SheetRepository sheets) {
+    public PersonRepository(JdbcTemplate jdbc, SheetRepository sheets, SettingRepository settings) {
         this.jdbc = jdbc;
         this.sheets = sheets;
+        this.settings = settings;
+    }
+
+    /** A name or alias as names are compared: lower-cased (as the name_key and alias_key columns are). */
+    public static String key(String name) {
+        return name.toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** The names and aliases (as compared, see #key) used on the other sheets of the sheet's tree (see
+     *  SettingRepository#tree): none may be taken on the sheet. */
+    public java.util.Set<String> treeKeys(String sheetId) {
+        java.util.Set<String> keys = new java.util.HashSet<>();
+        for (String other : settings.tree(sheetId)) {
+            keys.addAll(jdbc.queryForList("SELECT name_key FROM person WHERE sheet_id = ?", String.class, other));
+            keys.addAll(jdbc.queryForList("SELECT alias_key FROM person_alias WHERE sheet_id = ?", String.class, other));
+        }
+        return keys;
+    }
+
+    /** Whether the name is used as a name or alias on another sheet of the sheet's tree, case ignored. */
+    public boolean treeTaken(String sheetId, String name) {
+        return treeKeys(sheetId).contains(key(name));
+    }
+
+    /** The people, each marked with whether their name or an alias is used on another sheet of the sheet's tree. */
+    public List<Person> withClashing(String sheetId, List<Person> people) {
+        java.util.Set<String> keys = treeKeys(sheetId);
+        return people.stream().map((p) -> p.withClashing(p.usesAny(keys))).toList();
     }
 
     public List<Person> list(String sheetId) {
@@ -109,10 +139,10 @@ public class PersonRepository {
         return n != null && n > 0;
     }
 
-    /** Gives the person the alias: refused when it equals, case ignored, any name or alias on the sheet (the unique
-     *  (sheet_id, alias_key) index refuses one taken by a concurrent add). */
+    /** Gives the person the alias: refused when it equals, case ignored, any name or alias on the sheet or on another
+     *  sheet of its tree (the unique (sheet_id, alias_key) index refuses one taken by a concurrent add). */
     public void addAlias(String sheetId, long personId, String alias) throws DuplicatePersonNameException {
-        if (nameTaken(sheetId, alias, 0)) {
+        if (nameTaken(sheetId, alias, 0) || treeTaken(sheetId, alias)) {
             throw new DuplicatePersonNameException(alias);
         }
         try {

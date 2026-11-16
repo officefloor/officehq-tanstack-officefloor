@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { nowKey, useReadNow } from '../../query/readNow';
 import { counts, isOpen, type Claim } from '../claims/claims';
 import { lateBoundaries, roundsHalfUp, type Late } from '../overdue/late';
 import { gradeOn, type Person } from '../people/people';
@@ -14,9 +15,10 @@ export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'];
 
 /** The sheet's rates, by grade then from-date, then those of its parent, the parent's parent ... (see Rate.level). */
 export function useRates(sheetId: string) {
+  const now = useReadNow();
   return useQuery({
-    queryKey: ratesKey(sheetId),
-    queryFn: () => getJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`),
+    queryKey: nowKey(ratesKey(sheetId), now),
+    queryFn: () => getJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`, now),
   });
 }
 

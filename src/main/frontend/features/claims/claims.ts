@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { nowKey, useReadNow } from '../../query/readNow';
 import { heldOn, retiredOn, type Person } from '../people/people';
 
 /** A claim's status: DRAFT when added, then OPEN and SETTLED; a clerk settling above the clerk limit makes it PENDING
@@ -74,9 +75,10 @@ export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'];
 
 /** Every claim on the sheet, newest first. */
 export function useClaims(sheetId: string) {
+  const now = useReadNow();
   return useQuery({
-    queryKey: claimsKey(sheetId),
-    queryFn: () => getJson<Claim[]>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`),
+    queryKey: nowKey(claimsKey(sheetId), now),
+    queryFn: () => getJson<Claim[]>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`, now),
   });
 }
 
