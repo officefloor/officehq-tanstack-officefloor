@@ -16,7 +16,7 @@ export function day(date: string): number {
   return Date.UTC(y, m - 1, d) / 86_400_000;
 }
 
-/** A claim's due-by (yyyy-MM-dd): fixed when it was added, its date plus its person's own terms then, else those of their grade. */
+/** A claim's due-by (yyyy-MM-dd): fixed when it was added, the terms-th business day after its date (skipping weekends and the sheet's holidays then), by its person's own terms then, else those of their grade. */
 export function dueBy(claim: Claim): string {
   return claim.dueBy;
 }

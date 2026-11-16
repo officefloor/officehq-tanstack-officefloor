@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -11,14 +12,14 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Stores the claim's remaining amount, but only while it is still OPEN with the amount the split started from (a
  * change another user made first is refused), then adds the new claim: the split-off amount, the same person, date
- * and note, its due-by fixed now from the person's own terms, else those of their grade in force on its date, OPEN with the sheet's next
+ * and note, its due-by fixed now as the terms-th business day after its date (the person's own terms, else those of their grade in force on its date), OPEN with the sheet's next
  * number (see ClaimNumbering), opened by the user who split, and the original's number as split-from; a late entry when its
  * due-by falls inside a soft-closed period. The new claim's
  * status log starts with its OPEN line (see ClaimLog).
  */
 public class SaveSplit {
     public void save(@Val Claim claim, @Val ClaimSplit split, ClaimRepository claims, PersonRepository people,
-            PeriodRepository periods, SettingRepository settings, SheetRepository sheets, ClaimLog log,
+            PeriodRepository periods, SettingRepository settings, HolidayRepository holidays, SheetRepository sheets, ClaimLog log,
             Out<SplitOff> made) throws InvalidClaimStatusException {
         if (!claims.split(claim, claim.amount().add(split.amount()))) {
             throw new InvalidClaimStatusException("The claim was changed by someone else");
@@ -26,7 +27,8 @@ public class SaveSplit {
         Person person = people.find(claim.sheetId(), claim.personId());
         String grade = person == null ? null : person.gradeOn(claim.date());
         Claim added = claims.add(claim.sheetId(), claim.personId(), split.amount(), claim.date(), claim.note(), null,
-                claim.date().plusDays(settings.terms(claim.sheetId(), person == null ? null : person.terms(), grade, claim.date())));
+                holidays.businessDaysAfter(claim.sheetId(), claim.date(),
+                        settings.terms(claim.sheetId(), person == null ? null : person.terms(), grade, claim.date())));
         if (periods.softClosedOn(added.sheetId(), added.dueBy())) {
             claims.markLateEntry(added);
         }

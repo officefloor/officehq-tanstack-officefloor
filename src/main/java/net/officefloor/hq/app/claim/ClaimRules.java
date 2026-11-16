@@ -28,12 +28,12 @@ public final class ClaimRules {
         return new Checked(date, Corrections.check(person.sheetId(), person.id(), values, claims), dueBy);
     }
 
-    /** The due-by a claim of the person dated the date is fixed with as it is added: its date plus the person's own terms, else the
-     *  terms of their grade in force on that date; when that falls on a holiday of the sheet, the next day that is not one (the holidays on the
-     *  sheet now decide: one added later leaves the due-by as it is). */
+    /** The due-by a claim of the person dated the date is fixed with as it is added: the terms-th business day after its date (see
+     *  HolidayRepository.businessDaysAfter), the terms being the person's own, else those of their grade in force on that date (the
+     *  holidays on the sheet now decide: one added later leaves the due-by as it is). */
     public static LocalDate dueBy(Person person, LocalDate date, SettingRepository settings, HolidayRepository holidays) {
-        return holidays.notOnHoliday(person.sheetId(),
-                date.plusDays(settings.terms(person.sheetId(), person.terms(), person.gradeOn(date), date)));
+        return holidays.businessDaysAfter(person.sheetId(), date,
+                settings.terms(person.sheetId(), person.terms(), person.gradeOn(date), date));
     }
 
     /** A claim's date, the number it corrects (null when none) and its due-by, once its rules are kept. */

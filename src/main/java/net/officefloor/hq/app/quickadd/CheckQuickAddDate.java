@@ -22,7 +22,7 @@ public class CheckQuickAddDate {
         LocalDate date = settings.claimDate(sheet);
         Person found = people.findByName(sheet, values.name());
         LocalDate dueBy = found != null ? ClaimRules.dueBy(found, date, settings, holidays)
-                : holidays.notOnHoliday(sheet, date.plusDays(settings.terms(sheet, values.terms(), values.grade(), date)));
+                : holidays.businessDaysAfter(sheet, date, settings.terms(sheet, values.terms(), values.grade(), date));
         if (periods.closedOn(sheet, dueBy)) {
             throw new InvalidClaimException("The claim's due-by is inside a closed period");
         }
