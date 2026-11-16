@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
-import { counts, useClaims } from '../claims/claims';
+import { live, useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { claimDue, rateFor, sum, useRates } from '../rates/rates';
 import { periodsKey, usePeriods, type Period } from './periods';
@@ -12,8 +12,8 @@ type Values = { name: string; from: string; to: string };
 const EMPTY: Values = { name: '', from: '', to: '' };
 
 /** The sheet's periods: the form that adds one, and each period with its due-total — the figures of the claims
- *  that count whose date falls in it, added up (skipping n/a); a closed period shows the due-total fixed when it
- *  was closed. */
+ *  that count (a held person's OPEN claims do not) whose date falls in it, added up (skipping n/a); a closed period
+ *  shows the due-total fixed when it was closed. */
 function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const periods = usePeriods(sheetId);
   const people = usePeople(sheetId);
@@ -39,7 +39,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
 
   const dueTotal = (p: Period) => {
     const grades = new Map((people.data ?? []).map((person) => [person.id, person.grade]));
-    const inPeriod = (claims.data ?? []).filter((c) => counts(c) && p.from <= c.date && c.date <= p.to);
+    const inPeriod = live(claims.data ?? [], people.data).filter((c) => p.from <= c.date && c.date <= p.to);
     return sum(
       inPeriod.map((c) => {
         const grade = grades.get(c.personId);

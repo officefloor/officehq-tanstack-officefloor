@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import type { Person } from '../people/people';
 
 /** A claim's status: DRAFT when added, then OPEN and SETTLED; a DRAFT or OPEN claim may be VOID. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
@@ -39,6 +40,13 @@ const cents = (amount: string) => Math.round(Number(amount) * 100);
 
 /** Whether a claim counts toward claimed and the totals: only OPEN and SETTLED claims do. */
 export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
+
+/** The claims that count in the live totals (claimed, due-totals, a period's due-total): a held person's OPEN claims
+ *  do not; their SETTLED ones still do. */
+export function live(claims: Claim[], people: Person[] | undefined): Claim[] {
+  const held = new Set((people ?? []).filter((p) => p.held).map((p) => p.id));
+  return claims.filter((c) => counts(c) && !(c.status === 'OPEN' && held.has(c.personId)));
+}
 
 /** The amounts of the claims that count added up, shown with two decimals. */
 export function total(claims: Claim[]): string {

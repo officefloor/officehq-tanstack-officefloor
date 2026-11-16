@@ -17,7 +17,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.stereotype.Service;
 
 /**
- * The sheet's figures as the screen shows them: each person's claimed (their claims that count added up) and
+ * The sheet's figures as the screen shows them: each person's claimed (their claims that count added up; a held person's OPEN claims do not) and
  * due-total (the figures of those claims added up; n/a when their grade has no rate today and no counting claim
  * keeps a figure), and the sheet's claimed-total and due-total (everyone's added up, skipping n/a).
  *
@@ -53,7 +53,7 @@ public class Rollup {
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             boolean kept = false;
             for (Claim c : all) {
-                if (c.personId() != person.id() || !ClaimDue.counts(c)) {
+                if (c.personId() != person.id() || !ClaimDue.countsLive(c, person.held())) {
                     continue;
                 }
                 claimed = claimed.add(c.amount());

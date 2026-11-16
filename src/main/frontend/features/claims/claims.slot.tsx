@@ -4,10 +4,10 @@ import { postJson, putJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
-import type { Person } from '../people/people';
+import { usePeople, type Person } from '../people/people';
 import { periodOf, usePeriods } from '../periods/periods';
 import { claimDue, rateFor, useRates } from '../rates/rates';
-import { claimsKey, total, useClaims, type Claim } from './claims';
+import { claimsKey, live, total, useClaims, type Claim } from './claims';
 
 type Values = { amount: string; date: string; note: string };
 const EMPTY: Values = { amount: '', date: '', note: '' };
@@ -155,7 +155,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
 
   return (
     <>
-      <td data-testid="person-claimed">{total(mine)}</td>
+      <td data-testid="person-claimed">{total(live(mine, [person]))}</td>
       <td>
         <form
           data-testid="claim-form"
@@ -203,12 +203,13 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
   );
 }
 
-/** The sheet's claimed-total: everyone's claimed (OPEN and SETTLED claims) added up. */
+/** The sheet's claimed-total: everyone's claimed (OPEN and SETTLED claims, but no held person's OPEN ones) added up. */
 function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId);
+  const people = usePeople(sheetId);
   return (
     <p>
-      Claimed total <span data-testid="rollup-claimed-total">{total(claims.data ?? [])}</span>
+      Claimed total <span data-testid="rollup-claimed-total">{total(live(claims.data ?? [], people.data))}</span>
       {claims.isError && <span data-testid="claims-load-error"> Could not load claims.</span>}
     </p>
   );

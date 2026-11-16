@@ -16,6 +16,12 @@ public final class ClaimDue {
         return claim.status() == ClaimStatus.OPEN || claim.status() == ClaimStatus.SETTLED;
     }
 
+    /** Whether a claim counts toward the live totals (claimed, due-totals, a period's due-total): one that counts,
+     *  unless it is OPEN and its person is on hold. */
+    public static boolean countsLive(Claim claim, boolean held) {
+        return counts(claim) && !(held && claim.status() == ClaimStatus.OPEN);
+    }
+
     /** The claim's amount at the grade's rate in force on its date, rounded half to even to two decimals; null
      *  when no rate applies. */
     public static BigDecimal live(Claim claim, String grade, RateRepository rates) {

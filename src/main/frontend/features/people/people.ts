@@ -6,8 +6,17 @@ export const GRADES = ['A', 'B', 'C'] as const;
 
 /** A person on the sheet. `name` is unique on the sheet (case ignored), kept without outer spaces; `grade` is A, B or C.
  *  `version` goes up by one on each stored edit; an edit sends the version it was made from. `retiredFrom` (yyyy-MM-dd)
- *  is the date the person is retired from, null when not retired: a person with one counts as retired at once. */
-export type Person = { id: number; sheetId: string; name: string; grade: string; version: number; retiredFrom: string | null };
+ *  is the date the person is retired from, null when not retired: a person with one counts as retired at once. `held` is
+ *  whether the person is on hold: their OPEN claims then count in no live total. */
+export type Person = {
+  id: number;
+  sheetId: string;
+  name: string;
+  grade: string;
+  version: number;
+  retiredFrom: string | null;
+  held: boolean;
+};
 
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'];
 

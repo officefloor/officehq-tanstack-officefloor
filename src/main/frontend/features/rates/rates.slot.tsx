@@ -4,7 +4,7 @@ import { putJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
-import { useClaims } from '../claims/claims';
+import { live, useClaims } from '../claims/claims';
 import { GRADES, usePeople, type Person } from '../people/people';
 import { useSheetToday } from '../session/session';
 import { personDue, rateFor, ratesKey, sum, useRates, type Rate } from './rates';
@@ -130,7 +130,7 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
   const today = useSheetToday(sheetId);
-  const mine = claims.data?.filter((c) => c.personId === person.id) ?? [];
+  const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person]);
   return <td data-testid="person-due-total">{personDue(mine, rates.data, person.grade, today)}</td>;
 }
 
@@ -141,7 +141,7 @@ function DueTotal({ sheetId }: { sheetId: string }) {
   const rates = useRates(sheetId);
   const today = useSheetToday(sheetId);
   const dues = (people.data ?? []).map((p) =>
-    personDue(claims.data?.filter((c) => c.personId === p.id) ?? [], rates.data, p.grade, today),
+    personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p.grade, today),
   );
   return (
     <p>

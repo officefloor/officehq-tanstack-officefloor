@@ -22,19 +22,19 @@ public class PersonRepository {
     }
 
     public List<Person> list(String sheetId) {
-        return jdbc.query("SELECT id, sheet_id, name, grade, version, retired_from FROM person WHERE sheet_id = ? ORDER BY id",
+        return jdbc.query("SELECT id, sheet_id, name, grade, version, retired_from, held FROM person WHERE sheet_id = ? ORDER BY id",
                 PersonRepository::map, sheetId);
     }
 
     public Person find(String sheetId, long id) {
-        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade, version, retired_from FROM person WHERE sheet_id = ? AND id = ?",
+        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade, version, retired_from, held FROM person WHERE sheet_id = ? AND id = ?",
                 PersonRepository::map, sheetId, id);
         return found.isEmpty() ? null : found.get(0);
     }
 
     /** The person on the sheet with this name, case ignored; null when there is none. */
     public Person findByName(String sheetId, String name) {
-        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade, version, retired_from FROM person WHERE sheet_id = ? AND name_key = LOWER(?)",
+        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade, version, retired_from, held FROM person WHERE sheet_id = ? AND name_key = LOWER(?)",
                 PersonRepository::map, sheetId, name);
         return found.isEmpty() ? null : found.get(0);
     }
@@ -62,7 +62,7 @@ public class PersonRepository {
         } catch (DuplicateKeyException e) {
             throw new DuplicatePersonNameException(name);
         }
-        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0, null);
+        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0, null, false);
     }
 
     /** Stores the person as its new version, only while the stored one is still {@code fromVersion}: a save
@@ -85,9 +85,15 @@ public class PersonRepository {
         jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?", Date.valueOf(from), sheetId, id);
     }
 
+    /** Puts the person on hold (true) or takes them off it (false), only while they are not already so; false when
+     *  they already were. */
+    public boolean hold(String sheetId, long id, boolean held) {
+        return jdbc.update("UPDATE person SET held = ? WHERE sheet_id = ? AND id = ? AND held = ?", held, sheetId, id, !held) == 1;
+    }
+
     private static Person map(ResultSet rs, int n) throws SQLException {
         Date retired = rs.getDate("retired_from");
         return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
-                retired == null ? null : retired.toLocalDate().toString());
+                retired == null ? null : retired.toLocalDate().toString(), rs.getBoolean("held"));
     }
 }

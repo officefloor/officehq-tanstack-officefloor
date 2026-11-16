@@ -11,6 +11,7 @@ public class RetirePerson {
             Out<Person> retired) {
         LocalDate from = retirement.from() != null ? retirement.from() : sheets.today(person.sheetId());
         people.retire(person.sheetId(), person.id(), from);
-        retired.set(new Person(person.id(), person.sheetId(), person.name(), person.grade(), person.version(), from.toString()));
+        retired.set(new Person(person.id(), person.sheetId(), person.name(), person.grade(), person.version(), from.toString(),
+                person.held()));
     }
 }
