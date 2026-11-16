@@ -6,7 +6,7 @@ import { gradeOn, listPeople, peopleKey } from '../people/api';
 import { listPeriods, periodDueTotal, periodsKey } from '../periods/api';
 import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
 import { heldOf } from '../rates/shares';
-import { isReviewLate, useFloor, useLate, useReviewSla } from '../settings/api';
+import { isPendingLate, isReviewLate, useFloor, useLate, usePendingSla, useReviewSla } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { Fig } from '../session/Fig';
 
@@ -46,7 +46,7 @@ export function dueChange(previous: string, current: string): string {
 
 /** The sheet's summary, agreeing with the lists: per grade, how many people not retired are on it
  *  today, their due-totals added up (n/a ones skipped) and how many of them are active (see `isActive`); per period by from-date, its due-total and its change from the period before (none for the earliest); per status,
- *  how many claims have it; how many REVIEW claims are review-late (see `isReviewLate`); per void reason on the list, how many VOID claims were voided with it. */
+ *  how many claims have it; how many REVIEW claims are review-late (see `isReviewLate`); how many PENDING claims are pending-late (see `isPendingLate`); per void reason on the list, how many VOID claims were voided with it. */
 export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
@@ -57,6 +57,7 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
   const today = useSheetToday(sheetId, user);
   const charges = useLate(sheetId, today);
   const reviewSla = useReviewSla(sheetId);
+  const pendingSla = usePendingSla(sheetId);
   const all = claims.data ?? [];
   const active = (people.data ?? []).filter((p) => !p.retired);
   const liveOf = (p: (typeof active)[number]) => liveClaims(all.filter((c) => c.personId === p.id), [p]);
@@ -101,6 +102,12 @@ export function Summary({ sheetId, user }: { sheetId: string; user: string }) {
             <td>Review late</td>
             <td>Claims <span data-testid="summary-review-late-count">
               {all.filter((c) => isReviewLate(c, today, reviewSla)).length}</span></td>
+            <td />
+          </tr>
+          <tr>
+            <td>Pending late</td>
+            <td>Claims <span data-testid="summary-pending-late-count">
+              {all.filter((c) => isPendingLate(c, today, pendingSla)).length}</span></td>
             <td />
           </tr>
           {(voidReasons.data ?? []).map((r) => (

@@ -53,6 +53,8 @@ export type Role = { sheetId: string; user: string; role: string };
  *  once per claim ever.
  *  The review SLA (a number of days; blank means none; not dated): a REVIEW claim whose review day (the
  *  sheet's today when it went to REVIEW) plus them is before the sheet's today is review-late (see `isReviewLate`).
+ *  The pending SLA (a number of days; blank means none; not dated): a PENDING claim whose pending day (the
+ *  sheet's today when it last went to PENDING) plus them is before the sheet's today is pending-late (see `isPendingLate`).
  *  The score thresholds (score-mid and score-high, whole numbers; blank means none; not dated): while both
  *  are set, each person shows a score band (see `scoreBand`).
  *  The score log (on or blank; not dated): while on, changing the sheet's today records a SCORE audit line per
@@ -64,7 +66,7 @@ export type Role = { sheetId: string; user: string; role: string };
  *  A grade's clerk limit (clerk-limit-<grade>, two decimals; blank means none; dated): a claim whose person's
  *  grade on the sheet's today has one in force then goes by it instead of the sheet's clerk limit. */
 export const SETTING_KEYS = ['clerk-limit', 'clerk-limit-A', 'clerk-limit-B', 'clerk-limit-C', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'rounding',
-  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'max-open', 'score-mid', 'score-high', 'score-log', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'] as const;
+  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'pending-sla', 'max-open', 'score-mid', 'score-high', 'score-log', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'] as const;
 
 /** The roles that may take each action of the permission matrix while its entry is blank. */
 export const PERMISSION_STANDING: Record<string, string> = {
@@ -76,7 +78,7 @@ export const PERMISSION_STANDING: Record<string, string> = {
 export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00', 'fiscal-start-month': '1' };
 
 /** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
-export const UNDATED_KEYS: readonly string[] = ['pot', 'proof-kinds', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'max-open', 'score-mid', 'score-high', 'score-log', 'perm-open', 'perm-settle', 'perm-void',
+export const UNDATED_KEYS: readonly string[] = ['pot', 'proof-kinds', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'pending-sla', 'max-open', 'score-mid', 'score-high', 'score-log', 'perm-open', 'perm-settle', 'perm-void',
   'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'];
 
 /** The fiscal year a date (yyyy-MM-dd) falls in, FY<yyyy>, for a fiscal year start month (1 to 12). */
@@ -170,6 +172,13 @@ export function useReviewSla(sheetId: string): number | null {
   return value ? Number(value) : null;
 }
 
+/** The sheet's pending SLA in whole days (null: none). */
+export function usePendingSla(sheetId: string): number | null {
+  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+  const value = settingOn(settings.data, 'pending-sla', '9999-12-31');
+  return value ? Number(value) : null;
+}
+
 /** The sheet's score thresholds as whole numbers (null: either is blank). */
 export function useScoreThresholds(sheetId: string): { mid: number; high: number } | null {
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
@@ -200,6 +209,25 @@ export function reviewDay(c: Pick<Claim, 'log'>): string | null {
 export function isReviewLate(c: Pick<Claim, 'status' | 'log'>, today: string, sla: number | null): boolean {
   if (c.status !== 'REVIEW' || sla === null) return false;
   const day = reviewDay(c);
+  if (day === null) return false;
+  const until = new Date(Date.parse(`${day}T00:00:00Z`) + sla * 86_400_000).toISOString().slice(0, 10);
+  return until < today;
+}
+
+/** The day a claim last went to PENDING (yyyy-MM-dd), from its status log (null: never). */
+export function pendingDay(c: Pick<Claim, 'log'>): string | null {
+  for (let i = (c.log ?? []).length - 1; i >= 0; i--) {
+    const m = /^PENDING by .* on (\d{4}-\d{2}-\d{2}) due=/.exec(c.log[i]);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/** Whether a claim is pending-late: PENDING, and its pending day plus the pending SLA (null: none) is
+ *  before the sheet's today. */
+export function isPendingLate(c: Pick<Claim, 'status' | 'log'>, today: string, sla: number | null): boolean {
+  if (c.status !== 'PENDING' || sla === null) return false;
+  const day = pendingDay(c);
   if (day === null) return false;
   const until = new Date(Date.parse(`${day}T00:00:00Z`) + sla * 86_400_000).toISOString().slice(0, 10);
   return until < today;

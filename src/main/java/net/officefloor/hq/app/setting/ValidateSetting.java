@@ -132,6 +132,12 @@ public class ValidateSetting {
             }
             body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null));
             return;
+        } else if (SettingRepository.PENDING_SLA.equals(key)) {
+            if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("The pending SLA is blank or a whole number of days, 0 or more");
+            }
+            body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null));
+            return;
         } else if (SettingRepository.MAX_OPEN.equals(key)) {
             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
                 throw new InvalidSettingException("The maximum of open claims is blank or a whole number, 0 or more");
