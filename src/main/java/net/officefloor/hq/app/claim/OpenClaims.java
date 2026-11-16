@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 /**
  * Opens each selected claim that can be opened, in list order (people in the order they were added, a person's
- * claims newest first): as the single open does, it must be a DRAFT not dated inside a closed period, nor one with an empty note whose due is above the note threshold
+ * claims newest first): as the single open does, it must be a DRAFT whose due-by is not inside a closed period, nor one with an empty note whose due is above the note threshold
  * (see ApplyClaimStatus#needsNote), takes its
  * number (see ClaimNumbering) and records who opened it, adds its OPEN line to its status log (see ClaimLog), then writes CLAIM_OPENED and the figures it moved (see Rollup).
  * A user whose role the sheet does not permit to open opens none. Each that cannot, or is not on the sheet, is left as it is and counted refused.
@@ -49,7 +49,7 @@ public class OpenClaims {
             chosen = List.of();
         }
         for (Claim claim : chosen) {
-            if (claim.status() != ClaimStatus.DRAFT || periods.closedOn(sheet, claim.date())
+            if (claim.status() != ClaimStatus.DRAFT || periods.closedOn(sheet, claim.dueBy())
                     || ApplyClaimStatus.needsNote(claim, people, rates, settings, late)) {
                 continue;
             }

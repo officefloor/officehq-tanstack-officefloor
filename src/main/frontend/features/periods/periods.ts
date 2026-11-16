@@ -46,7 +46,7 @@ export function statusAsOf(claim: Claim, day: string): ClaimStatus | undefined {
 }
 
 /** A person's due-total for a period: the figures (each due as shown now, with its late charge) of their claims
- *  whose date falls in it and that counted by the status each had at the end of the period's last day (see
+ *  whose due-by falls in it and that counted by the status each had at the end of the period's last day (see
  *  statusAsOf; a claim added after it does not count), the live rules otherwise applying (a deferred claim does
  *  not count, nor a claim open now dated within a hold of its person, or of a person whose retirement date is reached,
  *  not bound by a statement), added up (skipping
@@ -61,7 +61,7 @@ export function personPeriodDue(
 ): string {
   if (period.closed || period.soft) return period.personTotals?.[String(person.id)] ?? '0.00';
   const mine = (claims ?? []).filter((c) => {
-    if (c.personId !== person.id || c.date < period.from || period.to < c.date) return false;
+    if (c.personId !== person.id || c.dueBy < period.from || period.to < c.dueBy) return false;
     const status = statusAsOf(c, period.to);
     return status !== undefined && counts({ ...c, status }) && !(isOpen(c) && !bound(c) && (heldOn(person, c.date) || retiredOn(person, late.today)));
   });

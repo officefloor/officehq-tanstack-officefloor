@@ -6,7 +6,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Soft-closes an open period: its due-total and each person's are fixed as a close fixes them (see ClosePeriod), but
- *  claims dated inside it can still be added, edited, opened, settled and voided. Soft-closing a period closed or
+ *  claims whose due-by falls inside it can still be added, edited, opened, settled and voided. Soft-closing a period closed or
  *  soft-closed already is refused, and so is soft-closing by a role the sheet's close permission does not allow. */
 public class SoftClosePeriod {
     public void close(@Val Period period, @Val PeriodCloseRequest request, PeriodCloser closer,

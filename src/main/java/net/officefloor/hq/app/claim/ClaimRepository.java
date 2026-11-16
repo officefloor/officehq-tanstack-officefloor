@@ -97,7 +97,7 @@ public class ClaimRepository {
         jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND locked_by IS NOT NULL", sheetId);
     }
 
-    /** Marks the claim a late entry: added while the period its date falls in was soft-closed. */
+    /** Marks the claim a late entry: added while the period its due-by falls in was soft-closed. */
     public void markLateEntry(Claim claim) {
         jdbc.update("UPDATE claim SET late_entry = TRUE WHERE sheet_id = ? AND id = ?", claim.sheetId(), claim.id());
     }

@@ -84,7 +84,7 @@ public class PeriodCloser {
         }
         for (Claim c : claims.list(period.sheetId())) {
             Person person = byId.get(c.personId());
-            if (c.date().isBefore(period.from()) || c.date().isAfter(period.to())) {
+            if (c.dueBy().isBefore(period.from()) || c.dueBy().isAfter(period.to())) {
                 continue;
             }
             ClaimStatus status = ClaimDue.statusAsOf(logs.getOrDefault(c.id(), List.of()), period.to());

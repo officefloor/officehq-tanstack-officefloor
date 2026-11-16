@@ -10,7 +10,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Checks a move of a claim to another person on the sheet. Only a role the sheet's reassign permission allows (a steward while it is blank) moves a claim, and only a DRAFT, OPEN or
- * PENDING one: a SETTLED or VOID claim stays. A claim dated inside a closed period, a correction (it belongs with the
+ * PENDING one: a SETTLED or VOID claim stays. A claim whose due-by falls inside a closed period, a correction (it belongs with the
  * claim it corrects), a move to the claim's own person, to a person not on the sheet, or to one retired before the
  * claim's date, is refused.
  */
@@ -27,8 +27,8 @@ public class ApplyReassign {
         if (claim.corrects() != null) {
             throw new InvalidClaimStatusException("A correction stays with the claim it corrects");
         }
-        if (periods.closedOn(claim.sheetId(), claim.date())) {
-            throw new InvalidClaimStatusException("The claim's date is inside a closed period");
+        if (periods.closedOn(claim.sheetId(), claim.dueBy())) {
+            throw new InvalidClaimStatusException("The claim's due-by is inside a closed period");
         }
         Person from = people.find(claim.sheetId(), claim.personId());
         Person to = people.find(claim.sheetId(), request.personId());

@@ -6,7 +6,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Closes an open period, fixing its due-total as it is now: the figures (each due as shown now, with its late charge)
- *  of the claims whose date falls in it and that counted by the status each had at the end of the period's last day,
+ *  of the claims whose due-by falls in it and that counted by the status each had at the end of the period's last day,
  *  as its status log records it (a claim added after it does not count), the live rules otherwise applying (a
  *  person's claims OPEN or PENDING now and dated within a hold of theirs, not bound by a statement, do not, nor do deferred
  *  claims), added up (skipping n/a). Each person's own due-total for the period is fixed

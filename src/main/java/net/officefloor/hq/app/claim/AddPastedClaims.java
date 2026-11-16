@@ -23,11 +23,11 @@ public class AddPastedClaims {
             LocalDate date = c.checked().date();
             String sheet = c.person().sheetId();
             Claim added = claims.add(sheet, c.person().id(), c.values().amount(), date, c.values().note(),
-                    c.checked().corrects(), date.plusDays(settings.terms(sheet, c.person().terms(), c.person().gradeOn(date), date)));
+                    c.checked().corrects(), c.checked().dueBy());
             log.write(added, pasted.by());
             lines.add("CLAIM_ADDED sheet=" + added.sheetId() + " by=" + pasted.by() + " person=" + c.person().name()
                     + " amount=" + added.amount().toPlainString() + " date=" + added.date());
-            if (periods.softClosedOn(sheet, date)) {
+            if (periods.softClosedOn(sheet, c.checked().dueBy())) {
                 claims.markLateEntry(added);
                 lines.add("LATE_ENTRY sheet=" + added.sheetId() + " by=" + pasted.by() + " person=" + c.person().name()
                         + " amount=" + added.amount().toPlainString() + " date=" + added.date());

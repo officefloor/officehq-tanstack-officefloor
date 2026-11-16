@@ -9,7 +9,8 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Applies the edited values; only a DRAFT claim can be edited (an open claim is voided and a new one added instead),
- * and a claim dated inside a closed period, or moved into one, or left or moved after its person's retirement date, is refused. */
+ * and a claim whose due-by (which an edit leaves as it is) falls inside a closed period, or left or moved after its person's retirement date,
+ * is refused. */
 public class ApplyClaim {
     public void apply(@Val Claim claim, @Val ClaimValues values, SheetRepository sheets, PeriodRepository periods,
             PersonRepository people, ClaimRepository claims, Out<Claim> changed) throws InvalidClaimException {
@@ -17,8 +18,8 @@ public class ApplyClaim {
             throw new InvalidClaimException("Only a DRAFT claim can be edited");
         }
         LocalDate date = values.date() != null ? values.date() : sheets.today(claim.sheetId());
-        if (periods.closedOn(claim.sheetId(), claim.date()) || periods.closedOn(claim.sheetId(), date)) {
-            throw new InvalidClaimException("The claim's date is inside a closed period");
+        if (periods.closedOn(claim.sheetId(), claim.dueBy())) {
+            throw new InvalidClaimException("The claim's due-by is inside a closed period");
         }
         Person person = people.find(claim.sheetId(), claim.personId());
         if (person != null && !person.mayClaimOn(date)) {

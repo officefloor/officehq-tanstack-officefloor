@@ -20,7 +20,7 @@ import net.officefloor.plugin.variable.Val;
  * or the figure a statement bound it to, with its late charge as of the sheet's today frozen in (see LateCharge).
  * Opening records who opened the claim; that user cannot settle nor approve it (four eyes). A claim whose due is
  * above the sheet's proof threshold in force on its date (if it has one) cannot be settled nor approved while its proofs
- * count is 0 (checked before the clerk limit, so it never goes PENDING); a due of n/a is within any threshold. A claim dated inside a closed
+ * count is 0 (checked before the clerk limit, so it never goes PENDING); a due of n/a is within any threshold. A claim whose due-by falls inside a closed
  * period cannot change status, nor can a deferred claim be settled (see ClaimDue#deferred). A clerk (any user not made a steward) settling a claim whose due is above the sheet's
  * clerk limit, if it has one, makes it PENDING instead (its due left live, not bound by a statement); a due of n/a is
  * within any limit. A steward settles anything. Only a steward approves a PENDING claim (fixing its live figure, late
@@ -31,7 +31,7 @@ import net.officefloor.plugin.variable.Val;
  * Opening, settling and voiding are each taken only by the roles the sheet's permission allows (see SettingRepository#permits).
  * Only a steward voids a SETTLED claim, and only within 7 days of its settlement (the sheet's today on its status log's
  * latest SETTLED line) by the sheet's today; its frozen figure is kept on it but, VOID, it leaves every total.
- * Only a steward re-settles a SETTLED claim (not one dated inside a closed period): its due is fixed again at the figure
+ * Only a steward re-settles a SETTLED claim (not one whose due-by falls inside a closed period): its due is fixed again at the figure
  * it would have today as an OPEN claim bound by no statement (today's rates, grades, floor and late charge).
  */
 public class ApplyClaimStatus {
@@ -52,8 +52,8 @@ public class ApplyClaimStatus {
         if (!allowed) {
             throw new InvalidClaimStatusException("A " + claim.status() + " claim cannot be made " + change.to());
         }
-        if (periods.closedOn(claim.sheetId(), claim.date())) {
-            throw new InvalidClaimStatusException("The claim's date is inside a closed period");
+        if (periods.closedOn(claim.sheetId(), claim.dueBy())) {
+            throw new InvalidClaimStatusException("The claim's due-by is inside a closed period");
         }
         if (change.action() == ClaimAction.SETTLE && ClaimDue.deferred(claim, sheets.today(claim.sheetId()))) {
             throw new InvalidClaimStatusException("A deferred claim cannot be settled until the date it is deferred until");

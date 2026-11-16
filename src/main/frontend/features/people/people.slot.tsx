@@ -64,7 +64,7 @@ function QuickAdd({ sheetId, user }: { sheetId: string; user: string }) {
           {' '}
           {values.name.trim() === ''
             ? 'A name is required.'
-            : "The amount must be 0.00 or more, with up to two decimals, today not inside a closed period, and not after the person's retirement date."}
+            : "The amount must be 0.00 or more, with up to two decimals, its due-by not inside a closed period, and not after the person's retirement date."}
         </span>
       )}
     </form>

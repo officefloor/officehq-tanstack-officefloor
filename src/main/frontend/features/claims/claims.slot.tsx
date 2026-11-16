@@ -26,18 +26,18 @@ function ClaimsHead() {
   );
 }
 
-const DRAFT_ONLY = 'Only a draft claim not dated inside a closed period can be edited; void it and add a new one instead.';
+const DRAFT_ONLY = 'Only a draft claim whose due-by is not inside a closed period can be edited; void it and add a new one instead.';
 const VIEWER_REFUSED = 'A viewer cannot change the sheet.';
 const LOCK_REFUSED = 'Someone else is editing this claim; it can be edited once they save or cancel.';
-const EDIT_REFUSED = 'This claim cannot be edited: only a draft not dated inside a closed period, and not while someone else is editing it.';
+const EDIT_REFUSED = 'This claim cannot be edited: only a draft whose due-by is not inside a closed period, and not while someone else is editing it.';
 
 type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
 
-/** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, its status log (oldest first), due-by (fixed when it was added), whether it is overdue, whether it is deferred and until when, its proofs count, and the period its date falls in, with the buttons that edit it or change its status. A clerk's settle above the clerk limit makes it PENDING; a
+/** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, its status log (oldest first), due-by (fixed when it was added), whether it is overdue, whether it is deferred and until when, its proofs count, and the period its due-by falls in, with the buttons that edit it or change its status. A clerk's settle above the clerk limit makes it PENDING; a
  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
- *  shows the claim's error. An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one dated inside a closed period); a claim with no proofs whose due is above the proof threshold on its date cannot be settled nor approved; a claim with an empty note whose due is above the note threshold on its date cannot be opened (alone or in bulk). A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). A steward re-dates an OPEN or PENDING claim to the date typed beside Re-date (its due-by and any statement figure stay; refused, with the claim's error, for anyone else, any other claim, or a date inside a closed period or after the person's retirement). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
- *  with the claim's error, for anyone else or any other claim). Split takes the amount typed beside it off an OPEN claim (not deferred nor dated inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Only a DRAFT not dated inside a closed period can be edited: Edit opens the editor and locks the claim for the user until it
+ *  shows the claim's error. An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one whose due-by is inside a closed period); a claim with no proofs whose due is above the proof threshold on its date cannot be settled nor approved; a claim with an empty note whose due is above the note threshold on its date cannot be opened (alone or in bulk). A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). A steward re-dates an OPEN or PENDING claim to the date typed beside Re-date (its due-by and any statement figure stay; refused, with the claim's error, for anyone else, any other claim, or a date after the person's retirement). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
+ *  with the claim's error, for anyone else or any other claim). Split takes the amount typed beside it off an OPEN claim (not deferred, nor with its due-by inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Only a DRAFT whose due-by is not inside a closed period can be edited: Edit opens the editor and locks the claim for the user until it
  *  is saved or cancelled (Cancel) or the sheet's today changes; Edit on any other claim, on a claim another user holds, or by a
  *  viewer shows the claim's error instead and takes no lock. */
 function ClaimRow({
@@ -164,7 +164,7 @@ function ClaimRow({
       <span data-testid="claim-proofs">{c.proofs}</span>{' '}
       <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
       <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
-      <span data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</span>{' '}
+      <span data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</span>{' '}
       <button
         type="button"
         data-testid="claim-edit"
@@ -178,7 +178,7 @@ function ClaimRow({
           lock.reset();
           setEditRefused(null);
           // refused at once when the screen already knows the claim cannot be edited; else the server decides
-          if (c.status !== 'DRAFT' || periodOf(periods.data, c.date)?.closed) {
+          if (c.status !== 'DRAFT' || periodOf(periods.data, c.dueBy)?.closed) {
             setEditRefused(DRAFT_ONLY);
             return;
           }
@@ -375,36 +375,36 @@ function ClaimRow({
           {' '}
           {(c.status === 'OPEN' || c.status === 'PENDING') && c.openedBy === user && status.variables !== 'reject' && status.variables !== 'void' && status.variables !== 'resettle'
             ? 'You opened this claim, so someone else must settle or approve it.'
-            : `A ${c.status} claim cannot be changed that way, nor one dated inside a closed period, nor a deferred one settled, nor one with no proofs settled or approved when its due is above the proof threshold, nor one with an empty note opened when its due is above the note threshold; only a steward approves or rejects a pending claim or re-settles a settled one, only a steward voids a settled claim and only within 7 days of its settlement, a rejection needs a reason, and only a role the sheet lets open, settle or void a claim may do so.`}
+            : `A ${c.status} claim cannot be changed that way, nor one whose due-by is inside a closed period, nor a deferred one settled, nor one with no proofs settled or approved when its due is above the proof threshold, nor one with an empty note opened when its due is above the note threshold; only a steward approves or rejects a pending claim or re-settles a settled one, only a steward voids a settled claim and only within 7 days of its settlement, a rejection needs a reason, and only a role the sheet lets open, settle or void a claim may do so.`}
         </span>
       )}
       {reassign.isError && (
         <span data-testid="claim-error">
           {' '}
-          Only a role the sheet lets reassign (a steward unless set) moves a claim, and only a draft, open or pending one (not a correction, nor one dated inside a
+          Only a role the sheet lets reassign (a steward unless set) moves a claim, and only a draft, open or pending one (not a correction, nor one whose due-by is inside a
           closed period) to another person not retired before its date.
         </span>
       )}
       {defer.isError && (
         <span data-testid="claim-error">
           {' '}
-          Only an open claim, not dated inside a closed period, can be deferred, and only to a date after today.
+          Only an open claim whose due-by is not inside a closed period can be deferred, and only to a date after today.
         </span>
       )}
       {redate.isError && (
         <span data-testid="claim-error">
           {' '}
-          Only a steward re-dates a claim, and only an open or pending one not dated inside a closed period, to a date
-          neither inside a closed period nor after the person's retirement.
+          Only a steward re-dates a claim, and only an open or pending one whose due-by is not inside a closed period, to a date
+          not after the person's retirement.
         </span>
       )}
       {proof.isError && (
-        <span data-testid="claim-error"> A settled or void claim, or one dated inside a closed period, takes no more proofs.</span>
+        <span data-testid="claim-error"> A settled or void claim, or one whose due-by is inside a closed period, takes no more proofs.</span>
       )}
       {split.isError && (
         <span data-testid="claim-error">
           {' '}
-          Only an open claim, not deferred nor dated inside a closed period, can be split, by an amount more than 0.00 and less than
+          Only an open claim, not deferred, nor with its due-by inside a closed period, can be split, by an amount more than 0.00 and less than
           its amount, and only by a role the sheet lets open a claim.
         </span>
       )}
@@ -513,7 +513,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
           </button>
           {save.isError && (
             <span data-testid="claim-form-error">
-              The amount must have up to two decimals, and be 0.00 or more unless it corrects, by number, a settled claim of this person; the date not inside a closed period nor after the person's retirement date, and only a draft claim can be edited.
+              The amount must have up to two decimals, and be 0.00 or more unless it corrects, by number, a settled claim of this person; its due-by not inside a closed period, the date not after the person's retirement date, and only a draft claim can be edited.
             </span>
           )}
         </form>
