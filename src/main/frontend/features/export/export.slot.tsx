@@ -27,7 +27,8 @@ function download(name: string, lines: string[]) {
 
 /** The button that downloads the people as a CSV file: name, grade in force today, retired-from date (or nothing)
  *  and due-total as shown, one line per person in list order, retired people included. The file is made once the
- *  sheet's figures are no longer being re-read, so it holds what the screen shows. */
+ *  sheet's figures are no longer being re-read, so it holds what the screen shows: while an as-of date is set (see
+ *  features/asof) every figure is read as the sheet stood then, so the file holds the as-of figures. */
 function ExportPeople({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
@@ -47,7 +48,7 @@ function ExportPeople({ sheetId }: { sheetId: string }) {
       lines.push([p.name, p.grade, p.retiredFrom ?? '', due].map(csvValue).join(','));
     }
     download(`people-${sheetId}.csv`, lines);
-  }, [wanted, fetching, people.data, claims.data, rates.data, late, floor, sheetId]);
+  }, [wanted, fetching, people.data, claims.data, rates.data, late, floor, cap, sheetId]);
 
   return (
     <p>
@@ -60,7 +61,8 @@ function ExportPeople({ sheetId }: { sheetId: string }) {
 
 /** The button that downloads the claims as a CSV file: person, number, date, amount, due, status and period as the
  *  claim rows show them (an empty number or period, or an n/a due, as it is), people in list order (retired people
- *  included) and each person's claims oldest first. Made once the sheet's figures are no longer being re-read. */
+ *  included) and each person's claims oldest first. Made once the sheet's figures are no longer being re-read; while an
+ *  as-of date is set they are the as-of figures (only the claims that existed then, their due as it stood then). */
 function ExportClaims({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
@@ -97,7 +99,7 @@ function ExportClaims({ sheetId }: { sheetId: string }) {
 
 /** The button that downloads the pools as a CSV file: pool, member, share and cut as the pool rows show them (a pool
  *  member as pool:<name>, an empty cut when none), pools in the order added and each pool's members in the order added.
- *  Made once the sheet's figures are no longer being re-read. */
+ *  Made once the sheet's figures are no longer being re-read; while an as-of date is set they are the as-of figures. */
 function ExportPools({ sheetId }: { sheetId: string }) {
   const pools = usePools(sheetId);
   const fetching = useIsFetching({ queryKey: ['sheet', sheetId] });
