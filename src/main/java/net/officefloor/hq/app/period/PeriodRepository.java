@@ -190,6 +190,19 @@ public class PeriodRepository {
         return carried;
     }
 
+    /** Each person's opening balances pasted for the period added up, by person id (see OpeningRepository): as of a
+     *  date (see AsOf) only those made while the sheet's today was on or before it; null for all of them. */
+    public Map<Long, BigDecimal> openings(Period period, LocalDate asOf) {
+        Map<Long, BigDecimal> totals = new LinkedHashMap<>();
+        jdbc.query("SELECT person_id, amount, made_on FROM opening WHERE sheet_id = ? AND period_id = ? ORDER BY id",
+                (ResultSet rs) -> {
+                    if (asOf == null || AsOf.counts(rs.getObject("made_on", LocalDate.class), asOf)) {
+                        totals.merge(rs.getLong("person_id"), rs.getBigDecimal("amount").setScale(2), BigDecimal::add);
+                    }
+                }, period.sheetId(), period.id());
+        return totals;
+    }
+
     /** The fixed due-total of each person for the closed period, by person id. */
     public Map<Long, BigDecimal> personTotals(Period period) {
         Map<Long, BigDecimal> totals = new LinkedHashMap<>();

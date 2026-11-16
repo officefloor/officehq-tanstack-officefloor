@@ -74,7 +74,7 @@ public class PeriodCloser {
 
     /** Each person's carried figure for the period as it is now, by person id: the figures of their claims whose due-by
      *  falls in an earlier period of the sheet (one ending before this one starts) and that were still OPEN or PENDING
-     *  at the end of this period's last day, the live rules otherwise applying as for the due-total (see #figures). */
+     *  at the end of this period's last day, the live rules otherwise applying as for the due-total (see #figures), with their opening balances pasted for it. */
     private Map<Long, BigDecimal> carried(Period period) {
         List<Period> earlier = periods.list(period.sheetId()).stream()
                 .filter((p) -> p.to().isBefore(period.from())).toList();
@@ -103,6 +103,11 @@ public class PeriodCloser {
                 perPerson.merge(c.personId(), figure, BigDecimal::add);
             }
         }
+        periods.openings(period, null).forEach((id, amount) -> {
+            if (perPerson.containsKey(id)) {
+                perPerson.merge(id, amount, BigDecimal::add);
+            }
+        });
         return perPerson;
     }
 

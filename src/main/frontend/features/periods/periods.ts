@@ -26,6 +26,8 @@ export type Period = {
   /** Closed or soft-closed, each person's carried figure for the period fixed when it was closed, by person id (empty
    *  for one closed before carried figures were kept). */
   personCarried: Record<string, string>;
+  /** Each person's opening balances pasted for the period added up, by person id (added to their live carried figure). */
+  openings: Record<string, string>;
 };
 
 export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'];
@@ -86,7 +88,8 @@ export function personPeriodDue(
 /** A person's carried figure for a period: the figures (each due as shown now, with its late charge) of their claims
  *  that count and belong to an earlier period of the sheet (their due-by falls in a period ending before this one
  *  starts) and that were still OPEN or PENDING at the end of this period's last day (see statusAsOf), the live rules
- *  otherwise applying as for personPeriodDue, added up (skipping n/a); 0.00 when nothing is carried. For a closed or
+ *  otherwise applying as for personPeriodDue, added up (skipping n/a) with their opening balances pasted for the period;
+ *  0.00 when nothing is carried. For a closed or
  *  soft-closed period, their figure fixed when it was (soft-)closed (0.00 for a person added after). */
 export function personPeriodCarried(
   period: Period,
@@ -106,7 +109,8 @@ export function personPeriodCarried(
     if (status !== 'OPEN' && status !== 'PENDING') return false;
     return counts({ ...c, status }) && !(isOpen(c) && !bound(c) && (heldOn(person, c.date) || retiredOn(person, late.today)));
   });
-  return sum(mine.map((c) => claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late)));
+  const opening = period.openings?.[String(person.id)] ?? '0.00';
+  return sum([...mine.map((c) => claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late)), opening]);
 }
 
 /** A period's due-total: the people's due-totals for it (see personPeriodDue) added up. */

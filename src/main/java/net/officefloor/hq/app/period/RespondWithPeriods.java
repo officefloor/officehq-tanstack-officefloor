@@ -16,6 +16,6 @@ public class RespondWithPeriods {
         response.send(date == null
                 ? periods.list(sheetId.trim()).stream().map((p) -> PeriodResponse.from(p, periods)).toList()
                 : periods.listAsOf(sheetId.trim(), date).entrySet().stream()
-                        .map((e) -> PeriodResponse.from(e.getKey(), e.getValue())).toList());
+                        .map((e) -> PeriodResponse.from(e.getKey(), e.getValue(), periods.openings(e.getKey(), date))).toList());
     }
 }
