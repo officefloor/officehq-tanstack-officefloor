@@ -77,6 +77,27 @@ public class PoolRepository {
         return result;
     }
 
+    /** Each person's cut total by person id: their cuts across every pool they are a member of (crews'
+     *  included) as they now stand, added up (a pool that shows no cut adds nothing). */
+    public Map<Long, BigDecimal> cutTotals(String sheetId) {
+        return cutTotals(asOf(sheetId, null));
+    }
+
+    /** Each person's cut total by person id as it stood on the date, with it as the sheet's today. */
+    public Map<Long, BigDecimal> cutTotalsAsOf(String sheetId, LocalDate on) {
+        return cutTotals(asOf(sheetId, on));
+    }
+
+    private static Map<Long, BigDecimal> cutTotals(List<Pool> pools) {
+        Map<Long, BigDecimal> totals = new HashMap<>();
+        for (Pool pool : pools) {
+            for (PoolMember m : pool.members()) {
+                if (m.personId() != null && !m.cut().isEmpty()) totals.merge(m.personId(), new BigDecimal(m.cut()), BigDecimal::add);
+            }
+        }
+        return totals;
+    }
+
     /** Fix every pool member's cut for the period as it now stands, replacing any fixed before. */
     public void freeze(String sheetId, String period) {
         thaw(sheetId, period);

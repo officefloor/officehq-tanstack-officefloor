@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.util.ArrayList;
+import net.officefloor.hq.app.pool.PoolRepository;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -29,7 +30,7 @@ public class BulkReassignClaims {
             @RequestParam(name = "by", required = false) String by,
             @RequestBody BulkReassignRequest request, ClaimRepository claims, PeriodRepository periods,
             PersonRepository people, RateRepository rates, SheetRepository sheets,
-            SettingRepository settings, RoleRepository roles, Audit audit,
+            SettingRepository settings, PoolRepository pools, RoleRepository roles, Audit audit,
             Out<BulkReassignResult> result) {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
@@ -49,7 +50,7 @@ public class BulkReassignClaims {
 
         boolean archived = sheets.isArchived(id);
         int moved = 0;
-        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
+        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
         for (Claim claim : ordered) {
             if (archived) continue;
             Reassignment reassignment;
@@ -63,7 +64,7 @@ public class BulkReassignClaims {
             moved++;
             audit.record(RecordClaimStatus.line("CLAIM_REASSIGNED", user, claim, people)
                     + " from=" + reassignment.from() + " to=" + reassignment.to());
-            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
+            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
             for (String line : after.changesSince(before, id, user)) {
                 audit.record(line);
             }

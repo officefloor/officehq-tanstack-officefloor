@@ -26,8 +26,8 @@ const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/po
 export const poolsKey = (sheetId: string) => [...sheetKey(sheetId), 'pools'] as const;
 
 /** The sheet's pools, in the order they were added. */
-export function listPools(sheetId: string): Promise<Pool[]> {
-  return getJson<Pool[]>(base(sheetId));
+export function listPools(sheetId: string, live = false): Promise<Pool[]> {
+  return getJson<Pool[]>(base(sheetId), live);
 }
 
 /** Add a pool (name trimmed); refused (rejects) for a blank name or one already used on the sheet by a pool

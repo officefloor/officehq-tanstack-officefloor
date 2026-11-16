@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.rate;
 
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.pool.PoolRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rollup.Rollup;
@@ -17,17 +18,17 @@ public class ImportRates {
     public void importRates(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by, @Val ImportRateLines lines,
             SheetRepository sheets, RateRepository rates, PersonRepository people, ClaimRepository claims,
-            SettingRepository settings, Audit audit, Out<ImportRatesResult> result) {
+            SettingRepository settings, PoolRepository pools, Audit audit, Out<ImportRatesResult> result) {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
         sheets.open(id, user);
         for (ValidRate line : lines.lines()) {
-            Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
+            Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
             Rate rate = rates.set(id, line.grade(), line.pct(), line.from(), line.to(), user);
             audit.record("RATE_SET sheet=" + id + " by=" + user + " grade=" + rate.grade() + " rate=" + rate.pct()
                     + (rate.from() == null ? "" : " from=" + rate.from())
                     + (rate.to() == null ? "" : " to=" + rate.to()));
-            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
+            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
             for (String change : after.changesSince(before, id, user)) {
                 audit.record(change);
             }

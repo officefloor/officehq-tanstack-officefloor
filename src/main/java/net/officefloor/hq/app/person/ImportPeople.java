@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.person;
 
 import java.time.LocalDate;
+import net.officefloor.hq.app.pool.PoolRepository;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -28,7 +29,7 @@ public class ImportPeople {
     public void importPeople(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by, @Val ImportLines lines,
             PersonRepository people, SheetRepository sheets, ClaimRepository claims, RateRepository rates,
-            SettingRepository settings, GradeRepository grades, Audit audit, Out<ImportResult> result) throws InvalidPersonException {
+            SettingRepository settings, PoolRepository pools, GradeRepository grades, Audit audit, Out<ImportResult> result) throws InvalidPersonException {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
         List<Person> matched = new ArrayList<>();
@@ -68,7 +69,7 @@ public class ImportPeople {
         for (int i = 0; i < lines.people().size(); i++) {
             PersonRequest request = lines.people().get(i);
             Person person = matched.get(i);
-            Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
+            Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
             sheets.open(id, user);
             if (person == null) {
                 person = people.add(id, request.name(), request.grade(),
@@ -95,7 +96,7 @@ public class ImportPeople {
                 edited.record(by, person, audit);
                 updatedCount++;
             }
-            for (String line : Rollup.of(id, people, claims, rates, sheets, settings).changesSince(before, id, user)) {
+            for (String line : Rollup.of(id, people, claims, rates, sheets, settings, pools).changesSince(before, id, user)) {
                 audit.record(line);
             }
         }

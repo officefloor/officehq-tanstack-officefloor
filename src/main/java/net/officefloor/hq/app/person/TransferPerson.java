@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.person;
 
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.pool.PoolRepository;
 import net.officefloor.hq.app.claim.ClaimNumbers;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
@@ -35,7 +36,7 @@ public class TransferPerson {
     public void transfer(@RequestParam(name = "by", required = false) String by,
             @Val TransferRequest request, @Val Person person, PersonRepository people,
             ClaimRepository claims, PeriodRepository periods, RateRepository rates,
-            SettingRepository settings, SheetRepository sheets, RoleRepository roles,
+            SettingRepository settings, PoolRepository pools, SheetRepository sheets, RoleRepository roles,
             Out<Transfer> transferred) throws InvalidPersonException {
         String user = by == null ? "" : by;
         String sheetId = person.getSheetId();
@@ -70,7 +71,7 @@ public class TransferPerson {
             throw new InvalidPersonException("The contact is already on " + to);
         }
         sheets.open(to, user);
-        Rollup before = Rollup.of(to, people, claims, rates, sheets, settings);
+        Rollup before = Rollup.of(to, people, claims, rates, sheets, settings, pools);
         for (long id : claims.transferAll(sheetId, person.getId(), to)) {
             Claim claim = claims.find(to, id);
             claims.renumber(claim, ClaimNumbers.next(claim, claims, periods, settings, sheets));

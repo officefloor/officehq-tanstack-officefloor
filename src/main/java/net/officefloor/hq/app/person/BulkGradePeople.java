@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.person;
 
 import java.time.LocalDate;
+import net.officefloor.hq.app.pool.PoolRepository;
 import java.util.HashSet;
 import java.util.Set;
 import net.officefloor.hq.app.Audit;
@@ -27,7 +28,7 @@ public class BulkGradePeople {
     public void grade(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by, @Val BulkGradeRequest request,
             PersonRepository people, ClaimRepository claims, RateRepository rates,
-            SheetRepository sheets, SettingRepository settings, RoleRepository roles, GradeRepository grades, Audit audit, Out<BulkGradeResult> result)
+            SheetRepository sheets, SettingRepository settings, PoolRepository pools, RoleRepository roles, GradeRepository grades, Audit audit, Out<BulkGradeResult> result)
             throws PersonConflictException, SheetArchivedException, InvalidPersonException {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
@@ -50,7 +51,7 @@ public class BulkGradePeople {
         }
         LocalDate today = sheets.today(id);
         int graded = 0;
-        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
+        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
         for (Person listed : people.list(id)) {
             if (!selected.contains(listed.getId())) continue;
             Person person = people.find(id, listed.getId());
@@ -67,7 +68,7 @@ public class BulkGradePeople {
             graded++;
             audit.record("PERSON_EDITED sheet=" + id + " by=" + user + " name=" + person.getName()
                     + " grade=" + person.getGrade());
-            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
+            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
             for (String line : after.changesSince(before, id, user)) {
                 audit.record(line);
             }

@@ -50,7 +50,7 @@ public class SettingRepository {
      *  when opened instead of OPEN (two decimals; blank: none). */
     public static final String REVIEW_THRESHOLD = "review-threshold";
 
-    /** The cap: the most a person's due-total can be (two decimals; blank: no cap). */
+    /** The cap: the most a person's due-total plus their cut total can be (two decimals; blank: no cap). */
     public static final String CAP = "cap";
 
     /** The pot: the sum a balanced pool's members cut between them (two decimals; blank: none; not dated). */

@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCapOf } from '../pools/cap';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { claimsKey, listClaims, liveClaims } from '../claims/api';
 import { gradeOn, listPeople, peopleKey, shownName } from '../people/api';
 import type { Person } from '../people/api';
 import { listRates, personDue, rateByGrade, ratesKey } from '../rates/api';
 import { heldOf } from '../rates/shares';
-import { useCap, useFloor, useLate } from '../settings/api';
+import { useFloor, useLate } from '../settings/api';
 import { poolsKey } from '../pools/api';
 import { useSheetToday } from '../sheet/api';
 import { addCrew, addCrewMember, crewDueTotal, crewsKey, listCrews } from './api';
@@ -20,12 +21,12 @@ export function useDueOf(sheetId: string, user: string): Map<number, string | nu
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
   const floor = useFloor(sheetId);
   const today = useSheetToday(sheetId, user);
-  const cap = useCap(sheetId, today);
+  const capOf = useCapOf(sheetId, today);
   const charges = useLate(sheetId, today);
   const byGrade = rateByGrade(rates.data, today);
   return new Map((people.data ?? []).map((q) => [q.id, personDue(
     liveClaims((claims.data ?? []).filter((c) => c.personId === q.id), [q]),
-    rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges, cap,
+    rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges, capOf(q.id),
     heldOf(q.id, claims.data ?? [], people.data, rates.data, floor, charges))]));
 }
 

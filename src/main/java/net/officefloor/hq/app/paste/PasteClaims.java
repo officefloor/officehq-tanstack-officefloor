@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.paste;
 
 import java.math.BigDecimal;
+import net.officefloor.hq.app.pool.PoolRepository;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -59,14 +60,14 @@ public class PasteClaims {
     public void paste(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by, @Val PasteLines lines,
             PersonRepository people, SheetRepository sheets, ClaimRepository claims,
-            PeriodRepository periods, SettingRepository settings, ClaimLogRepository log, Audit audit,
+            PeriodRepository periods, SettingRepository settings, PoolRepository pools, ClaimLogRepository log, Audit audit,
             HolidayRepository holidays, RoleRepository roles, RateRepository rates, ClaimLineRepository claimLines,
             Out<PasteResult> result, PlatformTransactionManager transactions)
             throws PeriodClosedException, InvalidClaimException, ClaimStatusException, ClaimLockedException {
         // Run in a transaction of its own: a line refused after earlier lines were written undoes them all.
         TransactionStatus tx = transactions.getTransaction(new DefaultTransactionDefinition());
         try {
-            pasteAll(sheetId, by, lines, people, sheets, claims, periods, settings, log, audit, holidays, roles, rates,
+            pasteAll(sheetId, by, lines, people, sheets, claims, periods, settings, pools, log, audit, holidays, roles, rates,
                     claimLines, result);
         } catch (Throwable e) {
             transactions.rollback(tx);
@@ -78,7 +79,7 @@ public class PasteClaims {
     private void pasteAll(String sheetId,
             String by, PasteLines lines,
             PersonRepository people, SheetRepository sheets, ClaimRepository claims,
-            PeriodRepository periods, SettingRepository settings, ClaimLogRepository log, Audit audit,
+            PeriodRepository periods, SettingRepository settings, PoolRepository pools, ClaimLogRepository log, Audit audit,
             HolidayRepository holidays, RoleRepository roles, RateRepository rates, ClaimLineRepository claimLines,
             Out<PasteResult> result)
             throws PeriodClosedException, InvalidClaimException, ClaimStatusException, ClaimLockedException {
@@ -129,7 +130,7 @@ public class PasteClaims {
         }
 
         List<String> records = new ArrayList<>();
-        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
+        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
         for (Pending p : pending) {
             String head = " sheet=" + id + " by=" + user + " person=" + p.person().getName();
             Claim claim;
@@ -181,7 +182,7 @@ public class PasteClaims {
             log.record(claim, user);
             records.add(opened.event() + head + " amount=" + claim.getAmount() + " date=" + claim.getDate()
                     + claim.getAuditNumber());
-            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
+            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
             records.addAll(after.changesSince(before, id, user));
             before = after;
         }

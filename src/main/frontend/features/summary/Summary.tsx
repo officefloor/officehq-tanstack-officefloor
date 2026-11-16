@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { claimsKey, isActive, listClaims, listVoidReasons, liveClaims, voidReasonsKey, type Claim } from '../claims/api';
+import { useCapOf } from '../pools/cap';
 import { GRADES, gradeOn, listPeople, peopleKey } from '../people/api';
 import { listPeriods, periodDueTotal, periodsKey } from '../periods/api';
 import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
 import { heldOf } from '../rates/shares';
-import { isReviewLate, useCap, useFloor, useLate, useReviewSla } from '../settings/api';
+import { isReviewLate, useFloor, useLate, useReviewSla } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { Fig } from '../session/Fig';
 
@@ -24,13 +25,13 @@ export function useGradeDues(sheetId: string, user: string): Record<string, stri
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
   const floor = useFloor(sheetId);
   const today = useSheetToday(sheetId, user);
-  const cap = useCap(sheetId, today);
+  const capOf = useCapOf(sheetId, today);
   const charges = useLate(sheetId, today);
   const byGrade = rateByGrade(rates.data, today);
   const all = claims.data ?? [];
   const active = (people.data ?? []).filter((p) => !p.retired);
   const dueOf = (p: (typeof active)[number]) => personDue(liveClaims(all.filter((c) => c.personId === p.id), [p]),
-    rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap,
+    rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, capOf(p.id),
     heldOf(p.id, all, people.data, rates.data, floor, charges));
   return Object.fromEntries(GRADES.map((g) => [g, sumDues(active.filter((p) => p.grade === g).map(dueOf))]));
 }

@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.person;
 
 import java.util.HashSet;
+import net.officefloor.hq.app.pool.PoolRepository;
 import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimRepository;
@@ -25,7 +26,7 @@ public class BulkRetirePeople {
     public void retire(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by, @Val BulkRetireRequest request,
             PersonRepository people, ClaimRepository claims, RateRepository rates,
-            SheetRepository sheets, SettingRepository settings, RoleRepository roles, Audit audit,
+            SheetRepository sheets, SettingRepository settings, PoolRepository pools, RoleRepository roles, Audit audit,
             Out<BulkRetireResult> result) throws SheetArchivedException {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
@@ -39,7 +40,7 @@ public class BulkRetirePeople {
         Set<Long> selected = new HashSet<>(request.personIds());
         String from = request.from() != null ? request.from() : sheets.today(id).toString();
         int retired = 0;
-        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
+        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
         for (Person listed : people.list(id)) {
             if (!selected.contains(listed.getId())) continue;
             Person person = people.find(id, listed.getId());
@@ -48,7 +49,7 @@ public class BulkRetirePeople {
             retired++;
             audit.record("PERSON_RETIRED sheet=" + id + " by=" + user + " name=" + person.getName()
                     + " from=" + person.getRetiredFrom());
-            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
+            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
             for (String line : after.changesSince(before, id, user)) {
                 audit.record(line);
             }

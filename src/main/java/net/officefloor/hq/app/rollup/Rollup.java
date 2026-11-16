@@ -13,6 +13,7 @@ import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Dues;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.pool.PoolRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.DatedSetting;
@@ -21,7 +22,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 
 /** The sheet's figures at one moment, as the screen shows them: each person's claimed (corrections
  *  left out; held ones count, see {@link Person#countsClaimed}) and
- *  due-total (null: n/a; else at most the sheet's cap) and overdue-total, in the order they were added, and the
+ *  due-total (null: n/a; else at most the sheet's cap less their cut total, not below 0.00) and overdue-total, in the order they were added, and the
  *  sheet's claimed-total, due-total and overdue-total (these two leave out the single highest and
  *  lowest person's figure when three or more people have one), with the sheet's alert threshold
  *  (null: off). A shared claim's due counts toward each holder's due-total (and settled figures) by their part
@@ -43,10 +44,11 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
 
     /** The sheet's figures now. */
     public static Rollup of(String sheetId, PersonRepository people, ClaimRepository claims,
-            RateRepository rates, SheetRepository sheets, SettingRepository settings) {
+            RateRepository rates, SheetRepository sheets, SettingRepository settings, PoolRepository pools) {
         List<Rate> sheetRates = rates.list(sheetId);
         DatedSetting floor = settings.floor(sheetId);
         BigDecimal cap = settings.cap(sheetId);
+        Map<Long, BigDecimal> cuts = cap == null ? Map.of() : pools.cutTotals(sheetId);
         LocalDate todayDate = sheets.today(sheetId);
         String today = todayDate.toString();
         Dues.Late late = settings.late(sheetId, todayDate);
@@ -110,7 +112,10 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             BigDecimal settled = f[3].add(heldSettled.getOrDefault(p.getId(), zero()));
             boolean kept = keeps.get(p.getId()) || held != null;
             boolean na = rateOn(sheetRates, p.getGrade(), today) == null && !kept;
-            if (cap != null && due.compareTo(cap) > 0) due = cap.setScale(2);
+            if (cap != null) {
+                BigDecimal room = capLessCuts(cap, cuts.get(p.getId()));
+                if (due.compareTo(room) > 0) due = room;
+            }
             figures.put(p.getId(), new Figures(p.getName(), claimed.toPlainString(),
                     na ? null : due.toPlainString(), overdue.toPlainString(),
                     score(settled, overdueCounts.get(p.getId())[0])));
@@ -155,6 +160,12 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
     /** Whether the person's due-total is above the alert threshold (none: not). */
     private boolean above(Figures figures) {
         return figures.dueTotal() != null && new BigDecimal(figures.dueTotal()).compareTo(alertThreshold) > 0;
+    }
+
+    /** What a person's due-total is held to: the cap less their cut total (none: 0.00), not below 0.00. */
+    public static BigDecimal capLessCuts(BigDecimal cap, BigDecimal cutTotal) {
+        BigDecimal room = cutTotal == null ? cap : cap.subtract(cutTotal);
+        return room.signum() < 0 ? zero() : room.setScale(2);
     }
 
     /** Whether the claim corrects another: such a claim is left out of claimed. */

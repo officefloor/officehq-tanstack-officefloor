@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.rollup;
 
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.pool.PoolRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
@@ -12,7 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class TakeRollup {
     public void take(@PathVariable("sheetId") String sheetId, PersonRepository people,
             ClaimRepository claims, RateRepository rates, SheetRepository sheets,
-            SettingRepository settings, Out<Rollup> before) {
-        before.set(Rollup.of(sheetId.trim(), people, claims, rates, sheets, settings));
+            SettingRepository settings, PoolRepository pools, Out<Rollup> before) {
+        before.set(Rollup.of(sheetId.trim(), people, claims, rates, sheets, settings, pools));
     }
 }

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCapOf } from '../pools/cap';
 import { claimsKey, listClaims, liveClaims } from '../claims/api';
 import { gradeOn, listPeople, peopleKey, shownName } from '../people/api';
 import { listRates, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
 import { heldOf } from '../rates/shares';
-import { useCap, useFloor, useLate } from '../settings/api';
+import { useFloor, useLate } from '../settings/api';
 import { listTree, sheetKey, treeKey, useSheetToday } from '../sheet/api';
 
 /** A person as the search finds them: their name, aliases and due-total as their row shows it. */
@@ -17,7 +18,7 @@ function useSheetPeople(sheetId: string, user: string): Found[] | undefined {
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
   const floor = useFloor(sheetId);
   const today = useSheetToday(sheetId, user);
-  const cap = useCap(sheetId, today);
+  const capOf = useCapOf(sheetId, today);
   const charges = useLate(sheetId, today);
   if (!people.isSuccess || !claims.isSuccess || !rates.isSuccess || today === '') return undefined;
   const byGrade = rateByGrade(rates.data, today);
@@ -26,7 +27,7 @@ function useSheetPeople(sheetId: string, user: string): Found[] | undefined {
     shown: shownName(p),
     aliases: p.aliases,
     due: showDue(personDue(liveClaims(claims.data.filter((c) => c.personId === p.id), [p]),
-      rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap,
+      rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, capOf(p.id),
       heldOf(p.id, claims.data, people.data, rates.data, floor, charges))),
   }));
 }

@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.person;
 
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.pool.PoolRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.rollup.Rollup;
@@ -14,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class RecordPersonArrived {
     public void record(@RequestParam(name = "by", required = false) String by,
             @Val Transfer transfer, PersonRepository people, ClaimRepository claims, RateRepository rates,
-            SheetRepository sheets, SettingRepository settings, Audit audit) {
+            SheetRepository sheets, SettingRepository settings, PoolRepository pools, Audit audit) {
         String user = by == null ? "" : by;
         String to = transfer.to();
         audit.record("PERSON_TRANSFERRED sheet=" + to + " by=" + user
@@ -23,7 +24,7 @@ public class RecordPersonArrived {
             audit.record("PERSON_MERGED sheet=" + to + " by=" + user
                     + " from=" + transfer.person().getName() + " into=" + transfer.into().getName());
         }
-        Rollup after = Rollup.of(to, people, claims, rates, sheets, settings);
+        Rollup after = Rollup.of(to, people, claims, rates, sheets, settings, pools);
         for (String line : after.changesSince(transfer.toBefore(), to, user)) {
             audit.record(line);
         }

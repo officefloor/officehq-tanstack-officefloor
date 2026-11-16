@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.util.ArrayList;
+import net.officefloor.hq.app.pool.PoolRepository;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -31,7 +32,7 @@ public class BulkVoidClaims {
             @RequestParam(name = "by", required = false) String by,
             @RequestBody BulkVoidRequest request, ClaimRepository claims, PeriodRepository periods,
             PersonRepository people, RateRepository rates, SheetRepository sheets,
-            SettingRepository settings, RoleRepository roles, ClaimLogRepository log,
+            SettingRepository settings, PoolRepository pools, RoleRepository roles, ClaimLogRepository log,
             VoidReasonRepository reasons, Audit audit, Out<BulkVoidResult> result) {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
@@ -52,7 +53,7 @@ public class BulkVoidClaims {
         boolean refusedAll = sheets.isArchived(id) || Role.VIEWER.equals(roles.roleOf(id, user));
         VoidClaim rules = new VoidClaim();
         int voided = 0;
-        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
+        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
         for (Claim claim : ordered) {
             if (refusedAll) continue;
             try {
@@ -66,7 +67,7 @@ public class BulkVoidClaims {
             audit.record(RecordClaimStatus.line(ClaimStatus.VOID.event(), user, claim, people)
                     + (claim.isReversal() ? RecordClaimStatus.reversed(claim) : "")
                     + (claim.getVoidReason() != null ? " reason=" + claim.getVoidReason() : ""));
-            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
+            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
             for (String line : after.changesSince(before, id, user)) {
                 audit.record(line);
             }

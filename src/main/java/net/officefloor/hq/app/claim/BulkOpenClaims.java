@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.util.ArrayList;
+import net.officefloor.hq.app.pool.PoolRepository;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -34,7 +35,7 @@ public class BulkOpenClaims {
             @RequestParam(name = "by", required = false) String by,
             @RequestBody BulkOpenRequest request, ClaimRepository claims, PeriodRepository periods,
             PersonRepository people, RateRepository rates, SheetRepository sheets,
-            SettingRepository settings, RoleRepository roles, ClaimLogRepository log, Audit audit, Out<BulkOpenResult> result) {
+            SettingRepository settings, PoolRepository pools, RoleRepository roles, ClaimLogRepository log, Audit audit, Out<BulkOpenResult> result) {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
         Set<Long> selected = new HashSet<>(request == null || request.claimIds() == null
@@ -54,7 +55,7 @@ public class BulkOpenClaims {
         boolean allowed = !sheets.isArchived(id)
                 && Permissions.allows(id, user, Permissions.OPEN, roles, settings);
         int opened = 0;
-        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
+        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
         for (Claim claim : ordered) {
             if (!allowed) continue;
             try {
@@ -78,7 +79,7 @@ public class BulkOpenClaims {
                     + " person=" + (person == null ? "" : person.getName())
                     + " amount=" + claim.getAmount() + " date=" + claim.getDate()
                     + claim.getAuditNumber());
-            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
+            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
             for (String line : after.changesSince(before, id, user)) {
                 audit.record(line);
             }

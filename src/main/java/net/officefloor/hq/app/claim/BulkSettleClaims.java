@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
+import net.officefloor.hq.app.pool.PoolRepository;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -35,7 +36,7 @@ public class BulkSettleClaims {
             @RequestParam(name = "by", required = false) String by,
             @RequestBody BulkSettleRequest request, ClaimRepository claims, PeriodRepository periods,
             PersonRepository people, RateRepository rates, SheetRepository sheets,
-            SettingRepository settings, RoleRepository roles, ClaimLogRepository log, WatchRepository watches, Audit audit,
+            SettingRepository settings, PoolRepository pools, RoleRepository roles, ClaimLogRepository log, WatchRepository watches, Audit audit,
             Out<BulkSettleResult> result) {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
@@ -71,7 +72,7 @@ public class BulkSettleClaims {
 
         int batch = sheets.nextSettleBatch(id);
         BigDecimal total = BigDecimal.ZERO.setScale(2);
-        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
+        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
         for (Claim claim : ordered) {
             claim.setSettleBatch(batch);
             ClaimNumbers.settled(claim, claims, periods, settings, sheets);
@@ -83,7 +84,7 @@ public class BulkSettleClaims {
                 if (claim.getSettledDue() != null) total = total.add(new BigDecimal(claim.getSettledDue()));
                 Notify.watchers(user, claim, people, watches, audit);
             }
-            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
+            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
             for (String line : after.changesSince(before, id, user)) {
                 audit.record(line);
             }

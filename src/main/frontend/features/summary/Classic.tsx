@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { claimsKey, listClaims, liveClaims } from '../claims/api';
+import { useCapOf } from '../pools/cap';
 import { gradeOn, listPeople, peopleKey } from '../people/api';
 import { classicPeriodDueTotal, listPeriods, periodsKey } from '../periods/api';
 import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
 import { heldOf } from '../rates/shares';
-import { useCap, useFloor, useLate } from '../settings/api';
+import { useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { Fig } from '../session/Fig';
 
@@ -18,13 +19,13 @@ export function Classic({ sheetId, user }: { sheetId: string; user: string }) {
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
   const floor = useFloor(sheetId);
   const today = useSheetToday(sheetId, user);
-  const cap = useCap(sheetId, today);
+  const capOf = useCapOf(sheetId, today);
   const charges = useLate(sheetId, today);
   const byGrade = rateByGrade(rates.data, today);
   const all = claims.data ?? [];
   const live = liveClaims(all, people.data);
   const dueTotal = sumDues((people.data ?? []).map((p) =>
-    personDue(live.filter((c) => c.personId === p.id), rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap,
+    personDue(live.filter((c) => c.personId === p.id), rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, capOf(p.id),
       heldOf(p.id, all, people.data, rates.data, floor, charges))));
   const byStart = [...(periods.data ?? [])].sort((a, b) => a.from.localeCompare(b.from));
 

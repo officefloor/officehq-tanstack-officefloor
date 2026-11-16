@@ -184,7 +184,7 @@ export function heldParts(personId: number, claims: Claim[], dueOfClaim: (c: Cla
 }
 
 /** A person's due-total: the sum of their counting claims' due figures (n/a ones skipped; a shared one less its
- *  holders' parts) and the parts they hold of others' (`held`), at most the sheet's `cap` (null: no cap); n/a
+ *  holders' parts) and the parts they hold of others' (`held`), at most `cap` (the sheet's cap less the person's cut total, see `capLessCuts`; null: no cap); n/a
  *  when their grade today has no rate today (`pct`), they hold no part, and none of those claims keeps a settled or bound
  *  figure, or a live one at a grade no longer in force on the sheet's today or dated on or before it
  *  (its rate since ended). */
@@ -199,7 +199,7 @@ export function personDue(claims: Claim[], rates: Rate[] | undefined, gradeOn: G
   return cap !== null && hundredths(sum) > hundredths(cap) ? formatCents(hundredths(cap)) : sum;
 }
 
-/** What a person's due figures add up to above the sheet's `cap` (null: no cap); 0.00 when they do
+/** What a person's due figures add up to above their `cap` (the sheet's cap less their cut total; null: no cap); 0.00 when they do
  *  not exceed it, or their due-total is n/a. */
 export function excessOf(claims: Claim[], rates: Rate[] | undefined, gradeOn: GradeOn, pct: string | undefined,
   floor: DatedOn, late: Late, cap: string | null, held: HeldPart[] = []): string {

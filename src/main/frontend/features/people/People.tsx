@@ -13,9 +13,10 @@ import { PersonPlans } from '../plans/PersonPlans';
 import { backing, claimedClaims, claimsKey, patronShares, isActive, correctsAnother, listClaims, liveClaims, showTags, sumAmounts, tagsKey } from '../claims/api';
 import { listPeriods, periodOf, periodsKey, personPeriodCarried, personPeriodDue } from '../periods/api';
 import { listPools, personCutTotal, poolsKey } from '../pools/api';
+import { useCapOf } from '../pools/cap';
 import { agedDues, claimDue, excessOf, listRates, overdue, personDue, personScore, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
 import { heldOf } from '../rates/shares';
-import { roleOf, roleOfKey, scoreBand, useCap, useFloor, useLate, useScoreThresholds } from '../settings/api';
+import { roleOf, roleOfKey, scoreBand, useFloor, useLate, useScoreThresholds } from '../settings/api';
 import { crewsKey, listCrews, type Crew } from '../crews/api';
 import { useSheetToday } from '../sheet/api';
 import { BulkGrade } from './BulkGrade';
@@ -40,7 +41,7 @@ function snapshotOn(p: Person, day: string): string {
 
 /** The people on the sheet: a form that adds a person or edits one, and the list in list order (each with buttons that move
  *  them up or down a place; new people go to the end),
- *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap, with the excess above it, and split into settled and open (see `splitDues`); n/a
+ *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap less their cut total (not below 0.00), with the excess above that, and split into settled and open (see `splitDues`); n/a
  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
  *  their statements (a button that takes one, now or as of the date typed beside it, a button that cancels the last, the count, the last one's due-total and date), whether
  *  they are retired and from when (with a date and a button that retires them, a button that unretires them, and their past retirements, each `<from> to <to>`), their snapshot lines (one per SNAPSHOT written for them, oldest first, each `<the day being left> <due-total>`), their statement lines (one per statement still standing, oldest first, each `<statement date> <due-total>`), whether they have
@@ -78,7 +79,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const crews = useQuery({ queryKey: crewsKey(sheetId), queryFn: () => listCrews(sheetId) });
   const floor = useFloor(sheetId);
   const today = useSheetToday(sheetId, user);
-  const cap = useCap(sheetId, today);
+  const capOf = useCapOf(sheetId, today);
   const scoreThresholds = useScoreThresholds(sheetId);
   const charges = useLate(sheetId, today);
   const byGrade = rateByGrade(rates.data, today);
@@ -477,7 +478,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const everyone = people.data ?? [];
   const dueOf = new Map(everyone.map((q) => [q.id, personDue(
     liveClaims((claims.data ?? []).filter((c) => c.personId === q.id), [q]),
-    rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges, cap,
+    rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges, capOf(q.id),
     heldOf(q.id, claims.data ?? [], everyone, rates.data, floor, charges))]));
   const nameOf = new Map(everyone.map((q) => [q.id, q.name]));
   const shownOf = new Map(everyone.map((q) => [q.id, shownName(q)]));
@@ -662,10 +663,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                 {(shows('due-total') || shows('excess')) && (
                   <td>
                     {shows('due-total') && (
-                      <>Due <span data-testid="person-due-total"><Fig>{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap, held))}</Fig></span>{' '}</>
+                      <>Due <span data-testid="person-due-total"><Fig>{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, capOf(p.id), held))}</Fig></span>{' '}</>
                     )}
                     {shows('excess') && (
-                      <>excess <span data-testid="person-excess"><Fig>{excessOf(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap, held)}</Fig></span></>
+                      <>excess <span data-testid="person-excess"><Fig>{excessOf(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, capOf(p.id), held)}</Fig></span></>
                     )}
                   </td>
                 )}

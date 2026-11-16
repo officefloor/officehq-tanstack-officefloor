@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { claimsKey, listClaims, liveClaims } from '../claims/api';
+import { useCapOf } from '../pools/cap';
 import { gradeOn, listPeople, listWatches, peopleKey, watchesKey, type Person } from '../people/api';
 import { useDueTotal } from '../rates/DueTotal';
 import { claimDue, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, sumDues } from '../rates/api';
-import { useCap, useFloor, useLate } from '../settings/api';
+import { useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { useOverdue } from '../rates/Overdue';
 import { STATUSES, statusCount } from './Summary';
@@ -24,14 +25,14 @@ function useMyFigures(sheetId: string, user: string): { due: string; overdue: st
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
   const floor = useFloor(sheetId);
   const today = useSheetToday(sheetId, user);
-  const cap = useCap(sheetId, today);
+  const capOf = useCapOf(sheetId, today);
   const charges = useLate(sheetId, today);
   const me = nameKey(user);
   const p = (people.data ?? []).find((q: Person) => [q.name, ...q.aliases].some((n) => nameKey(n) === me));
   if (!p || !claims.data) return null;
   const live = liveClaims(claims.data.filter((c) => c.personId === p.id), [p]);
   const dueOfClaim = (c: (typeof live)[number]) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges);
-  const due = personDue(live, rates.data, (d) => gradeOn(p, d), rateByGrade(rates.data, today).get(p.grade), floor, charges, cap,
+  const due = personDue(live, rates.data, (d) => gradeOn(p, d), rateByGrade(rates.data, today).get(p.grade), floor, charges, capOf(p.id),
     heldOf(p.id, claims.data, people.data, rates.data, floor, charges));
   return { due: showDue(due), overdue: overdue(live, charges, dueOfClaim).total };
 }

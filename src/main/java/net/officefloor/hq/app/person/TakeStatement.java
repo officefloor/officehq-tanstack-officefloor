@@ -9,8 +9,10 @@ import java.util.Map;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.Dues;
+import net.officefloor.hq.app.pool.PoolRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.DatedSetting;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
@@ -18,7 +20,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** Takes a statement of the person: records their due-total now (the sum of the due of their claims that
- *  count live (open ones dated within a hold of theirs, and not bound, do not), n/a ones skipped, at most the sheet's cap; n/a when their grade has no rate on the sheet's today and none of
+ *  count live (open ones dated within a hold of theirs, and not bound, do not), n/a ones skipped, at most the sheet's cap less their cut total (not below 0.00); n/a when their grade has no rate on the sheet's today and none of
  *  those claims keeps a settled or bound figure, or a live one at a grade no longer in force or dated on or before the sheet's today) on the sheet's today, and binds each counting claim
  *  to the due it shows now, late charge and floor included (a claim already bound keeps its figure); a claim that does not
  *  count live is unbound.
@@ -30,7 +32,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class TakeStatement {
     public void take(@RequestParam(name = "asof", required = false) String asof, @Val Person person,
             PersonRepository people, ClaimRepository claims, RateRepository rates, SheetRepository sheets,
-            SettingRepository settings) throws InvalidPersonException {
+            SettingRepository settings, PoolRepository pools) throws InvalidPersonException {
         String sheetId = person.getSheetId();
         LocalDate today = sheets.today(sheetId);
         LocalDate on = today;
@@ -46,6 +48,7 @@ public class TakeStatement {
             floor = settings.floor(sheetId);
             late = settings.late(sheetId, today);
             cap = settings.cap(sheetId);
+            if (cap != null) cap = Rollup.capLessCuts(cap, pools.cutTotals(sheetId).get(person.getId()));
         } else {
             try {
                 on = LocalDate.parse(asof.trim());
@@ -64,6 +67,7 @@ public class TakeStatement {
             floor = settings.datedAsOf(sheetId, SettingRepository.FLOOR, SettingRepository.DEFAULT_FLOOR, on);
             late = settings.lateAsOf(sheetId, on);
             cap = settings.capAsOf(sheetId, on);
+            if (cap != null) cap = Rollup.capLessCuts(cap, pools.cutTotalsAsOf(sheetId, on).get(person.getId()));
             person.setStatedAsOf(on.toString());
         }
         // The figure each counting claim is bound to, by claim id.
