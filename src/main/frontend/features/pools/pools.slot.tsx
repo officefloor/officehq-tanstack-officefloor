@@ -34,7 +34,8 @@ function PoolRow({ sheetId, user, pool }: { sheetId: string; user: string; pool:
       <ul>
         {pool.members.map((m) => (
           <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
-            {m.name}: <span data-testid="pool-share">{m.share.toFixed(2)}</span>
+            {m.name}: <span data-testid="pool-share">{m.share.toFixed(2)}</span>, cut{' '}
+            <span data-testid="pool-cut">{m.cut ?? ''}</span>
             {m.retired && ' (retired)'}
           </li>
         ))}

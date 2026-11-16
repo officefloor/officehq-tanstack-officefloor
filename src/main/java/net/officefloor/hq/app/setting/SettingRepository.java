@@ -68,6 +68,9 @@ public class SettingRepository {
     /** The days after a period's to-date before a change of the sheet's today closes it; blank for off (undated). */
     public static final String GRACE_DAYS = "grace-days";
 
+    /** The sheet's pot, shared out as each balanced pool's cuts (two decimals); blank for none (undated). */
+    public static final String POT = "pot";
+
     /** The prefix of an action's permission: perm-open, perm-settle, perm-void, perm-reassign, perm-close or
      *  perm-reopen, its value the roles that may take it, comma separated; blank: the standing rule (see PERMISSIONS). */
     public static final String PERM_PREFIX = "perm-";
@@ -228,6 +231,12 @@ public class SettingRepository {
     public Integer graceDays(String sheetId) {
         String value = value(sheetId, GRACE_DAYS);
         return value == null ? null : Integer.valueOf(value);
+    }
+
+    /** The sheet's pot, or null when it is blank (none). */
+    public BigDecimal pot(String sheetId) {
+        String value = value(sheetId, POT);
+        return value == null ? null : new BigDecimal(value);
     }
 
     /** Whether the role may take the action (open, settle, void, reassign, close or reopen) on the sheet: the roles its

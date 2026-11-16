@@ -16,10 +16,10 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  decimals; or floor or late-pct, its value such an amount (not blank), all kept with two decimals; or terms, its value a
  *  whole number of days 0 or more (not blank), kept without leading zeros, and so is terms-A, terms-B or terms-C (a
  *  grade's own terms); or grace-A, grace-B or grace-C (a grade's grace), its value blank (none) or a whole number of days 0 or
- *  more, kept without leading zeros; or grace-days, its value blank (off) or a whole number of days 0 or more (undated); or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today); or
+ *  more, kept without leading zeros; or grace-days, its value blank (off) or a whole number of days 0 or more (undated); or pot, its value blank (none) or an amount with up to two decimals, kept with two (undated); or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today); or
  *  period-numbering-from or entry-date, its value a date yyyy-MM-dd or blank (off); or cap, proof-threshold, proof-threshold-A, -B or -C (a grade's own) or note-threshold, its value blank (none) or
  *  an amount like the clerk limit; or perm-open, perm-settle, perm-void, perm-reassign, perm-close or perm-reopen, its value
- *  blank (the standing rule) or roles (clerk, steward) separated by commas, kept without spaces or repeats. Every key but policy-date, period-numbering-from, entry-date, grace-days and the permissions is dated: its from-date is blank (the
+ *  blank (the standing rule) or roles (clerk, steward) separated by commas, kept without spaces or repeats. Every key but policy-date, period-numbering-from, entry-date, grace-days, pot and the permissions is dated: its from-date is blank (the
  *  sheet's today) or a date yyyy-MM-dd. */
 public class ValidateSetting {
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
@@ -40,6 +40,7 @@ public class ValidateSetting {
         boolean numberingFrom = SettingRepository.PERIOD_NUMBERING_FROM.equals(k);
         boolean graceDays = SettingRepository.GRACE_DAYS.equals(k);
         boolean entryDate = SettingRepository.ENTRY_DATE.equals(k);
+        boolean pot = SettingRepository.POT.equals(k);
         boolean cap = SettingRepository.CAP.equals(k);
         boolean proofThreshold = SettingRepository.PROOF_THRESHOLD.equals(k);
         boolean gradeProofThreshold = k.startsWith(SettingRepository.PROOF_THRESHOLD_PREFIX)
@@ -48,14 +49,14 @@ public class ValidateSetting {
         boolean noteThreshold = SettingRepository.NOTE_THRESHOLD.equals(k);
         boolean perm = k.startsWith(SettingRepository.PERM_PREFIX)
                 && SettingRepository.PERMISSIONS.containsKey(k.substring(SettingRepository.PERM_PREFIX.length()));
-        if (!perm && !SettingRepository.CLERK_LIMIT.equals(k) && !cap && !proofThreshold && !noteThreshold && !floor && !terms && !grace && !latePct && !policyDate && !numberingFrom && !graceDays && !entryDate) {
+        if (!perm && !SettingRepository.CLERK_LIMIT.equals(k) && !cap && !proofThreshold && !noteThreshold && !floor && !terms && !grace && !latePct && !policyDate && !numberingFrom && !graceDays && !entryDate && !pot) {
             throw new InvalidSettingException("Unknown setting " + k);
         }
         String value = request == null || request.value() == null ? "" : request.value().trim();
         String by = request == null || request.by() == null ? "" : request.by().trim();
         String fromText = request == null || request.from() == null ? "" : request.from().trim();
         LocalDate from = null;
-        if (!policyDate && !numberingFrom && !entryDate && !graceDays && !fromText.isEmpty()) {
+        if (!policyDate && !numberingFrom && !entryDate && !graceDays && !pot && !fromText.isEmpty()) {
             try {
                 from = LocalDate.parse(fromText);
             } catch (DateTimeParseException e) {
@@ -102,6 +103,14 @@ public class ValidateSetting {
                 throw new InvalidSettingException("The grace days must be a whole number of days, 0 or more, or blank");
             }
             values.set(new SettingValues(k, String.valueOf(Integer.parseInt(value)), null, false, by));
+            return;
+        }
+        if (pot) {
+            if (!value.isEmpty() && !AMOUNT.matcher(value).matches()) {
+                throw new InvalidSettingException("The pot must be an amount with up to two decimals, or blank");
+            }
+            values.set(new SettingValues(k, value.isEmpty() ? null : new BigDecimal(value).setScale(2).toPlainString(),
+                    null, false, by));
             return;
         }
         if (grace) {

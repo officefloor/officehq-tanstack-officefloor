@@ -7,7 +7,7 @@ import org.springframework.http.ResponseEntity;
 
 public class RespondWithPoolMemberCreated {
     public void respond(@Val PoolMemberValues values, ObjectResponse<ResponseEntity<PoolMember>> response) {
-        response.send(new ResponseEntity<>(new PoolMember(values.personId(), values.name(), values.share(), false),
+        response.send(new ResponseEntity<>(new PoolMember(values.personId(), values.name(), values.share(), false, null),
                 HttpStatus.CREATED));
     }
 }
