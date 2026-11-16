@@ -41,7 +41,7 @@ public class PersonTransferrer {
                 + " AND c.claim_number IS NOT NULL ORDER BY (SELECT MIN(l.log_date) FROM claim_log l WHERE l.sheet_id = c.sheet_id"
                 + " AND l.claim_id = c.id AND l.status = 'OPEN') NULLS LAST, c.id", Long.class, from, id);
         for (Long c : claims) {
-            for (String table : List.of("claim_log", "claim_reminder", "claim_comment", "claim_void_reason")) {
+            for (String table : List.of("claim_log", "claim_reminder", "claim_comment", "claim_line", "claim_void_reason")) {
                 jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND claim_id = ?", to, from, c);
             }
             jdbc.update("UPDATE claim_edit SET sheet_id = ?, ref = NULL WHERE sheet_id = ? AND claim_id = ?", to, from, c);
@@ -86,7 +86,7 @@ public class PersonTransferrer {
                 + " AND c.claim_number IS NOT NULL ORDER BY (SELECT MIN(l.log_date) FROM claim_log l WHERE l.sheet_id = c.sheet_id"
                 + " AND l.claim_id = c.id AND l.status = 'OPEN') NULLS LAST, c.id", Long.class, from, id);
         for (Long c : claims) {
-            for (String table : List.of("claim_log", "claim_reminder", "claim_comment", "claim_void_reason")) {
+            for (String table : List.of("claim_log", "claim_reminder", "claim_comment", "claim_line", "claim_void_reason")) {
                 jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND claim_id = ?", to, from, c);
             }
             jdbc.update("UPDATE claim_edit SET sheet_id = ?, ref = NULL WHERE sheet_id = ? AND claim_id = ?", to, from, c);

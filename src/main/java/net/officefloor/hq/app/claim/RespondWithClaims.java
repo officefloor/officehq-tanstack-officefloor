@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** The sheet's claims, newest first, each with its status log. Read as of a date (see AsOf), each as it stood then:
- *  one added later is left out; its amount, date and note are those it had before any later edit; its status, and its log, are those its log shows then; its comments are those written by then; its proofs count leaves out the proofs added after; it has the number and opener
+ *  one added later is left out; its amount, date and note are those it had before any later edit; its status, and its log, are those its log shows then; its comments are those written by then; its lines are those added by then; its proofs count leaves out the proofs added after; it has the number and opener
  *  only once opened by then, its settled due only while SETTLED then, and is bound only when its person's last
  *  statement was taken while the sheet's today was on or before the date; the date stands in for today. */
 public class RespondWithClaims {
@@ -31,6 +31,7 @@ public class RespondWithClaims {
         Map<Long, LocalDate> reminded = claims.reminders(sheet, date);
         Map<Long, List<ClaimComment>> comments = claims.comments(sheet, date);
         Map<Long, Integer> batches = claims.batches(sheet, date);
+        Map<Long, List<ClaimLine>> lineItems = claims.lines(sheet, date);
         Map<Long, Claim> edited = date == null ? Map.of() : claims.editedAfter(sheet, date);
         Map<Long, Integer> proofsAfter = date == null ? Map.of() : claims.proofsAfter(sheet, date);
         List<ClaimResponse> out = new ArrayList<>();
@@ -46,7 +47,7 @@ public class RespondWithClaims {
             }
             out.add(ClaimResponse.from(shown, claims, lines, today, date == null ? locks.get(c.id()) : null,
                     late.contains(c.id()), reminded.get(c.id()), comments.getOrDefault(c.id(), List.of()),
-                    batches.get(c.id())));
+                    batches.get(c.id()), lineItems.getOrDefault(c.id(), List.of())));
         }
         response.send(out);
     }

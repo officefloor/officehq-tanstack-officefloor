@@ -104,7 +104,7 @@ public class CloneRepository {
         Map<Object, Object> copied = copy("claim", "c WHERE c.sheet_id = ? ORDER BY "
                 + "(SELECT p.position FROM person p WHERE p.id = c.person_id), c.person_id, c.id", from, to, claim);
         Map<String, Function<Map<String, Object>, Object>> ofClaim = Map.of("claim_id", (r) -> copied.get(r.get("claim_id")));
-        for (String table : List.of("claim_log", "claim_edit", "claim_comment", "claim_reminder")) {
+        for (String table : List.of("claim_log", "claim_edit", "claim_comment", "claim_line", "claim_reminder")) {
             copy(table, "WHERE sheet_id = ? ORDER BY id", from, to, ofClaim);
         }
         copy("claim_void_reason", "WHERE sheet_id = ?", from, to, ofClaim);

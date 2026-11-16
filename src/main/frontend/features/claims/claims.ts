@@ -57,7 +57,15 @@ export type Claim = {
   comments: ClaimComment[];
   /** The number of the bulk settle batch that settled it; null when none did (settled one at a time, or not settled). */
   batch: number | null;
+  /** Its lines, in the order added; with any, its amount is their quantities times unit amounts added up. */
+  lines: ClaimLine[];
 };
+
+/** A line of a claim: its label, quantity (a whole number, at least 1) and unit amount (two decimals). */
+export type ClaimLine = { label: string; qty: number; unit: string };
+
+/** A line as shown: `<label> <qty> x <unit>`. */
+export const lineLine = (l: ClaimLine) => `${l.label} ${l.qty} x ${l.unit}`;
 
 /** A comment on a claim: who wrote it, the sheet's today (yyyy-MM-dd) when it was written, and its text. */
 export type ClaimComment = { by: string; date: string; text: string };

@@ -282,6 +282,50 @@ public class ClaimRepository {
         return out;
     }
 
+    /** Adds the line to the claim and stores its new amount as an edit by the line's adder (see update), but only while
+     *  it is still a DRAFT and no one but the adder holds its lock; false otherwise (nothing is written). The lock is
+     *  kept. */
+    public boolean addLine(Claim claim, ClaimLine line) {
+        jdbc.update("INSERT INTO claim_edit (sheet_id, claim_id, amount, claim_date, note, corrects, ref, tags, made_on) "
+                + "SELECT sheet_id, id, amount, claim_date, note, corrects, ref, tags, ? FROM claim WHERE sheet_id = ? AND id = ? AND status = ? "
+                + "AND (locked_by IS NULL OR locked_by = ?)",
+                Date.valueOf(line.date()), claim.sheetId(), claim.id(), ClaimStatus.DRAFT.name(), line.by());
+        if (jdbc.update("UPDATE claim SET amount = ?, edited_by = ? WHERE sheet_id = ? AND id = ? AND status = ? "
+                + "AND (locked_by IS NULL OR locked_by = ?)",
+                claim.amount(), line.by(), claim.sheetId(), claim.id(), ClaimStatus.DRAFT.name(), line.by()) != 1) {
+            return false;
+        }
+        jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, added_by, added_on, label, qty, unit) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                claim.sheetId(), claim.id(), line.by(), Date.valueOf(line.date()), line.label(), line.qty(), line.unit());
+        return true;
+    }
+
+    /** The claim's lines, in the order added. */
+    public List<ClaimLine> lines(String sheetId, long id) {
+        return jdbc.query("SELECT added_by, added_on, label, qty, unit FROM claim_line WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
+                (rs, n) -> new ClaimLine(rs.getString("added_by"), rs.getObject("added_on", LocalDate.class),
+                        rs.getString("label"), rs.getInt("qty"), rs.getBigDecimal("unit").setScale(2)), sheetId, id);
+    }
+
+    /** The lines of each claim of the sheet that has any, in the order added, added on or before {@code asOf} (null:
+     *  any day), by claim id. */
+    public Map<Long, List<ClaimLine>> lines(String sheetId, LocalDate asOf) {
+        Map<Long, List<ClaimLine>> out = new HashMap<>();
+        jdbc.query("SELECT claim_id, added_by, added_on, label, qty, unit FROM claim_line WHERE sheet_id = ? "
+                + "AND (CAST(? AS DATE) IS NULL OR added_on <= ?) ORDER BY id",
+                (rs) -> { out.computeIfAbsent(rs.getLong("claim_id"), (k) -> new java.util.ArrayList<>()).add(new ClaimLine(
+                        rs.getString("added_by"), rs.getObject("added_on", LocalDate.class), rs.getString("label"),
+                        rs.getInt("qty"), rs.getBigDecimal("unit").setScale(2))); },
+                sheetId, asOf == null ? null : Date.valueOf(asOf), asOf == null ? null : Date.valueOf(asOf));
+        return out;
+    }
+
+    /** Whether the claim has any lines (its amount is then its lines' total). */
+    public boolean hasLines(String sheetId, long id) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim_line WHERE sheet_id = ? AND claim_id = ?", Integer.class, sheetId, id);
+        return n != null && n > 0;
+    }
+
     /** The last day a reminder was written for the claim; null when none. */
     public LocalDate remindedOn(String sheetId, long id) {
         return jdbc.queryForObject("SELECT MAX(reminded_on) FROM claim_reminder WHERE sheet_id = ? AND claim_id = ?",

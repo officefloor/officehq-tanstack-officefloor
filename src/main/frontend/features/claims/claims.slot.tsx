@@ -11,7 +11,7 @@ import { useDelegations } from '../delegation/delegation';
 import { claimDue, rateFor, useRates } from '../rates/rates';
 import { dueBy, isOverdue } from '../overdue/overdue';
 import { useFloor, useLate, type Dated } from '../settings/settings';
-import { claimsKey, commentLine, live, logLine, total, useClaims, type Claim } from './claims';
+import { claimsKey, commentLine, lineLine, live, logLine, total, useClaims, type Claim } from './claims';
 import { useSelectedClaims } from './selection';
 import { useSheetToday } from '../session/session';
 import { useVoidReasons } from '../voidreasons/voidreasons';
@@ -44,7 +44,9 @@ type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | '
  *  with the claim's error, for anyone else or any other claim). Remind writes a reminder for an OPEN or PENDING claim, once per sheet-today, which becomes its reminded date (refused, with the claim's error, for any other claim or a second reminder that day). Comment adds the text typed beside it to the claim's comments, shown in the order written as `<user> on <date>: <text>` (an empty one is refused with the claim's error). Split takes the amount typed beside it off an OPEN claim (not deferred, nor with its due-by inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Only a DRAFT whose due-by is not inside a closed period can be edited: Edit opens the editor and locks the claim for the user until it
  *  is saved or cancelled (Cancel) or the sheet's today changes; Edit on any other claim, on a claim another user holds, or by a
  *  viewer shows the claim's error instead and takes no lock. The row's own amount entry and Save amount change a DRAFT's amount
- *  exactly as the editor's save would (same rules, CLAIM_EDITED), keeping its date and note; a refusal shows the claim's error. */
+ *  exactly as the editor's save would (same rules, CLAIM_EDITED), keeping its date and note; a refusal shows the claim's error. Add line adds the label, quantity and unit amount typed
+ *  beside it to a DRAFT's lines, shown as `<label> <qty> x <unit>`; its amount becomes their total and another amount
+ *  typed in an edit is refused (the same rules as an edit, else the claim's error). */
 function ClaimRow({
   sheetId,
   user,
@@ -143,6 +145,19 @@ function ClaimRow({
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
   });
+  const [lineLabel, setLineLabel] = useState('');
+  const [lineQty, setLineQty] = useState('');
+  const [lineUnit, setLineUnit] = useState('');
+  const line = useMutation({
+    mutationFn: (l: { label: string; qty: string; unit: string }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/lines`, { ...l, by: user }),
+    onSuccess: () => {
+      setLineLabel('');
+      setLineQty('');
+      setLineUnit('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
   const [inlineAmount, setInlineAmount] = useState('');
   // the row's own amount entry saves through the claim form's edit, keeping the claim's date, note, corrects, reference and tags
   const inline = useMutation({
@@ -181,6 +196,7 @@ function ClaimRow({
     split.reset();
     remind.reset();
     comment.reset();
+    line.reset();
     inline.reset();
     status.reset();
     status.mutate(action);
@@ -230,6 +246,7 @@ function ClaimRow({
           split.reset();
           remind.reset();
           comment.reset();
+          line.reset();
           inline.reset();
           lock.reset();
           setEditRefused(null);
@@ -282,6 +299,7 @@ function ClaimRow({
           split.reset();
           remind.reset();
           comment.reset();
+          line.reset();
           inline.reset();
           inline.mutate(inlineAmount);
         }}
@@ -352,6 +370,7 @@ function ClaimRow({
           split.reset();
           remind.reset();
           comment.reset();
+          line.reset();
           inline.reset();
           proof.mutate();
         }}
@@ -371,6 +390,7 @@ function ClaimRow({
           split.reset();
           remind.reset();
           comment.reset();
+          line.reset();
           inline.reset();
         }}
       />
@@ -389,6 +409,7 @@ function ClaimRow({
           split.reset();
           remind.reset();
           comment.reset();
+          line.reset();
           inline.reset();
           defer.mutate(deferUntil.trim());
         }}
@@ -420,6 +441,7 @@ function ClaimRow({
           split.reset();
           remind.reset();
           comment.reset();
+          line.reset();
           inline.reset();
           redate.mutate(newDate.trim());
         }}
@@ -436,6 +458,7 @@ function ClaimRow({
           split.reset();
           remind.reset();
           comment.reset();
+          line.reset();
           inline.reset();
         }}
       />
@@ -454,6 +477,7 @@ function ClaimRow({
           split.reset();
           remind.reset();
           comment.reset();
+          line.reset();
           inline.reset();
           split.mutate(splitAmount.trim());
         }}
@@ -493,6 +517,7 @@ function ClaimRow({
           split.reset();
           remind.reset();
           comment.reset();
+          line.reset();
           inline.reset();
           reassign.mutate(Number(moveTo));
         }}
@@ -514,6 +539,7 @@ function ClaimRow({
           split.reset();
           remind.reset();
           comment.reset();
+          line.reset();
           inline.reset();
           remind.mutate();
         }}
@@ -527,6 +553,7 @@ function ClaimRow({
         onChange={(e) => {
           setCommentText(e.target.value);
           comment.reset();
+          line.reset();
         }}
       />
       <button
@@ -544,6 +571,7 @@ function ClaimRow({
           split.reset();
           remind.reset();
           comment.reset();
+          line.reset();
           inline.reset();
           // an empty comment is refused at once; else the server decides
           if (commentText.trim() === '') {
@@ -555,6 +583,57 @@ function ClaimRow({
       >
         Comment
       </button>
+      <input
+        data-testid="claim-line-label"
+        placeholder="Line"
+        value={lineLabel}
+        onChange={(e) => {
+          setLineLabel(e.target.value);
+          line.reset();
+        }}
+      />
+      <input
+        data-testid="claim-line-qty"
+        placeholder="Qty"
+        inputMode="numeric"
+        value={lineQty}
+        onChange={(e) => {
+          setLineQty(e.target.value);
+          line.reset();
+        }}
+      />
+      <input
+        data-testid="claim-line-unit"
+        placeholder="Unit"
+        inputMode="decimal"
+        value={lineUnit}
+        onChange={(e) => {
+          setLineUnit(e.target.value);
+          line.reset();
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-line-add"
+        disabled={line.isPending}
+        onClick={() => {
+          setEditRefused(null);
+          lock.reset();
+          status.reset();
+          reassign.reset();
+          defer.reset();
+          redate.reset();
+          proof.reset();
+          split.reset();
+          remind.reset();
+          comment.reset();
+          line.reset();
+          inline.reset();
+          line.mutate({ label: lineLabel, qty: lineQty, unit: lineUnit });
+        }}
+      >
+        Add line
+      </button>{' '}
       {editRefused !== null && <span data-testid="claim-error"> {editRefused}</span>}
       {status.isError && (
         <span data-testid="claim-error">
@@ -606,18 +685,33 @@ function ClaimRow({
           {comment.error instanceof HttpError && comment.error.status === 403 ? VIEWER_REFUSED : EMPTY_COMMENT}
         </span>
       )}
+      {line.isError && (
+        <span data-testid="claim-error">
+          {' '}
+          {line.error instanceof HttpError && line.error.status === 403
+            ? VIEWER_REFUSED
+            : 'Only a draft claim whose due-by is not inside a closed period, and that no one else is editing, takes a line: a label, a whole quantity of at least 1 and a unit amount with up to two decimals.'}
+        </span>
+      )}
       {inline.isError && (
         <span data-testid="claim-error">
           {' '}
           {inline.error instanceof HttpError && inline.error.status === 403
             ? VIEWER_REFUSED
-            : 'Only a draft claim whose due-by is not inside a closed period, and that no one else is editing, can have its amount changed, to one with up to two decimals, 0.00 or more unless it corrects a settled claim.'}
+            : 'Only a draft claim whose due-by is not inside a closed period, that no one else is editing and that has no lines, can have its amount changed, to one with up to two decimals, 0.00 or more unless it corrects a settled claim.'}
         </span>
       )}
       <ol data-testid="claim-log">
         {c.log.map((l, i) => (
           <li key={i} data-testid="claim-log-line">
             {logLine(l)}
+          </li>
+        ))}
+      </ol>
+      <ol data-testid="claim-lines">
+        {c.lines.map((l, i) => (
+          <li key={i} data-testid="claim-lines-line">
+            {lineLine(l)}
           </li>
         ))}
       </ol>
