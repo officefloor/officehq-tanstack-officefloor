@@ -8,8 +8,7 @@ import { usePeople, type Person } from '../people/people';
 import { periodOf, usePeriods } from '../periods/periods';
 import { claimDue, rateFor, useRates } from '../rates/rates';
 import { dueBy, isOverdue } from '../overdue/overdue';
-import { useSheetToday } from '../session/session';
-import { useFloor, useTerms } from '../settings/settings';
+import { useFloor, useLate } from '../settings/settings';
 import { claimsKey, live, total, useClaims, type Claim } from './claims';
 
 type Values = { amount: string; date: string; note: string };
@@ -50,8 +49,7 @@ function ClaimRow({
 }) {
   const queryClient = useQueryClient();
   const periods = usePeriods(sheetId);
-  const terms = useTerms(sheetId);
-  const today = useSheetToday(sheetId);
+  const late = useLate(sheetId);
   const status = useMutation({
     mutationFn: (action: Action) =>
       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/status`, { action, by: user }),
@@ -69,9 +67,9 @@ function ClaimRow({
       <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
       <span data-testid="claim-amount">{c.amount}</span> <span data-testid="claim-date">{c.date}</span>{' '}
       <span data-testid="claim-note">{c.note}</span>{' '}
-      <span data-testid="claim-due">{claimDue(c, rate, floor)}</span>{' '}
-      <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
-      <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="claim-due">{claimDue(c, rate, floor, late)}</span>{' '}
+      <span data-testid="claim-due-by">{dueBy(c, late.terms)}</span>{' '}
+      <span data-testid="claim-overdue">{isOverdue(c, late.terms, late.today) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
       <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}

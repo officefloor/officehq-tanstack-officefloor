@@ -7,6 +7,7 @@ import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
@@ -14,14 +15,14 @@ import net.officefloor.plugin.variable.Val;
  * Moves the claim to its new status: DRAFT to OPEN, OPEN to SETTLED, DRAFT or OPEN to VOID. A voided claim keeps
  * its number (never given again). Settling fixes the claim's due: its amount at its
  * person's grade's rate in force on the claim's date, rounded half to even to two decimals and at least the sheet's floor (left live when no rate applies),
- * or the figure a statement bound it to.
+ * or the figure a statement bound it to, with its late charge as of the sheet's today frozen in (see LateCharge).
  * Opening records who opened the claim; that user cannot settle it (four eyes). A claim dated inside a closed
  * period cannot change status. A clerk (any user not made a steward) settles only a claim whose due is at or below the
  * sheet's clerk limit, if it has one; a due of n/a is within any limit. A steward settles anything.
  */
 public class ApplyClaimStatus {
     public void apply(@Val Claim claim, @Val ClaimStatusChange change, PersonRepository people, RateRepository rates,
-            PeriodRepository periods, SettingRepository settings, RoleRepository roles, Out<Claim> changed, Out<ClaimNumber> number) throws InvalidClaimStatusException {
+            PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, Out<Claim> changed, Out<ClaimNumber> number) throws InvalidClaimStatusException {
         boolean allowed = switch (change.to()) {
             case OPEN -> claim.status() == ClaimStatus.DRAFT;
             case SETTLED -> claim.status() == ClaimStatus.OPEN;
@@ -37,7 +38,7 @@ public class ApplyClaimStatus {
         if (change.to() == ClaimStatus.SETTLED && change.by().equals(claim.openedBy())) {
             throw new InvalidClaimStatusException("The user who opened a claim cannot settle it");
         }
-        BigDecimal settledDue = change.to() == ClaimStatus.SETTLED ? due(claim, people, rates, settings) : claim.due();
+        BigDecimal settledDue = change.to() == ClaimStatus.SETTLED ? LateCharge.of(claim.sheetId(), sheets, settings).add(claim, due(claim, people, rates, settings)) : claim.due();
         if (change.to() == ClaimStatus.SETTLED && settledDue != null
                 && !RoleRepository.STEWARD.equals(roles.roleOf(claim.sheetId(), change.by()))) {
             BigDecimal limit = settings.clerkLimit(claim.sheetId());

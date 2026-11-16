@@ -26,6 +26,12 @@ public class SettingRepository {
     /** The terms a sheet has until they are set. */
     public static final int DEFAULT_TERMS = 14;
 
+    /** The percent of an overdue claim's figure added for every full 30 days it is overdue; 0.00 until set. */
+    public static final String LATE_PCT = "late-pct";
+
+    /** The late percent a sheet has until one is set. */
+    public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
+
     private final JdbcTemplate jdbc;
 
     public SettingRepository(JdbcTemplate jdbc) {
@@ -61,6 +67,12 @@ public class SettingRepository {
     public int terms(String sheetId) {
         String value = value(sheetId, TERMS);
         return value == null ? DEFAULT_TERMS : Integer.parseInt(value);
+    }
+
+    /** The sheet's late percent: what an overdue claim gains of its figure for every full 30 days overdue. */
+    public BigDecimal latePct(String sheetId) {
+        String value = value(sheetId, LATE_PCT);
+        return value == null ? DEFAULT_LATE_PCT : new BigDecimal(value);
     }
 
     /** Stores the setting, replacing the value it had. */

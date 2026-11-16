@@ -10,6 +10,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimDue;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.LateCharge;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -19,7 +20,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * The sheet's figures as the screen shows them: each person's claimed (their claims that count added up; a held person's OPEN claims do not) and
- * due-total (the figures of those claims added up; n/a when their grade has no rate today and no counting claim
+ * due-total (the figures of those claims, each with its late charge, added up; n/a when their grade has no rate today and no counting claim
  * keeps a figure), and the sheet's claimed-total and due-total (everyone's added up, skipping n/a).
  *
  * A change takes the figures before it ({@link #take}) and, after its own audit lines, writes ROLLUP for every
@@ -50,6 +51,7 @@ public class Rollup {
     public RollupBefore take(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         BigDecimal floor = settings.floor(sheetId);
+        LateCharge late = LateCharge.of(sheetId, sheets, settings);
         List<Claim> all = claims.list(sheetId);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         for (Person person : people.list(sheetId)) {
@@ -62,7 +64,7 @@ public class Rollup {
                 }
                 claimed = claimed.add(c.amount());
                 kept |= ClaimDue.kept(c);
-                BigDecimal figure = ClaimDue.figure(c, person.grade(), rates, floor);
+                BigDecimal figure = late.add(c, ClaimDue.figure(c, person.grade(), rates, floor));
                 if (figure != null) {
                     due = due.add(figure);
                 }

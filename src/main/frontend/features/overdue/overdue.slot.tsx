@@ -3,8 +3,7 @@ import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
 import { usePeople, type Person } from '../people/people';
 import { sum, useRates } from '../rates/rates';
-import { useSheetToday } from '../session/session';
-import { useFloor, useTerms } from '../settings/settings';
+import { useFloor, useLate } from '../settings/settings';
 import { overdue } from './overdue';
 
 function OverdueHead() {
@@ -20,11 +19,10 @@ function OverdueHead() {
 function PersonOverdue({ sheetId, person }: { sheetId: string; person: Person }) {
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
-  const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
-  const terms = useTerms(sheetId);
+  const late = useLate(sheetId);
   const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person]);
-  const o = overdue(mine, rates.data, person.grade, terms, today, floor);
+  const o = overdue(mine, rates.data, person.grade, late, floor);
   return (
     <>
       <td data-testid="person-overdue-count">{o.count}</td>
@@ -38,11 +36,10 @@ function OverdueTotal({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
-  const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
-  const terms = useTerms(sheetId);
+  const late = useLate(sheetId);
   const all = (people.data ?? []).map((p) =>
-    overdue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p.grade, terms, today, floor),
+    overdue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p.grade, late, floor),
   );
   return (
     <p>

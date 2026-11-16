@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Reads the body: the key is clerk-limit, its value blank (no limit) or an amount 0.00 or more with up to two
- *  decimals; or floor, its value such an amount (not blank), both kept with two decimals; or terms, its value a
+ *  decimals; or floor or late-pct, its value such an amount (not blank), all kept with two decimals; or terms, its value a
  *  whole number of days 0 or more (not blank), kept without leading zeros. */
 public class ValidateSetting {
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
@@ -18,7 +18,8 @@ public class ValidateSetting {
         String k = key == null ? "" : key.trim();
         boolean floor = SettingRepository.FLOOR.equals(k);
         boolean terms = SettingRepository.TERMS.equals(k);
-        if (!SettingRepository.CLERK_LIMIT.equals(k) && !floor && !terms) {
+        boolean latePct = SettingRepository.LATE_PCT.equals(k);
+        if (!SettingRepository.CLERK_LIMIT.equals(k) && !floor && !terms && !latePct) {
             throw new InvalidSettingException("Unknown setting " + k);
         }
         String value = request == null || request.value() == null ? "" : request.value().trim();
@@ -29,6 +30,9 @@ public class ValidateSetting {
             }
             values.set(new SettingValues(k, String.valueOf(Integer.parseInt(value)), by));
             return;
+        }
+        if (latePct && !AMOUNT.matcher(value).matches()) {
+            throw new InvalidSettingException("The late percent must be a percent with up to two decimals");
         }
         if (floor && value.isEmpty()) {
             throw new InvalidSettingException("The floor must be an amount with up to two decimals");

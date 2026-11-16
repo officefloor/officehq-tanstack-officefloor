@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { counts, type Claim } from '../claims/claims';
+import { lateSteps, type Late } from '../overdue/late';
 
 /** A grade's rate on the sheet: `rate` is a percent as text with two decimals (never a float), in force from
  *  `from` (yyyy-MM-dd; null: from the beginning of time). */
@@ -44,33 +45,43 @@ function shown(h: bigint): string {
  *  the floor (two decimals); 'n/a' when there is no rate. */
 export function due(amount: string, rate: string | undefined, floor: string): string {
   if (rate === undefined) return 'n/a';
-  const p = hundredths(amount) * hundredths(rate); // in 1/10000 of a hundredth
-  const a = p < 0n ? -p : p;
-  const q = a / 10000n;
-  const rem = a % 10000n;
-  const r = rem > 5000n || (rem === 5000n && q % 2n === 1n) ? q + 1n : q;
-  const d = p < 0n ? -r : r;
+  const d = percentOf(amount, rate, 1);
   const f = hundredths(floor);
   return shown(d < f ? f : d);
 }
 
+/** `times` × value × pct / 100 in hundredths, rounded half to even to two decimals. */
+function percentOf(value: string, pct: string, times: number): bigint {
+  const p = hundredths(value) * hundredths(pct) * BigInt(times); // in 1/10000 of a hundredth
+  const a = p < 0n ? -p : p;
+  const q = a / 10000n;
+  const rem = a % 10000n;
+  const r = rem > 5000n || (rem === 5000n && q % 2n === 1n) ? q + 1n : q;
+  return p < 0n ? -r : r;
+}
+
 /** A claim's due: the figure fixed when it was settled, otherwise the one its person's last statement bound it to,
- *  otherwise its amount at the rate in force on its date, at least the sheet's floor. */
-export function claimDue(claim: Claim, rate: string | undefined, floor: string): string {
+ *  otherwise its amount at the rate in force on its date, at least the sheet's floor. Given the sheet's late
+ *  charge, an overdue claim's figure gains the late percent of it for every full 30 days overdue (never bound by a
+ *  statement; frozen in when settled). */
+export function claimDue(claim: Claim, rate: string | undefined, floor: string, late?: Late): string {
   if (claim.due !== null) return claim.due;
-  if (claim.stated) return claim.statedDue ?? 'n/a';
-  return due(claim.amount, rate, floor);
+  const figure = claim.stated ? (claim.statedDue ?? 'n/a') : due(claim.amount, rate, floor);
+  if (late === undefined || figure === 'n/a') return figure;
+  const steps = lateSteps(claim, late);
+  return steps === 0 ? figure : shown(hundredths(figure) + percentOf(figure, late.pct, steps));
 }
 
 /** Whether a claim keeps its figure whatever the rates are: fixed when settled, or bound by a statement. */
 const kept = (c: Claim) => c.due !== null || (c.stated && c.statedDue !== null);
 
-/** A person's due-total: the figures of their claims that count (each at the rate in force on its date) added
- *  up; 'n/a' when their grade has no rate today, unless a settled or stated claim keeps a figure. */
-export function personDue(claims: Claim[], rates: Rate[] | undefined, grade: string, today: string, floor: string): string {
+/** A person's due-total: the figures of their claims that count (each at the rate in force on its date, with its
+ *  late charge) added up; 'n/a' when their grade has no rate today, unless a settled or stated claim keeps a
+ *  figure. */
+export function personDue(claims: Claim[], rates: Rate[] | undefined, grade: string, late: Late, floor: string): string {
   const counted = claims.filter(counts);
-  if (rateFor(rates, grade, today) === undefined && !counted.some(kept)) return 'n/a';
-  return sum(counted.map((c) => claimDue(c, rateFor(rates, grade, c.date), floor)));
+  if (rateFor(rates, grade, late.today) === undefined && !counted.some(kept)) return 'n/a';
+  return sum(counted.map((c) => claimDue(c, rateFor(rates, grade, c.date), floor, late)));
 }
 
 /** Two-decimal values added up, skipping 'n/a'. */

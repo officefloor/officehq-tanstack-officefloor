@@ -6,14 +6,14 @@ import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { claimDue, rateFor, sum, useRates } from '../rates/rates';
-import { useFloor } from '../settings/settings';
+import { useFloor, useLate } from '../settings/settings';
 import { periodsKey, usePeriods, type Period } from './periods';
 
 type Values = { name: string; from: string; to: string };
 const EMPTY: Values = { name: '', from: '', to: '' };
 
 /** The sheet's periods: the form that adds one, and each period with its due-total — the figures of the claims
- *  that count (a held person's OPEN claims do not) whose date falls in it, added up (skipping n/a); a closed period
+ *  that count, each with its late charge (a held person's OPEN claims do not) whose date falls in it, added up (skipping n/a); a closed period
  *  shows the due-total fixed when it was closed. */
 function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const periods = usePeriods(sheetId);
@@ -21,6 +21,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
   const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
   const queryClient = useQueryClient();
   const [values, setValues] = useState<Values>(EMPTY);
 
@@ -45,7 +46,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
     return sum(
       inPeriod.map((c) => {
         const grade = grades.get(c.personId);
-        return claimDue(c, grade === undefined ? undefined : rateFor(rates.data, grade, c.date), floor);
+        return claimDue(c, grade === undefined ? undefined : rateFor(rates.data, grade, c.date), floor, late);
       }),
     );
   };
