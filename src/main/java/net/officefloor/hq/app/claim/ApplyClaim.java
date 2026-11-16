@@ -31,6 +31,6 @@ public class ApplyClaim {
         ClaimRules.checkRef(claim.sheetId(), values, claim.id(), claims);
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), values.amount(), date, values.note(), claim.status(),
                 claim.number(), claim.due(), claim.openedBy(), claim.stated(), claim.statedDue(),
-                Corrections.check(claim.sheetId(), claim.personId(), values, claims), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), values.ref(), values.tags()));
+                Corrections.check(claim.sheetId(), claim.personId(), values, claim.id(), claims), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), values.ref(), values.tags()));
     }
 }

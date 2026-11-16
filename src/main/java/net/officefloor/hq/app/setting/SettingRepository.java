@@ -301,6 +301,18 @@ public class SettingRepository {
         return value(sheetId, PARENT);
     }
 
+    /** The sheet's parent sheet id as it stood once every setting stored while its today was on or before the date
+     *  was stored (see storedBy), or null when it had none then. */
+    public String parentAsOf(String sheetId, LocalDate madeOn) {
+        String value = null;
+        for (Setting s : storedBy(sheetId, madeOn)) {
+            if (PARENT.equals(s.key())) {
+                value = s.value();
+            }
+        }
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     /** The sheet's ancestors, nearest first, up to the given number of levels (stopping at a sheet already seen). */
     public List<String> ancestors(String sheetId, int levels) {
         List<String> found = new java.util.ArrayList<>();

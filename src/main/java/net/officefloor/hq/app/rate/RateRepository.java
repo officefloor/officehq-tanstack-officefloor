@@ -38,6 +38,24 @@ public class RateRepository {
         return chain;
     }
 
+    /** As chain, as of a date: the parent the sheet had then (see SettingRepository#parentAsOf), none when it had
+     *  none, then that parent's ancestors as they are now. */
+    public List<String> chainAsOf(String sheetId, LocalDate asOf) {
+        List<String> chain = new ArrayList<>();
+        chain.add(sheetId);
+        String parent = settings.parentAsOf(sheetId, asOf);
+        if (parent != null && !parent.equals(sheetId)) {
+            chain.add(parent);
+            for (String up : settings.ancestors(parent, SettingRepository.PARENT_LEVELS - 1)) {
+                if (up.equals(sheetId) || chain.contains(up)) {
+                    break;
+                }
+                chain.add(up);
+            }
+        }
+        return chain;
+    }
+
     /** The sheet's rates, by grade, then from-date (one with none first). */
     public List<Rate> list(String sheetId) {
         return jdbc.query("SELECT " + VERSIONED + " FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST",

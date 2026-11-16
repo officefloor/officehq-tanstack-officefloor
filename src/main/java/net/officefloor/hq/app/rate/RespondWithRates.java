@@ -12,7 +12,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /** The sheet's rates, by grade, then those of its parent, the parent's parent, up to three levels up (each with its
  *  level), which apply to a grade on a date the sheet has no rate for; read as of a date (see AsOf), the sheet's own
- *  as they stood then (see SheetAsOf) and those inherited as they are now (a parent keeps its own today, so the date
+ *  as they stood then (see SheetAsOf) and those inherited from the parent it had then (see RateRepository#chainAsOf)
+ *  as they are now (a parent keeps its own today, so the date
  *  says nothing of when its rates were stored). */
 public class RespondWithRates {
     public void respond(@PathVariable("sheetId") String sheetId,
@@ -20,7 +21,7 @@ public class RespondWithRates {
             SettingRepository settings, ObjectResponse<List<RateResponse>> response) {
         LocalDate date = AsOf.parse(asOf);
         List<RateResponse> shown = new ArrayList<>();
-        List<String> chain = rates.chain(sheetId.trim());
+        List<String> chain = date == null ? rates.chain(sheetId.trim()) : rates.chainAsOf(sheetId.trim(), date);
         if (date != null) {
             SheetAsOf sheet = SheetAsOf.read(chain.get(0), date, rates, settings);
             for (Rate rate : sheet.rates()) {
