@@ -85,16 +85,24 @@ public class ClaimRepository {
 
     /** Stores the claim's values and releases its lock, but only while it is still a DRAFT and no one but {@code by}
      *  holds its lock; false otherwise (nothing is written). The values it had are kept with {@code today}, the sheet's
-     *  today, so the claim can be shown as it stood before (see editedAfter). */
+     *  today, so the claim can be shown as it stood before (see editedAfter); {@code by} is kept as its last editor
+     *  (see editedBy). */
     public boolean update(Claim claim, String by, LocalDate today) {
         jdbc.update("INSERT INTO claim_edit (sheet_id, claim_id, amount, claim_date, note, corrects, ref, tags, made_on) "
                 + "SELECT sheet_id, id, amount, claim_date, note, corrects, ref, tags, ? FROM claim WHERE sheet_id = ? AND id = ? AND status = ? "
                 + "AND (locked_by IS NULL OR locked_by = ?)",
                 Date.valueOf(today), claim.sheetId(), claim.id(), ClaimStatus.DRAFT.name(), by);
-        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, ref_key = ?, tags = ?, locked_by = NULL WHERE sheet_id = ? AND id = ? AND status = ? "
+        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, ref_key = ?, tags = ?, locked_by = NULL, edited_by = ? WHERE sheet_id = ? AND id = ? AND status = ? "
                 + "AND (locked_by IS NULL OR locked_by = ?)",
-                claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.corrects(), claim.ref(), ClaimValues.refKey(claim.ref()), claim.tags(), claim.sheetId(), claim.id(),
+                claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.corrects(), claim.ref(), ClaimValues.refKey(claim.ref()), claim.tags(), by, claim.sheetId(), claim.id(),
                 ClaimStatus.DRAFT.name(), by) == 1;
+    }
+
+    /** Who last edited the claim (see update); null when never edited. */
+    public String editedBy(Claim claim) {
+        List<String> found = jdbc.queryForList("SELECT edited_by FROM claim WHERE sheet_id = ? AND id = ?", String.class,
+                claim.sheetId(), claim.id());
+        return found.isEmpty() ? null : found.get(0);
     }
 
     /** Locks the claim for {@code by} (its editor is open), but only while it is still a DRAFT and no one else holds

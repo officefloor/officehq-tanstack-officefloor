@@ -19,7 +19,8 @@ import net.officefloor.plugin.variable.Val;
  * its number (never given again). Settling fixes the claim's due: its amount at its
  * person's grade's rate in force on the claim's date, rounded by its rounding (see Rounding) and at least the sheet's floor (left live when no rate applies),
  * or the figure a statement bound it to, with its late charge as of the sheet's today frozen in (see LateCharge).
- * Opening records who opened the claim; that user cannot settle nor approve it (four eyes). A claim whose due is
+ * Opening records who opened the claim; that user cannot settle nor approve it (four eyes), nor can the user who last
+ * edited it (see ClaimRepository#editedBy). A claim whose due is
  * above the sheet's proof threshold in force on its date (if it has one) cannot be settled nor approved while its proofs
  * count is 0 (checked before the clerk limit, so it never goes PENDING); a due of n/a is within any threshold. A claim whose due-by falls inside a closed
  * period cannot change status, nor can a deferred claim be settled (see ClaimDue#deferred). A clerk (any user not made a steward) settling a claim whose due is above the sheet's
@@ -83,6 +84,10 @@ public class ApplyClaimStatus {
         if ((change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE)
                 && change.by().equals(claim.openedBy())) {
             throw new InvalidClaimStatusException("The user who opened a claim cannot settle nor approve it");
+        }
+        if ((change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE)
+                && change.by().equals(claims.editedBy(claim))) {
+            throw new InvalidClaimStatusException("The user who last edited a claim cannot settle nor approve it");
         }
         if ((change.action() == ClaimAction.APPROVE || change.action() == ClaimAction.REJECT) && !steward) {
             throw new InvalidClaimStatusException("Only a steward approves or rejects a pending claim");
