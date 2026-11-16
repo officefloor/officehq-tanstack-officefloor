@@ -23,7 +23,7 @@ import { useSheetToday } from '../sheet/api';
 import { BulkGrade } from './BulkGrade';
 import { BulkRetire } from './BulkRetire';
 import { BulkHold } from './BulkHold';
-import { ExportClaims, ExportPeople, ExportPeriods, ExportStatement } from './ExportPeople';
+import { ExportClaims, ExportPeople, ExportPeriods, ExportPerson, ExportStatement } from './ExportPeople';
 import { ImportPeople } from './ImportPeople';
 import { QuickAdd } from './QuickAdd';
 import { ColumnChooser, useColumns } from './Columns';
@@ -746,6 +746,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                     onClick={() => unstate(p.id)}>
                     Cancel statement
                   </button>{' '}
+                  <ExportPerson name={p.name} loading={reading} />{' '}
                   <ExportStatement name={p.name} loading={reading} rows={() => own.filter((c) => c.stated).reverse().map((c) => [
                     c.number ?? '', c.date, Number(c.amount).toFixed(2),
                     showDue(claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges)), c.status])} />{' '}
