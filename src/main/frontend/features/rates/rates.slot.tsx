@@ -5,10 +5,11 @@ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
-import { GRADES, usePeople, type Person } from '../people/people';
+import { useSheetDueTotal } from '../header/totals';
+import { GRADES, type Person } from '../people/people';
 import { useSheetToday } from '../session/session';
 import { useFloor, useLate } from '../settings/settings';
-import { personDue, rateFor, ratesKey, sum, useRates, type Rate } from './rates';
+import { personDue, rateFor, ratesKey, useRates, type Rate } from './rates';
 
 /** The sheet's rates: the form that sets one (from an optional from-date), each grade's rate in force on the
  *  sheet's today, and every rate set. */
@@ -138,17 +139,9 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }
 
 /** The sheet's due-total: everyone's due-total added up, skipping n/a. */
 function DueTotal({ sheetId }: { sheetId: string }) {
-  const people = usePeople(sheetId);
-  const claims = useClaims(sheetId);
-  const rates = useRates(sheetId);
-  const late = useLate(sheetId);
-  const floor = useFloor(sheetId);
-  const dues = (people.data ?? []).map((p) =>
-    personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor),
-  );
   return (
     <p>
-      Due total <span data-testid="rollup-due-total">{sum(dues)}</span>
+      Due total <span data-testid="rollup-due-total">{useSheetDueTotal(sheetId)}</span>
     </p>
   );
 }

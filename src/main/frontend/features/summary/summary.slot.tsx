@@ -1,12 +1,10 @@
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
+import { STATUSES, useStatusCounts } from '../header/totals';
 import { GRADES, gradeOn, usePeople } from '../people/people';
 import { periodDue, usePeriods } from '../periods/periods';
 import { personDue, sum, useRates } from '../rates/rates';
 import { useFloor, useLate } from '../settings/settings';
-
-/** The statuses the summary counts claims by. */
-const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
 
 /** The sheet's summary, worked out from the same figures the lists show. Per grade: the people on it on the sheet's
  *  today (retired people excluded) and their due-totals added up (skipping n/a). Per period: its due-total. Per
@@ -27,7 +25,7 @@ function Summary({ sheetId }: { sheetId: string }) {
         personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor),
       ),
     );
-  const withStatus = (status: string) => (claims.data ?? []).filter((c) => c.status === status).length;
+  const withStatus = useStatusCounts(sheetId);
 
   return (
     <section data-testid="summary">

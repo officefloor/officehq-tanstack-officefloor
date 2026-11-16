@@ -1,8 +1,9 @@
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
-import { usePeople, type Person } from '../people/people';
-import { sum, useRates } from '../rates/rates';
+import { useSheetOverdue } from '../header/totals';
+import { type Person } from '../people/people';
+import { useRates } from '../rates/rates';
 import { useFloor, useLate } from '../settings/settings';
 import { overdue } from './overdue';
 
@@ -33,18 +34,11 @@ function PersonOverdue({ sheetId, person }: { sheetId: string; person: Person })
 
 /** The sheet's overdue count and overdue-total: everyone's added up. */
 function OverdueTotal({ sheetId }: { sheetId: string }) {
-  const people = usePeople(sheetId);
-  const claims = useClaims(sheetId);
-  const rates = useRates(sheetId);
-  const floor = useFloor(sheetId);
-  const late = useLate(sheetId);
-  const all = (people.data ?? []).map((p) =>
-    overdue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor),
-  );
+  const all = useSheetOverdue(sheetId);
   return (
     <p>
-      Overdue <span data-testid="rollup-overdue-count">{all.reduce((n, o) => n + o.count, 0)}</span>, total{' '}
-      <span data-testid="rollup-overdue-total">{sum(all.map((o) => o.total))}</span>
+      Overdue <span data-testid="rollup-overdue-count">{all.count}</span>, total{' '}
+      <span data-testid="rollup-overdue-total">{all.total}</span>
     </p>
   );
 }
