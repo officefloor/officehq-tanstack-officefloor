@@ -22,7 +22,7 @@ import { crewsKey, listCrews, type Crew } from '../crews/api';
 import { useSheetToday } from '../sheet/api';
 import { BulkGrade } from './BulkGrade';
 import { BulkRetire } from './BulkRetire';
-import { ExportClaims, ExportPeople, ExportStatement } from './ExportPeople';
+import { ExportClaims, ExportPeople, ExportPeriods, ExportStatement } from './ExportPeople';
 import { ImportPeople } from './ImportPeople';
 import { QuickAdd } from './QuickAdd';
 import { ColumnChooser, useColumns } from './Columns';
@@ -566,6 +566,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
         p.name, c.number ?? '', c.date, Number(c.amount).toFixed(2),
         showDue(claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges)), c.status,
         periodOf(periods.data, c.dueBy)?.name ?? '']))} loading={reading} />
+      <ExportPeriods rows={() => everyone.flatMap((p) => [...(periods.data ?? [])].sort((a, b) => a.added - b.added).map((q) => [
+        p.name, q.name, personPeriodDue(q, p, claims.data ?? [], people.data, rates.data, floor, charges),
+        personPeriodCarried(q, periods.data ?? [], p, claims.data ?? [], people.data, rates.data, floor, charges)]))} loading={reading} />
       <BulkOpen sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
       <BulkGrade sheetId={sheetId} user={user} selected={[...selectedPeople]} onDone={() => setSelectedPeople(new Set())} />
       <BulkRetire sheetId={sheetId} user={user} selected={[...selectedPeople]} onDone={() => setSelectedPeople(new Set())} />

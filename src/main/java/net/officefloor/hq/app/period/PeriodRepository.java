@@ -19,9 +19,9 @@ public class PeriodRepository {
             rs.getBigDecimal("closed_total") == null ? null
                     : rs.getBigDecimal("closed_total").setScale(2).toPlainString(), Map.of(),
             rs.getBoolean("soft_closed"), (Integer) rs.getObject("claim_cap", Integer.class), Map.of(), Map.of(),
-            rs.getBoolean("locked"));
+            rs.getBoolean("locked"), rs.getLong("id"));
 
-    private static final String COLUMNS = "SELECT sheet_id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap, locked FROM period ";
+    private static final String COLUMNS = "SELECT id, sheet_id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap, locked FROM period ";
 
     private final JdbcTemplate jdbc;
     private final PoolRepository pools;
@@ -50,13 +50,13 @@ public class PeriodRepository {
                 },
                 p.sheetId(), p.name());
         return new Period(p.sheetId(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(), totals, p.soft(), p.cap(),
-                carried, p.personOpenings(), p.locked());
+                carried, p.personOpenings(), p.locked(), p.added());
     }
 
     /** The period with each person's opening balance for it. */
     private Period withOpenings(Period p) {
         return new Period(p.sheetId(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(), p.personTotals(), p.soft(),
-                p.cap(), p.personCarried(), openings(p.sheetId(), p.name()), p.locked());
+                p.cap(), p.personCarried(), openings(p.sheetId(), p.name()), p.locked(), p.added());
     }
 
     /** Each person's opening balance for the sheet's period, by person id. */
@@ -158,7 +158,7 @@ public class PeriodRepository {
                 personCarried.getOrDefault(id, BigDecimal.ZERO.setScale(2)).toPlainString()));
         return new Period(period.sheetId(), period.name(), period.from(), period.to(), !soft,
                 total.toPlainString(), shown, soft, period.cap(), carried, openings(period.sheetId(), period.name()),
-                period.locked());
+                period.locked(), period.added());
     }
 
     /** Reopen the closed or soft-closed period: its due-total and pool cuts are live again. */
@@ -169,14 +169,14 @@ public class PeriodRepository {
         jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL, closed_by = NULL, "
                 + "closed_at = NULL WHERE sheet_id = ? AND name = ?", period.sheetId(), period.name());
         return new Period(period.sheetId(), period.name(), period.from(), period.to(), false, null, Map.of(), false, period.cap(), Map.of(),
-                openings(period.sheetId(), period.name()), period.locked());
+                openings(period.sheetId(), period.name()), period.locked(), period.added());
     }
 
     /** Lock or unlock the period. */
     public Period lock(Period period, boolean locked) {
         jdbc.update("UPDATE period SET locked = ? WHERE sheet_id = ? AND name = ?", locked, period.sheetId(), period.name());
         return new Period(period.sheetId(), period.name(), period.from(), period.to(), period.closed(), period.closedTotal(),
-                period.personTotals(), period.soft(), period.cap(), period.personCarried(), period.personOpenings(), locked);
+                period.personTotals(), period.soft(), period.cap(), period.personCarried(), period.personOpenings(), locked, period.added());
     }
 
     /** Whether another period on the sheet has the name, compared without regard to case. */
@@ -201,7 +201,9 @@ public class PeriodRepository {
     public Period add(String sheetId, String name, LocalDate from, LocalDate to, String user, Integer cap) {
         jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, created_by, claim_cap) "
                 + "VALUES (?, ?, ?, ?, ?, ?)", sheetId, name, from, to, user, cap);
-        return new Period(sheetId, name, from.toString(), to.toString(), false, null, Map.of(), false, cap, Map.of(), Map.of(), false);
+        Long added = jdbc.queryForObject("SELECT id FROM period WHERE sheet_id = ? AND name = ?", Long.class, sheetId, name);
+        return new Period(sheetId, name, from.toString(), to.toString(), false, null, Map.of(), false, cap, Map.of(), Map.of(), false,
+                added);
     }
 
     /** The sheet's period whose dates contain the date (yyyy-MM-dd); null when there is none. */

@@ -49,3 +49,15 @@ export function ExportStatement({ name, rows, loading }: { name: string; rows: (
     </button>
   );
 }
+
+/** The "export periods" button: downloads `rows` (one per person and period: people in list order,
+ *  periods in the order added) as a CSV file under a header line, quoted, ended and disabled as the
+ *  people export. */
+export function ExportPeriods({ rows, loading }: { rows: () => string[][]; loading: boolean }) {
+  const download = () => downloadCsv('periods.csv', [['person', 'period', 'figure', 'carried'], ...rows()]);
+  return (
+    <button type="button" data-testid="export-periods" disabled={loading} onClick={download}>
+      Export periods
+    </button>
+  );
+}

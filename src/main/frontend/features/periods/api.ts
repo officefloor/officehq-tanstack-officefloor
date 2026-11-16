@@ -21,6 +21,8 @@ export type Period = {
   personOpenings: Record<string, string>;
   /** Locked by a steward: it cannot be reopened until unlocked. */
   locked: boolean;
+  /** The order it was added in: higher was added later. */
+  added: number;
 };
 /** cap: a whole number above zero, blank for none. */
 export type PeriodInput = { name: string; from: string; to: string; cap: string };

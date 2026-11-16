@@ -10,10 +10,11 @@ import java.util.Map;
  *  have in it. Once fixed, each person's carried figure for it is fixed then too ({@code personCarried}).
  *  Each person's opening balance for it (pasted, added up), by person id ({@code personOpenings}); it is
  *  added to their live carried figure, and fixed into it when the period is closed or soft-closed.
- *  A locked period (only a steward locks and unlocks it) cannot be reopened. */
+ *  A locked period (only a steward locks and unlocks it) cannot be reopened. {@code added}: the order it was
+ *  added in (higher: added later). */
 public record Period(String sheetId, String name, String from, String to, boolean closed,
         String closedTotal, Map<Long, String> personTotals, boolean soft, Integer cap,
-        Map<Long, String> personCarried, Map<Long, String> personOpenings, boolean locked) {
+        Map<Long, String> personCarried, Map<Long, String> personOpenings, boolean locked, long added) {
 
     /** Whether its figures are fixed: closed or soft-closed. */
     public boolean fixed() {
