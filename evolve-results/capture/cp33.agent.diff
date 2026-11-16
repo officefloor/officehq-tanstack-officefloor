@@ -1,0 +1,59 @@
+diff --git a/src/main/frontend/features/export/export.slot.tsx b/src/main/frontend/features/export/export.slot.tsx
+new file mode 100644
+index 000000000..d915de3b9
+--- /dev/null
++++ b/src/main/frontend/features/export/export.slot.tsx
+@@ -0,0 +1,53 @@
++import { useEffect, useState } from 'react';
++import { useIsFetching } from '@tanstack/react-query';
++import { SheetPage } from '../../slots/defs/sheetPage';
++import { live, useClaims } from '../claims/claims';
++import { usePeople } from '../people/people';
++import { personDue, useRates } from '../rates/rates';
++import { useFloor, useLate } from '../settings/settings';
++
++/** A CSV value: wrapped in double quotes, any quote inside doubled, when it holds a comma, a quote or a line break. */
++function csvValue(v: string): string {
++  return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
++}
++
++/** The button that downloads the people as a CSV file: name, grade in force today, retired-from date (or nothing)
++ *  and due-total as shown, one line per person in list order, retired people included. The file is made once the
++ *  sheet's figures are no longer being re-read, so it holds what the screen shows. */
++function ExportPeople({ sheetId }: { sheetId: string }) {
++  const people = usePeople(sheetId);
++  const claims = useClaims(sheetId);
++  const rates = useRates(sheetId);
++  const late = useLate(sheetId);
++  const floor = useFloor(sheetId);
++  const fetching = useIsFetching({ queryKey: ['sheet', sheetId] });
++  const [wanted, setWanted] = useState(false);
++
++  useEffect(() => {
++    if (!wanted || fetching > 0 || !people.data) return;
++    setWanted(false);
++    const lines = ['name,grade,retired-from,due-total'];
++    for (const p of people.data) {
++      const due = personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor);
++      lines.push([p.name, p.grade, p.retiredFrom ?? '', due].map(csvValue).join(','));
++    }
++    const url = URL.createObjectURL(new Blob([lines.join('\n') + '\n'], { type: 'text/csv' }));
++    const a = document.createElement('a');
++    a.href = url;
++    a.download = `people-${sheetId}.csv`;
++    document.body.appendChild(a);
++    a.click();
++    a.remove();
++    setTimeout(() => URL.revokeObjectURL(url), 1000);
++  }, [wanted, fetching, people.data, claims.data, rates.data, late, floor, sheetId]);
++
++  return (
++    <p>
++      <button type="button" data-testid="export-people" onClick={() => setWanted(true)}>
++        Export people (CSV)
++      </button>
++    </p>
++  );
++}
++
++export const contribution = SheetPage.fill({ order: 15, Component: ExportPeople });
