@@ -15,7 +15,7 @@ const EMPTY: Values = { name: '', from: '', to: '' };
 
 /** The sheet's periods: the form that adds one, and each period with its due-total — the figures of the claims
  *  that count, each with its late charge (a person's OPEN or PENDING claims dated within a hold of theirs, not bound by a statement, do not) whose date falls in it, added up (skipping n/a); a closed period
- *  shows the due-total fixed when it was closed. */
+ *  shows the due-total fixed when it was closed, a soft-closed one that fixed when it was soft-closed. */
 function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const periods = usePeriods(sheetId);
   const people = usePeople(sheetId);
@@ -79,7 +79,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-due-total">{periodDue(p, claims.data, people.data, rates.data, floor, late)}</td>
-              <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+              <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
               <td>
                 <PeriodClose sheetId={sheetId} user={user} period={p} />
               </td>
@@ -178,18 +178,25 @@ export const contributions = [
   PersonRow.fill({ order: 22, Component: PersonPeriods }),
 ];
 
-/** Closes a period: its due-total is fixed as it is now. Reopens a closed one (the roles the reopen permission allows; a steward while blank): its due-total is
+/** Closes a period: its due-total is fixed as it is now. Soft-closes an open one: its due-total is fixed as it is now, but
+ *  claims dated inside it can still change (both by the roles the close permission allows). Reopens a closed or soft-closed one (the roles the reopen permission allows; a steward while blank): its due-total is
  *  live again. A refused action shows the period's error; the next action on the period clears it. */
 function PeriodClose({ sheetId, user, period }: { sheetId: string; user: string; period: Period }) {
   const queryClient = useQueryClient();
-  const act = (action: 'close' | 'reopen') =>
+  const act = (action: 'close' | 'soft-close' | 'reopen') =>
     postJson<Period>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/${period.id}/${action}`, { by: user });
   const onSuccess = () => {
     void queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
   };
   const close = useMutation({ mutationFn: () => act('close'), onSuccess });
+  const softClose = useMutation({ mutationFn: () => act('soft-close'), onSuccess });
   const reopen = useMutation({ mutationFn: () => act('reopen'), onSuccess });
-  const pending = close.isPending || reopen.isPending;
+  const pending = close.isPending || softClose.isPending || reopen.isPending;
+  const resetAll = () => {
+    close.reset();
+    softClose.reset();
+    reopen.reset();
+  };
   return (
     <>
       <button
@@ -197,8 +204,7 @@ function PeriodClose({ sheetId, user, period }: { sheetId: string; user: string;
         data-testid="period-close"
         disabled={pending}
         onClick={() => {
-          close.reset();
-          reopen.reset();
+          resetAll();
           close.mutate();
         }}
       >
@@ -206,18 +212,29 @@ function PeriodClose({ sheetId, user, period }: { sheetId: string; user: string;
       </button>{' '}
       <button
         type="button"
+        data-testid="period-soft-close"
+        disabled={pending}
+        onClick={() => {
+          resetAll();
+          softClose.mutate();
+        }}
+      >
+        Soft close
+      </button>{' '}
+      <button
+        type="button"
         data-testid="period-reopen"
         disabled={pending}
         onClick={() => {
-          close.reset();
-          reopen.reset();
+          resetAll();
           reopen.mutate();
         }}
       >
         Reopen
       </button>
       {close.isError && <span data-testid="period-error"> This period is already closed, or your role may not close a period.</span>}
-      {reopen.isError && <span data-testid="period-error"> Only a role the sheet lets reopen (a steward unless set) can reopen a period, and only a closed one.</span>}
+      {softClose.isError && <span data-testid="period-error"> Only an open period can be soft-closed, by a role the sheet lets close.</span>}
+      {reopen.isError && <span data-testid="period-error"> Only a role the sheet lets reopen (a steward unless set) can reopen a period, and only a closed or soft-closed one.</span>}
     </>
   );
 }

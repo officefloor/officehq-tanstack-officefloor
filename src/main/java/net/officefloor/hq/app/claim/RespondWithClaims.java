@@ -3,6 +3,7 @@ package net.officefloor.hq.app.claim;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,7 +15,9 @@ public class RespondWithClaims {
         Map<Long, List<ClaimLogLine>> logs = log.bySheet(sheetId.trim());
         LocalDate today = sheets.today(sheetId.trim());
         Map<Long, String> locks = claims.locks(sheetId.trim());
+        Set<Long> late = claims.lateEntries(sheetId.trim());
         response.send(claims.list(sheetId.trim()).stream()
-                .map((c) -> ClaimResponse.from(c, claims, logs.getOrDefault(c.id(), List.of()), today, locks.get(c.id()))).toList());
+                .map((c) -> ClaimResponse.from(c, claims, logs.getOrDefault(c.id(), List.of()), today, locks.get(c.id()),
+                        late.contains(c.id()))).toList());
     }
 }

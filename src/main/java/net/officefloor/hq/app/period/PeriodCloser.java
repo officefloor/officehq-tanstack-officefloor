@@ -42,11 +42,38 @@ public class PeriodCloser {
         this.log = log;
     }
 
-    /** Closes the period, returning the due-total it fixed; one already closed is refused. */
+    /** Closes the period, returning the due-total it fixed; one already closed is refused. A soft-closed one is closed
+     *  with its figures fixed afresh. */
     public BigDecimal close(Period period) throws InvalidPeriodException {
         if (period.closed()) {
             throw new InvalidPeriodException("The period " + period.name() + " is already closed");
         }
+        Map<Long, BigDecimal> perPerson = figures(period);
+        BigDecimal total = perPerson.values().stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
+        if (!periods.close(period, total)) {
+            throw new InvalidPeriodException("The period " + period.name() + " is already closed");
+        }
+        periods.fixPersonTotals(period, perPerson);
+        return total;
+    }
+
+    /** Soft-closes an open period, fixing its figures as a close does, returning the due-total it fixed; one closed or
+     *  soft-closed already is refused. */
+    public BigDecimal softClose(Period period) throws InvalidPeriodException {
+        if (period.closed() || period.soft()) {
+            throw new InvalidPeriodException("The period " + period.name() + " is not open");
+        }
+        Map<Long, BigDecimal> perPerson = figures(period);
+        BigDecimal total = perPerson.values().stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
+        if (!periods.softClose(period, total)) {
+            throw new InvalidPeriodException("The period " + period.name() + " is not open");
+        }
+        periods.fixPersonTotals(period, perPerson);
+        return total;
+    }
+
+    /** Each person's due-total for the period as it is now, by person id (see ClosePeriod). */
+    private Map<Long, BigDecimal> figures(Period period) {
         Map<Long, Person> byId = people.list(period.sheetId()).stream()
                 .collect(Collectors.toMap(Person::id, (p) -> p));
         Map<Long, List<ClaimLogLine>> logs = log.bySheet(period.sheetId());
@@ -71,11 +98,6 @@ public class PeriodCloser {
                 perPerson.merge(c.personId(), figure, BigDecimal::add);
             }
         }
-        BigDecimal total = perPerson.values().stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
-        if (!periods.close(period, total)) {
-            throw new InvalidPeriodException("The period " + period.name() + " is already closed");
-        }
-        periods.fixPersonTotals(period, perPerson);
-        return total;
+        return perPerson;
     }
 }

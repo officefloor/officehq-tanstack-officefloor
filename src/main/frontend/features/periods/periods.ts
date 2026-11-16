@@ -16,8 +16,10 @@ export type Period = {
   from: string;
   to: string;
   closed: boolean;
+  /** Soft-closed (not closed): its figures are fixed as for a close, but claims dated inside it can still change. */
+  soft: boolean;
   closedTotal: string | null;
-  /** Closed, each person's due-total for the period fixed when it was closed, by person id. */
+  /** Closed or soft-closed, each person's due-total for the period fixed when it was closed, by person id. */
   personTotals: Record<string, string>;
 };
 
@@ -47,7 +49,7 @@ export function statusAsOf(claim: Claim, day: string): ClaimStatus | undefined {
  *  whose date falls in it and that counted by the status each had at the end of the period's last day (see
  *  statusAsOf; a claim added after it does not count), the live rules otherwise applying (a deferred claim does
  *  not count, nor a claim open now dated within a hold of its person, not bound by a statement), added up (skipping
- *  n/a); for a closed period, their figure fixed when it was closed (0.00 for a person added after). */
+ *  n/a); for a closed or soft-closed period, their figure fixed when it was (soft-)closed (0.00 for a person added after). */
 export function personPeriodDue(
   period: Period,
   person: Person,
@@ -56,7 +58,7 @@ export function personPeriodDue(
   floor: Dated,
   late: Late,
 ): string {
-  if (period.closed) return period.personTotals?.[String(person.id)] ?? '0.00';
+  if (period.closed || period.soft) return period.personTotals?.[String(person.id)] ?? '0.00';
   const mine = (claims ?? []).filter((c) => {
     if (c.personId !== person.id || c.date < period.from || period.to < c.date) return false;
     const status = statusAsOf(c, period.to);

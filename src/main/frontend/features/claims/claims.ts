@@ -43,6 +43,8 @@ export type Claim = {
   splitFrom: string | null;
   log: ClaimLogLine[];
   lockedBy: string | null;
+  /** Whether it was added while the period its date falls in was soft-closed. */
+  lateEntry: boolean;
 };
 
 /** One line of a claim's status log: the status it took, who made the change, the sheet's today (yyyy-MM-dd) when

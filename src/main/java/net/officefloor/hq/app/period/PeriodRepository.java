@@ -16,7 +16,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PeriodRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, from_date, to_date, closed, closed_total";
+    private static final String COLUMNS = "id, sheet_id, name, from_date, to_date, closed, closed_total, soft_closed";
 
     private final JdbcTemplate jdbc;
 
@@ -65,10 +65,25 @@ public class PeriodRepository {
         return n != null && n > 0;
     }
 
-    /** Closes the period with its fixed due-total, but only while it is still open; false when it was not. */
+    /** Closes the period with its fixed due-total, but only while it is not closed (open or soft-closed), dropping the
+ *  figures a soft close fixed; false when it was closed. */
     public boolean close(Period period, BigDecimal total) {
-        return jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet_id = ? AND id = ? AND closed = FALSE",
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_id = ?", period.sheetId(), period.id());
+        return jdbc.update("UPDATE period SET closed = TRUE, soft_closed = FALSE, closed_total = ? WHERE sheet_id = ? AND id = ? AND closed = FALSE",
                 total, period.sheetId(), period.id()) == 1;
+    }
+
+    /** Soft-closes the period with its fixed due-total, but only while it is open; false when it was not. */
+    public boolean softClose(Period period, BigDecimal total) {
+        return jdbc.update("UPDATE period SET soft_closed = TRUE, closed_total = ? WHERE sheet_id = ? AND id = ? AND closed = FALSE "
+                + "AND soft_closed = FALSE", total, period.sheetId(), period.id()) == 1;
+    }
+
+    /** Whether a soft-closed period of the sheet contains the date. */
+    public boolean softClosedOn(String sheetId, LocalDate date) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM period WHERE sheet_id = ? AND soft_closed = TRUE "
+                + "AND from_date <= ? AND to_date >= ?", Integer.class, sheetId, Date.valueOf(date), Date.valueOf(date));
+        return n != null && n > 0;
     }
 
     /** Fixes each person's due-total for the period, as it is closed. */
@@ -89,10 +104,11 @@ public class PeriodRepository {
         return totals;
     }
 
-    /** Reopens the period, dropping its fixed due-totals, but only while it is closed; false when it was not. */
+    /** Reopens the period, dropping its fixed due-totals, but only while it is closed or soft-closed; false when it was not. */
     public boolean reopen(Period period) {
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_id = ?", period.sheetId(), period.id());
-        return jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND id = ? AND closed = TRUE",
+        return jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND id = ? "
+                + "AND (closed = TRUE OR soft_closed = TRUE)",
                 period.sheetId(), period.id()) == 1;
     }
 
@@ -108,12 +124,13 @@ public class PeriodRepository {
             ps.setDate(4, Date.valueOf(to));
             return ps;
         }, keys);
-        return new Period(keys.getKey().longValue(), sheetId, name, from, to, false, null);
+        return new Period(keys.getKey().longValue(), sheetId, name, from, to, false, null, false);
     }
 
     private static Period map(ResultSet rs, int n) throws SQLException {
         BigDecimal total = rs.getBigDecimal("closed_total");
         return new Period(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
-                rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate(), rs.getBoolean("closed"), total == null ? null : total.setScale(2));
+                rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate(), rs.getBoolean("closed"), total == null ? null : total.setScale(2),
+                rs.getBoolean("soft_closed"));
     }
 }

@@ -8,8 +8,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -93,6 +95,22 @@ public class ClaimRepository {
     /** Releases every lock on the sheet's claims (its today changed). */
     public void unlockAll(String sheetId) {
         jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND locked_by IS NOT NULL", sheetId);
+    }
+
+    /** Marks the claim a late entry: added while the period its date falls in was soft-closed. */
+    public void markLateEntry(Claim claim) {
+        jdbc.update("UPDATE claim SET late_entry = TRUE WHERE sheet_id = ? AND id = ?", claim.sheetId(), claim.id());
+    }
+
+    /** Whether the claim is a late entry (see markLateEntry). */
+    public boolean lateEntry(String sheetId, long id) {
+        List<Boolean> found = jdbc.queryForList("SELECT late_entry FROM claim WHERE sheet_id = ? AND id = ?", Boolean.class, sheetId, id);
+        return !found.isEmpty() && Boolean.TRUE.equals(found.get(0));
+    }
+
+    /** The ids of the sheet's late-entry claims (see markLateEntry). */
+    public Set<Long> lateEntries(String sheetId) {
+        return new HashSet<>(jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND late_entry = TRUE", Long.class, sheetId));
     }
 
     /** Who holds the claim's lock; null when no one does. */
