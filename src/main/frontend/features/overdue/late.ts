@@ -1,4 +1,4 @@
-import type { Claim } from '../claims/claims';
+import { isOpen, type Claim } from '../claims/claims';
 
 /** What the late charge on a sheet depends on: its terms (days), its today (yyyy-MM-dd, '' while it loads), its
  *  late percent (two decimals) and its policy date (yyyy-MM-dd; its today while blank): a claim whose `roundsOn` is
@@ -22,9 +22,9 @@ export function dueBy(claim: Claim, terms: number): string {
   return new Date(Date.UTC(y, m - 1, d + terms)).toISOString().slice(0, 10);
 }
 
-/** Whether a claim is overdue: it is OPEN and its due-by is before the sheet's today. */
+/** Whether a claim is overdue: it is open (OPEN or PENDING) and its due-by is before the sheet's today. */
 export function isOverdue(claim: Claim, terms: number, today: string): boolean {
-  return claim.status === 'OPEN' && today !== '' && dueBy(claim, terms) < today;
+  return isOpen(claim) && today !== '' && dueBy(claim, terms) < today;
 }
 
 /** How many full 30 days an overdue claim is overdue (0 when it is not overdue, its due is fixed by settling, or it is a

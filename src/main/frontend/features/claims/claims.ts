@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import type { Person } from '../people/people';
 
-/** A claim's status: DRAFT when added, then OPEN and SETTLED; a DRAFT or OPEN claim may be VOID. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+/** A claim's status: DRAFT when added, then OPEN and SETTLED; a clerk settling above the clerk limit makes it PENDING
+ *  until a steward approves (SETTLED) or rejects (OPEN) it; a DRAFT, OPEN or PENDING claim may be VOID. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 
 /** A claim of a person. `amount` is text with two decimals (never a float); `date` is yyyy-MM-dd; `number` (text: 1, 2, ..., or P1-1, X-1 when numbered per period) is given
  *  when the claim is opened (null for a draft or a voided claim); `due` is the due fixed when it was settled (null
@@ -42,14 +43,17 @@ export function useClaims(sheetId: string) {
 /** An amount ("12.34") in whole cents, so sums are exact. */
 const cents = (amount: string) => Math.round(Number(amount) * 100);
 
-/** Whether a claim counts toward claimed and the totals: only OPEN and SETTLED claims do. */
-export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
+/** Whether a claim is open: OPEN, or PENDING (handled like an OPEN claim but not bound by a statement). */
+export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
 
-/** The claims that count in the live totals (claimed, due-totals, a period's due-total): a held person's OPEN claims
- *  do not; their SETTLED ones still do. */
+/** Whether a claim counts toward claimed and the totals: only OPEN, PENDING and SETTLED claims do. */
+export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
+
+/** The claims that count in the live totals (claimed, due-totals, a period's due-total): a held person's open (OPEN
+ *  or PENDING) claims do not; their SETTLED ones still do. */
 export function live(claims: Claim[], people: Person[] | undefined): Claim[] {
   const held = new Set((people ?? []).filter((p) => p.held).map((p) => p.id));
-  return claims.filter((c) => counts(c) && !(c.status === 'OPEN' && held.has(c.personId)));
+  return claims.filter((c) => counts(c) && !(isOpen(c) && held.has(c.personId)));
 }
 
 /** The amounts of the claims that count added up, shown with two decimals. */

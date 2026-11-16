@@ -8,7 +8,7 @@ import java.util.List;
  *  {@code grade} is the one in force on the sheet's today.
  *  The version is 0 when added and goes up by one on each stored edit. {@code retiredFrom} (yyyy-MM-dd) is the date the
  *  person is retired from, null when not retired; a person with one counts as retired at once, whatever the date.
- *  {@code held} is whether the person is on hold: their OPEN claims then count in no live total. */
+ *  {@code held} is whether the person is on hold: their OPEN or PENDING claims then count in no live total. */
 public record Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
         List<PersonGrade> grades) {
 

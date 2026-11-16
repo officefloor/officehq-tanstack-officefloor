@@ -66,14 +66,14 @@ function percentOf(value: string, pct: string, times: number, halfUp: boolean): 
   return p < 0n ? -r : r;
 }
 
-/** A claim's due: the figure fixed when it was settled, otherwise the one its person's last statement bound it to,
+/** A claim's due: the figure fixed when it was settled, otherwise the one its person's last statement bound it to (never while PENDING),
  *  otherwise its amount at the rate in force on its date, at least the sheet's floor. Given the sheet's late
  *  charge, an overdue claim's figure gains the late percent of it for every full 30 days overdue (never bound by a
  *  statement; frozen in when settled). Both round by the sheet's policy date (see Late). */
 export function claimDue(claim: Claim, rate: string | undefined, floor: string, late?: Late): string {
   if (claim.due !== null) return claim.due;
   const halfUp = roundsHalfUp(claim, late);
-  const figure = claim.stated ? (claim.statedDue ?? 'n/a') : due(claim.amount, rate, floor, halfUp);
+  const figure = claim.stated && claim.status !== 'PENDING' ? (claim.statedDue ?? 'n/a') : due(claim.amount, rate, floor, halfUp);
   if (late === undefined || figure === 'n/a') return figure;
   const steps = lateSteps(claim, late);
   return steps === 0 ? figure : shown(hundredths(figure) + percentOf(figure, late.pct, steps, halfUp));

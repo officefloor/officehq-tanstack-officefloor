@@ -15,7 +15,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Closes an open period, fixing its due-total as it is now: the figures of the claims that count (a held person's OPEN claims do not) whose date falls
+/** Closes an open period, fixing its due-total as it is now: the figures of the claims that count (a held person's OPEN or PENDING claims do not) whose date falls
  *  in it, each with its late charge, added up (skipping n/a). Closing a period already closed is refused. */
 public class ClosePeriod {
     public void close(@Val Period period, @Val PeriodCloseRequest request, PeriodRepository periods,

@@ -24,11 +24,12 @@ function ClaimsHead() {
   );
 }
 
-type Action = 'open' | 'settle' | 'void';
+type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void';
 
-/** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, due-by (its date plus the sheet's terms), whether it is overdue, and the period its date falls in, with the buttons that edit it or change its status. An action
- *  the status does not allow, or settling a claim the user opened, is refused by the server and shows the claim's
- *  error. Only a DRAFT can be edited: Edit on any other claim shows the claim's error instead of opening the editor. */
+/** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, due-by (its date plus the sheet's terms), whether it is overdue, and the period its date falls in, with the buttons that edit it or change its status. A clerk's settle above the clerk limit makes it PENDING; a
+ *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
+ *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
+ *  shows the claim's error. Only a DRAFT can be edited: Edit on any other claim shows the claim's error instead of opening the editor. */
 function ClaimRow({
   sheetId,
   user,
@@ -53,9 +54,17 @@ function ClaimRow({
   const late = useLate(sheetId);
   const status = useMutation({
     mutationFn: (action: Action) =>
-      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/status`, { action, by: user }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/status`, {
+        action,
+        by: user,
+        reason: action === 'reject' ? reason : '',
+      }),
+    onSuccess: (_, action) => {
+      if (action === 'reject') setReason('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
   });
+  const [reason, setReason] = useState('');
   const [editRefused, setEditRefused] = useState(false);
   const [selected, setSelected] = useSelectedClaims();
   const act = (action: Action) => {
@@ -110,6 +119,21 @@ function ClaimRow({
       <button type="button" data-testid="claim-settle" disabled={status.isPending} onClick={() => act('settle')}>
         Settle
       </button>
+      <button type="button" data-testid="claim-approve" disabled={status.isPending} onClick={() => act('approve')}>
+        Approve
+      </button>
+      <input
+        data-testid="claim-reject-reason"
+        placeholder="Reason"
+        value={reason}
+        onChange={(e) => {
+          setReason(e.target.value);
+          status.reset();
+        }}
+      />
+      <button type="button" data-testid="claim-reject" disabled={status.isPending} onClick={() => act('reject')}>
+        Reject
+      </button>
       <button type="button" data-testid="claim-void" disabled={status.isPending} onClick={() => act('void')}>
         Void
       </button>
@@ -119,9 +143,9 @@ function ClaimRow({
       {status.isError && (
         <span data-testid="claim-error">
           {' '}
-          {c.status === 'OPEN' && c.openedBy === user
-            ? 'You opened this claim, so someone else must settle it.'
-            : `A ${c.status} claim cannot be changed that way, nor one dated inside a closed period; a clerk cannot settle a claim whose due is above the clerk limit.`}
+          {(c.status === 'OPEN' || c.status === 'PENDING') && c.openedBy === user && status.variables !== 'reject' && status.variables !== 'void'
+            ? 'You opened this claim, so someone else must settle or approve it.'
+            : `A ${c.status} claim cannot be changed that way, nor one dated inside a closed period; only a steward approves or rejects a pending claim, and a rejection needs a reason.`}
         </span>
       )}
     </li>
@@ -229,7 +253,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
   );
 }
 
-/** The sheet's claimed-total: everyone's claimed (OPEN and SETTLED claims, but no held person's OPEN ones) added up. */
+/** The sheet's claimed-total: everyone's claimed (OPEN, PENDING and SETTLED claims, but no held person's OPEN or PENDING ones) added up. */
 function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);

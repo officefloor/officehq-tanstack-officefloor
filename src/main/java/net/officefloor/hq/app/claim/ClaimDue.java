@@ -10,15 +10,20 @@ public final class ClaimDue {
     private ClaimDue() {
     }
 
-    /** Whether a claim counts toward claimed and the totals: only OPEN and SETTLED claims do. */
+    /** Whether a claim counts toward claimed and the totals: only OPEN, PENDING and SETTLED claims do. */
     public static boolean counts(Claim claim) {
-        return claim.status() == ClaimStatus.OPEN || claim.status() == ClaimStatus.SETTLED;
+        return isOpen(claim) || claim.status() == ClaimStatus.SETTLED;
+    }
+
+    /** Whether a claim is open: OPEN, or PENDING (handled like an OPEN claim but for its statement binding). */
+    public static boolean isOpen(Claim claim) {
+        return claim.status() == ClaimStatus.OPEN || claim.status() == ClaimStatus.PENDING;
     }
 
     /** Whether a claim counts toward the live totals (claimed, due-totals, a period's due-total): one that counts,
-     *  unless it is OPEN and its person is on hold. */
+     *  unless it is open (OPEN or PENDING) and its person is on hold. */
     public static boolean countsLive(Claim claim, boolean held) {
-        return counts(claim) && !(held && claim.status() == ClaimStatus.OPEN);
+        return counts(claim) && !(held && isOpen(claim));
     }
 
     /** The claim's amount at the grade's rate in force on its date, rounded to two decimals by the claim's rounding
@@ -37,18 +42,23 @@ public final class ClaimDue {
         return claim.amount().signum() < 0;
     }
 
-    /** The figure the claim shows: fixed when settled, else the one a statement bound it to, else live; null when
-     *  it has none (n/a). */
+    /** The figure the claim shows: fixed when settled, else the one a statement bound it to (never while PENDING),
+     *  else live; null when it has none (n/a). */
     public static BigDecimal figure(Claim claim, String grade, RateRepository rates, BigDecimal floor,
             Rounding rounding) {
         if (claim.due() != null) {
             return claim.due();
         }
-        return claim.stated() ? claim.statedDue() : live(claim, grade, rates, floor, rounding);
+        return bound(claim) ? claim.statedDue() : live(claim, grade, rates, floor, rounding);
     }
 
     /** Whether the claim keeps a figure whatever the rates are: fixed when settled, or bound by a statement. */
     public static boolean kept(Claim claim) {
-        return claim.due() != null || (claim.stated() && claim.statedDue() != null);
+        return claim.due() != null || (bound(claim) && claim.statedDue() != null);
+    }
+
+    /** Whether a statement binds the claim now: it is stated and not PENDING. */
+    public static boolean bound(Claim claim) {
+        return claim.stated() && claim.status() != ClaimStatus.PENDING;
     }
 }

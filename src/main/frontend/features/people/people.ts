@@ -12,7 +12,7 @@ export type PersonGrade = { grade: string; from: string | null };
  *  grades recorded, by from-date, and `grade` (A, B or C) the one in force on the sheet's today.
  *  `version` goes up by one on each stored edit; an edit sends the version it was made from. `retiredFrom` (yyyy-MM-dd)
  *  is the date the person is retired from, null when not retired: a person with one counts as retired at once. `held` is
- *  whether the person is on hold: their OPEN claims then count in no live total. */
+ *  whether the person is on hold: their OPEN or PENDING claims then count in no live total. */
 export type Person = {
   id: number;
   sheetId: string;

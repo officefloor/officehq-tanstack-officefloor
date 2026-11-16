@@ -11,23 +11,25 @@ import net.officefloor.plugin.variable.Val;
  * stored status is no longer the one this change started from) is refused, and the transaction gives back the number.
  */
 public class SaveClaimStatus {
-    public void save(@Val Claim claim, ClaimRepository claims, PeriodRepository periods,
+    public void save(@Val Claim claim, @Val ClaimStatusChange change, ClaimRepository claims, PeriodRepository periods,
             SettingRepository settings, SheetRepository sheets, Out<Claim> saved,
             Out<ClaimNumber> number) throws InvalidClaimStatusException {
         Claim toSave = claim;
-        if (claim.status() == ClaimStatus.OPEN) {
+        if (change.action() == ClaimAction.OPEN) {
             String next = ClaimNumbering.next(claim, claims, periods, settings, sheets);
             toSave = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                     claim.note(), claim.status(), next, claim.due(), claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects());
             number.set(new ClaimNumber(next));
         }
-        ClaimStatus from = switch (claim.status()) {
+        ClaimStatus from = switch (change.action()) {
             case OPEN -> ClaimStatus.DRAFT;
-            case SETTLED -> ClaimStatus.OPEN;
-            default -> null;
+            case SETTLE -> ClaimStatus.OPEN;
+            case APPROVE, REJECT -> ClaimStatus.PENDING;
+            case VOID -> null;
         };
         boolean stored = from != null ? claims.updateStatus(toSave, from)
-                : claims.updateStatus(toSave, ClaimStatus.DRAFT) || claims.updateStatus(toSave, ClaimStatus.OPEN);
+                : claims.updateStatus(toSave, ClaimStatus.DRAFT) || claims.updateStatus(toSave, ClaimStatus.OPEN)
+                        || claims.updateStatus(toSave, ClaimStatus.PENDING);
         if (!stored) {
             throw new InvalidClaimStatusException("The claim was changed by someone else");
         }

@@ -13,7 +13,7 @@ function HoldHead() {
   );
 }
 
-/** Whether the person is on hold, and the button that holds or releases them. While held, their OPEN claims count in
+/** Whether the person is on hold, and the button that holds or releases them. While held, their OPEN or PENDING claims count in
  *  no live total; their SETTLED claims still do. A refused hold or release shows the row's error. */
 function PersonHold({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const queryClient = useQueryClient();

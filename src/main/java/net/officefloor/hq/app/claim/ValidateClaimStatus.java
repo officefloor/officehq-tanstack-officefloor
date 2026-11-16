@@ -3,17 +3,29 @@ package net.officefloor.hq.app.claim;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Reads the body: the action is open, settle or void. */
+/** Reads the body: the action is open, settle, approve, reject (which needs a reason) or void. */
 public class ValidateClaimStatus {
     public void validate(@RequestBody ClaimStatusRequest request, Out<ClaimStatusChange> change)
             throws InvalidClaimStatusException {
         String action = request == null || request.action() == null ? "" : request.action().trim();
-        ClaimStatus to = switch (action) {
-            case "open" -> ClaimStatus.OPEN;
-            case "settle" -> ClaimStatus.SETTLED;
-            case "void" -> ClaimStatus.VOID;
-            default -> throw new InvalidClaimStatusException("The action must be open, settle or void");
+        ClaimAction taken = switch (action) {
+            case "open" -> ClaimAction.OPEN;
+            case "settle" -> ClaimAction.SETTLE;
+            case "approve" -> ClaimAction.APPROVE;
+            case "reject" -> ClaimAction.REJECT;
+            case "void" -> ClaimAction.VOID;
+            default -> throw new InvalidClaimStatusException("The action must be open, settle, approve, reject or void");
         };
-        change.set(new ClaimStatusChange(to, request.by() == null ? "" : request.by().trim()));
+        ClaimStatus to = switch (taken) {
+            case OPEN, REJECT -> ClaimStatus.OPEN;
+            case SETTLE, APPROVE -> ClaimStatus.SETTLED;
+            case VOID -> ClaimStatus.VOID;
+        };
+        String reason = request.reason() == null ? "" : request.reason().trim();
+        if (taken == ClaimAction.REJECT && reason.isEmpty()) {
+            throw new InvalidClaimStatusException("A rejection needs a reason");
+        }
+        change.set(new ClaimStatusChange(taken, to, request.by() == null ? "" : request.by().trim(),
+                taken == ClaimAction.REJECT ? reason : ""));
     }
 }
