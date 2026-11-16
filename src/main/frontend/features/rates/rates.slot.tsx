@@ -6,10 +6,10 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
 import { useSheetDueTotal, useSheetSplit } from '../header/totals';
-import { GRADES, type Person } from '../people/people';
+import { GRADES, usePeople, type Person } from '../people/people';
 import { useSheetToday } from '../session/session';
 import { useCap, useFloor, useLate } from '../settings/settings';
-import { personDue, personExcess, personSplit, rateFor, ratesKey, useRates, type Rate } from './rates';
+import { personDue, personExcess, personSplit, RATE_PATTERN, ratePreview, rateFor, ratesKey, useRates, type Rate } from './rates';
 
 /** The sheet's rates: the form that sets one (from an optional from-date, through an optional to-date), each grade's rate in force on the
  *  sheet's today, and every rate set. */
@@ -113,6 +113,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
         )}
       </form>
       {rates.isError && <p data-testid="rates-load-error">Could not load rates.</p>}
+      <RatePreview sheetId={sheetId} rates={rates.data} />
       <table data-testid="rates-current">
         <tbody>
           {GRADES.map((g) => (
@@ -136,6 +137,80 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
         </tbody>
       </table>
     </section>
+  );
+}
+
+/** A preview of a candidate rate for a grade: how many OPEN and PENDING claims of people on the grade (on the
+ *  claim's date) would show a different due, and the sum of the differences (see ratePreview). Nothing is saved. */
+function RatePreview({ sheetId, rates }: { sheetId: string; rates: Rate[] | undefined }) {
+  const claims = useClaims(sheetId);
+  const people = usePeople(sheetId);
+  const late = useLate(sheetId);
+  const floor = useFloor(sheetId);
+  const [grade, setGrade] = useState<string>(GRADES[0]);
+  const [pct, setPct] = useState('');
+  const [result, setResult] = useState<{ count: number; diff: string } | null>(null);
+  const [error, setError] = useState(false);
+  const clear = () => {
+    setResult(null);
+    setError(false);
+  };
+
+  return (
+    <form
+      data-testid="rate-preview-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        clear();
+        const rate = pct.trim();
+        if (!RATE_PATTERN.test(rate)) {
+          setError(true);
+          return;
+        }
+        const next = ratePreview(claims.data ?? [], people.data ?? [], rates, grade, rate, late, floor);
+        setTimeout(() => setResult(next), 0);
+      }}
+    >
+      <label>
+        Preview grade{' '}
+        <select
+          data-testid="rate-preview-grade"
+          value={grade}
+          onChange={(e) => {
+            setGrade(e.target.value);
+            clear();
+          }}
+        >
+          {GRADES.map((g) => (
+            <option key={g} value={g}>
+              {g}
+            </option>
+          ))}
+        </select>
+      </label>{' '}
+      <label>
+        Rate %{' '}
+        <input
+          data-testid="rate-preview-pct"
+          inputMode="decimal"
+          value={pct}
+          onChange={(e) => {
+            setPct(e.target.value);
+            clear();
+          }}
+        />
+      </label>{' '}
+      <button type="submit" data-testid="rate-preview">
+        Preview
+      </button>
+      {result !== null && (
+        <span>
+          {' '}Claims changed <span data-testid="rate-preview-count">{result.count}</span>
+          {' '}Difference <span data-testid="rate-preview-diff">{result.diff}</span>
+        </span>
+      )}
+      {error && <span data-testid="rate-preview-error">The rate must be a percent 0.00 or more, with up to two decimals.</span>}
+    </form>
   );
 }
 

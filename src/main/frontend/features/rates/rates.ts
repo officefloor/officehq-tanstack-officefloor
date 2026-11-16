@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { counts, type Claim } from '../claims/claims';
+import { counts, isOpen, type Claim } from '../claims/claims';
 import { lateBoundaries, roundsHalfUp, type Late } from '../overdue/late';
 import { gradeOn, type Person } from '../people/people';
 import type { Dated } from '../settings/settings';
@@ -118,6 +118,38 @@ export function personExcess(claims: Claim[], rates: Rate[] | undefined, person:
   return total !== 'n/a' && cap !== null && hundredths(total) > hundredths(cap)
     ? shown(hundredths(total) - hundredths(cap))
     : '0.00';
+}
+
+/** A candidate rate: a percent 0.00 or more with up to two decimals (as the rate form takes it). */
+export const RATE_PATTERN = /^\d{1,5}(\.\d{1,2})?$/;
+
+/** What a candidate rate would change if it applied to the grade on every date: of the OPEN and PENDING claims whose
+ *  person is on the grade on the claim's date, how many would show a different due, and the sum of the differences
+ *  (new due minus current due; an n/a due counts as 0.00). A claim bound by a statement keeps its due, so never
+ *  changes; settled claims are not looked at. */
+export function ratePreview(
+  claims: Claim[],
+  people: Person[],
+  rates: Rate[] | undefined,
+  grade: string,
+  pct: string,
+  late: Late,
+  floor: Dated,
+): { count: number; diff: string } {
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const value = (d: string) => (d === 'n/a' ? 0n : hundredths(d));
+  let count = 0;
+  let diff = 0n;
+  for (const c of claims) {
+    const person = byId.get(c.personId);
+    if (!isOpen(c) || person === undefined || gradeOn(person, c.date) !== grade) continue;
+    const now = claimDue(c, rateFor(rates, grade, c.date), floor, late);
+    const then = claimDue(c, pct, floor, late);
+    if (now === then) continue;
+    count++;
+    diff += value(then) - value(now);
+  }
+  return { count, diff: shown(diff) };
 }
 
 /** Two-decimal values added up, skipping 'n/a'. */
