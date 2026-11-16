@@ -108,6 +108,17 @@ public class Rollup {
         }
     }
 
+    /** Writes ROLLUP for every person on the sheet, in list order, then TOTALS: the figures of a sheet just made. */
+    public void recordAll(String sheetId, String by) {
+        Map<Long, Figures> now = take(sheetId).figures();
+        for (Figures f : now.values()) {
+            audit.record("ROLLUP sheet=" + sheetId + " by=" + by + " person=" + f.name() + " claimed=" + f.claimed()
+                    + " due-total=" + f.dueTotal() + " overdue-total=" + f.overdueTotal());
+        }
+        audit.record("TOTALS sheet=" + sheetId + " by=" + by + " claimed-total=" + claimedTotal(now) + " due-total="
+                + dueTotal(now) + " overdue-total=" + overdueTotal(now));
+    }
+
     private static String claimedTotal(Map<Long, Figures> figures) {
         return figures.values().stream().map((f) -> new BigDecimal(f.claimed()))
                 .reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add).toPlainString();
