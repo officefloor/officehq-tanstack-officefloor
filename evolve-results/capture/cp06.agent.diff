@@ -1,0 +1,187 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimValues.java b/src/main/java/net/officefloor/hq/app/claim/ClaimValues.java
+index 2c66a96de..ab7358160 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimValues.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimValues.java
+@@ -3,6 +3,6 @@ package net.officefloor.hq.app.claim;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ 
+-/** A claim's values once validated. {@code date} is null when none was given (the sheet's today applies). */
+-public record ClaimValues(BigDecimal amount, LocalDate date, String note) {
++/** A claim's values once validated. {@code date} is null when none was given (the sheet's today applies). {@code by} is who gives them. */
++public record ClaimValues(BigDecimal amount, LocalDate date, String note, String by) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimAdded.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimAdded.java
+new file mode 100644
+index 000000000..13d008c82
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimAdded.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++
++/** Writes CLAIM_ADDED to the audit file once the claim is stored. */
++public class RecordClaimAdded {
++    public void record(@Val Claim claim, @Val Person person, @Val ClaimValues values, Audit audit) {
++        audit.record("CLAIM_ADDED sheet=" + claim.sheetId() + " by=" + values.by() + " person=" + person.name()
++                + " amount=" + claim.amount().toPlainString() + " date=" + claim.date());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimEdited.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimEdited.java
+new file mode 100644
+index 000000000..d0f09e3ba
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimEdited.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++
++/** Writes CLAIM_EDITED to the audit file once the edit is stored. */
++public class RecordClaimEdited {
++    public void record(@Val Claim claim, @Val ClaimValues values, PersonRepository people, Audit audit) {
++        Person person = people.find(claim.sheetId(), claim.personId());
++        audit.record("CLAIM_EDITED sheet=" + claim.sheetId() + " by=" + values.by() + " person="
++                + (person == null ? "" : person.name()) + " amount=" + claim.amount().toPlainString()
++                + " date=" + claim.date());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+index cc007ccaa..b41ad8c77 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+@@ -26,6 +26,7 @@ public class ValidateClaim {
+             }
+         }
+         String note = request.note() == null ? "" : request.note().trim();
+-        values.set(new ClaimValues(new BigDecimal(amount).setScale(2), parsed, note));
++        values.set(new ClaimValues(new BigDecimal(amount).setScale(2), parsed, note,
++                request.by() == null ? "" : request.by().trim()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonValues.java b/src/main/java/net/officefloor/hq/app/person/PersonValues.java
+index 11ecc18df..189abc406 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonValues.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonValues.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.person;
+ 
+-/** A person's values once validated. */
+-public record PersonValues(String name, String grade) {
++/** A person's values once validated, and who gives them. */
++public record PersonValues(String name, String grade, String by) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordPersonAdded.java b/src/main/java/net/officefloor/hq/app/person/RecordPersonAdded.java
+new file mode 100644
+index 000000000..89539377f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RecordPersonAdded.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Writes PERSON_ADDED to the audit file once the person is stored. */
++public class RecordPersonAdded {
++    public void record(@Val Person person, @Val PersonValues values, Audit audit) {
++        audit.record("PERSON_ADDED sheet=" + person.sheetId() + " by=" + values.by() + " name=" + person.name()
++                + " grade=" + person.grade());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordPersonEdited.java b/src/main/java/net/officefloor/hq/app/person/RecordPersonEdited.java
+new file mode 100644
+index 000000000..ec90f85d7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RecordPersonEdited.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Writes PERSON_EDITED to the audit file once the edit is stored. */
++public class RecordPersonEdited {
++    public void record(@Val Person person, @Val PersonValues values, Audit audit) {
++        audit.record("PERSON_EDITED sheet=" + person.sheetId() + " by=" + values.by() + " name=" + person.name()
++                + " grade=" + person.grade());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+index 8efe223fe..31e5b5c05 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+@@ -17,6 +17,6 @@ public class ValidatePerson {
+         if (!GRADES.contains(grade)) {
+             throw new InvalidPersonException("Grade must be A, B or C");
+         }
+-        values.set(new PersonValues(name, grade));
++        values.set(new PersonValues(name, grade, request.by() == null ? "" : request.by().trim()));
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index d0a8fcfb6..8891bbed6 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -15,6 +15,10 @@ apply:
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.RecordClaimEdited
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index e21dff30c..684778546 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -11,6 +11,10 @@ check:
+ add:
+   class: net.officefloor.hq.app.person.AddPerson
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.RecordPersonAdded
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPersonCreated
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index d4ffd1d02..42a2d8654 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -19,6 +19,10 @@ apply:
+ save:
+   class: net.officefloor.hq.app.person.SavePerson
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.RecordPersonEdited
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 6235e002e..20ff91eb8 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -12,6 +12,10 @@ load:
+ add:
+   class: net.officefloor.hq.app.claim.AddClaim
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.RecordClaimAdded
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaimCreated
