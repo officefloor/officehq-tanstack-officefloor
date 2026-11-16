@@ -6,18 +6,21 @@ import { type Person } from '../people/people';
 import { useRates } from '../rates/rates';
 import { useFloor, useLate } from '../settings/settings';
 import { overdue } from './overdue';
+import { useShownColumns } from '../columns/columns';
 
-function OverdueHead() {
+function OverdueHead({ user }: { user: string }) {
+  const shown = useShownColumns(user);
   return (
     <>
-      <th>Overdue</th>
-      <th>Overdue total</th>
+      {shown('overdue-count') && <th>Overdue</th>}
+      {shown('overdue-total') && <th>Overdue total</th>}
     </>
   );
 }
 
 /** A person's overdue count and overdue-total, over their claims that count in the live totals. */
-function PersonOverdue({ sheetId, person }: { sheetId: string; person: Person }) {
+function PersonOverdue({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+  const shown = useShownColumns(user);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
   const floor = useFloor(sheetId);
@@ -26,8 +29,8 @@ function PersonOverdue({ sheetId, person }: { sheetId: string; person: Person })
   const o = overdue(mine, rates.data, person, late, floor);
   return (
     <>
-      <td data-testid="person-overdue-count">{o.count}</td>
-      <td data-testid="person-overdue-total">{o.total}</td>
+      {shown('overdue-count') && <td data-testid="person-overdue-count">{o.count}</td>}
+      {shown('overdue-total') && <td data-testid="person-overdue-total">{o.total}</td>}
     </>
   );
 }

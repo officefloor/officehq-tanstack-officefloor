@@ -8,6 +8,7 @@ import { claimsKey, type Claim } from '../claims/claims';
 import { tagsKey } from '../tags/tags';
 import { usePeopleDue } from '../header/totals';
 import { GRADES, peopleKey, SORT_KEYS, sortPeople, useEditingPerson, usePeople, useShowRetired, useSortBy, type Person } from './people';
+import { useShownColumns } from '../columns/columns';
 
 /** The form's values. `gradeFrom` (yyyy-MM-dd) is the date the grade is given from; blank, the sheet's today. A
  *  person's first grade applies from the beginning of time. `terms` are the person's own terms in days; blank, none. `contact` is the person's contact, kept by the server
@@ -90,6 +91,7 @@ function QuickAdd({ sheetId, user }: { sheetId: string; user: string }) {
  *  (412) shows the error and puts the current values, and their version, in the form; an edit refused otherwise shows the
  *  error and closes the editor. */
 function People({ sheetId, user }: { sheetId: string; user: string }) {
+  const shown = useShownColumns(user);
   const people = usePeople(sheetId);
   const [showRetired, setShowRetired] = useShowRetired();
   const [sortBy, setSortBy] = useSortBy();
@@ -254,8 +256,8 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
           <tr>
             <th>Name</th>
             <th>Grade</th>
-            <th>Terms</th>
-            <th>Contact</th>
+            {shown('terms') && <th>Terms</th>}
+            {shown('contact') && <th>Contact</th>}
             <th>Tags</th>
             <PeopleHead.Slot sheetId={sheetId} user={user} />
             <th />
@@ -266,8 +268,8 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
-              <td data-testid="person-terms">{p.terms ?? ''}</td>
-              <td data-testid="person-contact">{p.contact ?? ''}</td>
+              {shown('terms') && <td data-testid="person-terms">{p.terms ?? ''}</td>}
+              {shown('contact') && <td data-testid="person-contact">{p.contact ?? ''}</td>}
               <td data-testid="person-tags">{(p.tags ?? []).join(', ')}</td>
               <PersonRow.Slot sheetId={sheetId} user={user} person={p} />
               <td>

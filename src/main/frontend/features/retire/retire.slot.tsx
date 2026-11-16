@@ -5,11 +5,13 @@ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { peopleKey, type Person } from '../people/people';
 import { usePersonRowAction } from '../people/rowAction';
+import { useShownColumns } from '../columns/columns';
 
-function RetireHead() {
+function RetireHead({ user }: { user: string }) {
+  const shown = useShownColumns(user);
   return (
     <>
-      <th>Retired</th>
+      {shown('retired') && <th>Retired</th>}
       <th>Retired from</th>
       <th>Past retirements</th>
       <th />
@@ -23,6 +25,7 @@ function RetireHead() {
  *  one line each, and no claim of theirs may be dated after its from and before its to. A refused retirement or
  *  unretirement (anyone not retired) shows the row's error. */
 function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+  const shown = useShownColumns(user);
   const queryClient = useQueryClient();
   const [from, setFrom] = useState('');
   const submit = useSubmitOnce();
@@ -46,7 +49,7 @@ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string
 
   return (
     <>
-      <td data-testid="person-retired">{person.retiredFrom !== null ? 'yes' : 'no'}</td>
+      {shown('retired') && <td data-testid="person-retired">{person.retiredFrom !== null ? 'yes' : 'no'}</td>}
       <td data-testid="person-retired-from">{person.retiredFrom ?? ''}</td>
       <td>
         {(person.retirements ?? []).map((r, i) => (

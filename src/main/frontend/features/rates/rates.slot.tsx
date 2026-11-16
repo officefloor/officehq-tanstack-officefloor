@@ -10,6 +10,7 @@ import { GRADES, usePeople, type Person } from '../people/people';
 import { useSheetToday } from '../session/session';
 import { useCap, useFloor, useLate } from '../settings/settings';
 import { ownRates, personDue, personExcess, personSplit, RATE_PATTERN, ratePreview, rateFor, ratesKey, useRates, type Rate } from './rates';
+import { useShownColumns } from '../columns/columns';
 
 /** The sheet's rates: the form that sets one (from an optional from-date, through an optional to-date), each grade's rate in force on the
  *  sheet's today, and every rate set. */
@@ -276,11 +277,12 @@ function RatePreview({ sheetId, rates }: { sheetId: string; rates: Rate[] | unde
   );
 }
 
-function DueHead() {
+function DueHead({ user }: { user: string }) {
+  const shown = useShownColumns(user);
   return (
     <>
-      <th>Due total</th>
-      <th>Excess</th>
+      {shown('due-total') && <th>Due total</th>}
+      {shown('excess') && <th>Excess</th>}
       <th>Settled total</th>
       <th>Open total</th>
     </>
@@ -289,7 +291,8 @@ function DueHead() {
 
 /** A person's due-total: the sum of their claims' due figures, at most the sheet's cap (see personDue), and their
  *  excess over the cap (see personExcess). */
-function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }) {
+function PersonDueTotal({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+  const shown = useShownColumns(user);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
   const late = useLate(sheetId);
@@ -299,8 +302,8 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }
   const split = personSplit(mine, rates.data, person, late, floor);
   return (
     <>
-      <td data-testid="person-due-total">{personDue(mine, rates.data, person, late, floor, cap)}</td>
-      <td data-testid="person-excess">{personExcess(mine, rates.data, person, late, floor, cap)}</td>
+      {shown('due-total') && <td data-testid="person-due-total">{personDue(mine, rates.data, person, late, floor, cap)}</td>}
+      {shown('excess') && <td data-testid="person-excess">{personExcess(mine, rates.data, person, late, floor, cap)}</td>}
       <td data-testid="person-settled-total">{split.settled}</td>
       <td data-testid="person-open-total">{split.open}</td>
     </>

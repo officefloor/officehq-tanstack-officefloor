@@ -9,12 +9,14 @@ import { usePeople, type Person } from '../people/people';
 import { useSheetToday } from '../session/session';
 import { equalShares, sharedSum, sum } from '../rates/rates';
 import { patronsKey, usePatrons, type Patron } from './patrons';
+import { useShownColumns } from '../columns/columns';
 
-function PatronsHead() {
+function PatronsHead({ user }: { user: string }) {
+  const shown = useShownColumns(user);
   return (
     <>
-      <th>Patrons</th>
-      <th>Backing</th>
+      {shown('patrons') && <th>Patrons</th>}
+      {shown('backing') && <th>Backing</th>}
       <th />
     </>
   );
@@ -26,6 +28,7 @@ function PatronsHead() {
  *  up — times their share / 100, added up and rounded half to even; 0.00 with none), and the picker that names another person on the sheet as a patron. A refused add shows the row's
  *  patron error. */
 function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+  const shown = useShownColumns(user);
   const people = usePeople(sheetId);
   const patrons = usePatrons(sheetId);
   const claims = useClaims(sheetId);
@@ -65,8 +68,8 @@ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: strin
 
   return (
     <>
-      <td data-testid="person-patrons">{names.join(', ')}</td>
-      <td data-testid="person-backing">{backing}</td>
+      {shown('patrons') && <td data-testid="person-patrons">{names.join(', ')}</td>}
+      {shown('backing') && <td data-testid="person-backing">{backing}</td>}
       <td>
         <select
           data-testid="person-patron-select"

@@ -5,11 +5,13 @@ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { peopleKey, type Person } from '../people/people';
 import { usePersonRowAction } from '../people/rowAction';
+import { useShownColumns } from '../columns/columns';
 
-function HoldHead() {
+function HoldHead({ user }: { user: string }) {
+  const shown = useShownColumns(user);
   return (
     <>
-      <th>On hold</th>
+      {shown('hold') && <th>On hold</th>}
       <th />
     </>
   );
@@ -19,6 +21,7 @@ function HoldHead() {
  *  from-date (blank: the sheet's today) until the to-date (blank: open-ended). Only their OPEN or PENDING claims dated
  *  within a hold, and not bound by a statement, count in no live total. A refused hold shows the row's error. */
 function PersonHold({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+  const shown = useShownColumns(user);
   const queryClient = useQueryClient();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -37,7 +40,7 @@ function PersonHold({ sheetId, user, person }: { sheetId: string; user: string; 
 
   return (
     <>
-      <td data-testid="person-hold">{person.held ? 'yes' : 'no'}</td>
+      {shown('hold') && <td data-testid="person-hold">{person.held ? 'yes' : 'no'}</td>}
       <td>
         {(person.holds ?? []).map((h, i) => (
           <div key={i} data-testid="person-hold-line">

@@ -6,13 +6,15 @@ import type { Person } from '../people/people';
 import { usePersonRowAction } from '../people/rowAction';
 import { claimsKey } from '../claims/claims';
 import { statementsKey, useStatements } from './statements';
+import { useShownColumns } from '../columns/columns';
 
-function StatementsHead() {
+function StatementsHead({ user }: { user: string }) {
+  const shown = useShownColumns(user);
   return (
     <>
-      <th>Statements</th>
-      <th>Stated total</th>
-      <th>Stated on</th>
+      {shown('statement-count') && <th>Statements</th>}
+      {shown('stated-total') && <th>Stated total</th>}
+      {shown('statement-date') && <th>Stated on</th>}
       <th />
     </>
   );
@@ -23,6 +25,7 @@ function StatementsHead() {
  *  figure then (not floored); and
  *  the button that cancels their last statement (a steward only), making the claims it bound live again. */
 function PersonStatements({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+  const shown = useShownColumns(user);
   const statements = useStatements(sheetId);
   const queryClient = useQueryClient();
   const mine = statements.data?.find((s) => s.personId === person.id);
@@ -54,9 +57,9 @@ function PersonStatements({ sheetId, user, person }: { sheetId: string; user: st
 
   return (
     <>
-      <td data-testid="person-statement-count">{mine?.count ?? 0}</td>
-      <td data-testid="person-stated-total">{mine?.dueTotal ?? ''}</td>
-      <td data-testid="person-statement-date">{mine?.date ?? ''}</td>
+      {shown('statement-count') && <td data-testid="person-statement-count">{mine?.count ?? 0}</td>}
+      {shown('stated-total') && <td data-testid="person-stated-total">{mine?.dueTotal ?? ''}</td>}
+      {shown('statement-date') && <td data-testid="person-statement-date">{mine?.date ?? ''}</td>}
       <td>
         <input
           data-testid="person-statement-asof"

@@ -16,14 +16,16 @@ import { useSelectedClaims } from './selection';
 import { useSheetToday } from '../session/session';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 import { useTemplates } from '../templates/templates';
+import { useShownColumns } from '../columns/columns';
 
 type Values = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
 const EMPTY: Values = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
 
-function ClaimsHead() {
+function ClaimsHead({ user }: { user: string }) {
+  const shown = useShownColumns(user);
   return (
     <>
-      <th>Claimed</th>
+      {shown('claimed') && <th>Claimed</th>}
       <th>Claims</th>
     </>
   );
@@ -732,6 +734,7 @@ function ClaimRow({
 /** A person's claimed, and their claims (newest first) with the form that adds one or saves the one
  *  being edited. A blank date takes the sheet's entry date, else its today (the server applies it). */
 function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+  const shown = useShownColumns(user);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId).data;
   const floor = useFloor(sheetId);
@@ -807,7 +810,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
 
   return (
     <>
-      <td data-testid="person-claimed">{claimed(live(mine, [person], today))}</td>
+      {shown('claimed') && <td data-testid="person-claimed">{claimed(live(mine, [person], today))}</td>}
       <td>
         <form
           data-testid="claim-form"

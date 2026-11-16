@@ -5,11 +5,13 @@ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { peopleKey, type Person } from '../people/people';
 import { usePersonRowAction } from '../people/rowAction';
+import { useShownColumns } from '../columns/columns';
 
-function AliasesHead() {
+function AliasesHead({ user }: { user: string }) {
+  const shown = useShownColumns(user);
   return (
     <>
-      <th>Aliases</th>
+      {shown('aliases') && <th>Aliases</th>}
       <th />
     </>
   );
@@ -18,6 +20,7 @@ function AliasesHead() {
 /** A person's aliases (sorted as names are compared, by the server) and the entry that gives them another. An alias
  *  shares the names' uniqueness: one blank, or equal to any name or alias on the sheet, is refused with the row's error. */
 function PersonAliases({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+  const shown = useShownColumns(user);
   const queryClient = useQueryClient();
   const [alias, setAlias] = useState('');
   const submit = useSubmitOnce();
@@ -34,7 +37,7 @@ function PersonAliases({ sheetId, user, person }: { sheetId: string; user: strin
 
   return (
     <>
-      <td data-testid="person-aliases">{(person.aliases ?? []).join(', ')}</td>
+      {shown('aliases') && <td data-testid="person-aliases">{(person.aliases ?? []).join(', ')}</td>}
       <td>
         <input
           data-testid="person-alias-input"
