@@ -1,0 +1,80 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index cc14aa026..c5115bcdd 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -11,7 +11,7 @@ import { useDelegations } from '../delegation/delegation';
+ import { claimDue, rateFor, useRates } from '../rates/rates';
+ import { dueBy, isOverdue } from '../overdue/overdue';
+ import { useFloor, useLate, type Dated } from '../settings/settings';
+-import { claimsKey, commentLine, lineLine, live, logLine, total, useClaims, type Claim } from './claims';
++import { claimsKey, commentLine, lineLine, live, logLine, claimed, useClaims, type Claim } from './claims';
+ import { useSelectedClaims } from './selection';
+ import { useSheetToday } from '../session/session';
+ import { useVoidReasons } from '../voidreasons/voidreasons';
+@@ -804,7 +804,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
+ 
+   return (
+     <>
+-      <td data-testid="person-claimed">{total(live(mine, [person], today))}</td>
++      <td data-testid="person-claimed">{claimed(live(mine, [person], today))}</td>
+       <td>
+         <form
+           data-testid="claim-form"
+@@ -892,14 +892,14 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
+   );
+ }
+ 
+-/** The sheet's claimed-total: everyone's claimed (OPEN, PENDING and SETTLED claims, but no OPEN or PENDING ones dated within a hold of their person, or of one whose retirement date is reached, and not bound by a statement) added up. */
++/** The sheet's claimed-total: everyone's claimed (OPEN, PENDING and SETTLED claims that correct no other, but no OPEN or PENDING ones dated within a hold of their person, or of one whose retirement date is reached, and not bound by a statement) added up. */
+ function ClaimedTotal({ sheetId }: { sheetId: string }) {
+   const claims = useClaims(sheetId);
+   const people = usePeople(sheetId);
+   const today = useSheetToday(sheetId);
+   return (
+     <p>
+-      Claimed total <span data-testid="rollup-claimed-total">{total(live(claims.data ?? [], people.data, today))}</span>
++      Claimed total <span data-testid="rollup-claimed-total">{claimed(live(claims.data ?? [], people.data, today))}</span>
+       {claims.isError && <span data-testid="claims-load-error"> Could not load claims.</span>}
+     </p>
+   );
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 047eb7ca5..5bb63ce8a 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -114,6 +114,12 @@ export function live(claims: Claim[], people: Person[] | undefined, today: strin
+   });
+ }
+ 
++/** A person's or the sheet's claimed: the amounts of the claims that count added up, leaving out corrections
++ *  (claims that correct another), shown with two decimals. */
++export function claimed(claims: Claim[]): string {
++  return total(claims.filter((c) => !c.corrects));
++}
++
+ /** The amounts of the claims that count added up, shown with two decimals. */
+ export function total(claims: Claim[]): string {
+   return (claims.filter(counts).reduce((sum, c) => sum + cents(c.amount), 0) / 100).toFixed(2);
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 84adb32fa..2a0b42def 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -19,7 +19,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ import org.springframework.stereotype.Service;
+ 
+ /**
+- * The sheet's figures as the screen shows them: each person's claimed (their claims that count added up; a person's OPEN or PENDING claims dated within a hold of theirs, or any once their retirement date is reached, not bound by a statement, do not, nor do deferred claims) and
++ * The sheet's figures as the screen shows them: each person's claimed (the amounts of their claims that count added up, leaving out corrections; a person's OPEN or PENDING claims dated within a hold of theirs, or any once their retirement date is reached, not bound by a statement, do not, nor do deferred claims) and
+  * due-total (the figures of those claims, each with its late charge, added up; n/a when their grade has no rate today and no counting claim
+  * has a figure, kept or at the grade in force on its date; at most the sheet's cap), overdue-total (the figures, late charge included, of those claims that are overdue — open, their due-by plus
+  * their grace (see LateCharge#lateFrom) before today — added up, skipping n/a; not capped), and the sheet's claimed-total, due-total and overdue-total (everyone's added up, skipping n/a; the due-total and
+@@ -67,7 +67,9 @@ public class Rollup {
+                 if (c.personId() != person.id() || !ClaimDue.countsLive(c, person, today)) {
+                     continue;
+                 }
+-                claimed = claimed.add(c.amount());
++                if (c.corrects() == null) {
++                    claimed = claimed.add(c.amount());
++                }
+                 BigDecimal figure = late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, late.rounding()), settings.floor(sheetId, c.date()));
+                 figured |= figure != null;
+                 if (figure != null) {
