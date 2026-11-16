@@ -53,7 +53,7 @@ public class PeriodCloser {
         if (!periods.close(period, total)) {
             throw new InvalidPeriodException("The period " + period.name() + " is already closed");
         }
-        periods.fixPersonTotals(period, perPerson);
+        periods.fixPersonTotals(period, perPerson, carried(period));
         return total;
     }
 
@@ -68,8 +68,42 @@ public class PeriodCloser {
         if (!periods.softClose(period, total)) {
             throw new InvalidPeriodException("The period " + period.name() + " is not open");
         }
-        periods.fixPersonTotals(period, perPerson);
+        periods.fixPersonTotals(period, perPerson, carried(period));
         return total;
+    }
+
+    /** Each person's carried figure for the period as it is now, by person id: the figures of their claims whose due-by
+     *  falls in an earlier period of the sheet (one ending before this one starts) and that were still OPEN or PENDING
+     *  at the end of this period's last day, the live rules otherwise applying as for the due-total (see #figures). */
+    private Map<Long, BigDecimal> carried(Period period) {
+        List<Period> earlier = periods.list(period.sheetId()).stream()
+                .filter((p) -> p.to().isBefore(period.from())).toList();
+        Map<Long, Person> byId = people.list(period.sheetId()).stream()
+                .collect(Collectors.toMap(Person::id, (p) -> p));
+        Map<Long, List<ClaimLogLine>> logs = log.bySheet(period.sheetId());
+        LateCharge late = LateCharge.of(period.sheetId(), sheets, settings, claims);
+        Map<Long, BigDecimal> perPerson = new LinkedHashMap<>();
+        for (Long id : byId.keySet()) {
+            perPerson.put(id, BigDecimal.ZERO.setScale(2));
+        }
+        for (Claim c : claims.list(period.sheetId())) {
+            Person person = byId.get(c.personId());
+            if (earlier.stream().noneMatch((p) -> !c.dueBy().isBefore(p.from()) && !c.dueBy().isAfter(p.to()))) {
+                continue;
+            }
+            ClaimStatus status = ClaimDue.statusAsOf(logs.getOrDefault(c.id(), List.of()), period.to());
+            if ((status != ClaimStatus.OPEN && status != ClaimStatus.PENDING)
+                    || (ClaimDue.isOpen(c) && !ClaimDue.bound(c) && person != null && person.heldOn(c.date()))
+                    || ClaimDue.retiredOut(c, person, late.today())
+                    || ClaimDue.deferred(c, late.today())) {
+                continue;
+            }
+            BigDecimal figure = person == null ? c.due() : late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, late.rounding()), settings.floor(c.sheetId(), c.date()));
+            if (figure != null) {
+                perPerson.merge(c.personId(), figure, BigDecimal::add);
+            }
+        }
+        return perPerson;
     }
 
     /** Each person's due-total for the period as it is now, by person id (see ClosePeriod). */

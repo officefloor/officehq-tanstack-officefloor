@@ -23,6 +23,9 @@ export type Period = {
   personTotals: Record<string, string>;
   /** The most OPEN or PENDING claims a person may have in it (by due-by); null for no cap. */
   cap: number | null;
+  /** Closed or soft-closed, each person's carried figure for the period fixed when it was closed, by person id (empty
+   *  for one closed before carried figures were kept). */
+  personCarried: Record<string, string>;
 };
 
 export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'];
@@ -83,7 +86,8 @@ export function personPeriodDue(
 /** A person's carried figure for a period: the figures (each due as shown now, with its late charge) of their claims
  *  that count and belong to an earlier period of the sheet (their due-by falls in a period ending before this one
  *  starts) and that were still OPEN or PENDING at the end of this period's last day (see statusAsOf), the live rules
- *  otherwise applying as for personPeriodDue, added up (skipping n/a); 0.00 when nothing is carried. */
+ *  otherwise applying as for personPeriodDue, added up (skipping n/a); 0.00 when nothing is carried. For a closed or
+ *  soft-closed period, their figure fixed when it was (soft-)closed (0.00 for a person added after). */
 export function personPeriodCarried(
   period: Period,
   periods: Period[] | undefined,
@@ -93,6 +97,8 @@ export function personPeriodCarried(
   floor: Dated,
   late: Late,
 ): string {
+  const fixed = period.personCarried ?? {};
+  if ((period.closed || period.soft) && Object.keys(fixed).length > 0) return fixed[String(person.id)] ?? '0.00';
   const earlier = (periods ?? []).filter((p) => p.to < period.from);
   const mine = (claims ?? []).filter((c) => {
     if (c.personId !== person.id || !earlier.some((p) => p.from <= c.dueBy && c.dueBy <= p.to)) return false;

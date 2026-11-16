@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { ReadNow } from '../../query/readNow';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { useSheetDueTotal, useSheetOverdue } from '../header/totals';
 import { usePeople } from '../people/people';
@@ -28,8 +27,9 @@ function SheetFigures({ sheetId, report }: { sheetId: string; report: (sheetId: 
 }
 
 /** The consolidated figures over the sheet and all its descendants: their people counted, and each sheet's
- *  due-total and overdue-total (as that sheet shows it) added up. A sheet with no children shows its own. They are
- *  always the figures as the sheets are now: an as-of date (see features/asof) leaves them as they are. */
+ *  due-total and overdue-total (as that sheet shows it) added up. A sheet with no children shows its own. While an
+ *  as-of date is set (see features/asof), every sheet of the tree is read as it stood at the end of that date, with
+ *  that date as its today. */
 function Consolidated({ sheetId }: { sheetId: string }) {
   const descendants = useDescendants(sheetId);
   const sheets = [sheetId, ...(descendants.data ?? [])];
@@ -42,11 +42,9 @@ function Consolidated({ sheetId }: { sheetId: string }) {
 
   return (
     <section data-testid="consolidated">
-      <ReadNow.Provider value={true}>
-        {sheets.map((id) => (
-          <SheetFigures key={id} sheetId={id} report={report} />
-        ))}
-      </ReadNow.Provider>
+      {sheets.map((id) => (
+        <SheetFigures key={id} sheetId={id} report={report} />
+      ))}
       Consolidated: people <span data-testid="consolidated-people-count">{counted.reduce((n, f) => n + f.people, 0)}</span>
       {' · '}Due total <span data-testid="consolidated-due-total">{sum(counted.map((f) => f.due))}</span>
       {' · '}Overdue total <span data-testid="consolidated-overdue-total">{sum(counted.map((f) => f.overdue))}</span>

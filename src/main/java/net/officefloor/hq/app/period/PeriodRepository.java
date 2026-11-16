@@ -29,7 +29,29 @@ public class PeriodRepository {
     }
 
     /** A period as it stood at the end of a date: closed or soft-closed then, with the figures that fixed. */
-    public record StateAsOf(boolean closed, boolean soft, BigDecimal closedTotal, Map<Long, BigDecimal> personTotals) {
+    public record StateAsOf(boolean closed, boolean soft, BigDecimal closedTotal, Map<Long, BigDecimal> personTotals,
+            Map<Long, BigDecimal> personCarried) {
+    }
+
+    /** Figures by person id from their logged text: "personId=figure" joined by ";". */
+    private static Map<Long, BigDecimal> parseFigures(String text) {
+        Map<Long, BigDecimal> figures = new LinkedHashMap<>();
+        if (text != null && !text.isEmpty()) {
+            for (String part : text.split(";")) {
+                int at = part.indexOf('=');
+                figures.put(Long.parseLong(part.substring(0, at)), new BigDecimal(part.substring(at + 1)).setScale(2));
+            }
+        }
+        return figures;
+    }
+
+    /** Figures by person id as logged text (see #parseFigures). */
+    private static String figuresText(Map<Long, BigDecimal> figures) {
+        StringBuilder text = new StringBuilder();
+        for (Map.Entry<Long, BigDecimal> e : figures.entrySet()) {
+            text.append(text.length() == 0 ? "" : ";").append(e.getKey()).append('=').append(e.getValue().toPlainString());
+        }
+        return text.toString();
     }
 
     /** The sheet's periods as they stood at the end of the date, by from-date, each with its state then: one added while
@@ -42,7 +64,7 @@ public class PeriodRepository {
                 }, sheetId);
         Map<Long, StateAsOf> states = new java.util.HashMap<>();
         java.util.Set<Long> logged = new java.util.HashSet<>();
-        jdbc.query("SELECT period_id, closed, soft_closed, closed_total, person_totals, made_on FROM period_log"
+        jdbc.query("SELECT period_id, closed, soft_closed, closed_total, person_totals, person_carried, made_on FROM period_log"
                 + " WHERE sheet_id = ? ORDER BY id", (ResultSet rs) -> {
                     long id = rs.getLong("period_id");
                     logged.add(id);
@@ -50,16 +72,9 @@ public class PeriodRepository {
                         return;
                     }
                     BigDecimal total = rs.getBigDecimal("closed_total");
-                    Map<Long, BigDecimal> totals = new LinkedHashMap<>();
-                    String text = rs.getString("person_totals");
-                    if (text != null && !text.isEmpty()) {
-                        for (String part : text.split(";")) {
-                            int at = part.indexOf('=');
-                            totals.put(Long.parseLong(part.substring(0, at)), new BigDecimal(part.substring(at + 1)).setScale(2));
-                        }
-                    }
                     states.put(id, new StateAsOf(rs.getBoolean("closed"), rs.getBoolean("soft_closed"),
-                            total == null ? null : total.setScale(2), totals));
+                            total == null ? null : total.setScale(2), parseFigures(rs.getString("person_totals")),
+                            parseFigures(rs.getString("person_carried"))));
                 }, sheetId);
         Map<Period, StateAsOf> out = new LinkedHashMap<>();
         for (Period p : list(sheetId)) {
@@ -68,8 +83,9 @@ public class PeriodRepository {
             }
             StateAsOf state = states.get(p.id());
             if (state == null) {
-                state = logged.contains(p.id()) ? new StateAsOf(false, false, null, Map.of())
-                        : new StateAsOf(p.closed(), p.soft(), p.closedTotal(), p.closed() || p.soft() ? personTotals(p) : Map.of());
+                state = logged.contains(p.id()) ? new StateAsOf(false, false, null, Map.of(), Map.of())
+                        : new StateAsOf(p.closed(), p.soft(), p.closedTotal(), p.closed() || p.soft() ? personTotals(p) : Map.of(),
+                                p.closed() || p.soft() ? personCarried(p) : Map.of());
             }
             out.put(p, state);
         }
@@ -152,16 +168,26 @@ public class PeriodRepository {
         return n != null && n > 0;
     }
 
-    /** Fixes each person's due-total for the period, as it is closed (kept on its close's log line too). */
-    public void fixPersonTotals(Period period, Map<Long, BigDecimal> totals) {
-        StringBuilder text = new StringBuilder();
+    /** Fixes each person's due-total and carried figure for the period, as it is closed (kept on its close's log line
+     *  too). */
+    public void fixPersonTotals(Period period, Map<Long, BigDecimal> totals, Map<Long, BigDecimal> carried) {
         for (Map.Entry<Long, BigDecimal> e : totals.entrySet()) {
-            jdbc.update("INSERT INTO period_person_total (sheet_id, period_id, person_id, total) VALUES (?, ?, ?, ?)",
-                    period.sheetId(), period.id(), e.getKey(), e.getValue());
-            text.append(text.length() == 0 ? "" : ";").append(e.getKey()).append('=').append(e.getValue().toPlainString());
+            jdbc.update("INSERT INTO period_person_total (sheet_id, period_id, person_id, total, carried) VALUES (?, ?, ?, ?, ?)",
+                    period.sheetId(), period.id(), e.getKey(), e.getValue(), carried.getOrDefault(e.getKey(), BigDecimal.ZERO.setScale(2)));
         }
-        jdbc.update("UPDATE period_log SET person_totals = ? WHERE id = (SELECT MAX(id) FROM period_log WHERE sheet_id = ?"
-                + " AND period_id = ?)", text.toString(), period.sheetId(), period.id());
+        jdbc.update("UPDATE period_log SET person_totals = ?, person_carried = ? WHERE id = (SELECT MAX(id) FROM period_log"
+                + " WHERE sheet_id = ? AND period_id = ?)", figuresText(totals), figuresText(carried), period.sheetId(), period.id());
+    }
+
+    /** The fixed carried figure of each person for the closed period, by person id (one fixed before carried figures
+     *  were kept is left out). */
+    public Map<Long, BigDecimal> personCarried(Period period) {
+        Map<Long, BigDecimal> carried = new LinkedHashMap<>();
+        jdbc.query("SELECT person_id, carried FROM period_person_total WHERE sheet_id = ? AND period_id = ? AND carried IS NOT NULL"
+                + " ORDER BY person_id", (ResultSet rs) -> {
+                    carried.put(rs.getLong("person_id"), rs.getBigDecimal("carried").setScale(2));
+                }, period.sheetId(), period.id());
+        return carried;
     }
 
     /** The fixed due-total of each person for the closed period, by person id. */
