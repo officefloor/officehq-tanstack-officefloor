@@ -6,7 +6,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
 /** A claim of a person. `amount` is text with two decimals (never a float); `date` is yyyy-MM-dd; `number` is given
  *  when the claim is opened (null for a draft or a voided claim); `due` is the due fixed when it was settled (null
- *  while its due is live, worked out from its grade's current rate). */
+ *  while its due is live, worked out from its grade's current rate); `openedBy` is who opened it (null when never
+ *  opened). */
 export type Claim = {
   id: number;
   sheetId: string;
@@ -17,6 +18,7 @@ export type Claim = {
   status: ClaimStatus;
   number: number | null;
   due: string | null;
+  openedBy: string | null;
 };
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'];

@@ -22,7 +22,8 @@ function ClaimsHead() {
 type Action = 'open' | 'settle' | 'void';
 
 /** One claim: its values, status and due, with the buttons that edit it or change its status. An action
- *  the status does not allow is refused by the server and shows the claim's error. */
+ *  the status does not allow, or settling a claim the user opened, is refused by the server and shows the claim's
+ *  error. */
 function ClaimRow({
   sheetId,
   user,
@@ -58,6 +59,7 @@ function ClaimRow({
       <span data-testid="claim-note">{c.note}</span>{' '}
       <span data-testid="claim-due">{claimDue(c, rate)}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
+      <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
       <button
         type="button"
         data-testid="claim-edit"
@@ -83,7 +85,12 @@ function ClaimRow({
         Void
       </button>
       {status.isError && (
-        <span data-testid="claim-error"> A {c.status} claim cannot be changed that way.</span>
+        <span data-testid="claim-error">
+          {' '}
+          {c.status === 'OPEN' && c.openedBy === user
+            ? 'You opened this claim, so someone else must settle it.'
+            : `A ${c.status} claim cannot be changed that way.`}
+        </span>
       )}
     </li>
   );

@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by";
 
     private final JdbcTemplate jdbc;
     private final DataSource dataSource;
@@ -52,7 +52,7 @@ public class ClaimRepository {
             ps.setString(5, note);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null);
+        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
     }
 
     public void update(Claim claim) {
@@ -61,12 +61,12 @@ public class ClaimRepository {
     }
 
     /**
-     * Stores the claim's status, number and fixed due, but only while its status is still {@code from}; false when another
+     * Stores the claim's status, number, fixed due and who opened it, but only while its status is still {@code from}; false when another
      * change got there first (nothing is written).
      */
     public boolean updateStatus(Claim claim, ClaimStatus from) {
-        return jdbc.update("UPDATE claim SET status = ?, claim_number = ?, due = ? WHERE sheet_id = ? AND id = ? AND status = ?",
-                claim.status().name(), claim.number(), claim.due(), claim.sheetId(), claim.id(), from.name()) == 1;
+        return jdbc.update("UPDATE claim SET status = ?, claim_number = ?, due = ?, opened_by = ? WHERE sheet_id = ? AND id = ? AND status = ?",
+                claim.status().name(), claim.number(), claim.due(), claim.openedBy(), claim.sheetId(), claim.id(), from.name()) == 1;
     }
 
     /**
@@ -103,6 +103,7 @@ public class ClaimRepository {
         return new Claim(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
                 rs.getBigDecimal("amount").setScale(2), rs.getObject("claim_date", LocalDate.class),
                 rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
-                rs.getObject("claim_number", Long.class), due == null ? null : due.setScale(2));
+                rs.getObject("claim_number", Long.class), due == null ? null : due.setScale(2),
+                rs.getString("opened_by"));
     }
 }
