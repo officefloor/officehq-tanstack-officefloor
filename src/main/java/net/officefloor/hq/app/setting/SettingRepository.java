@@ -147,8 +147,8 @@ public class SettingRepository {
         return value == null ? terms(sheetId, date) : Integer.parseInt(value);
     }
 
-    /** The sheet's late percent in force on the date (a claim's date): what an overdue claim gains of its figure for
-     *  every full 30 days overdue. */
+    /** The sheet's late percent in force on the date (a 30-day boundary of an overdue claim): what the claim gains of its
+     *  figure for that boundary. */
     public BigDecimal latePct(String sheetId, LocalDate date) {
         String value = value(sheetId, LATE_PCT, date);
         return value == null ? DEFAULT_LATE_PCT : new BigDecimal(value);

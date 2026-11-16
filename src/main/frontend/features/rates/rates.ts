@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { counts, type Claim } from '../claims/claims';
-import { lateSteps, roundsHalfUp, type Late } from '../overdue/late';
+import { lateBoundaries, roundsHalfUp, type Late } from '../overdue/late';
 import { gradeOn, type Person } from '../people/people';
 import type { Dated } from '../settings/settings';
 
@@ -70,15 +70,17 @@ function percentOf(value: string, pct: string, times: number, halfUp: boolean): 
 
 /** A claim's due: the figure fixed when it was settled, otherwise the one its person's last statement bound it to (never while PENDING),
  *  otherwise its amount at the rate in force on its date, at least the sheet's floor in force on its date. Given the sheet's late
- *  charge, an overdue claim's figure gains the late percent of it for every full 30 days overdue (never bound by a
+ *  charge, an overdue claim's figure gains, for every full 30 days overdue, the late percent in force on that boundary
+ *  (its due-by plus 30, 60, 90 ... days) of it, each rounded like the claim and added up (never bound by a
  *  statement; frozen in when settled). Both round by the sheet's policy date (see Late). */
 export function claimDue(claim: Claim, rate: string | undefined, floor: Dated, late?: Late): string {
   if (claim.due !== null) return claim.due;
   const halfUp = roundsHalfUp(claim, late);
   const figure = claim.stated && claim.status !== 'PENDING' ? (claim.statedDue ?? 'n/a') : due(claim.amount, rate, floor(claim.date), halfUp);
   if (late === undefined || figure === 'n/a') return figure;
-  const steps = lateSteps(claim, late);
-  return steps === 0 ? figure : shown(hundredths(figure) + percentOf(figure, late.pct(claim.date), steps, halfUp));
+  const boundaries = lateBoundaries(claim, late);
+  if (boundaries.length === 0) return figure;
+  return shown(hundredths(figure) + boundaries.reduce((t, b) => t + percentOf(figure, late.pct(b), 1, halfUp), 0n));
 }
 
 /** The sum of a person's figures: the figures of their claims that count (each at the rate, of the grade in force,

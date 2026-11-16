@@ -9,8 +9,9 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 
 /**
  * The late charge on a sheet as of its today: an overdue claim (OPEN or PENDING, its due-by — fixed when it was added — before
- * today) gains the late percent in force on its date of its figure for every full 30 days it is overdue, rounded to two
- * decimals by the claim's rounding (see Rounding). The charge is never bound by a statement (it follows today); settling freezes it into the claim's due.
+ * today) gains, for every full 30 days it is overdue, the late percent in force on that boundary date (its due-by plus 30,
+ * 60, 90 ... days) of its figure, each rounded to two decimals by the claim's rounding (see Rounding), added up; a
+ * boundary whose percent is 0.00 adds nothing. The charge is never bound by a statement (it follows today); settling freezes it into the claim's due.
  */
 public record LateCharge(LocalDate today, Function<LocalDate, BigDecimal> pct, Rounding rounding) {
 
@@ -32,8 +33,12 @@ public record LateCharge(LocalDate today, Function<LocalDate, BigDecimal> pct, R
         }
         long overdue = ChronoUnit.DAYS.between(claim.dueBy(), today);
         long steps = overdue <= 0 ? 0 : overdue / DAYS;
-        return figure.multiply(pct.apply(claim.date())).multiply(BigDecimal.valueOf(steps)).movePointLeft(2)
-                .setScale(2, rounding.mode(claim));
+        BigDecimal charge = BigDecimal.ZERO.setScale(2);
+        for (long step = 1; step <= steps; step++) {
+            BigDecimal boundary = pct.apply(claim.dueBy().plusDays(step * DAYS));
+            charge = charge.add(figure.multiply(boundary).movePointLeft(2).setScale(2, rounding.mode(claim)));
+        }
+        return charge;
     }
 
     /** The figure with its charge added on top; null when it has none. */
