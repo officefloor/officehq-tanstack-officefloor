@@ -1,0 +1,379 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 6246e7d7e..9880c8498 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -29,7 +29,7 @@ type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
+ /** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, its status log (oldest first), due-by (fixed when it was added), whether it is overdue, whether it is deferred and until when, its proofs count, and the period its date falls in, with the buttons that edit it or change its status. A clerk's settle above the clerk limit makes it PENDING; a
+  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
+  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
+- *  shows the claim's error. An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one dated inside a closed period); a claim with no proofs whose due is above the proof threshold on its date cannot be settled nor approved. A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
++ *  shows the claim's error. An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one dated inside a closed period); a claim with no proofs whose due is above the proof threshold on its date cannot be settled nor approved. A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). A steward re-dates an OPEN or PENDING claim to the date typed beside Re-date (its due-by and any statement figure stay; refused, with the claim's error, for anyone else, any other claim, or a date inside a closed period or after the person's retirement). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
+  *  with the claim's error, for anyone else or any other claim). Split takes the amount typed beside it off an OPEN claim (not deferred nor dated inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Only a DRAFT can be edited: Edit on any other claim shows the claim's error instead of opening the editor. */
+ function ClaimRow({
+   sheetId,
+@@ -85,6 +85,15 @@ function ClaimRow({
+       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+     },
+   });
++  const [newDate, setNewDate] = useState('');
++  const redate = useMutation({
++    mutationFn: (date: string) =>
++      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/date`, { date, by: user }),
++    onSuccess: () => {
++      setNewDate('');
++      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
++    },
++  });
+   const proof = useMutation({
+     mutationFn: () => postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/proofs`, { by: user }),
+     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+@@ -104,6 +113,7 @@ function ClaimRow({
+     setEditRefused(false);
+     reassign.reset();
+     defer.reset();
++    redate.reset();
+     proof.reset();
+     split.reset();
+     status.reset();
+@@ -141,6 +151,7 @@ function ClaimRow({
+           status.reset();
+           reassign.reset();
+           defer.reset();
++          redate.reset();
+           proof.reset();
+           split.reset();
+           if (c.status !== 'DRAFT') {
+@@ -194,6 +205,7 @@ function ClaimRow({
+           status.reset();
+           reassign.reset();
+           defer.reset();
++          redate.reset();
+           proof.reset();
+           split.reset();
+           proof.mutate();
+@@ -209,6 +221,7 @@ function ClaimRow({
+         onChange={(e) => {
+           setDeferUntil(e.target.value);
+           defer.reset();
++          redate.reset();
+           proof.reset();
+           split.reset();
+         }}
+@@ -222,6 +235,7 @@ function ClaimRow({
+           status.reset();
+           reassign.reset();
+           defer.reset();
++          redate.reset();
+           proof.reset();
+           split.reset();
+           defer.mutate(deferUntil.trim());
+@@ -229,6 +243,33 @@ function ClaimRow({
+       >
+         Defer
+       </button>{' '}
++      <input
++        type="date"
++        data-testid="claim-date-new"
++        aria-label="New date"
++        value={newDate}
++        onChange={(e) => {
++          setNewDate(e.target.value);
++          redate.reset();
++        }}
++      />
++      <button
++        type="button"
++        data-testid="claim-redate"
++        disabled={redate.isPending}
++        onClick={() => {
++          setEditRefused(false);
++          status.reset();
++          reassign.reset();
++          defer.reset();
++          redate.reset();
++          proof.reset();
++          split.reset();
++          redate.mutate(newDate.trim());
++        }}
++      >
++        Re-date
++      </button>{' '}
+       <input
+         data-testid="claim-split-amount"
+         placeholder="Split amount"
+@@ -248,6 +289,7 @@ function ClaimRow({
+           status.reset();
+           reassign.reset();
+           defer.reset();
++          redate.reset();
+           proof.reset();
+           split.reset();
+           split.mutate(splitAmount.trim());
+@@ -282,6 +324,7 @@ function ClaimRow({
+           status.reset();
+           reassign.reset();
+           defer.reset();
++          redate.reset();
+           proof.reset();
+           split.reset();
+           reassign.mutate(Number(moveTo));
+@@ -313,6 +356,13 @@ function ClaimRow({
+           Only an open claim, not dated inside a closed period, can be deferred, and only to a date after today.
+         </span>
+       )}
++      {redate.isError && (
++        <span data-testid="claim-error">
++          {' '}
++          Only a steward re-dates a claim, and only an open or pending one not dated inside a closed period, to a date
++          neither inside a closed period nor after the person's retirement.
++        </span>
++      )}
+       {proof.isError && (
+         <span data-testid="claim-error"> A settled or void claim, or one dated inside a closed period, takes no more proofs.</span>
+       )}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyRedate.java b/src/main/java/net/officefloor/hq/app/claim/ApplyRedate.java
+new file mode 100644
+index 000000000..bb1950735
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyRedate.java
+@@ -0,0 +1,58 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.period.Period;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Re-dates an OPEN or PENDING claim, by a steward. Its due-by stays as it was fixed and a figure a statement bound it
++ * to stays bound; its period follows the new date. While per-period numbering is on (see ClaimNumbering) and the new
++ * date falls in another period's sequence than the old one, the claim takes the next number of its new sequence (its
++ * old number is never given again). Anyone but a steward, any other claim, a claim dated inside a closed period, a new
++ * date inside one, or a new date after the person's retirement, is refused.
++ */
++public class ApplyRedate {
++    public void apply(@Val Claim claim, @Val ClaimRedating request, RoleRepository roles, PersonRepository people,
++            PeriodRepository periods, SettingRepository settings, SheetRepository sheets, ClaimRepository claims,
++            Out<Claim> changed, Out<ClaimRedating> redating) throws InvalidClaimStatusException {
++        String sheet = claim.sheetId();
++        if (!RoleRepository.STEWARD.equals(roles.roleOf(sheet, request.by()))) {
++            throw new InvalidClaimStatusException("Only a steward re-dates a claim");
++        }
++        if (claim.status() != ClaimStatus.OPEN && claim.status() != ClaimStatus.PENDING) {
++            throw new InvalidClaimStatusException("A " + claim.status() + " claim cannot be re-dated");
++        }
++        if (periods.closedOn(sheet, claim.date())) {
++            throw new InvalidClaimStatusException("The claim's date is inside a closed period");
++        }
++        if (periods.closedOn(sheet, request.date())) {
++            throw new InvalidClaimStatusException("The new date is inside a closed period");
++        }
++        Person person = people.find(sheet, claim.personId());
++        if (person == null || !person.mayClaimOn(request.date())) {
++            throw new InvalidClaimStatusException("The new date is after the person's retirement");
++        }
++        Claim redated = new Claim(claim.id(), sheet, claim.personId(), claim.amount(), request.date(), claim.note(),
++                claim.status(), claim.number(), claim.due(), claim.openedBy(), claim.stated(), claim.statedDue(),
++                claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom());
++        String number = claim.number();
++        if (ClaimNumbering.perPeriod(sheet, settings, sheets)
++                && !keyOf(periods.containing(sheet, claim.date())).equals(keyOf(periods.containing(sheet, request.date())))) {
++            number = ClaimNumbering.next(redated, claims, periods, settings, sheets);
++        }
++        changed.set(new Claim(claim.id(), sheet, claim.personId(), claim.amount(), request.date(), claim.note(),
++                claim.status(), number, claim.due(), claim.openedBy(), claim.stated(), claim.statedDue(),
++                claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom()));
++        redating.set(new ClaimRedating(request.date(), request.by(), claim.date()));
++    }
++
++    private static String keyOf(Period period) {
++        return period == null ? "X" : period.name();
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java
+index d8e36ed84..7737beacd 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java
+@@ -20,12 +20,17 @@ public final class ClaimNumbering {
+     public static String next(Claim claim, ClaimRepository claims, PeriodRepository periods, SettingRepository settings,
+             SheetRepository sheets) {
+         String sheet = claim.sheetId();
+-        LocalDate from = settings.periodNumberingFrom(sheet);
+-        if (from == null || sheets.today(sheet).isBefore(from)) {
++        if (!perPeriod(sheet, settings, sheets)) {
+             return String.valueOf(claims.nextNumber(sheet));
+         }
+         Period period = periods.containing(sheet, claim.date());
+         String key = period == null ? "X" : period.name();
+         return key + "-" + claims.nextPeriodNumber(sheet, key);
+     }
++
++    /** Whether claims are numbered per period now: the period-numbering-from setting is a date on or before today. */
++    public static boolean perPeriod(String sheet, SettingRepository settings, SheetRepository sheets) {
++        LocalDate from = settings.periodNumberingFrom(sheet);
++        return from != null && !sheets.today(sheet).isBefore(from);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRedating.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRedating.java
+new file mode 100644
+index 000000000..6df223294
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRedating.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.time.LocalDate;
++
++/** A re-dating of a claim: its new date and who re-dates it; once applied, also the date it had before. */
++public record ClaimRedating(LocalDate date, String by, LocalDate old) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 24756429e..e73fc113c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -95,6 +95,14 @@ public class ClaimRepository {
+                 to, claim.sheetId(), claim.sheetId(), claim.id(), from) == 1;
+     }
+ 
++    /** Stores the claim's new date and number, but only while it is still OPEN or PENDING and dated {@code was}; false
++     *  when another change got there first (nothing is written). */
++    public boolean redate(Claim claim, LocalDate was) {
++        return jdbc.update("UPDATE claim SET claim_date = ?, claim_number = ? WHERE sheet_id = ? AND id = ? AND claim_date = ? "
++                + "AND status IN ('OPEN', 'PENDING')",
++                Date.valueOf(claim.date()), claim.number(), claim.sheetId(), claim.id(), Date.valueOf(was)) == 1;
++    }
++
+     /** Stores the date the claim is deferred until, but only while it is still OPEN; false when it no longer is
+      *  (nothing is written). */
+     public boolean defer(Claim claim) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimRedated.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimRedated.java
+new file mode 100644
+index 000000000..2de8c0771
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimRedated.java
+@@ -0,0 +1,23 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupBefore;
++import net.officefloor.plugin.variable.Val;
++
++/** Writes CLAIM_REDATED to the audit file once the new date is stored, naming the claim as every claim line does (its
++ *  new date, and number=<number> as it now is), ending old=<old date> new=<new date>. Then writes the figures the
++ *  re-dating moved (see Rollup). */
++public class RecordClaimRedated {
++    public void record(@Val Claim claim, @Val ClaimRedating redating, @Val RollupBefore before, PersonRepository people,
++            Rollup rollup, Audit audit) {
++        Person person = people.find(claim.sheetId(), claim.personId());
++        audit.record("CLAIM_REDATED sheet=" + claim.sheetId() + " by=" + redating.by() + " person=" + person.name()
++                + " amount=" + claim.amount().toPlainString() + " date=" + claim.date()
++                + (claim.number() == null ? "" : " number=" + claim.number()) + " old=" + redating.old() + " new="
++                + redating.date());
++        rollup.record(claim.sheetId(), redating.by(), before);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RedateRequest.java b/src/main/java/net/officefloor/hq/app/claim/RedateRequest.java
+new file mode 100644
+index 000000000..6d9374757
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RedateRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** Body of re-dating a claim: its new date (yyyy-MM-dd), and who re-dates it. */
++public record RedateRequest(String date, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveRedate.java b/src/main/java/net/officefloor/hq/app/claim/SaveRedate.java
+new file mode 100644
+index 000000000..b3d2a4bb2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveRedate.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/** Stores the claim's new date and number. A change another user made first (the claim re-dated or its status
++ *  changed) is refused. */
++public class SaveRedate {
++    public void save(@Val Claim claim, @Val ClaimRedating redating, ClaimRepository claims, Out<Claim> saved)
++            throws InvalidClaimStatusException {
++        if (!claims.redate(claim, redating.old())) {
++            throw new InvalidClaimStatusException("The claim was changed by someone else");
++        }
++        saved.set(claims.find(claim.sheetId(), claim.id()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateRedate.java b/src/main/java/net/officefloor/hq/app/claim/ValidateRedate.java
+new file mode 100644
+index 000000000..9a58ec388
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateRedate.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.claim;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Reads the body: a re-dating needs a real date (yyyy-MM-dd), the claim's new date. */
++public class ValidateRedate {
++    public void validate(@RequestBody RedateRequest request, Out<ClaimRedating> redating)
++            throws InvalidClaimStatusException {
++        String date = request == null || request.date() == null ? "" : request.date().trim();
++        LocalDate parsed;
++        try {
++            parsed = LocalDate.parse(date);
++        } catch (DateTimeParseException e) {
++            throw new InvalidClaimStatusException("A re-dating needs the claim's new date");
++        }
++        redating.set(new ClaimRedating(parsed, request.by() == null ? "" : request.by().trim(), null));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/date.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/date.PUT.yml
+new file mode 100644
+index 000000000..ebc86ed59
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/date.PUT.yml
+@@ -0,0 +1,31 @@
++# PUT /api/sheets/{sheetId}/claims/{claimId}/date — re-date an OPEN or PENDING claim, by a steward. Its due-by stays as
++# it was fixed, a figure a statement bound it to stays bound, and its period follows the new date: while per-period
++# numbering is on and the period changes, it takes the next number of its new period's sequence (its old number is
++# never given again). Anyone but a steward, any other claim, a claim dated inside a closed period, a new date inside
++# one, after the person's retirement or not a date, is a 409 and a claim not on the sheet a 404, neither writing
++# anything. Responds with the claim as stored.
++validate:
++  class: net.officefloor.hq.app.claim.ValidateRedate
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.ApplyRedate
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveRedate
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.RecordClaimRedated
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
