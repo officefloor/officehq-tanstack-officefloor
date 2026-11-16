@@ -2,10 +2,12 @@ package net.officefloor.hq.app;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -35,6 +37,9 @@ public class Audit {
     private static final Pattern HEAD = Pattern.compile("^(\\S+) sheet=(\\S+) by=(\\S+)");
     /** A name= or person= field: its value runs to the next field (a space then key=) or the end of the line. */
     private static final Pattern ABOUT = Pattern.compile(" (?:name|person)=(.*?)(?= [^\\s=]+=|$)");
+
+    /** Any field: its key, and its value running to the next field (a space then key=) or the end of the line. */
+    private static final Pattern FIELD = Pattern.compile(" ([^\\s=]+)=(.*?)(?= [^\\s=]+=|$)");
 
     private final Path file;
     private final ObjectProvider<DelegationRepository> delegations;
@@ -117,6 +122,53 @@ public class Audit {
             }
         }
         return false;
+    }
+
+    /** The claim's timeline: the sheet's lines about one claim exactly as the file holds them, newest first. For a claim
+     *  with a number, the lines carrying number=<it>; for one without, the lines carrying no number that name its person
+     *  (compared as names are), amount and date together. */
+    public synchronized List<String> claimLines(String sheetId, String number, String person, BigDecimal amount,
+            LocalDate date) {
+        String key = person.trim().toLowerCase(Locale.ROOT);
+        List<String> found = new ArrayList<>();
+        for (String line : lines(sheetId, "")) {
+            List<String> numbers = values(line, "number");
+            if (number != null) {
+                if (numbers.contains(number)) {
+                    found.add(line);
+                }
+                continue;
+            }
+            if (!numbers.isEmpty()) {
+                continue;
+            }
+            boolean named = values(line, "person").stream()
+                    .anyMatch((v) -> v.trim().toLowerCase(Locale.ROOT).equals(key));
+            boolean dated = values(line, "date").contains(date.toString());
+            boolean amounted = values(line, "amount").stream().anyMatch((v) -> {
+                try {
+                    return new BigDecimal(v).compareTo(amount) == 0;
+                } catch (NumberFormatException e) {
+                    return false;
+                }
+            });
+            if (named && dated && amounted) {
+                found.add(line);
+            }
+        }
+        return found;
+    }
+
+    /** The values of the line's fields named {@code key}; each runs to the next field or the end of the line. */
+    private static List<String> values(String line, String key) {
+        List<String> found = new ArrayList<>();
+        Matcher m = FIELD.matcher(line);
+        while (m.find()) {
+            if (m.group(1).equals(key)) {
+                found.add(m.group(2));
+            }
+        }
+        return found;
     }
 
     /** Remove the audit file. */

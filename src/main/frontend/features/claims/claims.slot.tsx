@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { HttpError, postJson, putJson } from '../../api/http';
+import { getJson, HttpError, postJson, putJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
@@ -48,7 +48,9 @@ type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | '
  *  viewer shows the claim's error instead and takes no lock. The row's own amount entry and Save amount change a DRAFT's amount
  *  exactly as the editor's save would (same rules, CLAIM_EDITED), keeping its date and note; a refusal shows the claim's error. Add line adds the label, quantity and unit amount typed
  *  beside it to a DRAFT's lines, shown as `<label> <qty> x <unit>`; its amount becomes their total and another amount
- *  typed in an edit is refused (the same rules as an edit, else the claim's error). */
+ *  typed in an edit is refused (the same rules as an edit, else the claim's error). Timeline lists the audit lines
+ *  about the claim, newest first, as the file holds them: those carrying its number, or for a claim with no number
+ *  those naming its person, amount and date together. */
 function ClaimRow({
   sheetId,
   user,
@@ -137,6 +139,10 @@ function ClaimRow({
   const remind = useMutation({
     mutationFn: () => postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/remind`, { by: user }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
+  // the claim's timeline: its audit lines as the file holds them, newest first, read afresh each time Timeline is pressed
+  const timeline = useMutation({
+    mutationFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/timeline`),
   });
   const [commentText, setCommentText] = useState('');
   const comment = useMutation({
@@ -706,6 +712,25 @@ function ClaimRow({
             : 'Only a draft claim whose due-by is not inside a closed period, that no one else is editing and that has no lines, can have its amount changed, to one with up to two decimals, 0.00 or more unless it corrects a settled claim.'}
         </span>
       )}
+      <button
+        type="button"
+        data-testid="claim-timeline"
+        disabled={timeline.isPending}
+        onClick={() => {
+          timeline.reset();
+          timeline.mutate();
+        }}
+      >
+        Timeline
+      </button>
+      {timeline.isError && <span data-testid="claim-timeline-error"> Could not read the claim's timeline.</span>}
+      <ol data-testid="claim-timeline-lines">
+        {(timeline.data ?? []).map((line, i) => (
+          <li key={i} data-testid="claim-timeline-line">
+            {line}
+          </li>
+        ))}
+      </ol>
       <ol data-testid="claim-log">
         {c.log.map((l, i) => (
           <li key={i} data-testid="claim-log-line">
