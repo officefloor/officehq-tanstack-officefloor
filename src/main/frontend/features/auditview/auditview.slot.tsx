@@ -4,7 +4,7 @@ import { getJson } from '../../api/http';
 import { SheetPage } from '../../slots/defs/sheetPage';
 
 /** The audit viewer: the sheet's audit lines as the file holds them, newest first, read when Show is pressed; with a
- *  name in the filter, only the lines about that person (name=<it> or person=<it>, compared as names are). */
+ *  name in the filter, only the lines about that person (name=<it> or person=<it>, compared as names are), then the matching lines of the sheet's descendants. */
 function AuditView({ sheetId }: { sheetId: string }) {
   const [filter, setFilter] = useState('');
   const show = useMutation({
