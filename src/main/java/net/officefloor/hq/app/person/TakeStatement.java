@@ -41,14 +41,15 @@ public class TakeStatement {
         List<Rate> sheetRates;
         DatedSetting floor;
         Dues.Late late;
-        BigDecimal cap;
+        DatedSetting cap;
+        Map<Long, BigDecimal> cuts;
         if (asof == null || asof.isBlank()) {
             own = claims.listOf(sheetId, person.getId());
             sheetRates = rates.list(sheetId);
             floor = settings.floor(sheetId);
             late = settings.late(sheetId, today);
             cap = settings.cap(sheetId);
-            if (cap != null) cap = Rollup.capLessCuts(cap, pools.cutTotals(sheetId).get(person.getId()));
+            cuts = pools.cutTotals(sheetId);
         } else {
             try {
                 on = LocalDate.parse(asof.trim());
@@ -67,15 +68,17 @@ public class TakeStatement {
             floor = settings.datedAsOf(sheetId, SettingRepository.FLOOR, SettingRepository.DEFAULT_FLOOR, on);
             late = settings.lateAsOf(sheetId, on);
             cap = settings.capAsOf(sheetId, on);
-            if (cap != null) cap = Rollup.capLessCuts(cap, pools.cutTotalsAsOf(sheetId, on).get(person.getId()));
+            cuts = pools.cutTotalsAsOf(sheetId, on);
             person.setStatedAsOf(on.toString());
         }
         // The figure each counting claim is bound to, by claim id.
         Map<Long, String> figures = new HashMap<>();
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean kept = false;
+        List<Claim> counting = new java.util.ArrayList<>();
         for (Claim c : own) {
             if (!then.countsLive(c)) continue;
+            counting.add(c);
             String grade = then.gradeOn(c.getDate());
             Rate rate = RateRepository.inForce(sheetRates, grade, c.getDate(), c.getId());
             String live = rate == null ? null : Dues.of(c.getAmount(), rate.pct(), late.rounding(c.getRoundDate()));
@@ -93,7 +96,10 @@ public class TakeStatement {
             claims.updateBinding(c);
         }
         boolean na = RateRepository.inForce(sheetRates, then.getGrade(), on.toString()) == null && !kept;
-        if (cap != null && total.compareTo(cap) > 0) total = cap.setScale(2);
+        // Their cap: the one in force on the date of their latest counting claim, less their cut total.
+        BigDecimal capOf = SettingRepository.capOn(cap, counting, on.toString());
+        if (capOf != null) capOf = Rollup.capLessCuts(capOf, cuts.get(person.getId()));
+        if (capOf != null && total.compareTo(capOf) > 0) total = capOf.setScale(2);
         String stated = na ? null : total.toPlainString();
         if (asof == null || asof.isBlank()) {
             // Taken now, it records the due-total their row shows: their parts of others' shared claims

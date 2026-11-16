@@ -4,7 +4,7 @@ import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
-import { isPendingLate, isReviewLate, useNoteThreshold, usePendingSla, useProofKinds, useProofThreshold, useReviewSla, type DatedOn } from '../settings/api';
+import { isPendingLate, isReviewLate, useNoteThreshold, usePendingSla, useProofKinds, useProofThreshold, usePolicyVersions, useReviewSla, type DatedOn } from '../settings/api';
 import { claimFromTemplate, listTemplates, templatesKey } from '../templates/api';
 import { addClaim, addClaimLine, claimTimeline, addProof, PROOF_KINDS, proofsOf, claimsKey, commentClaim, listVoidReasons, voidReasonsKey, deferClaim, redateClaim, setClaimDueBy, remindClaim, waiveClaim, assignReview, holdClaim, dueBy, isOverdue, lockClaim, moveClaim, reassignClaim, shareClaim, showShares, showTags, splitClaim, settlePartClaim, unlockClaim, updateClaim, type Claim, type ProofKind, type ClaimAction, type ClaimInput, type ClaimLineInput } from './api';
 import { Fig } from '../session/Fig';
@@ -614,6 +614,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
 
   const noteThreshold = useNoteThreshold(sheetId);
   const reviewSla = useReviewSla(sheetId);
+  const policy = usePolicyVersions(sheetId);
   const pendingSla = usePendingSla(sheetId);
   // Whether a claim needs a note before it is opened: an empty one, and its due above the threshold.
   const needsNote = (c: Claim) => {
@@ -880,6 +881,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
               <td data-testid="claim-corrects">{c.corrects ?? ''}</td>
               <td data-testid="claim-ref">{c.ref ?? ''}</td>
               <td data-testid="claim-tags">{showTags(c.tags)}</td>
+              <td>Policy <span data-testid="claim-policy">{policy.on(c.date)}</span></td>
               <td data-testid="claim-due"><Fig>{showDue(claimDue(c, rates, gradeOn, floor, charges))}</Fig></td>
               <td>
                 Due by <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}

@@ -97,8 +97,9 @@ public class SettleClaim {
         String due = asOfDue != null ? asOfDue.get() : dueOf(claim, person, rates, settings, sheets);
         if (judged) requireProof(claim, person, due, settings);
         if (due != null && Role.CLERK.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
+            // The clerk limit in force on the claim's own date.
             BigDecimal limit = settings.clerkLimit(claim.getSheetId(),
-                    person == null ? null : person.gradeOn(sheets.today(claim.getSheetId()).toString()));
+                    person == null ? null : person.gradeOn(claim.getDate()), claim.getDate());
             if (limit != null && new BigDecimal(due).compareTo(limit) > 0) {
                 claim.setStatus(ClaimStatus.OPEN.moveTo(ClaimStatus.PENDING).name());
                 return;

@@ -22,11 +22,11 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class SettingRepository {
 
-    /** The clerk limit: the largest due a clerk may settle (two decimals; blank: no limit). */
+    /** The clerk limit: the largest due a clerk may settle, the one in force on the claim's date (two decimals; blank: no limit). */
     public static final String CLERK_LIMIT = "clerk-limit";
 
     /** A grade's clerk limit ({@code clerk-limit-<grade>}, dated; two decimals; blank: none): a claim
-     *  whose person's grade on the sheet's today has one in force then goes by it instead of the sheet's. */
+     *  whose person's grade on its date has one in force on that date goes by it instead of the sheet's. */
     public static final String CLERK_LIMIT_OF_GRADE = "clerk-limit-";
 
     /** The proof threshold: a claim whose due is above the one in force on its date cannot be settled
@@ -50,7 +50,8 @@ public class SettingRepository {
      *  when opened instead of OPEN (two decimals; blank: none). */
     public static final String REVIEW_THRESHOLD = "review-threshold";
 
-    /** The cap: the most a person's due-total plus their cut total can be (two decimals; blank: no cap). */
+    /** The cap: the most a person's due-total plus their cut total can be, the one in force on the date of their
+     *  latest claim that counts (two decimals; blank: no cap). */
     public static final String CAP = "cap";
 
     /** The pot: the sum a balanced pool's members cut between them (two decimals; blank: none; not dated). */
@@ -151,6 +152,9 @@ public class SettingRepository {
     /** The floor until it is first set. */
     public static final String DEFAULT_FLOOR = "1.00";
 
+    /** The policy settings: versioned together, every change to one of them a new policy version. */
+    public static final List<String> POLICY_KEYS = List.of(ROUNDING, FLOOR, CAP, TERMS, LATE_PCT, CLERK_LIMIT);
+
     /** Whether a key is dated: every key that carries a figure (the policy date, the period
      *  numbering date, the grace days, the pot, the proof kinds, the fiscal year start month and the permission matrix are not). */
     public static boolean isDated(String key) {
@@ -196,10 +200,9 @@ public class SettingRepository {
                 + "AND (h2.on_date IS NULL OR h2.on_date <= ?))", (rs, n) -> row(rs), sheetId, key, asOf), start);
     }
 
-    /** The sheet's cap in force on the date as it stood then; null when there was none. */
-    public BigDecimal capAsOf(String sheetId, LocalDate asOf) {
-        String value = datedAsOf(sheetId, CAP, null, asOf).on(asOf.toString());
-        return value == null ? null : new BigDecimal(value);
+    /** The sheet's cap by date as it stood at the end of the date. */
+    public DatedSetting capAsOf(String sheetId, LocalDate asOf) {
+        return datedAsOf(sheetId, CAP, null, asOf);
     }
 
     /** What a claim's late charge and rounding went by at the end of the date, the date standing in
@@ -253,13 +256,12 @@ public class SettingRepository {
         return value == null ? null : new BigDecimal(value);
     }
 
-    /** The clerk limit of a grade in force on the sheet's today: its own when set, else the sheet's
-     *  (a null grade: the sheet's); null when there is none. */
-    public BigDecimal clerkLimit(String sheetId, String grade) {
-        String today = sheets.today(sheetId).toString();
-        String value = grade == null ? null : dated(sheetId, CLERK_LIMIT_OF_GRADE + grade, null).on(today);
+    /** The clerk limit of a grade in force on a date (yyyy-MM-dd; a claim's: its own date): its own when
+     *  set, else the sheet's (a null grade: the sheet's); null when there is none. */
+    public BigDecimal clerkLimit(String sheetId, String grade, String date) {
+        String value = grade == null ? null : dated(sheetId, CLERK_LIMIT_OF_GRADE + grade, null).on(date);
         if (value == null) {
-            value = dated(sheetId, CLERK_LIMIT, null).on(today);
+            value = dated(sheetId, CLERK_LIMIT, null).on(date);
         }
         return value == null ? null : new BigDecimal(value);
     }
@@ -292,10 +294,31 @@ public class SettingRepository {
         return value == null ? null : new BigDecimal(value);
     }
 
-    /** The sheet's cap in force on its today; null when there is none. */
-    public BigDecimal cap(String sheetId) {
-        String value = dated(sheetId, CAP, null).on(sheets.today(sheetId).toString());
+    /** The sheet's cap by date: a person goes by the one in force on the date of their latest claim
+     *  that counts (see {@link #capOn}). */
+    public DatedSetting cap(String sheetId) {
+        return dated(sheetId, CAP, null);
+    }
+
+    /** The cap of a person whose counting claims are {@code counting}, from the sheet's cap by date: the
+     *  one in force on the latest of their dates (none: on {@code today}); null when there is none. */
+    public static BigDecimal capOn(DatedSetting cap, java.util.Collection<Claim> counting, String today) {
+        String latest = null;
+        for (Claim c : counting) {
+            if (latest == null || c.getDate().compareTo(latest) > 0) latest = c.getDate();
+        }
+        String value = cap.on(latest == null ? today : latest);
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The sheet's policy versions, oldest first. */
+    public List<PolicyVersion> policyVersions(String sheetId) {
+        return jdbc.query("SELECT sheet_id, version, setting, from_date FROM policy_version WHERE sheet_id = ? "
+                + "ORDER BY version", (rs, n) -> {
+                    LocalDate from = rs.getObject("from_date", LocalDate.class);
+                    return new PolicyVersion(rs.getString("sheet_id"), rs.getInt("version"), rs.getString("setting"),
+                            from == null ? null : from.toString());
+                }, sheetId);
     }
 
     /** The sheet's floor (two decimals) by date: a claim goes by the one in force on its date. */
@@ -372,7 +395,8 @@ public class SettingRepository {
     }
 
     /** Record the setting's value (null: blank) from the from-date (null: from the beginning of time,
-     *  for an undated key), replacing the one recorded from the same from-date. */
+     *  for an undated key), replacing the one recorded from the same from-date; a policy setting's change
+     *  is the policy's next version, in force from the same from-date. */
     public Setting set(String sheetId, String key, String value, LocalDate from, String user) {
         jdbc.update("DELETE FROM sheet_setting WHERE sheet_id = ? AND setting = ? AND from_key = ?",
                 sheetId, key, from == null ? LocalDate.of(1, 1, 1) : from);
@@ -380,6 +404,11 @@ public class SettingRepository {
                 + "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)", sheetId, key, value, from, user);
         jdbc.update("INSERT INTO setting_history (sheet_id, setting, val, from_date, on_date) "
                 + "VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", sheetId, key, value, from, sheetId);
+        if (POLICY_KEYS.contains(key)) {
+            jdbc.update("INSERT INTO policy_version (sheet_id, version, setting, from_date) VALUES (?, "
+                    + "(SELECT COALESCE(MAX(version), 0) + 1 FROM policy_version WHERE sheet_id = ?), ?, ?)",
+                    sheetId, sheetId, key, from);
+        }
         return new Setting(sheetId, key, value == null ? "" : value, from == null ? null : from.toString());
     }
 }

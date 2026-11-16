@@ -4,7 +4,7 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { useSheetToday } from '../sheet/api';
 import { poolsKey } from '../pools/api';
 import { ratesKey } from '../rates/api';
-import { changeSetting, listSettings, PERMISSION_STANDING, settingOn, settingsKey, SETTING_KEYS, UNDATED_KEYS } from './api';
+import { changeSetting, listSettings, PERMISSION_STANDING, usePolicyVersions, settingOn, settingsKey, SETTING_KEYS, UNDATED_KEYS } from './api';
 import { Fig } from '../session/Fig';
 
 /** The sheet's settings: each one's value in force on the sheet's today and a form that changes them.
@@ -17,6 +17,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
   const current = (key: string) => settingOn(settings.data, key, today) ?? '';
   const [form, setForm] = useState<Record<string, string>>({});
   const [froms, setFroms] = useState<Record<string, string>>({});
+  const policy = usePolicyVersions(sheetId);
 
   const save = useMutation({
     mutationFn: async ({ values, from }: { values: Record<string, string>; from: Record<string, string> }) => {
@@ -48,6 +49,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
   return (
     <section>
       <h3>Settings</h3>
+      <p>Policy version <span data-testid="policy-version">{policy.current}</span></p>
       <form
         onSubmit={(e) => {
           e.preventDefault();

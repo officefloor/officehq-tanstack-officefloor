@@ -49,8 +49,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             RateRepository rates, SheetRepository sheets, SettingRepository settings, PoolRepository pools) {
         List<Rate> sheetRates = rates.list(sheetId);
         DatedSetting floor = settings.floor(sheetId);
-        BigDecimal cap = settings.cap(sheetId);
-        Map<Long, BigDecimal> cuts = cap == null ? Map.of() : pools.cutTotals(sheetId);
+        DatedSetting cap = settings.cap(sheetId);
+        Map<Long, BigDecimal> cuts = cap.values().isEmpty() ? Map.of() : pools.cutTotals(sheetId);
         LocalDate todayDate = sheets.today(sheetId);
         String today = todayDate.toString();
         Dues.Late late = settings.late(sheetId, todayDate);
@@ -68,6 +68,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
         Map<Long, BigDecimal[]> own = new LinkedHashMap<>();
         Map<Long, int[]> overdueCounts = new java.util.HashMap<>();
         Map<Long, Boolean> keeps = new java.util.HashMap<>();
+        // Each person's counting claims: their cap is the one in force on the latest one's date.
+        Map<Long, List<Claim>> counting = new java.util.HashMap<>();
         for (Person p : listed) {
             BigDecimal claimed = zero();
             BigDecimal due = zero();
@@ -79,6 +81,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 if (c.getPersonId() != p.getId()) continue;
                 if (!corrects(c) && p.countsClaimed(c)) claimed = claimed.add(new BigDecimal(c.getAmount()));
                 if (!p.countsLive(c)) continue;
+                counting.computeIfAbsent(p.getId(), (id) -> new ArrayList<>()).add(c);
                 String grade = p.gradeOn(c.getDate());
                 Rate rate = RateRepository.inForce(sheetRates, grade, c.getDate(), c.getId());
                 String pct = rate == null ? null : rate.pct();
@@ -127,8 +130,9 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             BigDecimal settled = f[3].add(heldSettled.getOrDefault(p.getId(), zero()));
             boolean kept = keeps.get(p.getId()) || held != null;
             boolean na = rateOn(sheetRates, p.getGrade(), today) == null && !kept;
-            if (cap != null) {
-                BigDecimal room = capLessCuts(cap, cuts.get(p.getId()));
+            BigDecimal capOf = SettingRepository.capOn(cap, counting.getOrDefault(p.getId(), List.of()), today);
+            if (capOf != null) {
+                BigDecimal room = capLessCuts(capOf, cuts.get(p.getId()));
                 if (due.compareTo(room) > 0) due = room;
             }
             figures.put(p.getId(), new Figures(p.getName(), claimed.toPlainString(),

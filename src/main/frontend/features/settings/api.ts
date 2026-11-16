@@ -64,7 +64,7 @@ export type Role = { sheetId: string; user: string; role: string };
  *  The maximum of open claims per person (a whole number; blank means none; not dated): opening a claim is
  *  refused when its person already has that many OPEN or PENDING claims.
  *  A grade's clerk limit (clerk-limit-<grade>, two decimals; blank means none; dated): a claim whose person's
- *  grade on the sheet's today has one in force then goes by it instead of the sheet's clerk limit. */
+ *  grade on the claim's date has one in force then goes by it instead of the sheet's clerk limit (in force on the claim's date). */
 export const SETTING_KEYS = ['clerk-limit', 'clerk-limit-A', 'clerk-limit-B', 'clerk-limit-C', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'rounding',
   'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'pending-sla', 'max-open', 'score-mid', 'score-high', 'score-log', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'perm-today', 'parent', 'fiscal-start-month', 'default-grade'] as const;
 
@@ -233,10 +233,34 @@ export function isPendingLate(c: Pick<Claim, 'status' | 'log'>, today: string, s
   return until < today;
 }
 
-/** The sheet's cap in force on its today: the most a person's due-total can be; null when there is none. */
-export function useCap(sheetId: string, today: string, live = false): string | null {
+/** The sheet's cap by date: the most a person's due-total can be, the one in force on the date of their
+ *  latest claim that counts (null: none in force on that date). */
+export function useCap(sheetId: string, live = false): (date: string) => string | null {
   const settings = useQuery({ queryKey: liveKey(settingsKey(sheetId), live), queryFn: () => listSettings(sheetId, live) });
-  return settingOn(settings.data, 'cap', today) || null;
+  return (date) => settingOn(settings.data, 'cap', date) || null;
+}
+
+/** The policy settings (the rounding mode, the floor, the cap, the terms, the late percent and the clerk
+ *  limit) are versioned together: every change to one of them is a new policy version, numbered from 1 in
+ *  the order made, in force from its from-date (null: always). */
+export type PolicyVersion = { sheetId: string; version: number; key: string; from: string | null };
+
+export const policyVersionsKey = (sheetId: string) => [...settingsKey(sheetId), 'policy-versions'] as const;
+
+/** The sheet's policy versions, oldest first. */
+export function listPolicyVersions(sheetId: string, live = false): Promise<PolicyVersion[]> {
+  return getJson<PolicyVersion[]>(`${base(sheetId)}/policy-versions`, live);
+}
+
+/** The sheet's current policy version (0: none yet) and the version in force on a date (yyyy-MM-dd): the
+ *  number of versions whose from-date is on or before it (one with no from-date counts always). */
+export function usePolicyVersions(sheetId: string): { current: number; on: (date: string) => number } {
+  const versions = useQuery({ queryKey: policyVersionsKey(sheetId), queryFn: () => listPolicyVersions(sheetId) });
+  const all = versions.data ?? [];
+  return {
+    current: all.reduce((n, v) => Math.max(n, v.version), 0),
+    on: (date) => all.filter((v) => v.from === null || v.from <= date).length,
+  };
 }
 
 /** What a claim's late charge and rounding go by: the sheet's late percent by date (a late charge goes
