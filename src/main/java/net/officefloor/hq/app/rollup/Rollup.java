@@ -26,7 +26,9 @@ import net.officefloor.hq.app.sheet.SheetRepository;
  *  sheet's claimed-total, due-total and overdue-total (these two leave out the single highest and
  *  lowest person's figure when three or more people have one), with the sheet's alert threshold
  *  (null: off). A shared claim's due counts toward each holder's due-total (and settled figures) by their part
- *  (see {@link ClaimShare#partOf}), its own person's by the rest. */
+ *  (see {@link ClaimShare#partOf(String, String, String, java.math.RoundingMode)}: by the rate of the holder's own
+ *  grade in force on the claim's date; a settled claim's parts stay frozen as its fixed due times their share),
+ *  its own person's by the rest. */
 public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueTotal, String overdueTotal,
         BigDecimal alertThreshold) {
 
@@ -58,6 +60,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
         List<BigDecimal> dues = new ArrayList<>();
         List<BigDecimal> overdues = new ArrayList<>();
         List<Person> listed = people.list(sheetId);
+        Map<Long, Person> byId = new java.util.HashMap<>();
+        for (Person p : listed) byId.put(p.getId(), p);
         // The parts of shared claims' dues each holder holds (and of those, of SETTLED claims, corrections left out).
         Map<Long, BigDecimal> heldDue = new java.util.HashMap<>();
         Map<Long, BigDecimal> heldSettled = new java.util.HashMap<>();
@@ -82,15 +86,26 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 kept |= c.getSettledDue() != null || c.isBound()
                         || (pct != null && (!grade.equals(p.getGrade()) || c.getDate().compareTo(today) <= 0));
                 boolean settles = !corrects(c) && ClaimStatus.SETTLED.name().equals(c.getStatus());
-                if (d != null) {
-                    BigDecimal full = new BigDecimal(d);
-                    BigDecimal net = full;
-                    for (ClaimShare share : c.getShares()) {
-                        BigDecimal part = share.partOf(full);
-                        net = net.subtract(part);
-                        heldDue.merge(share.personId(), part, BigDecimal::add);
-                        if (settles) heldSettled.merge(share.personId(), part, BigDecimal::add);
+                BigDecimal net = d == null ? null : new BigDecimal(d);
+                for (ClaimShare share : c.getShares()) {
+                    BigDecimal part;
+                    if (c.getSettledDue() != null) {
+                        // A settled claim keeps its parts as frozen with its due.
+                        part = share.partOf(new BigDecimal(c.getSettledDue()));
+                    } else {
+                        Person holder = byId.get(share.personId());
+                        Rate held = holder == null ? null : RateRepository.inForce(sheetRates,
+                                holder.gradeOn(c.getDate()), c.getDate(), c.getId());
+                        part = ClaimShare.partOf(c.getAmount(), share.share(), held == null ? null : held.pct(),
+                                late.rounding(c.getRoundDate()));
+                        // A holder whose grade has no rate holds 0.00, which leaves them n/a.
+                        if (held == null) continue;
                     }
+                    if (net != null) net = net.subtract(part);
+                    heldDue.merge(share.personId(), part, BigDecimal::add);
+                    if (settles) heldSettled.merge(share.personId(), part, BigDecimal::add);
+                }
+                if (net != null) {
                     due = due.add(net);
                     if (settles) settled = settled.add(net);
                 }
