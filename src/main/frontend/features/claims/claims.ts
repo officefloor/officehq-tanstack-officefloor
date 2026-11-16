@@ -51,7 +51,15 @@ export type Claim = {
   ref: string | null;
   /** Its tags: each trimmed and in lower case, no repeats, sorted; empty when none. */
   tags: string[];
+  /** Its comments, in the order written. */
+  comments: ClaimComment[];
 };
+
+/** A comment on a claim: who wrote it, the sheet's today (yyyy-MM-dd) when it was written, and its text. */
+export type ClaimComment = { by: string; date: string; text: string };
+
+/** A comment as shown: `<user> on <date>: <text>`. */
+export const commentLine = (m: ClaimComment) => `${m.by} on ${m.date}: ${m.text}`;
 
 /** One line of a claim's status log: the status it took, who made the change, the sheet's today (yyyy-MM-dd) when
  *  it was made, and the claim's due as shown at that moment (two decimals, or n/a). */

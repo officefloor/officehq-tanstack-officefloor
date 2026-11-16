@@ -213,6 +213,31 @@ public class ClaimRepository {
         }
     }
 
+    /** Writes a comment on the claim: who wrote it, its date (the sheet's today) and its text. */
+    public void comment(Claim claim, ClaimComment comment) {
+        jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, written_by, written_on, text) VALUES (?, ?, ?, ?, ?)",
+                claim.sheetId(), claim.id(), comment.by(), Date.valueOf(comment.date()), comment.text());
+    }
+
+    /** The claim's comments, in the order written. */
+    public List<ClaimComment> comments(String sheetId, long id) {
+        return jdbc.query("SELECT written_by, written_on, text FROM claim_comment WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
+                (rs, n) -> new ClaimComment(rs.getString("written_by"), rs.getObject("written_on", LocalDate.class),
+                        rs.getString("text")), sheetId, id);
+    }
+
+    /** The comments of each commented claim of the sheet, in the order written, written on or before {@code asOf}
+     *  (null: any day), by claim id. */
+    public Map<Long, List<ClaimComment>> comments(String sheetId, LocalDate asOf) {
+        Map<Long, List<ClaimComment>> out = new HashMap<>();
+        jdbc.query("SELECT claim_id, written_by, written_on, text FROM claim_comment WHERE sheet_id = ? "
+                + "AND (CAST(? AS DATE) IS NULL OR written_on <= ?) ORDER BY id",
+                (rs) -> { out.computeIfAbsent(rs.getLong("claim_id"), (k) -> new java.util.ArrayList<>()).add(new ClaimComment(
+                        rs.getString("written_by"), rs.getObject("written_on", LocalDate.class), rs.getString("text"))); },
+                sheetId, asOf == null ? null : Date.valueOf(asOf), asOf == null ? null : Date.valueOf(asOf));
+        return out;
+    }
+
     /** The last day a reminder was written for the claim; null when none. */
     public LocalDate remindedOn(String sheetId, long id) {
         return jdbc.queryForObject("SELECT MAX(reminded_on) FROM claim_reminder WHERE sheet_id = ? AND claim_id = ?",

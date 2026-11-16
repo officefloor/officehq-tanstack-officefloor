@@ -114,6 +114,8 @@ public class PersonRepository {
     /** Stores the person as its new version, with its grades, only while the stored one is still {@code fromVersion}:
      *  a save that lands in between refuses this one. */
     public void update(Person person, long fromVersion) throws DuplicatePersonNameException, StalePersonException {
+        List<Integer> termsWas = jdbc.query("SELECT terms FROM person WHERE sheet_id = ? AND id = ?",
+                (rs, n) -> rs.getObject(1, Integer.class), person.sheetId(), person.id());
         int n;
         try {
             n = jdbc.update("UPDATE person SET name = ?, version = ?, terms = ? WHERE sheet_id = ? AND id = ? AND version = ?",
@@ -130,6 +132,28 @@ public class PersonRepository {
                     person.sheetId(), person.id(), g.from() == null ? null : Date.valueOf(g.from()), g.grade());
         }
         logGrades(person.sheetId(), person.id(), person.grades());
+        Integer was = termsWas.isEmpty() ? null : termsWas.get(0);
+        if (!java.util.Objects.equals(was, person.terms())) {
+            jdbc.update("INSERT INTO person_terms_log (sheet_id, person_id, terms_was, terms, made_on) VALUES (?, ?, ?, ?, ?)",
+                    person.sheetId(), person.id(), was, person.terms(), Date.valueOf(sheets.today(person.sheetId())));
+        }
+    }
+
+    /** The person's own terms at the end of the date: those set by the last change made on or before it, else those
+     *  before the first change made after it (none logged: the terms stored now). */
+    private Integer termsAsOf(Person person, LocalDate date) {
+        Integer[] terms = { person.terms() };
+        boolean[] found = { false };
+        jdbc.query("SELECT terms_was, terms, made_on FROM person_terms_log WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                (ResultSet rs) -> {
+                    if (found[0]) {
+                        return;
+                    }
+                    boolean after = rs.getObject("made_on", LocalDate.class).isAfter(date);
+                    terms[0] = rs.getObject(after ? "terms_was" : "terms", Integer.class);
+                    found[0] = after;
+                }, person.sheetId(), person.id());
+        return terms[0];
     }
 
     /** Logs the person's grades as stored now, with the sheet's today. */
@@ -174,7 +198,7 @@ public class PersonRepository {
                 + " AND made_on <= ? ORDER BY id DESC LIMIT 1", (rs, n) -> rs.getObject(1, LocalDate.class), sheetId,
                 person.id(), Date.valueOf(date));
         return new Person(person.id(), sheetId, person.name(), Person.gradeOn(grades, date), person.version(),
-                retired.isEmpty() ? null : retired.get(0).toString(), List.copyOf(grades), holds, person.terms());
+                retired.isEmpty() ? null : retired.get(0).toString(), List.copyOf(grades), holds, termsAsOf(person, date));
     }
 
     /** The sheet's people as they stood at the end of the date (see #asOf), in the order added: one added while the

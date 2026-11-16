@@ -3,6 +3,8 @@ import { SignIn } from '../features/session/SignIn';
 import { SheetPicker } from '../features/session/SheetPicker';
 import { useSheet, useSheetId, useUser } from '../features/session/session';
 import { SheetPage } from '../slots/defs/sheetPage';
+import { usePeople } from '../features/people/people';
+import { useClaims } from '../features/claims/claims';
 
 // The one screen. Sign in first; then choose a sheet, whose content is the sheet.page region.
 export const Route = createFileRoute('/')({
@@ -25,7 +27,7 @@ function Home() {
       {sheet.data ? (
         <section data-testid="sheet">
           <h2>
-            Sheet <span data-testid="sheet-current-id">{sheet.data.id}</span>
+            Sheet <CurrentId sheetId={sheet.data.id} />
           </h2>
           <SheetPage.Slot sheetId={sheet.data.id} user={user} />
         </section>
@@ -34,4 +36,12 @@ function Home() {
       )}
     </>
   );
+}
+
+/** The loaded sheet's id, shown only once its people and claims are in, so its rows are on screen with it. */
+function CurrentId({ sheetId }: { sheetId: string }) {
+  const people = usePeople(sheetId);
+  const claims = useClaims(sheetId);
+  if (people.isPending || claims.isPending) return null;
+  return <span data-testid="sheet-current-id">{sheetId}</span>;
 }

@@ -10,7 +10,7 @@ import { useRoles } from '../roles/roles';
 import { claimDue, rateFor, useRates } from '../rates/rates';
 import { dueBy, isOverdue } from '../overdue/overdue';
 import { useFloor, useLate, type Dated } from '../settings/settings';
-import { claimsKey, live, logLine, total, useClaims, type Claim } from './claims';
+import { claimsKey, commentLine, live, logLine, total, useClaims, type Claim } from './claims';
 import { useSelectedClaims } from './selection';
 import { useSheetToday } from '../session/session';
 import { useVoidReasons } from '../voidreasons/voidreasons';
@@ -30,6 +30,7 @@ function ClaimsHead() {
 const DRAFT_ONLY = 'Only a draft claim whose due-by is not inside a closed period can be edited; void it and add a new one instead.';
 const VIEWER_REFUSED = 'A viewer cannot change the sheet.';
 const LOCK_REFUSED = 'Someone else is editing this claim; it can be edited once they save or cancel.';
+const EMPTY_COMMENT = 'A comment cannot be empty.';
 const EDIT_REFUSED = 'This claim cannot be edited: only a draft whose due-by is not inside a closed period, and not while someone else is editing it.';
 
 type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
@@ -38,7 +39,7 @@ type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
  *  shows the claim's error. An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one whose due-by is inside a closed period); a claim with no proofs whose due is above the proof threshold on its date cannot be settled nor approved; a claim with an empty note whose due is above the note threshold on its date cannot be opened (alone or in bulk). While the sheet has void reasons, Void needs one chosen beside it (refused, with the claim's error, without one). A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). A steward re-dates an OPEN or PENDING claim to the date typed beside Re-date (its due-by and any statement figure stay; refused, with the claim's error, for anyone else, any other claim, or a date after the person's retirement). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
- *  with the claim's error, for anyone else or any other claim). Remind writes a reminder for an OPEN or PENDING claim, once per sheet-today, which becomes its reminded date (refused, with the claim's error, for any other claim or a second reminder that day). Split takes the amount typed beside it off an OPEN claim (not deferred, nor with its due-by inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Only a DRAFT whose due-by is not inside a closed period can be edited: Edit opens the editor and locks the claim for the user until it
+ *  with the claim's error, for anyone else or any other claim). Remind writes a reminder for an OPEN or PENDING claim, once per sheet-today, which becomes its reminded date (refused, with the claim's error, for any other claim or a second reminder that day). Comment adds the text typed beside it to the claim's comments, shown in the order written as `<user> on <date>: <text>` (an empty one is refused with the claim's error). Split takes the amount typed beside it off an OPEN claim (not deferred, nor with its due-by inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Only a DRAFT whose due-by is not inside a closed period can be edited: Edit opens the editor and locks the claim for the user until it
  *  is saved or cancelled (Cancel) or the sheet's today changes; Edit on any other claim, on a claim another user holds, or by a
  *  viewer shows the claim's error instead and takes no lock. The row's own amount entry and Save amount change a DRAFT's amount
  *  exactly as the editor's save would (same rules, CLAIM_EDITED), keeping its date and note; a refusal shows the claim's error. */
@@ -126,6 +127,15 @@ function ClaimRow({
     mutationFn: () => postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/remind`, { by: user }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
+  const [commentText, setCommentText] = useState('');
+  const comment = useMutation({
+    mutationFn: (text: string) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/comments`, { text, by: user }),
+    onSuccess: () => {
+      setCommentText('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
   const [inlineAmount, setInlineAmount] = useState('');
   // the row's own amount entry saves through the claim form's edit, keeping the claim's date, note, corrects, reference and tags
   const inline = useMutation({
@@ -163,6 +173,7 @@ function ClaimRow({
     proof.reset();
     split.reset();
     remind.reset();
+    comment.reset();
     inline.reset();
     status.reset();
     status.mutate(action);
@@ -207,6 +218,7 @@ function ClaimRow({
           proof.reset();
           split.reset();
           remind.reset();
+          comment.reset();
           inline.reset();
           lock.reset();
           setEditRefused(null);
@@ -258,6 +270,7 @@ function ClaimRow({
           proof.reset();
           split.reset();
           remind.reset();
+          comment.reset();
           inline.reset();
           inline.mutate(inlineAmount);
         }}
@@ -321,6 +334,7 @@ function ClaimRow({
           proof.reset();
           split.reset();
           remind.reset();
+          comment.reset();
           inline.reset();
           proof.mutate();
         }}
@@ -339,6 +353,7 @@ function ClaimRow({
           proof.reset();
           split.reset();
           remind.reset();
+          comment.reset();
           inline.reset();
         }}
       />
@@ -356,6 +371,7 @@ function ClaimRow({
           proof.reset();
           split.reset();
           remind.reset();
+          comment.reset();
           inline.reset();
           defer.mutate(deferUntil.trim());
         }}
@@ -386,6 +402,7 @@ function ClaimRow({
           proof.reset();
           split.reset();
           remind.reset();
+          comment.reset();
           inline.reset();
           redate.mutate(newDate.trim());
         }}
@@ -401,6 +418,7 @@ function ClaimRow({
           setSplitAmount(e.target.value);
           split.reset();
           remind.reset();
+          comment.reset();
           inline.reset();
         }}
       />
@@ -418,6 +436,7 @@ function ClaimRow({
           proof.reset();
           split.reset();
           remind.reset();
+          comment.reset();
           inline.reset();
           split.mutate(splitAmount.trim());
         }}
@@ -456,6 +475,7 @@ function ClaimRow({
           proof.reset();
           split.reset();
           remind.reset();
+          comment.reset();
           inline.reset();
           reassign.mutate(Number(moveTo));
         }}
@@ -476,11 +496,47 @@ function ClaimRow({
           proof.reset();
           split.reset();
           remind.reset();
+          comment.reset();
           inline.reset();
           remind.mutate();
         }}
       >
         Remind
+      </button>{' '}
+      <input
+        data-testid="claim-comment-text"
+        placeholder="Comment"
+        value={commentText}
+        onChange={(e) => {
+          setCommentText(e.target.value);
+          comment.reset();
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-comment-add"
+        disabled={comment.isPending}
+        onClick={() => {
+          setEditRefused(null);
+          lock.reset();
+          status.reset();
+          reassign.reset();
+          defer.reset();
+          redate.reset();
+          proof.reset();
+          split.reset();
+          remind.reset();
+          comment.reset();
+          inline.reset();
+          // an empty comment is refused at once; else the server decides
+          if (commentText.trim() === '') {
+            setEditRefused(EMPTY_COMMENT);
+            return;
+          }
+          comment.mutate(commentText);
+        }}
+      >
+        Comment
       </button>
       {editRefused !== null && <span data-testid="claim-error"> {editRefused}</span>}
       {status.isError && (
@@ -527,6 +583,12 @@ function ClaimRow({
           Only an open or pending claim can be reminded, and only once a day.
         </span>
       )}
+      {comment.isError && (
+        <span data-testid="claim-error">
+          {' '}
+          {comment.error instanceof HttpError && comment.error.status === 403 ? VIEWER_REFUSED : EMPTY_COMMENT}
+        </span>
+      )}
       {inline.isError && (
         <span data-testid="claim-error">
           {' '}
@@ -539,6 +601,13 @@ function ClaimRow({
         {c.log.map((l, i) => (
           <li key={i} data-testid="claim-log-line">
             {logLine(l)}
+          </li>
+        ))}
+      </ol>
+      <ol data-testid="claim-comments">
+        {c.comments.map((m, i) => (
+          <li key={i} data-testid="claim-comments-line">
+            {commentLine(m)}
           </li>
         ))}
       </ol>

@@ -13,11 +13,17 @@ import java.util.List;
  *  (yyyy-MM-dd) the date it was last deferred until (shown even once that date has passed), null when never deferred; proofs is its proofs count; splitFrom is the number of the claim it was split from (null for any other claim); log is its status log, oldest first: each status it has had, who made the change, the sheet's
  *  today (yyyy-MM-dd) then, and its due as shown at that moment (two decimals, or n/a); lockedBy is who has its editor
  *  open (null when no one does); lateEntry is whether it was added while its period was soft-closed; reminded (yyyy-MM-dd) is the last day a
- *  reminder was written for it, null when none; ref is its external reference, null when none; tags are its tags, sorted (empty when none). */
+ *  reminder was written for it, null when none; ref is its external reference, null when none; tags are its tags, sorted (empty when none); comments are its comments in the order written, each with who wrote it and
+ *  the sheet's today (yyyy-MM-dd) then. */
 public record ClaimResponse(long id, String sheetId, long personId, String amount, String date, String note,
         String status, String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
         String roundsOn, String dueBy, boolean deferred, String deferredUntil, int proofs, String splitFrom, List<LogLine> log,
-        String lockedBy, boolean lateEntry, String reminded, String ref, List<String> tags) {
+        String lockedBy, boolean lateEntry, String reminded, String ref, List<String> tags,
+        List<Comment> comments) {
+
+    /** One comment on a claim as sent to the screen. */
+    public record Comment(String by, String date, String text) {
+    }
 
     /** One line of a claim's status log as sent to the screen. */
     public record LogLine(String status, String by, String date, String due) {
@@ -29,11 +35,12 @@ public record ClaimResponse(long id, String sheetId, long personId, String amoun
 
     public static ClaimResponse from(Claim claim, ClaimRepository claims, List<ClaimLogLine> log, LocalDate today) {
         return from(claim, claims, log, today, claims.lockedBy(claim.sheetId(), claim.id()),
-                claims.lateEntry(claim.sheetId(), claim.id()), claims.remindedOn(claim.sheetId(), claim.id()));
+                claims.lateEntry(claim.sheetId(), claim.id()), claims.remindedOn(claim.sheetId(), claim.id()),
+                claims.comments(claim.sheetId(), claim.id()));
     }
 
     public static ClaimResponse from(Claim claim, ClaimRepository claims, List<ClaimLogLine> log, LocalDate today, String lockedBy,
-            boolean lateEntry, LocalDate reminded) {
+            boolean lateEntry, LocalDate reminded, List<ClaimComment> comments) {
         boolean deferred = ClaimDue.deferred(claim, today);
         return new ClaimResponse(claim.id(), claim.sheetId(), claim.personId(), claim.amount().toPlainString(),
                 claim.date().toString(), claim.note(), claim.status().name(), claim.number(),
@@ -43,6 +50,7 @@ public record ClaimResponse(long id, String sheetId, long personId, String amoun
                 deferred, claim.deferredUntil() == null ? null : claim.deferredUntil().toString(), claim.proofs(), claim.splitFrom(),
                 log.stream().map((l) -> new LogLine(l.status().name(), l.by(), l.date().toString(), l.due())).toList(),
                 lockedBy, lateEntry, reminded == null ? null : reminded.toString(), claim.ref(),
-                claim.tags() == null ? List.of() : List.of(claim.tags().split(",")));
+                claim.tags() == null ? List.of() : List.of(claim.tags().split(",")),
+                comments.stream().map((m) -> new Comment(m.by(), m.date().toString(), m.text())).toList());
     }
 }
