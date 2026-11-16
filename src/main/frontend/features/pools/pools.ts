@@ -22,3 +22,23 @@ export function usePools(sheetId: string) {
     queryFn: () => getJson<Pool[]>(`/api/sheets/${encodeURIComponent(sheetId)}/pools`),
   });
 }
+
+const toCents = (cut: string) => Math.round(Number(cut) * 100);
+const fromCents = (cents: number) => (cents / 100).toFixed(2);
+
+/** A person's cut total: their cuts across every pool they are a member of, added up (a pool that shows no cut adds
+ *  nothing). Two decimals, as text. */
+export function personCutTotal(pools: Pool[] | undefined, personId: number): string {
+  let cents = 0;
+  for (const pool of pools ?? [])
+    for (const m of pool.members) if (m.pool === null && m.personId === personId && m.cut !== null) cents += toCents(m.cut);
+  return fromCents(cents);
+}
+
+/** The sheet's cut total: everyone's cut total added up. Two decimals, as text. */
+export function sheetCutTotal(pools: Pool[] | undefined): string {
+  let cents = 0;
+  for (const pool of pools ?? [])
+    for (const m of pool.members) if (m.pool === null && m.cut !== null) cents += toCents(m.cut);
+  return fromCents(cents);
+}

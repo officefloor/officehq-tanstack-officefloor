@@ -3,8 +3,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
-import { usePeople } from '../people/people';
-import { poolsKey, usePools, type Pool, type PoolMember } from './pools';
+import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
+import { usePeople, type Person } from '../people/people';
+import { personCutTotal, poolsKey, sheetCutTotal, usePools, type Pool, type PoolMember } from './pools';
 
 /** One pool: its total share and whether it is balanced, each member's line with their share, and the picker that adds
  *  a person, or another pool (pool:<name>), with a share. A pool already a member of a pool, one that would contain
@@ -143,4 +144,29 @@ function Pools({ sheetId, user }: { sheetId: string; user: string }) {
   );
 }
 
-export const contribution = SheetPage.fill({ order: 9.7, Component: Pools });
+function CutHead() {
+  return <th>Cut total</th>;
+}
+
+/** A person's cut total across the pools they are a member of. */
+function PersonCutTotal({ sheetId, person }: { sheetId: string; person: Person }) {
+  const pools = usePools(sheetId);
+  return <td data-testid="person-cut-total">{personCutTotal(pools.data, person.id)}</td>;
+}
+
+/** The sheet's cut total: everyone's cut total added up. */
+function CutTotal({ sheetId }: { sheetId: string }) {
+  const pools = usePools(sheetId);
+  return (
+    <p>
+      Cut total <span data-testid="rollup-cut-total">{sheetCutTotal(pools.data)}</span>
+    </p>
+  );
+}
+
+export const contributions = [
+  SheetPage.fill({ order: 9.7, Component: Pools }),
+  PeopleHead.fill({ order: 62, Component: CutHead }),
+  PersonRow.fill({ order: 62, Component: PersonCutTotal }),
+  SheetPage.fill({ order: 36, Component: CutTotal }),
+];
