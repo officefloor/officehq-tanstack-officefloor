@@ -1,0 +1,219 @@
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index 4d6ba9c5d..7c10489fd 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -69,6 +69,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
+           </span>
+         )}
+       </form>
++      <PeriodGenerate sheetId={sheetId} user={user} />
+       {periods.isError && <p data-testid="periods-load-error">Could not load periods.</p>}
+       <table data-testid="periods-table">
+         <tbody>
+@@ -90,6 +91,57 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
+   );
+ }
+ 
++type Range = { from: string; to: string };
++
++/** Generates one period per calendar month from the from-date's month to the to-date's month, each from the first to
++ *  the last day of its month and named yyyy-mm; a month whose name is already a period, or whose days overlap one, is
++ *  left out. Shows how many were made; the count is cleared while a new press runs. A to-date before the from-date
++ *  is refused. */
++function PeriodGenerate({ sheetId, user }: { sheetId: string; user: string }) {
++  const queryClient = useQueryClient();
++  const [range, setRange] = useState<Range>({ from: '', to: '' });
++  const generate = useMutation({
++    mutationFn: (r: Range) =>
++      postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/generate`, { ...r, by: user }),
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
++    },
++  });
++  const change = (r: Partial<Range>) => {
++    setRange((was) => ({ ...was, ...r }));
++    generate.reset();
++  };
++  return (
++    <p>
++      Generate monthly periods{' '}
++      <label>
++        From <input type="date" data-testid="period-generate-from" value={range.from} onChange={(e) => change({ from: e.target.value })} />
++      </label>{' '}
++      <label>
++        To <input type="date" data-testid="period-generate-to" value={range.to} onChange={(e) => change({ to: e.target.value })} />
++      </label>{' '}
++      <button
++        type="button"
++        data-testid="period-generate"
++        disabled={generate.isPending}
++        onClick={() => {
++          generate.reset();
++          generate.mutate(range);
++        }}
++      >
++        Generate
++      </button>
++      {generate.isSuccess && (
++        <>
++          {' '}
++          Made <span data-testid="period-generated">{generate.data.made}</span>
++        </>
++      )}
++      {generate.isError && <span data-testid="period-generate-error"> The to-date may not be before the from-date.</span>}
++    </p>
++  );
++}
++
+ /** One header cell per period of the sheet. */
+ function PeriodsHead({ sheetId }: { sheetId: string }) {
+   const periods = usePeriods(sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/period/GeneratePeriods.java b/src/main/java/net/officefloor/hq/app/period/GeneratePeriods.java
+new file mode 100644
+index 000000000..f01b46041
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/GeneratePeriods.java
+@@ -0,0 +1,30 @@
++package net.officefloor.hq.app.period;
++
++import java.time.YearMonth;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Stores one period per calendar month from the from-date's month to the to-date's month, each running from the
++ *  first to the last day of its month and named yyyy-mm, and writes each as PERIOD_ADDED. A month whose name is
++ *  already a period of the sheet, or whose days overlap one, is left out. */
++public class GeneratePeriods {
++    public void generate(@PathVariable("sheetId") String sheetId, @Val GeneratePeriodsValues values,
++            PeriodRepository periods, Audit audit, Out<GeneratedPeriods> generated) {
++        String sheet = sheetId.trim();
++        int made = 0;
++        YearMonth last = YearMonth.from(values.to());
++        for (YearMonth month = YearMonth.from(values.from()); !month.isAfter(last); month = month.plusMonths(1)) {
++            String name = month.toString();
++            if (periods.nameTaken(sheet, name) || periods.overlaps(sheet, month.atDay(1), month.atEndOfMonth())) {
++                continue;
++            }
++            Period period = periods.add(sheet, name, month.atDay(1), month.atEndOfMonth());
++            audit.record("PERIOD_ADDED sheet=" + period.sheetId() + " by=" + values.by() + " period=" + period.name()
++                    + " from=" + period.from() + " to=" + period.to());
++            made++;
++        }
++        generated.set(new GeneratedPeriods(made));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/GeneratePeriodsRequest.java b/src/main/java/net/officefloor/hq/app/period/GeneratePeriodsRequest.java
+new file mode 100644
+index 000000000..3ac7fdb78
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/GeneratePeriodsRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.period;
++
++/** Body of generating periods: the from and to dates (yyyy-MM-dd, blank for the sheet's today), and who generates. */
++public record GeneratePeriodsRequest(String from, String to, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/GeneratePeriodsValues.java b/src/main/java/net/officefloor/hq/app/period/GeneratePeriodsValues.java
+new file mode 100644
+index 000000000..b2bf125bb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/GeneratePeriodsValues.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.period;
++
++import java.time.LocalDate;
++
++/** The validated dates of generating periods, and who generates them. */
++public record GeneratePeriodsValues(LocalDate from, LocalDate to, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/GeneratedPeriods.java b/src/main/java/net/officefloor/hq/app/period/GeneratedPeriods.java
+new file mode 100644
+index 000000000..9fbddbd9c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/GeneratedPeriods.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.period;
++
++/** How many periods were generated. */
++public record GeneratedPeriods(int made) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/RespondWithGeneratedPeriods.java b/src/main/java/net/officefloor/hq/app/period/RespondWithGeneratedPeriods.java
+new file mode 100644
+index 000000000..98597885b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/RespondWithGeneratedPeriods.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.period;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithGeneratedPeriods {
++    public void respond(@Val GeneratedPeriods generated, ObjectResponse<GeneratedPeriods> response) {
++        response.send(generated);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/ValidateGeneratePeriods.java b/src/main/java/net/officefloor/hq/app/period/ValidateGeneratePeriods.java
+new file mode 100644
+index 000000000..4d33d2b04
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/ValidateGeneratePeriods.java
+@@ -0,0 +1,36 @@
++package net.officefloor.hq.app.period;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Reads the body: the from and to dates are yyyy-MM-dd (blank for the sheet's today), and the to-date is not before
++ *  the from-date. */
++public class ValidateGeneratePeriods {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody GeneratePeriodsRequest request,
++            SheetRepository sheets, Out<GeneratePeriodsValues> values) throws InvalidPeriodException {
++        String sheet = sheetId.trim();
++        LocalDate from = date(request == null ? null : request.from(), "from", sheets, sheet);
++        LocalDate to = date(request == null ? null : request.to(), "to", sheets, sheet);
++        if (to.isBefore(from)) {
++            throw new InvalidPeriodException("The to-date may not be before the from-date");
++        }
++        String by = request == null || request.by() == null ? "" : request.by().trim();
++        values.set(new GeneratePeriodsValues(from, to, by));
++    }
++
++    private static LocalDate date(String text, String which, SheetRepository sheets, String sheet)
++            throws InvalidPeriodException {
++        if (text == null || text.isBlank()) {
++            return sheets.today(sheet);
++        }
++        try {
++            return LocalDate.parse(text.trim());
++        } catch (DateTimeParseException e) {
++            throw new InvalidPeriodException("The " + which + "-date must be a date yyyy-MM-dd");
++        }
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/generate.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/generate.POST.yml
+new file mode 100644
+index 000000000..7855bbaf7
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/generate.POST.yml
+@@ -0,0 +1,14 @@
++# POST /api/sheets/{sheetId}/periods/generate — generate one period per calendar month from the from-date's month to
++# the to-date's month, each from the first to the last day of its month and named yyyy-mm, each written as
++# PERIOD_ADDED. A month whose name is already a period of the sheet, or whose days overlap one, is left out. A blank
++# date takes the sheet's today. A date that is not yyyy-MM-dd, or a to-date before the from-date, is a 400 and writes
++# nothing. Responds with how many were made.
++validate:
++  class: net.officefloor.hq.app.period.ValidateGeneratePeriods
++  next: generate
++generate:
++  class: net.officefloor.hq.app.period.GeneratePeriods
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.period.RespondWithGeneratedPeriods
