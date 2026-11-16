@@ -69,6 +69,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
           </span>
         )}
       </form>
+      <PeriodGenerate sheetId={sheetId} user={user} />
       {periods.isError && <p data-testid="periods-load-error">Could not load periods.</p>}
       <table data-testid="periods-table">
         <tbody>
@@ -87,6 +88,57 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
         </tbody>
       </table>
     </section>
+  );
+}
+
+type Range = { from: string; to: string };
+
+/** Generates one period per calendar month from the from-date's month to the to-date's month, each from the first to
+ *  the last day of its month and named yyyy-mm; a month whose name is already a period, or whose days overlap one, is
+ *  left out. Shows how many were made; the count is cleared while a new press runs. A to-date before the from-date
+ *  is refused. */
+function PeriodGenerate({ sheetId, user }: { sheetId: string; user: string }) {
+  const queryClient = useQueryClient();
+  const [range, setRange] = useState<Range>({ from: '', to: '' });
+  const generate = useMutation({
+    mutationFn: (r: Range) =>
+      postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/generate`, { ...r, by: user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+  });
+  const change = (r: Partial<Range>) => {
+    setRange((was) => ({ ...was, ...r }));
+    generate.reset();
+  };
+  return (
+    <p>
+      Generate monthly periods{' '}
+      <label>
+        From <input type="date" data-testid="period-generate-from" value={range.from} onChange={(e) => change({ from: e.target.value })} />
+      </label>{' '}
+      <label>
+        To <input type="date" data-testid="period-generate-to" value={range.to} onChange={(e) => change({ to: e.target.value })} />
+      </label>{' '}
+      <button
+        type="button"
+        data-testid="period-generate"
+        disabled={generate.isPending}
+        onClick={() => {
+          generate.reset();
+          generate.mutate(range);
+        }}
+      >
+        Generate
+      </button>
+      {generate.isSuccess && (
+        <>
+          {' '}
+          Made <span data-testid="period-generated">{generate.data.made}</span>
+        </>
+      )}
+      {generate.isError && <span data-testid="period-generate-error"> The to-date may not be before the from-date.</span>}
+    </p>
   );
 }
 
