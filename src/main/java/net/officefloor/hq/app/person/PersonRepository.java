@@ -1,8 +1,10 @@
 package net.officefloor.hq.app.person;
 
+import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -20,19 +22,19 @@ public class PersonRepository {
     }
 
     public List<Person> list(String sheetId) {
-        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? ORDER BY id",
+        return jdbc.query("SELECT id, sheet_id, name, grade, version, retired_from FROM person WHERE sheet_id = ? ORDER BY id",
                 PersonRepository::map, sheetId);
     }
 
     public Person find(String sheetId, long id) {
-        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? AND id = ?",
+        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade, version, retired_from FROM person WHERE sheet_id = ? AND id = ?",
                 PersonRepository::map, sheetId, id);
         return found.isEmpty() ? null : found.get(0);
     }
 
     /** The person on the sheet with this name, case ignored; null when there is none. */
     public Person findByName(String sheetId, String name) {
-        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? AND name_key = LOWER(?)",
+        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade, version, retired_from FROM person WHERE sheet_id = ? AND name_key = LOWER(?)",
                 PersonRepository::map, sheetId, name);
         return found.isEmpty() ? null : found.get(0);
     }
@@ -60,7 +62,7 @@ public class PersonRepository {
         } catch (DuplicateKeyException e) {
             throw new DuplicatePersonNameException(name);
         }
-        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0);
+        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0, null);
     }
 
     /** Stores the person as its new version, only while the stored one is still {@code fromVersion}: a save
@@ -78,7 +80,14 @@ public class PersonRepository {
         }
     }
 
+    /** Retires the person from the date (replacing any earlier retirement date). */
+    public void retire(String sheetId, long id, LocalDate from) {
+        jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?", Date.valueOf(from), sheetId, id);
+    }
+
     private static Person map(ResultSet rs, int n) throws SQLException {
-        return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"));
+        Date retired = rs.getDate("retired_from");
+        return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
+                retired == null ? null : retired.toLocalDate().toString());
     }
 }

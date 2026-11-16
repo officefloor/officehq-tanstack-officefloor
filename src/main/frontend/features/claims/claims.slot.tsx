@@ -180,7 +180,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
           </button>
           {save.isError && (
             <span data-testid="claim-form-error">
-              The amount must be 0.00 or more, with up to two decimals, the date not inside a closed period, and only a draft claim can be edited.
+              The amount must be 0.00 or more, with up to two decimals, the date not inside a closed period nor after the person's retirement date, and only a draft claim can be edited.
             </span>
           )}
         </form>

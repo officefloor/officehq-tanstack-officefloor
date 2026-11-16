@@ -5,7 +5,7 @@ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { claimsKey, type Claim } from '../claims/claims';
-import { GRADES, peopleKey, useEditingPerson, usePeople, type Person } from './people';
+import { GRADES, peopleKey, useEditingPerson, usePeople, useShowRetired, type Person } from './people';
 
 type Values = { name: string; grade: string };
 const EMPTY: Values = { name: '', grade: 'A' };
@@ -62,7 +62,7 @@ function QuickAdd({ sheetId, user }: { sheetId: string; user: string }) {
           {' '}
           {values.name.trim() === ''
             ? 'A name is required.'
-            : 'The amount must be 0.00 or more, with up to two decimals, and today not inside a closed period.'}
+            : "The amount must be 0.00 or more, with up to two decimals, today not inside a closed period, and not after the person's retirement date."}
         </span>
       )}
     </form>
@@ -74,6 +74,7 @@ function QuickAdd({ sheetId, user }: { sheetId: string; user: string }) {
  *  (412) shows the error and puts the current values, and their version, in the form. */
 function People({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
+  const [showRetired, setShowRetired] = useShowRetired();
   const queryClient = useQueryClient();
   const [editingId, setEditingId] = useEditingPerson();
   const editing = people.data?.find((p) => String(p.id) === editingId);
@@ -169,6 +170,15 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
         )}
       </form>
       <QuickAdd sheetId={sheetId} user={user} />
+      <label>
+        <input
+          type="checkbox"
+          data-testid="show-retired"
+          checked={showRetired}
+          onChange={(e) => setShowRetired(e.target.checked || undefined)}
+        />{' '}
+        Show retired
+      </label>
       {people.isError && <p data-testid="people-load-error">Could not load people.</p>}
       <table data-testid="people-table">
         <thead>
@@ -180,7 +190,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
           </tr>
         </thead>
         <tbody>
-          {people.data?.map((p) => (
+          {people.data?.filter((p) => showRetired || p.retiredFrom === null).map((p) => (
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>

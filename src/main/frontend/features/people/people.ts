@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { asString, useSearchParam } from '../../url/useSearchParam';
+import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
 
 export const GRADES = ['A', 'B', 'C'] as const;
 
 /** A person on the sheet. `name` is unique on the sheet (case ignored), kept without outer spaces; `grade` is A, B or C.
- *  `version` goes up by one on each stored edit; an edit sends the version it was made from. */
-export type Person = { id: number; sheetId: string; name: string; grade: string; version: number };
+ *  `version` goes up by one on each stored edit; an edit sends the version it was made from. `retiredFrom` (yyyy-MM-dd)
+ *  is the date the person is retired from, null when not retired: a person with one counts as retired at once. */
+export type Person = { id: number; sheetId: string; name: string; grade: string; version: number; retiredFrom: string | null };
 
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'];
 
@@ -20,3 +21,6 @@ export function usePeople(sheetId: string) {
 
 /** The id of the person whose editor is open (in the person form), or '' when the form adds. */
 export const useEditingPerson = () => useSearchParam('person', asString);
+
+/** Whether retired people are listed. Off when the screen is first opened; loading a sheet leaves it as it is. */
+export const useShowRetired = () => useSearchParam('retired', asFlag);
