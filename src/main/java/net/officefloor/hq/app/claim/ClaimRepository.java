@@ -245,13 +245,26 @@ public class ClaimRepository {
 
     /** Move every claim of the person {@code fromId} to {@code intoId}, in the order they were added,
      *  each the newest in the list as it moves: their numbers and dates kept, and any figure a statement
-     *  bound them to kept. */
-    public void moveAll(String sheetId, long fromId, long intoId) {
-        for (Long id : jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id",
-                Long.class, sheetId, fromId)) {
+     *  bound them to kept. The ids of the claims moved come back, in that order. */
+    public List<Long> moveAll(String sheetId, long fromId, long intoId) {
+        List<Long> moved = jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                Long.class, sheetId, fromId);
+        for (Long id : moved) {
             jdbc.update("UPDATE claim SET person_id = ?, list_seq = "
                     + NEXT_SEQ + " WHERE sheet_id = ? AND id = ?", intoId, sheetId, sheetId, id);
             snapshot(sheetId, id);
+        }
+        return moved;
+    }
+
+    /** Give back the claims a merge moved from the person {@code toId} to {@code fromId}, those still
+     *  {@code fromId}'s, as they are now (numbers, status and place in the list kept). */
+    public void moveBack(String sheetId, List<Long> ids, long fromId, long toId) {
+        for (Long id : ids) {
+            if (jdbc.update("UPDATE claim SET person_id = ? WHERE sheet_id = ? AND id = ? AND person_id = ?",
+                    toId, sheetId, id, fromId) > 0) {
+                snapshot(sheetId, id);
+            }
         }
     }
 

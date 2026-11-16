@@ -82,8 +82,8 @@ public class TransferPerson {
         if (into != null) {
             Person arrived = people.find(to, person.getId());
             arrived.setName(person.getName()); // arrived under a stand-in, as the name is taken there
-            claims.moveAll(to, arrived.getId(), into.getId());
-            people.merge(arrived, into, user);
+            List<Long> moved = claims.moveAll(to, arrived.getId(), into.getId());
+            people.merge(arrived, into, user, moved, false);
         }
         transferred.set(new Transfer(person, to, before, into));
     }

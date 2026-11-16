@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.person;
 
+import java.util.List;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.pool.PoolRepository;
@@ -37,10 +38,10 @@ public class MergePerson {
         if (person.isRetired() || into.isRetired()) {
             throw new InvalidPersonException("A retired person cannot be merged");
         }
-        claims.moveAll(sheetId, person.getId(), into.getId());
+        List<Long> moved = claims.moveAll(sheetId, person.getId(), into.getId());
         pools.moveMembers(sheetId, person.getId(), into.getId());
         periods.moveTotals(sheetId, person.getId(), into.getId());
-        people.merge(person, into, user);
+        people.merge(person, into, user, moved, true);
         merged.set(new Merge(person, into));
     }
 }

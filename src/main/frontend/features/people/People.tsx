@@ -29,7 +29,7 @@ import { QuickAdd } from './QuickAdd';
 import { ColumnChooser, useColumns } from './Columns';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { SortBy, sortPeople, useSortBy } from './SortBy';
-import { addAlias, addPatron, addPerson, cancelStatement, flagPerson, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, setApprover, shownName, takeStatement, transferPerson, undoTransfer, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+import { addAlias, addPatron, addPerson, cancelStatement, flagPerson, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, setApprover, shownName, takeStatement, transferPerson, undoMerge, undoTransfer, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 import { Fig } from '../session/Fig';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFrom: '', contact: '', tags: '' };
@@ -59,7 +59,8 @@ function snapshotOn(p: Person, day: string): string {
  *  Retired people are left out of the list unless "show retired" is on; their claims still count.
  *  Whether each person is active (see `isActive`). Their cut total (see `personCutTotal`).
  *  A picker and a button merge the person into another (see `mergePerson`), and an entry and a
- *  button transfer them to another sheet by id (see `transferPerson`).
+ *  button transfer them to another sheet by id (see `transferPerson`); a button undoes the last merge
+ *  into the person (see `undoMerge`).
  *  Whether the signed-in user watches each person, with a button that starts or stops it.
  *  A button exports everyone, retired people included, as a CSV file, and another exports their claims
  *  (people in list order, each one's claims oldest first, with the figures their rows show).
@@ -260,6 +261,19 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     ]),
   });
 
+  // The person whose last merge undo was refused; cleared by the next action on the row. The merged
+  // person comes back with their claims, so these are read again.
+  const unmerging = useMutation({
+    mutationFn: (v: { id: number }) => undoMerge(sheetId, user, v.id),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
+      queryClient.invalidateQueries({ queryKey: watchesKey(sheetId, user) }),
+    ]),
+  });
+
   // The person whose last transfer was refused; cleared by the next action on the row. A transfer
   // drops the person's claims, pool memberships, period totals and watches, so these are read again.
   const transferring = useMutation({
@@ -326,6 +340,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     patronage.reset();
     aliasing.reset();
     merging.reset();
+    unmerging.reset();
     transferring.reset();
     untransferring.reset();
     moving.reset();
@@ -438,6 +453,13 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     stateOnce(() => {
       resetRowActions();
       return merging.mutateAsync({ id, intoId });
+    });
+  };
+
+  const undoMergeInto = (id: number) => {
+    stateOnce(() => {
+      resetRowActions();
+      return unmerging.mutateAsync({ id });
     });
   };
 
@@ -760,6 +782,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   {merging.isError && merging.variables?.id === p.id && (
                     <span data-testid="person-error">The person could not be merged: only a steward can, into someone else, neither of them retired.</span>
                   )}
+                  {unmerging.isError && unmerging.variables?.id === p.id && (
+                    <span data-testid="person-error">The merge could not be undone: only by who made the last merge into this person, on the sheet's today it was made.</span>
+                  )}
                   {moving.isError && moving.variables?.id === p.id && (
                     <span data-testid="person-error">The person could not be moved: the first cannot move up, nor the last down.</span>
                   )}
@@ -903,6 +928,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   <button type="button" data-testid="person-merge" disabled={merging.isPending}
                     onClick={() => merge(p.id)}>
                     Merge
+                  </button>{' '}
+                  <button type="button" data-testid="person-merge-undo" disabled={unmerging.isPending}
+                    onClick={() => undoMergeInto(p.id)}>
+                    Undo merge
                   </button>{' '}
                   <input data-testid="person-transfer-to" placeholder="Sheet id" value={transferTos[p.id] ?? ''}
                     onChange={(e) => {

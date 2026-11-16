@@ -192,6 +192,14 @@ export function mergePerson(sheetId: string, by: string, id: number, intoId: num
   return postJson<Person>(`${base(sheetId)}/${id}/merge?by=${encodeURIComponent(by)}`, { intoId });
 }
 
+/** Whoever made the last merge into the person undoes it, on the sheet's today it was made: the
+ *  merged person is back at the end of the list with the claims that came from them (as they are now)
+ *  and their own aliases; patron and pool changes stay. Refused (rejects) for anyone else, any later
+ *  day, and a person with no merge to undo. */
+export function undoMerge(sheetId: string, by: string, id: number): Promise<Person> {
+  return postJson<Person>(`${base(sheetId)}/${id}/merge-undo?by=${encodeURIComponent(by)}`, {});
+}
+
 /** A steward transfers the person to another sheet by id (`to`): they arrive there with their grades,
  *  terms, contact, aliases and claims, and leave this sheet entirely; someone there with their name or an
  *  alias has them merged into them, as a merge does. Refused (rejects) for anyone else, a retired person,

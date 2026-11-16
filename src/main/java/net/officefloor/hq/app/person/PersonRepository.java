@@ -541,11 +541,46 @@ public class PersonRepository {
      *  patron names into instead (no repeats); into's statement count becomes theirs plus from's, their
      *  last statement staying theirs (having none, becoming from's), from's statements kept before
      *  into's; from's holds, watchers, grades and the person themselves are dropped; from's plans and crews become into's. Their claims, pool memberships and period totals must have
-     *  moved first. */
-    public void merge(Person from, Person into, String user) {
+     *  moved first ({@code claimIds}: the claims that moved). The merge is kept as the last into
+     *  {@code into}, with what it takes from from, for {@link #undoMerge} when {@code undoable}. */
+    public void merge(Person from, Person into, String user, List<Long> claimIds, boolean undoable) {
         String sheetId = into.getSheetId();
-        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, added_by) VALUES (?, ?, ?, ?)",
-                sheetId, into.getId(), from.getName(), user);
+        GeneratedKeyHolder mergeKey = new GeneratedKeyHolder();
+        jdbc.update(con -> {
+            PreparedStatement ps = con.prepareStatement("INSERT INTO person_merge (sheet_id, from_id, from_name, into_id, "
+                    + "merged_by, merged_on, undoable) VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?), ?)",
+                    new String[] { "id" });
+            ps.setString(1, sheetId);
+            ps.setLong(2, from.getId());
+            ps.setString(3, from.getName());
+            ps.setLong(4, into.getId());
+            ps.setString(5, user);
+            ps.setString(6, sheetId);
+            ps.setBoolean(7, undoable);
+            return ps;
+        }, mergeKey);
+        long mergeId = mergeKey.getKey().longValue();
+        if (undoable) {
+            for (Long claimId : claimIds) {
+                jdbc.update("INSERT INTO person_merge_moved (merge_id, kind, ref) VALUES (?, 'CLAIM', ?)", mergeId, claimId);
+            }
+            jdbc.update("INSERT INTO person_merge_moved (merge_id, kind, ref) SELECT ?, 'ALIAS', id FROM person_alias "
+                    + "WHERE sheet_id = ? AND person_id = ?", mergeId, sheetId, from.getId());
+            for (String table : MERGE_KEPT) {
+                keep(mergeId, table, sheetId, from.getId());
+            }
+        }
+        GeneratedKeyHolder aliasKey = new GeneratedKeyHolder();
+        jdbc.update(con -> {
+            PreparedStatement ps = con.prepareStatement(
+                    "INSERT INTO person_alias (sheet_id, person_id, alias, added_by) VALUES (?, ?, ?, ?)", new String[] { "id" });
+            ps.setString(1, sheetId);
+            ps.setLong(2, into.getId());
+            ps.setString(3, from.getName());
+            ps.setString(4, user);
+            return ps;
+        }, aliasKey);
+        jdbc.update("UPDATE person_merge SET name_alias_id = ? WHERE id = ?", aliasKey.getKey().longValue(), mergeId);
         jdbc.update("UPDATE person_alias SET person_id = ? WHERE sheet_id = ? AND person_id = ?",
                 into.getId(), sheetId, from.getId());
         for (Long patronId : from.getPatronIds()) {
@@ -591,6 +626,82 @@ public class PersonRepository {
                 + "(SELECT c.id FROM crew c WHERE c.lead_id = ?)", sheetId, into.getId(), into.getId());
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, from.getId());
         withAliases(sheetId, List.of(into));
+    }
+
+    /** The person's own rows a merge drops with them, kept for an undo: the person first. */
+    private static final List<String> MERGE_KEPT = List.of("person", "person_grade", "person_terms",
+            "person_grade_history", "person_retired_history", "person_retirement", "person_hold", "person_watch");
+
+    /** Keep the person's rows of the table (each column's value as text) under the merge. */
+    private void keep(long mergeId, String table, String sheetId, long personId) {
+        List<String> generated = jdbc.queryForList("SELECT LOWER(COLUMN_NAME) FROM INFORMATION_SCHEMA.COLUMNS "
+                + "WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME = ? AND IS_GENERATED = 'ALWAYS'", String.class,
+                table.toUpperCase(java.util.Locale.ROOT));
+        List<List<String[]>> rows = new ArrayList<>();
+        jdbc.query("SELECT * FROM " + table + " WHERE sheet_id = ? AND " + ("person".equals(table) ? "id" : "person_id") + " = ?",
+                (rs) -> {
+                    java.sql.ResultSetMetaData md = rs.getMetaData();
+                    List<String[]> row = new ArrayList<>();
+                    for (int i = 1; i <= md.getColumnCount(); i++) {
+                        String col = md.getColumnLabel(i).toLowerCase(java.util.Locale.ROOT);
+                        if (!generated.contains(col)) {
+                            row.add(new String[] { col, rs.getString(i) });
+                        }
+                    }
+                    rows.add(row);
+                }, sheetId, personId);
+        for (int n = 0; n < rows.size(); n++) {
+            for (String[] value : rows.get(n)) {
+                jdbc.update("INSERT INTO person_merge_value (merge_id, tbl, row_no, col, val) VALUES (?, ?, ?, ?, ?)",
+                        mergeId, table, n, value[0], value[1]);
+            }
+        }
+    }
+
+    /** The last merge into the person on the sheet; null when there has been none. */
+    public PersonMerge lastMergeInto(String sheetId, long intoId) {
+        return jdbc.query("SELECT id, from_id, from_name, merged_by, merged_on, undoable, undone, name_alias_id "
+                + "FROM person_merge WHERE sheet_id = ? AND into_id = ? ORDER BY id DESC",
+                (rs, n) -> new PersonMerge(rs.getLong("id"), sheetId, rs.getLong("from_id"), rs.getString("from_name"),
+                        intoId, rs.getString("merged_by"), rs.getObject("merged_on", LocalDate.class),
+                        rs.getBoolean("undoable"), rs.getBoolean("undone"), rs.getObject("name_alias_id", Long.class)),
+                sheetId, intoId).stream().findFirst().orElse(null);
+    }
+
+    /** The claims the merge moved from the merged person. */
+    public List<Long> mergedClaims(PersonMerge merge) {
+        return jdbc.queryForList("SELECT ref FROM person_merge_moved WHERE merge_id = ? AND kind = 'CLAIM' ORDER BY ref",
+                Long.class, merge.id());
+    }
+
+    /** Undo the merge: the merged person is back, as they were merged, at the end of the list, with
+     *  their own aliases (those the other still has) and without the alias their name became; the merge
+     *  is marked undone. Their claims are given back separately (see ClaimRepository#moveBack). */
+    public void undoMerge(PersonMerge merge) {
+        String sheetId = merge.sheetId();
+        Map<String, Map<Integer, Map<String, String>>> kept = new java.util.LinkedHashMap<>();
+        MERGE_KEPT.forEach((t) -> kept.put(t, new java.util.TreeMap<>()));
+        jdbc.query("SELECT tbl, row_no, col, val FROM person_merge_value WHERE merge_id = ?", (rs) -> {
+            kept.computeIfAbsent(rs.getString("tbl"), (t) -> new java.util.TreeMap<>())
+                    .computeIfAbsent(rs.getInt("row_no"), (n) -> new java.util.LinkedHashMap<>())
+                    .put(rs.getString("col"), rs.getString("val"));
+        }, merge.id());
+        kept.forEach((table, rows) -> rows.values().forEach((row) -> {
+            List<String> cols = new ArrayList<>(row.keySet());
+            jdbc.update("INSERT INTO " + table + " (" + String.join(", ", cols) + ") VALUES ("
+                    + String.join(", ", java.util.Collections.nCopies(cols.size(), "?")) + ")",
+                    cols.stream().map(row::get).toArray());
+        }));
+        jdbc.update("UPDATE person SET list_pos = " + NEXT_POS + " WHERE sheet_id = ? AND id = ?",
+                sheetId, sheetId, merge.fromId());
+        jdbc.update("UPDATE person_alias SET person_id = ? WHERE sheet_id = ? AND person_id = ? AND id IN "
+                + "(SELECT ref FROM person_merge_moved WHERE merge_id = ? AND kind = 'ALIAS')",
+                merge.fromId(), sheetId, merge.intoId(), merge.id());
+        if (merge.nameAliasId() != null) {
+            jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND id = ?", sheetId, merge.nameAliasId());
+        }
+        jdbc.update("DELETE FROM person_merge_value WHERE merge_id = ?", merge.id());
+        jdbc.update("UPDATE person_merge SET undone = TRUE WHERE id = ?", merge.id());
     }
 
     /** Move the person to the sheet {@code to} with their grades (and grade history) and aliases, their
