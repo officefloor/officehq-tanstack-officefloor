@@ -26,6 +26,22 @@ export function useSheetDueTotal(sheetId: string): string {
   );
 }
 
+/** Each person's due-total as their row shows it (two decimals, or n/a), by person id. */
+export function usePeopleDue(sheetId: string): Map<number, string> {
+  const people = usePeople(sheetId);
+  const claims = useClaims(sheetId);
+  const rates = useRates(sheetId);
+  const late = useLate(sheetId);
+  const floor = useFloor(sheetId);
+  const cap = useCap(sheetId);
+  return new Map(
+    (people.data ?? []).map((p) => [
+      p.id,
+      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap),
+    ]),
+  );
+}
+
 /** The sheet's settled-total and open-total: everyone's added up (not trimmed). */
 export function useSheetSplit(sheetId: string): { settled: string; open: string } {
   const people = usePeople(sheetId);

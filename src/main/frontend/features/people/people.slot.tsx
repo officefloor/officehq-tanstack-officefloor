@@ -6,7 +6,8 @@ import { SheetPage } from '../../slots/defs/sheetPage';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { claimsKey, type Claim } from '../claims/claims';
 import { tagsKey } from '../tags/tags';
-import { GRADES, peopleKey, useEditingPerson, usePeople, useShowRetired, type Person } from './people';
+import { usePeopleDue } from '../header/totals';
+import { GRADES, peopleKey, SORT_KEYS, sortPeople, useEditingPerson, usePeople, useShowRetired, useSortBy, type Person } from './people';
 
 /** The form's values. `gradeFrom` (yyyy-MM-dd) is the date the grade is given from; blank, the sheet's today. A
  *  person's first grade applies from the beginning of time. `terms` are the person's own terms in days; blank, none. `contact` is the person's contact, kept by the server
@@ -91,6 +92,8 @@ function QuickAdd({ sheetId, user }: { sheetId: string; user: string }) {
 function People({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
   const [showRetired, setShowRetired] = useShowRetired();
+  const [sortBy, setSortBy] = useSortBy();
+  const due = usePeopleDue(sheetId);
   const queryClient = useQueryClient();
   const [editingId, setEditingId] = useEditingPerson();
   const editing = people.data?.find((p) => String(p.id) === editingId);
@@ -234,6 +237,16 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
           onChange={(e) => setShowRetired(e.target.checked || undefined)}
         />{' '}
         Show retired
+      </label>{' '}
+      <label>
+        Sort by{' '}
+        <select data-testid="sort-by" value={sortBy || 'added'} onChange={(e) => setSortBy(e.target.value === 'added' ? undefined : e.target.value)}>
+          {SORT_KEYS.map((k) => (
+            <option key={k} value={k}>
+              {k}
+            </option>
+          ))}
+        </select>
       </label>
       {people.isError && <p data-testid="people-load-error">Could not load people.</p>}
       <table data-testid="people-table">
@@ -249,7 +262,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
           </tr>
         </thead>
         <tbody>
-          {people.data?.filter((p) => showRetired || p.retiredFrom === null).map((p) => (
+          {sortPeople(people.data?.filter((p) => showRetired || p.retiredFrom === null) ?? [], sortBy, due).map((p) => (
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>

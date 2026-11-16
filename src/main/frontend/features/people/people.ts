@@ -85,3 +85,27 @@ export const useEditingPerson = () => useSearchParam('person', asString);
 
 /** Whether retired people are listed. Off when the screen is first opened; loading a sheet leaves it as it is. */
 export const useShowRetired = () => useSearchParam('retired', asFlag);
+
+/** What the people list is sorted by on this screen: list order (added), name (as names are compared: case ignored),
+ *  grade, or due-total (n/a last). Equal keys keep list order. Only the screen's order changes: every action in list
+ *  order, and the rollups, still go by list order. */
+export const SORT_KEYS = ['added', 'name', 'grade', 'due-total'] as const;
+export const useSortBy = () => useSearchParam('sort', asString);
+
+/** The people in the order the sort key gives; `due` is each person's due-total (two decimals, or n/a) by id. */
+export function sortPeople(people: Person[], key: string, due: Map<number, string>): Person[] {
+  const nameKey = (p: Person) => p.name.toLowerCase();
+  const dueKey = (p: Person) => {
+    const d = due.get(p.id);
+    return d === undefined || d === 'n/a' ? Infinity : Number(d);
+  };
+  const cmp: ((a: Person, b: Person) => number) | undefined =
+    key === 'name'
+      ? (a, b) => (nameKey(a) < nameKey(b) ? -1 : nameKey(a) > nameKey(b) ? 1 : 0)
+      : key === 'grade'
+        ? (a, b) => (a.grade < b.grade ? -1 : a.grade > b.grade ? 1 : 0)
+        : key === 'due-total'
+          ? (a, b) => (dueKey(a) === dueKey(b) ? 0 : dueKey(a) < dueKey(b) ? -1 : 1)
+          : undefined;
+  return cmp === undefined ? people : [...people].sort(cmp); // Array.sort is stable: equal keys keep list order
+}
