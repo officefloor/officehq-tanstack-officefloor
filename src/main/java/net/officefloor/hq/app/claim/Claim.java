@@ -12,9 +12,11 @@ import java.time.LocalDate;
  * claim of the same person it corrects ({@code corrects}; null for any other claim), and its due-by ({@code dueBy}), fixed
  * when it is added from the terms of its person's grade in force on its date (see SettingRepository#terms), and the
  * date it is deferred until ({@code deferredUntil}; null when never deferred; see ClaimDue#deferred), and its proofs
- * count ({@code proofs}; 0 when added, raised by one at a time; see ApplyProof).
+ * count ({@code proofs}; 0 when added, raised by one at a time; see ApplyProof), and for a claim split off another
+ * the number of the claim it was split from ({@code splitFrom}; null for any other claim; see ApplySplit).
  */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
-        String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs) {
+        String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs,
+        String splitFrom) {
 }

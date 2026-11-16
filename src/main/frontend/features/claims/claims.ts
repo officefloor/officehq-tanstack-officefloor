@@ -17,7 +17,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  `deferred` is whether it is deferred on the sheet's today (an OPEN claim deferred until a date after it: it counts in no
  *  total, is not overdue and cannot be settled) and `deferredUntil` (yyyy-MM-dd) the date it was last deferred until (shown
  *  even once that date has passed; null when never deferred); `proofs` is its proofs count (a claim whose due is above the sheet's proof threshold
- *  on its date cannot be settled nor approved while it is 0); `log` is its status log, oldest first. */
+ *  on its date cannot be settled nor approved while it is 0); `splitFrom` is the number of the claim it was split from
+ *  (null for any other claim); `log` is its status log, oldest first. */
 export type Claim = {
   id: number;
   sheetId: string;
@@ -37,6 +38,7 @@ export type Claim = {
   deferred: boolean;
   deferredUntil: string | null;
   proofs: number;
+  splitFrom: string | null;
   log: ClaimLogLine[];
 };
 

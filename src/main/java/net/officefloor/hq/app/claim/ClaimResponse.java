@@ -10,11 +10,11 @@ import java.util.List;
  *  correction corrects (null for any other claim); roundsOn is the date that decides how its live figures round
  *  (the corrected claim's date for a correction, else its own; see Rounding); dueBy (yyyy-MM-dd) is its due-by, fixed
  *  when it was added; deferred is whether it is deferred on the sheet's today (see ClaimDue#deferred) and deferredUntil
- *  (yyyy-MM-dd) the date it was last deferred until (shown even once that date has passed), null when never deferred; proofs is its proofs count; log is its status log, oldest first: each status it has had, who made the change, the sheet's
+ *  (yyyy-MM-dd) the date it was last deferred until (shown even once that date has passed), null when never deferred; proofs is its proofs count; splitFrom is the number of the claim it was split from (null for any other claim); log is its status log, oldest first: each status it has had, who made the change, the sheet's
  *  today (yyyy-MM-dd) then, and its due as shown at that moment (two decimals, or n/a). */
 public record ClaimResponse(long id, String sheetId, long personId, String amount, String date, String note,
         String status, String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
-        String roundsOn, String dueBy, boolean deferred, String deferredUntil, int proofs, List<LogLine> log) {
+        String roundsOn, String dueBy, boolean deferred, String deferredUntil, int proofs, String splitFrom, List<LogLine> log) {
 
     /** One line of a claim's status log as sent to the screen. */
     public record LogLine(String status, String by, String date, String due) {
@@ -31,7 +31,7 @@ public record ClaimResponse(long id, String sheetId, long personId, String amoun
                 claim.due() == null ? null : claim.due().toPlainString(), claim.openedBy(), claim.stated(),
                 claim.statedDue() == null ? null : claim.statedDue().toPlainString(), claim.corrects(),
                 Rounding.roundsOn(claim, claims).toString(), claim.dueBy().toString(),
-                deferred, claim.deferredUntil() == null ? null : claim.deferredUntil().toString(), claim.proofs(),
+                deferred, claim.deferredUntil() == null ? null : claim.deferredUntil().toString(), claim.proofs(), claim.splitFrom(),
                 log.stream().map((l) -> new LogLine(l.status().name(), l.by(), l.date().toString(), l.due())).toList());
     }
 }

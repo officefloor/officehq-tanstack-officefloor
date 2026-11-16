@@ -75,7 +75,7 @@ public class ApplyClaimStatus {
         if (change.action() == ClaimAction.RESETTLE) {
             Claim asOpen = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                     claim.note(), ClaimStatus.OPEN, claim.number(), null, claim.openedBy(), false, null,
-                    claim.corrects(), claim.dueBy(), null, claim.proofs());
+                    claim.corrects(), claim.dueBy(), null, claim.proofs(), claim.splitFrom());
             settledDue = late.add(asOpen, due(asOpen, people, rates, settings, late.rounding()));
         } else {
             settledDue = to == ClaimStatus.SETTLED ? late.add(claim, due(claim, people, rates, settings, late.rounding())) : claim.due();
@@ -98,7 +98,7 @@ public class ApplyClaimStatus {
         previous.set(new PreviousDue(claim.due()));
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                 claim.note(), to, claim.number(), settledDue,
-                change.action() == ClaimAction.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs()));
+                change.action() == ClaimAction.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom()));
     }
 
     private static BigDecimal due(Claim claim, PersonRepository people, RateRepository rates, SettingRepository settings,

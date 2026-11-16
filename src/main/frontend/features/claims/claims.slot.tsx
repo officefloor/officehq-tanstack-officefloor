@@ -30,7 +30,7 @@ type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
  *  shows the claim's error. An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one dated inside a closed period); a claim with no proofs whose due is above the proof threshold on its date cannot be settled nor approved. A steward re-settles a SETTLED claim (its due fixed again at today's figure). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
- *  with the claim's error, for anyone else or any other claim). Only a DRAFT can be edited: Edit on any other claim shows the claim's error instead of opening the editor. */
+ *  with the claim's error, for anyone else or any other claim). Split takes the amount typed beside it off an OPEN claim (not deferred nor dated inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Only a DRAFT can be edited: Edit on any other claim shows the claim's error instead of opening the editor. */
 function ClaimRow({
   sheetId,
   user,
@@ -89,6 +89,15 @@ function ClaimRow({
     mutationFn: () => postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/proofs`, { by: user }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
+  const [splitAmount, setSplitAmount] = useState('');
+  const split = useMutation({
+    mutationFn: (amount: string) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/split`, { amount, by: user }),
+    onSuccess: () => {
+      setSplitAmount('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
   const [editRefused, setEditRefused] = useState(false);
   const [selected, setSelected] = useSelectedClaims();
   const act = (action: Action) => {
@@ -96,6 +105,7 @@ function ClaimRow({
     reassign.reset();
     defer.reset();
     proof.reset();
+    split.reset();
     status.reset();
     status.mutate(action);
   };
@@ -122,6 +132,7 @@ function ClaimRow({
       <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
       <span data-testid="claim-proofs">{c.proofs}</span>{' '}
+      <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
       <span data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</span>{' '}
       <button
         type="button"
@@ -131,6 +142,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           proof.reset();
+          split.reset();
           if (c.status !== 'DRAFT') {
             setEditRefused(true);
             return;
@@ -183,6 +195,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           proof.reset();
+          split.reset();
           proof.mutate();
         }}
       >
@@ -197,6 +210,7 @@ function ClaimRow({
           setDeferUntil(e.target.value);
           defer.reset();
           proof.reset();
+          split.reset();
         }}
       />
       <button
@@ -209,10 +223,37 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           proof.reset();
+          split.reset();
           defer.mutate(deferUntil.trim());
         }}
       >
         Defer
+      </button>{' '}
+      <input
+        data-testid="claim-split-amount"
+        placeholder="Split amount"
+        inputMode="decimal"
+        value={splitAmount}
+        onChange={(e) => {
+          setSplitAmount(e.target.value);
+          split.reset();
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-split"
+        disabled={split.isPending}
+        onClick={() => {
+          setEditRefused(false);
+          status.reset();
+          reassign.reset();
+          defer.reset();
+          proof.reset();
+          split.reset();
+          split.mutate(splitAmount.trim());
+        }}
+      >
+        Split
       </button>{' '}
       <select
         data-testid="claim-reassign-to"
@@ -242,6 +283,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           proof.reset();
+          split.reset();
           reassign.mutate(Number(moveTo));
         }}
       >
@@ -273,6 +315,13 @@ function ClaimRow({
       )}
       {proof.isError && (
         <span data-testid="claim-error"> A settled or void claim, or one dated inside a closed period, takes no more proofs.</span>
+      )}
+      {split.isError && (
+        <span data-testid="claim-error">
+          {' '}
+          Only an open claim, not deferred nor dated inside a closed period, can be split, by an amount more than 0.00 and less than
+          its amount, and only by a role the sheet lets open a claim.
+        </span>
       )}
       <ol data-testid="claim-log">
         {c.log.map((l, i) => (

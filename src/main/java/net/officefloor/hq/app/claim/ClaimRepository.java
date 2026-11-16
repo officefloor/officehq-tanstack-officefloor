@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from";
 
     private final JdbcTemplate jdbc;
     private final DataSource dataSource;
@@ -57,7 +57,7 @@ public class ClaimRepository {
         }, keys);
         jdbc.update("UPDATE claim SET listed = (SELECT COALESCE(MAX(c.listed), 0) + 1 FROM claim c WHERE c.sheet_id = ?) WHERE id = ?",
                 sheetId, keys.getKey().longValue());
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects, dueBy, null, 0);
+        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects, dueBy, null, 0, null);
     }
 
     /** The person's claim with the given number on the sheet; null when there is none. */
@@ -100,6 +100,19 @@ public class ClaimRepository {
     public boolean defer(Claim claim) {
         return jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ? AND status = ?",
                 Date.valueOf(claim.deferredUntil()), claim.sheetId(), claim.id(), ClaimStatus.OPEN.name()) == 1;
+    }
+
+    /** Stores the claim's remaining amount after a split, unbound from any statement figure, but only while it is
+     *  still OPEN with the amount {@code was}; false when another change got there first (nothing is written). */
+    public boolean split(Claim claim, BigDecimal was) {
+        return jdbc.update("UPDATE claim SET amount = ?, stated = FALSE, stated_due = NULL WHERE sheet_id = ? AND id = ? AND status = ? AND amount = ?",
+                claim.amount(), claim.sheetId(), claim.id(), ClaimStatus.OPEN.name(), was) == 1;
+    }
+
+    /** Stores the number of the claim this claim was split from. */
+    public void splitFrom(Claim claim) {
+        jdbc.update("UPDATE claim SET split_from = ? WHERE sheet_id = ? AND id = ?", claim.splitFrom(), claim.sheetId(),
+                claim.id());
     }
 
     /** Raises the claim's proofs count by one, but only while it is still DRAFT, OPEN or PENDING; false when it no
@@ -182,6 +195,6 @@ public class ClaimRepository {
                 rs.getString("claim_number"), due == null ? null : due.setScale(2),
                 rs.getString("opened_by"), rs.getBoolean("stated"), statedDue == null ? null : statedDue.setScale(2),
                 rs.getString("corrects"), rs.getObject("due_by", LocalDate.class),
-                rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"));
+                rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"), rs.getString("split_from"));
     }
 }
