@@ -19,7 +19,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  total, is not overdue and cannot be settled) and `deferredUntil` (yyyy-MM-dd) the date it was last deferred until (shown
  *  even once that date has passed; null when never deferred); `proofs` is its proofs count (a claim whose due is above the sheet's proof threshold
  *  on its date cannot be settled nor approved while it is 0); `splitFrom` is the number of the claim it was split from
- *  (null for any other claim); `log` is its status log, oldest first. */
+ *  (null for any other claim); `log` is its status log, oldest first; `lockedBy` is who has its editor open (it is locked for
+ *  everyone else; null when no one does). */
 export type Claim = {
   id: number;
   sheetId: string;
@@ -41,6 +42,7 @@ export type Claim = {
   proofs: number;
   splitFrom: string | null;
   log: ClaimLogLine[];
+  lockedBy: string | null;
 };
 
 /** One line of a claim's status log: the status it took, who made the change, the sheet's today (yyyy-MM-dd) when

@@ -7,7 +7,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -67,11 +69,44 @@ public class ClaimRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Stores the claim's values, but only while it is still a DRAFT; false when it no longer is (nothing is written). */
-    public boolean update(Claim claim) {
-        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE sheet_id = ? AND id = ? AND status = ?",
+    /** Stores the claim's values and releases its lock, but only while it is still a DRAFT and no one but {@code by}
+     *  holds its lock; false otherwise (nothing is written). */
+    public boolean update(Claim claim, String by) {
+        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, locked_by = NULL WHERE sheet_id = ? AND id = ? AND status = ? "
+                + "AND (locked_by IS NULL OR locked_by = ?)",
                 claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.corrects(), claim.sheetId(), claim.id(),
-                ClaimStatus.DRAFT.name()) == 1;
+                ClaimStatus.DRAFT.name(), by) == 1;
+    }
+
+    /** Locks the claim for {@code by} (its editor is open), but only while it is still a DRAFT and no one else holds
+     *  it; false otherwise (nothing is written). */
+    public boolean lock(Claim claim, String by) {
+        return jdbc.update("UPDATE claim SET locked_by = ? WHERE sheet_id = ? AND id = ? AND status = ? AND (locked_by IS NULL OR locked_by = ?)",
+                by, claim.sheetId(), claim.id(), ClaimStatus.DRAFT.name(), by) == 1;
+    }
+
+    /** Releases the claim's lock when {@code by} holds it. */
+    public void unlock(Claim claim, String by) {
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND id = ? AND locked_by = ?", claim.sheetId(), claim.id(), by);
+    }
+
+    /** Releases every lock on the sheet's claims (its today changed). */
+    public void unlockAll(String sheetId) {
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND locked_by IS NOT NULL", sheetId);
+    }
+
+    /** Who holds the claim's lock; null when no one does. */
+    public String lockedBy(String sheetId, long id) {
+        List<String> found = jdbc.queryForList("SELECT locked_by FROM claim WHERE sheet_id = ? AND id = ?", String.class, sheetId, id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** Who holds each locked claim's lock on the sheet, by claim id. */
+    public Map<Long, String> locks(String sheetId) {
+        Map<Long, String> out = new HashMap<>();
+        jdbc.query("SELECT id, locked_by FROM claim WHERE sheet_id = ? AND locked_by IS NOT NULL",
+                (rs) -> { out.put(rs.getLong("id"), rs.getString("locked_by")); }, sheetId);
+        return out;
     }
 
     /**

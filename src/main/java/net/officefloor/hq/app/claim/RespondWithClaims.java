@@ -13,7 +13,8 @@ public class RespondWithClaims {
             ClaimLogRepository log, SheetRepository sheets, ObjectResponse<List<ClaimResponse>> response) {
         Map<Long, List<ClaimLogLine>> logs = log.bySheet(sheetId.trim());
         LocalDate today = sheets.today(sheetId.trim());
+        Map<Long, String> locks = claims.locks(sheetId.trim());
         response.send(claims.list(sheetId.trim()).stream()
-                .map((c) -> ClaimResponse.from(c, claims, logs.getOrDefault(c.id(), List.of()), today)).toList());
+                .map((c) -> ClaimResponse.from(c, claims, logs.getOrDefault(c.id(), List.of()), today, locks.get(c.id()))).toList());
     }
 }
