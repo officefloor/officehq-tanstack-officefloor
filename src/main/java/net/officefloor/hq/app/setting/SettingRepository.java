@@ -265,6 +265,22 @@ public class SettingRepository {
         return found;
     }
 
+    /** The sheet's descendants: the sheets naming it as their parent, then theirs, and so on (each once, the sheet
+     *  itself never), in the order found. */
+    public List<String> descendants(String sheetId) {
+        List<String> found = new java.util.ArrayList<>();
+        for (int i = -1; i < found.size(); i++) {
+            String at = i < 0 ? sheetId : found.get(i);
+            for (String child : jdbc.queryForList("SELECT sheet_id FROM setting WHERE setting_key = ? AND from_date = ?"
+                    + " AND setting_value = ? ORDER BY sheet_id", String.class, PARENT, UNDATED, at)) {
+                if (!child.equals(sheetId) && !found.contains(child)) {
+                    found.add(child);
+                }
+            }
+        }
+        return found;
+    }
+
     /** Whether the sheet has the other as an ancestor, at any level. */
     public boolean hasAncestor(String sheetId, String ancestor) {
         return ancestors(sheetId, Integer.MAX_VALUE).contains(ancestor);
