@@ -147,9 +147,10 @@ public class Person {
     @JsonIgnore
     public TermsFrom getRecordedTerms() { return recordedTerms; }
 
-    /** Give them these terms (null: none); the audit line records them when they changed. */
+    /** Give them these terms (null: none); the audit line records the terms in force when they
+     *  changed, or differ from those in force. */
     public void giveTerms(Integer terms) {
-        termsChanged = !java.util.Objects.equals(this.terms, terms);
+        termsChanged = !java.util.Objects.equals(this.terms, terms) || !java.util.Objects.equals(getTerms(), terms);
         this.terms = terms;
     }
 
