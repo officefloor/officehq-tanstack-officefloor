@@ -29,7 +29,8 @@ export const isBound = (c: Claim) => c.stated && c.statedDue !== null;
  *  sheet's today then (the person's own, else their grade's that day, else the sheet's). `log` is its status log, oldest
  *  first: `<STATUS> by <user> on <date> due=<due>`, the sheet's today and its due at each change.
  *  `deferredUntil` is the date it was last deferred until (null: never), and `deferred` whether it is
- *  deferred on the sheet's today (OPEN, or VOID voided while deferred, and deferred until a later date): a deferred claim counts in no
+ *  deferred on the sheet's today (OPEN, or VOID voided while deferred, or SETTLED settled while bound after it was deferred;
+ *  not bound by a statement — a bound claim's deferral takes effect once the binding ends; and deferred until a later date): a deferred claim counts in no
  *  total, is not overdue, cannot be settled and is left unbound by a statement. `proofs` is how many
  *  proofs it has, `photoProofs` how many of them are photos (the rest are receipts): one whose due is
  *  above the proof threshold in force on its date cannot be settled or approved with none (while the
