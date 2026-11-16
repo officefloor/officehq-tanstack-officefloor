@@ -11,11 +11,12 @@ import { GRADES, peopleKey, SORT_KEYS, sortPeople, useEditingPerson, usePeople, 
 import { useShownColumns } from '../columns/columns';
 
 /** The form's values. `gradeFrom` (yyyy-MM-dd) is the date the grade is given from; blank, the sheet's today. A
- *  person's first grade applies from the beginning of time. `terms` are the person's own terms in days; blank, none. `contact` is the person's contact, kept by the server
+ *  person's first grade applies from the beginning of time. `terms` are the person's own terms in days; blank, none. `termsFrom` (yyyy-MM-dd) is the date they are given from;
+ *  blank, the beginning of time. `contact` is the person's contact, kept by the server
  *  without surrounding spaces and lower-cased; blank, none. `tags` are the person's tags, comma separated, kept by the server
  *  each trimmed and lower-cased, repeats dropped; blank, none. */
-type Values = { name: string; grade: string; gradeFrom: string; terms: string; contact: string; tags: string };
-const EMPTY: Values = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '', tags: '' };
+type Values = { name: string; grade: string; gradeFrom: string; terms: string; termsFrom: string; contact: string; tags: string };
+const EMPTY: Values = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFrom: '', contact: '', tags: '' };
 
 /** The form's values for a person as stored. */
 const valuesOf = (p: Person): Values => ({
@@ -23,6 +24,7 @@ const valuesOf = (p: Person): Values => ({
   grade: p.grade,
   gradeFrom: '',
   terms: p.terms === null ? '' : String(p.terms),
+  termsFrom: '',
   contact: p.contact ?? '',
   tags: (p.tags ?? []).join(', '),
 });
@@ -195,6 +197,15 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
             inputMode="numeric"
             value={values.terms}
             onChange={(e) => change({ terms: e.target.value })}
+          />
+        </label>{' '}
+        <label>
+          From{' '}
+          <input
+            data-testid="person-form-terms-from"
+            placeholder="yyyy-mm-dd"
+            value={values.termsFrom}
+            onChange={(e) => change({ termsFrom: e.target.value })}
           />
         </label>{' '}
         <label>

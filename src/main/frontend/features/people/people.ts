@@ -15,7 +15,9 @@ export type PersonGrade = { grade: string; from: string | null };
  *  is the date the person is retired from, null when not retired: a person with one counts as retired at once. `holds` are
  *  the person's holds, by from-date: an OPEN or PENDING claim of theirs dated within one, and not bound by a statement,
  *  counts in no live total. `held` is whether they have any hold. `terms` are the person's own terms in days (ahead of
- *  their grade's and the sheet's when a claim is added), null when they have none. `contact` is the person's contact
+ *  their grade's and the sheet's when a claim is added) in force on the sheet's today, null when they have none;
+ *  `ownTerms` are their own terms as recorded, by from-date (null: from the beginning of time), a claim having those in
+ *  force on its date. `contact` is the person's contact
  *  (unique on the sheet; without surrounding spaces, lower-cased), null when none. `aliases` are the person's aliases,
  *  sorted as names are compared: no alias equals (case ignored) any name or alias on the sheet, and the quick-add bar and
  *  the paste box find a person by one as by the name. `clashing` is whether their name or an alias is used as a name or
@@ -24,6 +26,9 @@ export type PersonGrade = { grade: string; from: string | null };
  *  `retirements` are their past retirements (each ended by unretiring them), in the order they ended.
  *  `tags` are the person's tags (each trimmed and in lower case, no repeats, sorted; empty when none): a claim of theirs
  *  counts for each in the tag totals. */
+/** A person's own terms in days (null: none) from a date (yyyy-MM-dd; null: the beginning of time). */
+export type PersonTerms = { days: number | null; from: string | null };
+
 export type Person = {
   id: number;
   sheetId: string;
@@ -35,6 +40,7 @@ export type Person = {
   grades: PersonGrade[];
   holds: PersonHold[];
   terms: number | null;
+  ownTerms: PersonTerms[];
   contact: string | null;
   aliases: string[];
   clashing: boolean;

@@ -74,7 +74,7 @@ public class CloneRepository {
 
         Map<Object, Object> people = copy("person", "WHERE sheet_id = ? ORDER BY id", from, to, Map.of());
         Map<String, Function<Map<String, Object>, Object>> ofPerson = Map.of("person_id", (r) -> people.get(r.get("person_id")));
-        for (String table : List.of("person_grade", "person_grade_log", "person_terms_log", "person_alias", "person_hold",
+        for (String table : List.of("person_grade", "person_grade_log", "person_terms_log", "person_terms_from", "person_alias", "person_hold",
                 "person_retire_log", "person_retirement")) {
             copy(table, "WHERE sheet_id = ? ORDER BY " + (hasColumn(table, "id") ? "id" : "person_id"), from, to, ofPerson);
         }

@@ -60,7 +60,8 @@ public class PersonTransferrer {
         for (String table : List.of("person_hold", "watch", "person_retire_log")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", from, id);
         }
-        for (String table : List.of("person_grade", "person_grade_log", "person_terms_log", "person_alias", "person_retirement")) {
+        for (String table : List.of("person_grade", "person_grade_log", "person_terms_log", "person_terms_from", "person_alias",
+                "person_retirement")) {
             jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, from, id);
         }
         jdbc.update("UPDATE person SET sheet_id = ?, added_on = ?, origin = ? WHERE sheet_id = ? AND id = ?", to,
@@ -105,7 +106,7 @@ public class PersonTransferrer {
         jdbc.update("DELETE FROM crew WHERE lead_id = ?", id);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", from, id);
         for (String table : List.of("person_hold", "watch", "person_retire_log", "person_grade", "person_grade_log",
-                "person_terms_log", "person_retirement")) {
+                "person_terms_log", "person_terms_from", "person_retirement")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", from, id);
         }
 

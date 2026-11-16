@@ -40,16 +40,16 @@ public final class ClaimRules {
     }
 
     /** The due-by a claim of the person dated the date is fixed with as it is added: the terms-th business day after its date (see
-     *  HolidayRepository.businessDaysAfter), the terms being the person's own, else those of their grade in force on that date (the
+     *  HolidayRepository.businessDaysAfter), the terms being the person's own in force on that date, else those of their grade in force on it (the
      *  holidays on the sheet now decide; one added later works it out again, see ClaimRepository#refixDueBys). */
     public static LocalDate dueBy(Person person, LocalDate date, SettingRepository settings, HolidayRepository holidays) {
         return holidays.businessDaysAfter(person.sheetId(), date, terms(person, date, settings));
     }
 
-    /** The terms a claim of the person dated the date is fixed with: the person's own, else those of their grade in force on
+    /** The terms a claim of the person dated the date is fixed with: the person's own in force on that date, else those of their grade in force on
      *  that date. The claim keeps them, so its due-by can be worked out again when a holiday is added (see ClaimRepository#refixDueBys). */
     public static int terms(Person person, LocalDate date, SettingRepository settings) {
-        return settings.terms(person.sheetId(), person.terms(), person.gradeOn(date), date);
+        return settings.terms(person.sheetId(), person.termsOn(date), person.gradeOn(date), date);
     }
 
     /** Whether opening the claim would take its person past the cap of the period its due-by falls in: they already have

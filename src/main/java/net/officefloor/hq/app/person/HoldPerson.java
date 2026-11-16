@@ -24,7 +24,7 @@ public class HoldPerson {
         holds.sort(Comparator.comparing(PersonHold::from));
         held.set(new Person(person.id(), person.sheetId(), person.name(), person.grade(), person.version(),
                 person.retiredFrom(), person.grades(), List.copyOf(holds), person.terms(), person.contact(), person.aliases())
-                .withRetirements(person.retirements()).withTags(person.tags()));
+                .withRetirements(person.retirements()).withTags(person.tags()).withOwnTerms(person.ownTerms(), person.terms()));
         added.set(span);
     }
 }

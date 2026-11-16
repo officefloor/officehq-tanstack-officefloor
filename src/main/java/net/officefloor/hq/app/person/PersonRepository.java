@@ -18,8 +18,9 @@ import org.springframework.stereotype.Repository;
 
 /** The stored people, kept per sheet. Ids are assigned in the order people are added; people are listed by their
  *  position, new ones at the end (see #move). A person's grades are kept
- *  dated in person_grade, and their holds in person_hold; a person read carries them all, and the grade in force on the
- *  sheet's today. */
+ *  dated in person_grade, their own terms from a date in person_terms_from (those from the beginning of time in
+ *  person.terms), and their holds in person_hold; a person read carries them all, and the grade and own terms in force
+ *  on the sheet's today. */
 @Repository
 public class PersonRepository {
 
@@ -102,6 +103,7 @@ public class PersonRepository {
                     holds.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())
                             .add(new PersonHold(rs.getDate("from_date").toLocalDate(), to == null ? null : to.toLocalDate()));
                 }, sheetId);
+        Map<Long, List<PersonTerms>> dated = datedTerms(sheetId);
         Map<Long, List<String>> aliases = aliases(sheetId);
         Map<Long, List<PersonRetirement>> retirements = new HashMap<>();
         jdbc.query("SELECT person_id, from_date, to_date FROM person_retirement WHERE sheet_id = ? ORDER BY person_id, id",
@@ -113,12 +115,35 @@ public class PersonRepository {
         List<Person> people = new ArrayList<>();
         for (Person p : found) {
             List<PersonGrade> mine = List.copyOf(grades.getOrDefault(p.id(), List.of()));
+            List<PersonTerms> own = ownTerms(p.terms(), dated.get(p.id()));
             people.add(new Person(p.id(), p.sheetId(), p.name(), Person.gradeOn(mine, today), p.version(), p.retiredFrom(),
                     mine, List.copyOf(holds.getOrDefault(p.id(), List.of())), p.terms(), p.contact(),
                     List.copyOf(aliases.getOrDefault(p.id(), List.of()))).withOrigin(p.origin())
-                    .withRetirements(List.copyOf(retirements.getOrDefault(p.id(), List.of()))).withTags(p.tags()));
+                    .withRetirements(List.copyOf(retirements.getOrDefault(p.id(), List.of()))).withTags(p.tags())
+                    .withOwnTerms(own, Person.termsOn(own, today)));
         }
         return people;
+    }
+
+    /** The sheet's own terms recorded from a date, by person, each person's by from-date. */
+    private Map<Long, List<PersonTerms>> datedTerms(String sheetId) {
+        Map<Long, List<PersonTerms>> dated = new HashMap<>();
+        jdbc.query("SELECT person_id, from_date, terms FROM person_terms_from WHERE sheet_id = ? ORDER BY person_id, from_date",
+                (ResultSet rs) -> {
+                    dated.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(new PersonTerms(
+                            rs.getObject("terms", Integer.class), rs.getDate("from_date").toLocalDate()));
+                }, sheetId);
+        return dated;
+    }
+
+    /** A person's own terms as recorded: those from the beginning of time first, then the dated ones. */
+    private static List<PersonTerms> ownTerms(Integer base, List<PersonTerms> dated) {
+        List<PersonTerms> terms = new ArrayList<>();
+        terms.add(new PersonTerms(base, null));
+        if (dated != null) {
+            terms.addAll(dated);
+        }
+        return List.copyOf(terms);
     }
 
     /** The sheet's aliases by person, each person's sorted as names are compared. */
@@ -210,6 +235,12 @@ public class PersonRepository {
         return new Person(id, sheetId, name, grade, 0, null, List.of(new PersonGrade(grade, null)), List.of(), terms, contact).withTags(tags);
     }
 
+    /** Records the person's own terms from the terms' (non-null) from-date. */
+    public void recordTerms(String sheetId, long id, PersonTerms terms) {
+        jdbc.update("INSERT INTO person_terms_from (sheet_id, person_id, from_date, terms) VALUES (?, ?, ?, ?)", sheetId, id,
+                Date.valueOf(terms.from()), terms.days());
+    }
+
     /** Puts the person at the end of the sheet's list: their position is their id (ids only go up), or one after the
      *  last on the sheet when that is higher. */
     public void toEnd(String sheetId, long id) {
@@ -256,7 +287,7 @@ public class PersonRepository {
         int n;
         try {
             n = jdbc.update("UPDATE person SET name = ?, version = ?, terms = ?, contact = ?, tags = ? WHERE sheet_id = ? AND id = ? AND version = ?",
-                    person.name(), person.version(), person.terms(), person.contact(), stored(person.tags()), person.sheetId(), person.id(), fromVersion);
+                    person.name(), person.version(), person.baseTerms(), person.contact(), stored(person.tags()), person.sheetId(), person.id(), fromVersion);
         } catch (DuplicateKeyException e) {
             if (contactClash(e)) {
                 throw new DuplicatePersonContactException(person.contact());
@@ -273,16 +304,22 @@ public class PersonRepository {
         }
         logGrades(person.sheetId(), person.id(), person.grades());
         Integer was = termsWas.isEmpty() ? null : termsWas.get(0);
-        if (!java.util.Objects.equals(was, person.terms())) {
+        if (!java.util.Objects.equals(was, person.baseTerms())) {
             jdbc.update("INSERT INTO person_terms_log (sheet_id, person_id, terms_was, terms, made_on) VALUES (?, ?, ?, ?, ?)",
-                    person.sheetId(), person.id(), was, person.terms(), Date.valueOf(sheets.today(person.sheetId())));
+                    person.sheetId(), person.id(), was, person.baseTerms(), Date.valueOf(sheets.today(person.sheetId())));
+        }
+        jdbc.update("DELETE FROM person_terms_from WHERE sheet_id = ? AND person_id = ?", person.sheetId(), person.id());
+        for (PersonTerms t : person.ownTerms()) {
+            if (t.from() != null) {
+                recordTerms(person.sheetId(), person.id(), t);
+            }
         }
     }
 
-    /** The person's own terms at the end of the date: those set by the last change made on or before it, else those
-     *  before the first change made after it (none logged: the terms stored now). */
+    /** The person's own terms from the beginning of time at the end of the date: those set by the last change made on
+     *  or before it, else those before the first change made after it (none logged: the terms stored now). */
     private Integer termsAsOf(Person person, LocalDate date) {
-        Integer[] terms = { person.terms() };
+        Integer[] terms = { person.baseTerms() };
         boolean[] found = { false };
         jdbc.query("SELECT terms_was, terms, made_on FROM person_terms_log WHERE sheet_id = ? AND person_id = ? ORDER BY id",
                 (ResultSet rs) -> {
@@ -344,10 +381,13 @@ public class PersonRepository {
         List<String> given = jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ?"
                 + " AND (added_on IS NULL OR added_on <= ?)", String.class, sheetId, person.id(), Date.valueOf(date));
         List<String> aliases = person.aliases().stream().filter(given::contains).toList();
-        return new Person(person.id(), sheetId, person.name(), Person.gradeOn(grades, date), person.version(),
+        Person then = new Person(person.id(), sheetId, person.name(), Person.gradeOn(grades, date), person.version(),
                 retired.isEmpty() || retired.get(0) == null ? null : retired.get(0).toString(), List.copyOf(grades), holds,
                 termsAsOf(person, date), person.contact(), aliases).withOrigin(person.origin()).withRetirements(retirements)
                 .withTags(person.tags());
+        List<PersonTerms> own = new ArrayList<>(person.ownTerms());
+        own.replaceAll((t) -> t.from() == null ? new PersonTerms(then.terms(), null) : t);
+        return then.withOwnTerms(List.copyOf(own), Person.termsOn(own, date));
     }
 
     /** The sheet's people as they stood at the end of the date (see #asOf), in list order (see #list; one merged away

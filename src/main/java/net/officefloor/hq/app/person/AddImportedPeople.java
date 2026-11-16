@@ -31,7 +31,7 @@ public class AddImportedPeople {
                 PersonValues edit = edit(matched, values);
                 Person person = ApplyPerson.edited(matched, edit, sheets.today(sheet));
                 people.update(person, matched.version());
-                new RecordPersonEdited().record(person, edit, new TermsBefore(matched.terms()),
+                new RecordPersonEdited().record(person, edit, new TermsBefore(matched.terms(), matched.ownTerms()),
                         new ContactBefore(matched.contact()), before, rollup, audit);
                 updated++;
             }
