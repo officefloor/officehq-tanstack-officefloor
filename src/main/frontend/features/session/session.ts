@@ -7,7 +7,9 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 export const useUser = () => useSearchParam('user', asString);
 export const useSheetId = () => useSearchParam('sheet', asString);
 
-export type Sheet = { id: string };
+/** `today` (yyyy-MM-dd) is the sheet's own date: every date decision and default date on the
+ *  sheet uses it, never the browser's clock. */
+export type Sheet = { id: string; today: string };
 
 /** The active sheet as the store holds it. Keyed ['sheet', id]: every per-sheet key starts so. */
 export function useSheet(sheetId: string) {
@@ -16,4 +18,9 @@ export function useSheet(sheetId: string) {
     queryFn: () => getJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}`),
     enabled: sheetId !== '',
   });
+}
+
+/** The sheet's today (yyyy-MM-dd), or '' while the sheet loads. Use it for every default date. */
+export function useSheetToday(sheetId: string): string {
+  return useSheet(sheetId).data?.today ?? '';
 }
