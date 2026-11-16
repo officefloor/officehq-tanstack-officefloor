@@ -6,6 +6,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -29,6 +33,8 @@ public class Audit {
     /** Lines that only report figures: never marked as made for a delegating steward. */
     private static final Set<String> FIGURES = Set.of("ROLLUP", "TOTALS", "ALERT");
     private static final Pattern HEAD = Pattern.compile("^(\\S+) sheet=(\\S+) by=(\\S+)");
+    /** A name= or person= field: its value runs to the next field (a space then key=) or the end of the line. */
+    private static final Pattern ABOUT = Pattern.compile(" (?:name|person)=(.*?)(?= [^\\s=]+=|$)");
 
     private final Path file;
     private final ObjectProvider<DelegationRepository> delegations;
@@ -59,6 +65,43 @@ public class Audit {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /** The sheet's lines exactly as the file holds them, newest first. With a name (blank: every line), only the
+     *  lines carrying name=<it> or person=<it>, compared as names are (case and surrounding spaces ignored). */
+    public synchronized List<String> lines(String sheetId, String name) {
+        String key = name.trim().toLowerCase(Locale.ROOT);
+        List<String> found = new ArrayList<>();
+        if (!Files.exists(file)) {
+            return found;
+        }
+        List<String> all;
+        try {
+            all = Files.readAllLines(file, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        for (String line : all) {
+            Matcher head = HEAD.matcher(line);
+            if (!head.find() || !head.group(2).equals(sheetId)) {
+                continue;
+            }
+            if (key.isEmpty() || about(line, key)) {
+                found.add(line);
+            }
+        }
+        Collections.reverse(found);
+        return found;
+    }
+
+    private static boolean about(String line, String key) {
+        Matcher m = ABOUT.matcher(line);
+        while (m.find()) {
+            if (m.group(1).trim().toLowerCase(Locale.ROOT).equals(key)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Remove the audit file. */
