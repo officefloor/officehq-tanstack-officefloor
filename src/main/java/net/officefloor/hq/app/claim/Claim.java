@@ -13,10 +13,11 @@ import java.time.LocalDate;
  * when it is added from its person's own terms, else those of their grade in force on its date (see SettingRepository#terms), and the
  * date it is deferred until ({@code deferredUntil}; null when never deferred; see ClaimDue#deferred), and its proofs
  * count ({@code proofs}; 0 when added, raised by one at a time; see ApplyProof), and for a claim split off another
- * the number of the claim it was split from ({@code splitFrom}; null for any other claim; see ApplySplit).
+ * the number of the claim it was split from ({@code splitFrom}; null for any other claim; see ApplySplit), and its external
+ * reference ({@code ref}; surrounding spaces removed; null when none was given), no two of a sheet's claims sharing one in any case.
  */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
         String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs,
-        String splitFrom) {
+        String splitFrom, String ref) {
 }

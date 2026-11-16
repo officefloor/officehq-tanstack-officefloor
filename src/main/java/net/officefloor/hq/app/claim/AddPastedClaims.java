@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Adds the checked claims as DRAFTs in the order pasted, each as AddClaim adds one, writing CLAIM_ADDED for each (and LATE_ENTRY after it for a late entry) and
+/** Adds the checked claims as DRAFTs in the order pasted, each as AddClaim adds one, writing CLAIM_ADDED for each (with ref=<reference> at its end when it has one; and LATE_ENTRY after it for a late entry) and
  *  then the figures the paste moved (see Rollup). */
 public class AddPastedClaims {
     public void add(@PathVariable("sheetId") String sheetId, @Val PastedClaims checked, @Val PastedLines pasted,
@@ -23,10 +23,11 @@ public class AddPastedClaims {
             LocalDate date = c.checked().date();
             String sheet = c.person().sheetId();
             Claim added = claims.add(sheet, c.person().id(), c.values().amount(), date, c.values().note(),
-                    c.checked().corrects(), c.checked().dueBy());
+                    c.checked().corrects(), c.values().ref(), c.checked().dueBy());
             log.write(added, pasted.by());
             lines.add("CLAIM_ADDED sheet=" + added.sheetId() + " by=" + pasted.by() + " person=" + c.person().name()
-                    + " amount=" + added.amount().toPlainString() + " date=" + added.date());
+                    + " amount=" + added.amount().toPlainString() + " date=" + added.date()
+                    + (added.ref() == null ? "" : " ref=" + added.ref()));
             if (periods.softClosedOn(sheet, c.checked().dueBy())) {
                 claims.markLateEntry(added);
                 lines.add("LATE_ENTRY sheet=" + added.sheetId() + " by=" + pasted.by() + " person=" + c.person().name()

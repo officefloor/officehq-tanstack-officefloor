@@ -23,6 +23,6 @@ public class ApplyDefer {
         }
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                 claim.note(), claim.status(), claim.number(), claim.due(), claim.openedBy(), claim.stated(),
-                claim.statedDue(), claim.corrects(), claim.dueBy(), deferral.until(), claim.proofs(), claim.splitFrom()));
+                claim.statedDue(), claim.corrects(), claim.dueBy(), deferral.until(), claim.proofs(), claim.splitFrom(), claim.ref()));
     }
 }

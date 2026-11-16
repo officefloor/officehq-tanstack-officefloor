@@ -14,7 +14,7 @@ public final class ClaimRules {
 
     /** The claim's date (the sheet's entry date, else its today, when none was given) and the due-by it would be fixed with (see dueBy);
      *  a due-by inside a closed period or a date after the person's retirement date is refused, as is a negative amount that does not
-     *  correct a SETTLED claim (see Corrections). */
+     *  correct a SETTLED claim (see Corrections), or a reference already used on the sheet (see checkRef). */
     public static Checked check(Person person, ClaimValues values, SettingRepository settings, PeriodRepository periods,
             ClaimRepository claims, HolidayRepository holidays) throws InvalidClaimException {
         LocalDate date = values.date() != null ? values.date() : settings.claimDate(person.sheetId());
@@ -25,7 +25,16 @@ public final class ClaimRules {
         if (!person.mayClaimOn(date)) {
             throw new InvalidClaimException("The claim's date is after the person's retirement date");
         }
+        checkRef(person.sheetId(), values, null, claims);
         return new Checked(date, Corrections.check(person.sheetId(), person.id(), values, claims), dueBy);
+    }
+
+    /** Refuses a reference another claim of the sheet already has, comparing without regard to case; {@code self} is the
+     *  claim being edited (null for an add), whose own reference does not count. */
+    public static void checkRef(String sheetId, ClaimValues values, Long self, ClaimRepository claims) throws InvalidClaimException {
+        if (values.ref() != null && claims.refUsed(sheetId, values.ref(), self)) {
+            throw new InvalidClaimException("The reference " + values.ref() + " is already used on the sheet");
+        }
     }
 
     /** The due-by a claim of the person dated the date is fixed with as it is added: the terms-th business day after its date (see

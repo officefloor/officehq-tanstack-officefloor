@@ -57,7 +57,7 @@ public class OpenClaims {
             String number = ClaimNumbering.next(claim, claims, periods, settings, sheets);
             Claim toSave = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                     claim.note(), ClaimStatus.OPEN, number, claim.due(), request.by(), claim.stated(),
-                    claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom());
+                    claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), claim.ref());
             if (!claims.updateStatus(toSave, ClaimStatus.DRAFT)) {
                 continue;
             }

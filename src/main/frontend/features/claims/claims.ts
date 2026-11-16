@@ -47,6 +47,8 @@ export type Claim = {
   lateEntry: boolean;
   /** The last day (yyyy-MM-dd) a reminder was written for it; null when never reminded. */
   reminded: string | null;
+  /** Its external reference (surrounding spaces removed; no two claims of a sheet share one, case ignored); null when none. */
+  ref: string | null;
 };
 
 /** One line of a claim's status log: the status it took, who made the change, the sheet's today (yyyy-MM-dd) when

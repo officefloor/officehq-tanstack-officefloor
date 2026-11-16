@@ -3,11 +3,13 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.Locale;
 import java.util.regex.Pattern;
 
 /** A claim's values once validated. {@code date} is null when none was given (the sheet's today applies). {@code corrects} is the number of
- *  the claim a correction corrects (null when none was given). {@code by} is who gives them. */
-public record ClaimValues(BigDecimal amount, LocalDate date, String note, String corrects, String by) {
+ *  the claim a correction corrects (null when none was given). {@code by} is who gives them. {@code ref} is its external reference,
+ *  surrounding spaces removed (null when none, or a blank one, was given). */
+public record ClaimValues(BigDecimal amount, LocalDate date, String note, String corrects, String by, String ref) {
     private static final Pattern AMOUNT = Pattern.compile("-?\\d{1,15}(\\.\\d{1,2})?");
 
     /** The request's values by the claim form's rules (see ValidateClaim). */
@@ -27,7 +29,13 @@ public record ClaimValues(BigDecimal amount, LocalDate date, String note, String
         }
         String note = request.note() == null ? "" : request.note().trim();
         String corrects = request.corrects() == null ? "" : request.corrects().trim();
+        String ref = request.ref() == null ? "" : request.ref().trim();
         return new ClaimValues(new BigDecimal(amount).setScale(2), parsed, note, corrects.isEmpty() ? null : corrects,
-                request.by() == null ? "" : request.by().trim());
+                request.by() == null ? "" : request.by().trim(), ref.isEmpty() ? null : ref);
+    }
+
+    /** The reference as compared: without regard to case. */
+    public static String refKey(String ref) {
+        return ref == null ? null : ref.toLowerCase(Locale.ROOT);
     }
 }

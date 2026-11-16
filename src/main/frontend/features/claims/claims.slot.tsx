@@ -14,8 +14,8 @@ import { claimsKey, live, logLine, total, useClaims, type Claim } from './claims
 import { useSelectedClaims } from './selection';
 import { useSheetToday } from '../session/session';
 
-type Values = { amount: string; date: string; note: string; corrects: string };
-const EMPTY: Values = { amount: '', date: '', note: '', corrects: '' };
+type Values = { amount: string; date: string; note: string; corrects: string; ref: string };
+const EMPTY: Values = { amount: '', date: '', note: '', corrects: '', ref: '' };
 
 function ClaimsHead() {
   return (
@@ -124,7 +124,7 @@ function ClaimRow({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
   const [inlineAmount, setInlineAmount] = useState('');
-  // the row's own amount entry saves through the claim form's edit, keeping the claim's date, note and corrects
+  // the row's own amount entry saves through the claim form's edit, keeping the claim's date, note, corrects and reference
   const inline = useMutation({
     mutationFn: (amount: string) =>
       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}`, {
@@ -132,6 +132,7 @@ function ClaimRow({
         date: c.date,
         note: c.note,
         corrects: c.corrects ?? '',
+        ref: c.ref ?? '',
         by: user,
       }),
     onSuccess: () => {
@@ -182,6 +183,7 @@ function ClaimRow({
       <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
+      <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
       <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
       <span data-testid="claim-proofs">{c.proofs}</span>{' '}
@@ -563,7 +565,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
   const openEditor = (c: Claim) => {
     save.reset();
     if (editingId !== undefined && editingId !== c.id) unlock.mutate(editingId);
-    setValues({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
+    setValues({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '', ref: c.ref ?? '' });
     setEditingId(c.id);
   };
   const cancel = () => {
@@ -612,12 +614,13 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
             value={values.corrects}
             onChange={(e) => change({ corrects: e.target.value })}
           />{' '}
+          <input data-testid="claim-form-ref" placeholder="Reference" value={values.ref} onChange={(e) => change({ ref: e.target.value })} />{' '}
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
             {editingId === undefined ? 'Add claim' : 'Save claim'}
           </button>
           {save.isError && (
             <span data-testid="claim-form-error">
-              The amount must have up to two decimals, and be 0.00 or more unless it corrects, by number, a settled claim of this person; its due-by not inside a closed period, the date not after the person's retirement date, and only a draft claim can be edited.
+              The amount must have up to two decimals, and be 0.00 or more unless it corrects, by number, a settled claim of this person; its due-by not inside a closed period, the date not after the person's retirement date, the reference not one already used on the sheet, and only a draft claim can be edited.
             </span>
           )}
         </form>

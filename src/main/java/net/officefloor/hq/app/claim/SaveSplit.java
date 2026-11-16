@@ -26,7 +26,7 @@ public class SaveSplit {
         }
         Person person = people.find(claim.sheetId(), claim.personId());
         String grade = person == null ? null : person.gradeOn(claim.date());
-        Claim added = claims.add(claim.sheetId(), claim.personId(), split.amount(), claim.date(), claim.note(), null,
+        Claim added = claims.add(claim.sheetId(), claim.personId(), split.amount(), claim.date(), claim.note(), null, null,
                 holidays.businessDaysAfter(claim.sheetId(), claim.date(),
                         settings.terms(claim.sheetId(), person == null ? null : person.terms(), grade, claim.date())));
         if (periods.softClosedOn(added.sheetId(), added.dueBy())) {
@@ -35,7 +35,7 @@ public class SaveSplit {
         String number = ClaimNumbering.next(added, claims, periods, settings, sheets);
         Claim opened = new Claim(added.id(), added.sheetId(), added.personId(), added.amount(), added.date(),
                 added.note(), ClaimStatus.OPEN, number, null, split.by(), false, null, null, added.dueBy(), null, 0,
-                claim.number());
+                claim.number(), null);
         claims.updateStatus(opened, ClaimStatus.DRAFT);
         claims.splitFrom(opened);
         log.write(opened, split.by());

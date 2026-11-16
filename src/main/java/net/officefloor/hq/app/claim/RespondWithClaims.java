@@ -58,6 +58,6 @@ public class RespondWithClaims {
         return new Claim(c.id(), c.sheetId(), c.personId(), values.amount(), values.date(), values.note(), status,
                 opened ? c.number() : null, status == ClaimStatus.SETTLED ? c.due() : null, opened ? c.openedBy() : null,
                 stated, stated ? c.statedDue() : null, values.corrects(), c.dueBy(), c.deferredUntil(), c.proofs(),
-                c.splitFrom());
+                c.splitFrom(), values.ref());
     }
 }
