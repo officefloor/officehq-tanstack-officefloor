@@ -4,6 +4,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
@@ -29,22 +30,39 @@ public class PersonRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    public Person add(String sheetId, String name, String grade) {
+    /** Whether a person on the sheet other than {@code exceptId} (0: anyone) has this name, case ignored. */
+    public boolean nameTaken(String sheetId, String name, long exceptId) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(?) AND id <> ?",
+                Integer.class, sheetId, name, exceptId);
+        return n != null && n > 0;
+    }
+
+    /** The unique (sheet_id, name_key) index refuses a name taken by a concurrent add or edit. */
+    public Person add(String sheetId, String name, String grade) throws DuplicatePersonNameException {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
-        jdbc.update(con -> {
-            PreparedStatement ps = con.prepareStatement("INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)",
-                    new String[] { "id" });
-            ps.setString(1, sheetId);
-            ps.setString(2, name);
-            ps.setString(3, grade);
-            return ps;
-        }, keys);
+        try {
+            jdbc.update(con -> {
+                PreparedStatement ps = con.prepareStatement("INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)",
+                        new String[] { "id" });
+                ps.setString(1, sheetId);
+                ps.setString(2, name);
+                ps.setString(3, grade);
+                return ps;
+            }, keys);
+        } catch (DuplicateKeyException e) {
+            throw new DuplicatePersonNameException(name);
+        }
         return new Person(keys.getKey().longValue(), sheetId, name, grade);
     }
 
-    public void update(Person person) {
-        jdbc.update("UPDATE person SET name = ?, grade = ? WHERE sheet_id = ? AND id = ?",
-                person.name(), person.grade(), person.sheetId(), person.id());
+    public void update(Person person) throws DuplicatePersonNameException {
+        try {
+            jdbc.update("UPDATE person SET name = ?, grade = ? WHERE sheet_id = ? AND id = ?",
+                    person.name(), person.grade(), person.sheetId(), person.id());
+        } catch (DuplicateKeyException e) {
+            throw new DuplicatePersonNameException(person.name());
+        }
     }
 
     private static Person map(ResultSet rs, int n) throws SQLException {

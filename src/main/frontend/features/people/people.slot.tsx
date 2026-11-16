@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson, putJson } from '../../api/http';
+import { HttpError, postJson, putJson } from '../../api/http';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { GRADES, peopleKey, useEditingPerson, usePeople, type Person } from './people';
 
@@ -78,7 +78,11 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
         )}
         {save.isError && (
           <span data-testid="person-form-error">
-            {values.name.trim() === '' ? 'A name is required.' : 'Could not save this person.'}
+            {values.name.trim() === ''
+              ? 'A name is required.'
+              : save.error instanceof HttpError && save.error.status === 409
+                ? 'That name is already in use on this sheet.'
+                : 'Could not save this person.'}
           </span>
         )}
       </form>
