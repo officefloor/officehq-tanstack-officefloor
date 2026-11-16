@@ -26,6 +26,7 @@ public class ValidateClaim {
             }
         }
         String note = request.note() == null ? "" : request.note().trim();
-        values.set(new ClaimValues(new BigDecimal(amount).setScale(2), parsed, note));
+        values.set(new ClaimValues(new BigDecimal(amount).setScale(2), parsed, note,
+                request.by() == null ? "" : request.by().trim()));
     }
 }
