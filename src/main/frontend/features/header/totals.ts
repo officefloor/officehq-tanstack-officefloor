@@ -26,6 +26,12 @@ export function useSheetDueTotal(sheetId: string): string {
   );
 }
 
+/** The sheet's classic due-total: everyone's due-total added up, skipping n/a, with no trimming. */
+export function useSheetDueSum(sheetId: string): string {
+  const due = usePeopleDue(sheetId);
+  return sum([...due.values()]);
+}
+
 /** Each person's due-total as their row shows it (two decimals, or n/a), by person id. */
 export function usePeopleDue(sheetId: string): Map<number, string> {
   const people = usePeople(sheetId);

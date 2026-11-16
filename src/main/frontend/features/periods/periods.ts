@@ -60,7 +60,8 @@ export function statusAsOf(claim: Claim, day: string): ClaimStatus | undefined {
  *  statusAsOf; a claim added after it does not count), the live rules otherwise applying (a deferred claim does
  *  not count, nor a claim open now dated within a hold of its person, or of a person whose retirement date is reached,
  *  not bound by a statement), added up (skipping
- *  n/a); for a closed or soft-closed period, their figure fixed when it was (soft-)closed (0.00 for a person added after). */
+ *  n/a); for a closed or soft-closed period, their figure fixed when it was (soft-)closed (0.00 for a person added after).
+ *  With `statusNow`, each claim counts by its status now instead (the classic summary). */
 export function personPeriodDue(
   period: Period,
   person: Person,
@@ -68,11 +69,12 @@ export function personPeriodDue(
   rates: Rate[] | undefined,
   floor: Dated,
   late: Late,
+  statusNow = false,
 ): string {
   if (period.closed || period.soft) return period.personTotals?.[String(person.id)] ?? '0.00';
   const mine = (claims ?? []).filter((c) => {
     if (c.personId !== person.id || c.dueBy < period.from || period.to < c.dueBy) return false;
-    const status = statusAsOf(c, period.to);
+    const status = statusNow ? c.status : statusAsOf(c, period.to);
     return status !== undefined && counts({ ...c, status }) && !(isOpen(c) && !bound(c) && (heldOn(person, c.date) || retiredOn(person, late.today)));
   });
   return sum(mine.map((c) => claimDue(c, rateFor(rates, gradeOn(person, c.date), c.date), floor, late)));
@@ -88,4 +90,17 @@ export function periodDue(
   late: Late,
 ): string {
   return sum((people ?? []).map((person) => personPeriodDue(period, person, claims, rates, floor, late)));
+}
+
+/** A period's classic due-total: as periodDue, but counting each claim by its status now (a closed or soft-closed
+ *  period still shows the figures fixed when it was closed). */
+export function classicPeriodDue(
+  period: Period,
+  claims: Claim[] | undefined,
+  people: Person[] | undefined,
+  rates: Rate[] | undefined,
+  floor: Dated,
+  late: Late,
+): string {
+  return sum((people ?? []).map((person) => personPeriodDue(period, person, claims, rates, floor, late, true)));
 }
