@@ -4,6 +4,7 @@ import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
 import { gradeOn, usePeople } from '../people/people';
 import { periodOf, usePeriods } from '../periods/periods';
+import { usePools } from '../pools/pools';
 import { claimDue, personDue, rateFor, useRates } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../settings/settings';
 
@@ -94,7 +95,35 @@ function ExportClaims({ sheetId }: { sheetId: string }) {
   );
 }
 
+/** The button that downloads the pools as a CSV file: pool, member, share and cut as the pool rows show them (a pool
+ *  member as pool:<name>, an empty cut when none), pools in the order added and each pool's members in the order added.
+ *  Made once the sheet's figures are no longer being re-read. */
+function ExportPools({ sheetId }: { sheetId: string }) {
+  const pools = usePools(sheetId);
+  const fetching = useIsFetching({ queryKey: ['sheet', sheetId] });
+  const [wanted, setWanted] = useState(false);
+
+  useEffect(() => {
+    if (!wanted || fetching > 0 || !pools.data) return;
+    setWanted(false);
+    const lines = ['pool,member,share,cut'];
+    for (const pool of pools.data)
+      for (const m of pool.members)
+        lines.push([pool.name, m.pool === null ? m.name : `pool:${m.pool}`, m.share.toFixed(2), m.cut ?? ''].map(csvValue).join(','));
+    download(`pools-${sheetId}.csv`, lines);
+  }, [wanted, fetching, pools.data, sheetId]);
+
+  return (
+    <p>
+      <button type="button" data-testid="export-pools" onClick={() => setWanted(true)}>
+        Export pools (CSV)
+      </button>
+    </p>
+  );
+}
+
 export const contributions = [
   SheetPage.fill({ order: 15, Component: ExportPeople }),
   SheetPage.fill({ order: 15.5, Component: ExportClaims }),
+  SheetPage.fill({ order: 15.6, Component: ExportPools }),
 ];

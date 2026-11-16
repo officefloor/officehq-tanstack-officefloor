@@ -81,11 +81,13 @@ public class PoolRepository {
                         parents.put(memberPool, poolId);
                     }
                 }, sheetId);
-        Map<Long, Pool> pools = new LinkedHashMap<>();
+        Map<Long, Pool> pools = new HashMap<>();
+        List<Pool> inOrder = new ArrayList<>();
         for (Long id : names.keySet()) {
-            share(id, names, members, parents, pot, held, pools);
+            // a pool above is built first; the list keeps the order added
+            inOrder.add(share(id, names, members, parents, pot, held, pools));
         }
-        return new ArrayList<>(pools.values());
+        return inOrder;
     }
 
     /** The ids of the sheet's people with a hold whose dates include the day (the sheet's today). */
