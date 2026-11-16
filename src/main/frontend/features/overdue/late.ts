@@ -54,6 +54,14 @@ export function plusDays(date: string, days: number): string {
   return new Date((day(date) + days) * 86_400_000).toISOString().slice(0, 10);
 }
 
+/** Whether a REVIEW claim is review-late: its review day (the sheet's today on the latest REVIEW line of its status log)
+ *  plus the review SLA days is before the sheet's today (never with no SLA, or for a claim not in REVIEW). */
+export function isReviewLate(claim: Claim, sla: number | null, today: string): boolean {
+  if (claim.status !== 'REVIEW' || sla === null || today === '') return false;
+  const reviewed = [...claim.log].reverse().find((l) => l.status === 'REVIEW');
+  return reviewed !== undefined && plusDays(reviewed.date, sla) < today;
+}
+
 /** The 30-day boundaries an overdue claim has passed (its due-by plus its grace plus 30, 60, 90 ... days, on or before today), each
  *  bearing the late percent in force on it; none when it bears no late charge (see lateSteps). */
 export function lateBoundaries(claim: Claim, late: Late): string[] {

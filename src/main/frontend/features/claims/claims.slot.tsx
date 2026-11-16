@@ -10,7 +10,8 @@ import { useRoles } from '../roles/roles';
 import { useDelegations } from '../delegation/delegation';
 import { claimDue, claimRate, useRates } from '../rates/rates';
 import { dueBy, isOverdue } from '../overdue/overdue';
-import { useFloor, useLate, type Dated } from '../settings/settings';
+import { isReviewLate } from '../overdue/late';
+import { useFloor, useLate, useReviewSla, type Dated } from '../settings/settings';
 import { claimsKey, commentLine, lineLine, live, logLine, claimed, useClaims, type Claim } from './claims';
 import { useSelectedClaims } from './selection';
 import { useSheetToday } from '../session/session';
@@ -80,6 +81,7 @@ function ClaimRow({
   const queryClient = useQueryClient();
   const periods = usePeriods(sheetId);
   const late = useLate(sheetId);
+  const reviewSla = useReviewSla(sheetId);
   const status = useMutation({
     mutationFn: (action: Action) =>
       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/status`, {
@@ -226,6 +228,7 @@ function ClaimRow({
       <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
       <span data-testid="claim-overdue">{isOverdue(c, late) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
+      <span data-testid="claim-review-late">{isReviewLate(c, reviewSla, today) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}

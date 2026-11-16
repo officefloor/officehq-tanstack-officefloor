@@ -82,6 +82,10 @@ public class SettingRepository {
      *  today escalates it (once per claim); blank for off (undated). */
     public static final String ESCALATE_AFTER = "escalate-after";
 
+    /** The review SLA: a REVIEW claim whose review day (the sheet's today when it went to REVIEW) plus this many days
+     *  is before the sheet's today is review-late; blank for none (undated). */
+    public static final String REVIEW_SLA = "review-sla";
+
     /** The sheet's pot, shared out as each balanced pool's cuts (two decimals); blank for none (undated). */
     public static final String POT = "pot";
 

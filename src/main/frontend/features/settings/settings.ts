@@ -84,3 +84,10 @@ export function useLate(sheetId: string): Late {
   const rounding = (date: string) => inForce(settings.data, 'rounding', date)?.value ?? null;
   return { today, pct: (date) => inForce(settings.data, 'late-pct', date)?.value ?? DEFAULT_LATE_PCT, policy, grace, rounding };
 }
+
+/** The sheet's review SLA in whole days (undated); null when blank (none). */
+export function useReviewSla(sheetId: string): number | null {
+  const settings = useSettings(sheetId);
+  const value = settings.data?.find((s) => s.key === 'review-sla')?.value;
+  return value === null || value === undefined ? null : Number(value);
+}

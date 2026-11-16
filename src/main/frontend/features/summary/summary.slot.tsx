@@ -5,13 +5,14 @@ import { STATUSES, useStatusCounts } from '../header/totals';
 import { GRADES, gradeOn, usePeople } from '../people/people';
 import { periodDue, usePeriods } from '../periods/periods';
 import { difference, personDue, sum, useRates } from '../rates/rates';
-import { useCap, useFloor, useLate } from '../settings/settings';
+import { isReviewLate } from '../overdue/late';
+import { useCap, useFloor, useLate, useReviewSla } from '../settings/settings';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 
 /** The sheet's summary, worked out from the same figures the lists show. Per grade: the people on it on the sheet's
  *  today (retired people excluded), their due-totals added up (skipping n/a) and how many of them are active. Per period: its due-total, and its
  *  change from the period before it by start date (blank for the earliest). Per
- *  status: how many of the sheet's claims have it. Per void reason on the sheet's list: how many VOID claims were voided
+ *  status: how many of the sheet's claims have it, and how many REVIEW claims are review-late (see isReviewLate). Per void reason on the sheet's list: how many VOID claims were voided
  *  with it. */
 function Summary({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId);
@@ -21,6 +22,7 @@ function Summary({ sheetId }: { sheetId: string }) {
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
   const cap = useCap(sheetId);
+  const reviewSla = useReviewSla(sheetId);
 
   const active = (people.data ?? []).filter((p) => p.retiredFrom === null);
   const onGrade = (grade: string) => active.filter((p) => gradeOn(p, late.today) === grade);
@@ -97,6 +99,12 @@ function Summary({ sheetId }: { sheetId: string }) {
               <td data-testid={`summary-status-${s}-count`}>{withStatus(s)}</td>
             </tr>
           ))}
+          <tr>
+            <td>Review late</td>
+            <td data-testid="summary-review-late-count">
+              {(claims.data ?? []).filter((c) => isReviewLate(c, reviewSla, late.today)).length}
+            </td>
+          </tr>
         </tbody>
       </table>
       <table data-testid="summary-void-reasons">
