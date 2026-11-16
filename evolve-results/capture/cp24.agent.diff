@@ -1,0 +1,601 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index f1b016215..4fc11f309 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -7,6 +7,7 @@ import { SheetPage } from '../../slots/defs/sheetPage';
+ import { usePeople, type Person } from '../people/people';
+ import { periodOf, usePeriods } from '../periods/periods';
+ import { claimDue, rateFor, useRates } from '../rates/rates';
++import { useFloor } from '../settings/settings';
+ import { claimsKey, live, total, useClaims, type Claim } from './claims';
+ 
+ type Values = { amount: string; date: string; note: string };
+@@ -31,6 +32,7 @@ function ClaimRow({
+   user,
+   claim: c,
+   rate,
++  floor,
+   editing,
+   onEdit,
+   onCancel,
+@@ -39,6 +41,7 @@ function ClaimRow({
+   user: string;
+   claim: Claim;
+   rate: string | undefined;
++  floor: string;
+   editing: boolean;
+   onEdit: () => void;
+   onCancel: () => void;
+@@ -62,7 +65,7 @@ function ClaimRow({
+       <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
+       <span data-testid="claim-amount">{c.amount}</span> <span data-testid="claim-date">{c.date}</span>{' '}
+       <span data-testid="claim-note">{c.note}</span>{' '}
+-      <span data-testid="claim-due">{claimDue(c, rate)}</span>{' '}
++      <span data-testid="claim-due">{claimDue(c, rate, floor)}</span>{' '}
+       <span data-testid="claim-status">{c.status}</span>{' '}
+       <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
+       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
+@@ -116,6 +119,7 @@ function ClaimRow({
+ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+   const claims = useClaims(sheetId);
+   const rates = useRates(sheetId).data;
++  const floor = useFloor(sheetId);
+   const queryClient = useQueryClient();
+   const mine = claims.data?.filter((c) => c.personId === person.id) ?? [];
+   const [editingId, setEditingId] = useState<number | undefined>(undefined);
+@@ -192,6 +196,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
+               user={user}
+               claim={c}
+               rate={rateFor(rates, person.grade, c.date)}
++              floor={floor}
+               editing={editingId === c.id}
+               onEdit={() => openEditor(c)}
+               onCancel={cancel}
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index 4b41bede0..c79c5368b 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -6,6 +6,7 @@ import { SheetPage } from '../../slots/defs/sheetPage';
+ import { live, useClaims } from '../claims/claims';
+ import { usePeople } from '../people/people';
+ import { claimDue, rateFor, sum, useRates } from '../rates/rates';
++import { useFloor } from '../settings/settings';
+ import { periodsKey, usePeriods, type Period } from './periods';
+ 
+ type Values = { name: string; from: string; to: string };
+@@ -19,6 +20,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
+   const people = usePeople(sheetId);
+   const claims = useClaims(sheetId);
+   const rates = useRates(sheetId);
++  const floor = useFloor(sheetId);
+   const queryClient = useQueryClient();
+   const [values, setValues] = useState<Values>(EMPTY);
+ 
+@@ -43,7 +45,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
+     return sum(
+       inPeriod.map((c) => {
+         const grade = grades.get(c.personId);
+-        return claimDue(c, grade === undefined ? undefined : rateFor(rates.data, grade, c.date));
++        return claimDue(c, grade === undefined ? undefined : rateFor(rates.data, grade, c.date), floor);
+       }),
+     );
+   };
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index 74857b17b..4a062a292 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -7,6 +7,7 @@ import { SheetPage } from '../../slots/defs/sheetPage';
+ import { live, useClaims } from '../claims/claims';
+ import { GRADES, usePeople, type Person } from '../people/people';
+ import { useSheetToday } from '../session/session';
++import { useFloor } from '../settings/settings';
+ import { personDue, rateFor, ratesKey, sum, useRates, type Rate } from './rates';
+ 
+ /** The sheet's rates: the form that sets one (from an optional from-date), each grade's rate in force on the
+@@ -130,8 +131,9 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }
+   const claims = useClaims(sheetId);
+   const rates = useRates(sheetId);
+   const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
+   const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person]);
+-  return <td data-testid="person-due-total">{personDue(mine, rates.data, person.grade, today)}</td>;
++  return <td data-testid="person-due-total">{personDue(mine, rates.data, person.grade, today, floor)}</td>;
+ }
+ 
+ /** The sheet's due-total: everyone's due-total added up, skipping n/a. */
+@@ -140,8 +142,9 @@ function DueTotal({ sheetId }: { sheetId: string }) {
+   const claims = useClaims(sheetId);
+   const rates = useRates(sheetId);
+   const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
+   const dues = (people.data ?? []).map((p) =>
+-    personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p.grade, today),
++    personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p.grade, today, floor),
+   );
+   return (
+     <p>
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 60c642a29..1078e8927 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -40,24 +40,26 @@ function shown(h: bigint): string {
+   return `${sign}${a / 100n}.${String(a % 100n).padStart(2, '0')}`;
+ }
+ 
+-/** What is due on an amount at a rate: amount × rate / 100, rounded half to even to two decimals; 'n/a' when
+- *  there is no rate. */
+-export function due(amount: string, rate: string | undefined): string {
++/** What is due on an amount at a rate: amount × rate / 100, rounded half to even to two decimals, and at least
++ *  the floor (two decimals); 'n/a' when there is no rate. */
++export function due(amount: string, rate: string | undefined, floor: string): string {
+   if (rate === undefined) return 'n/a';
+   const p = hundredths(amount) * hundredths(rate); // in 1/10000 of a hundredth
+   const a = p < 0n ? -p : p;
+   const q = a / 10000n;
+   const rem = a % 10000n;
+   const r = rem > 5000n || (rem === 5000n && q % 2n === 1n) ? q + 1n : q;
+-  return shown(p < 0n ? -r : r);
++  const d = p < 0n ? -r : r;
++  const f = hundredths(floor);
++  return shown(d < f ? f : d);
+ }
+ 
+ /** A claim's due: the figure fixed when it was settled, otherwise the one its person's last statement bound it to,
+- *  otherwise its amount at the rate in force on its date. */
+-export function claimDue(claim: Claim, rate: string | undefined): string {
++ *  otherwise its amount at the rate in force on its date, at least the sheet's floor. */
++export function claimDue(claim: Claim, rate: string | undefined, floor: string): string {
+   if (claim.due !== null) return claim.due;
+   if (claim.stated) return claim.statedDue ?? 'n/a';
+-  return due(claim.amount, rate);
++  return due(claim.amount, rate, floor);
+ }
+ 
+ /** Whether a claim keeps its figure whatever the rates are: fixed when settled, or bound by a statement. */
+@@ -65,10 +67,10 @@ const kept = (c: Claim) => c.due !== null || (c.stated && c.statedDue !== null);
+ 
+ /** A person's due-total: the figures of their claims that count (each at the rate in force on its date) added
+  *  up; 'n/a' when their grade has no rate today, unless a settled or stated claim keeps a figure. */
+-export function personDue(claims: Claim[], rates: Rate[] | undefined, grade: string, today: string): string {
++export function personDue(claims: Claim[], rates: Rate[] | undefined, grade: string, today: string, floor: string): string {
+   const counted = claims.filter(counts);
+   if (rateFor(rates, grade, today) === undefined && !counted.some(kept)) return 'n/a';
+-  return sum(counted.map((c) => claimDue(c, rateFor(rates, grade, c.date))));
++  return sum(counted.map((c) => claimDue(c, rateFor(rates, grade, c.date), floor)));
+ }
+ 
+ /** Two-decimal values added up, skipping 'n/a'. */
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index f0fa0e40c..6eece4f33 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -1,27 +1,57 @@
+-import { useState } from 'react';
++import { useRef, useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { SheetPage } from '../../slots/defs/sheetPage';
+-import { settingsKey, useSettings, type Setting } from './settings';
++import { DEFAULT_FLOOR, settingsKey, useSettings, type Setting } from './settings';
+ 
+-/** The sheet's settings: the clerk limit (the most a clerk may settle a claim's due for; blank for no limit). */
++type Key = 'clerk-limit' | 'floor';
++const KEYS: Key[] = ['clerk-limit', 'floor'];
++
++/** The sheet's settings: the clerk limit (the most a clerk may settle a claim's due for; blank for no limit) and the
++ *  floor (the least a claim's live due may be; 1.00 until set). Saving stores the fields entered since the last save
++ *  (a field focused counts, so a blank typed over a blank still saves), the clerk limit when none was. */
+ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+   const settings = useSettings(sheetId);
+   const queryClient = useQueryClient();
+-  const [limit, setLimit] = useState('');
++  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '' });
++  const touched = useRef(new Set<Key>());
+ 
+   const submit = useSubmitOnce();
+   const save = useMutation({
+-    mutationFn: (value: string) =>
+-      putJson<Setting>(`/api/sheets/${encodeURIComponent(sheetId)}/settings/clerk-limit`, { value, by: user }),
++    mutationFn: async (entries: [Key, string][]) => {
++      for (const [key, value] of entries) {
++        await putJson<Setting>(`/api/sheets/${encodeURIComponent(sheetId)}/settings/${key}`, { value, by: user });
++      }
++    },
+     onSuccess: () => {
+-      setLimit('');
++      setValues({ 'clerk-limit': '', floor: '' });
++      touched.current.clear();
++    },
++    onSettled: () => {
++      submit.end();
+       void queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) });
+     },
+-    onSettled: submit.end,
+   });
+-  const current = settings.data?.find((s) => s.key === 'clerk-limit')?.value ?? '';
++  const current = (key: Key) => settings.data?.find((s) => s.key === key)?.value ?? '';
++
++  const field = (key: Key, label: string) => (
++    <label>
++      {label}{' '}
++      <input
++        data-testid={`setting-${key}`}
++        inputMode="decimal"
++        value={values[key]}
++        onFocus={() => touched.current.add(key)}
++        onChange={(e) => {
++          touched.current.add(key);
++          const value = e.target.value;
++          setValues((was) => ({ ...was, [key]: value }));
++          save.reset();
++        }}
++      />
++    </label>
++  );
+ 
+   return (
+     <section data-testid="settings">
+@@ -32,31 +62,27 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+           e.preventDefault();
+           if (!submit.begin()) return;
+           save.reset();
+-          save.mutate(limit);
++          const keys = KEYS.filter((k) => touched.current.has(k));
++          save.mutate((keys.length > 0 ? keys : (['clerk-limit'] as Key[])).map((k) => [k, values[k]]));
+         }}
+       >
+-        <label>
+-          Clerk limit{' '}
+-          <input
+-            data-testid="setting-clerk-limit"
+-            inputMode="decimal"
+-            value={limit}
+-            onChange={(e) => {
+-              setLimit(e.target.value);
+-              save.reset();
+-            }}
+-          />
+-        </label>{' '}
++        {field('clerk-limit', 'Clerk limit')} {field('floor', 'Floor')}{' '}
+         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
+           Save settings
+         </button>
+         {save.isError && (
+-          <span data-testid="settings-error">The clerk limit must be an amount with up to two decimals, or blank.</span>
++          <span data-testid="settings-error">
++            The clerk limit must be an amount with up to two decimals, or blank; the floor an amount with up to two
++            decimals.
++          </span>
+         )}
+       </form>
+       {settings.isError && <p data-testid="settings-load-error">Could not load settings.</p>}
+       <p>
+-        Clerk limit in force <span data-testid="setting-clerk-limit-current">{current}</span>
++        Clerk limit in force <span data-testid="setting-clerk-limit-current">{current('clerk-limit')}</span>
++      </p>
++      <p>
++        Floor in force <span data-testid="setting-floor-current">{current('floor') || DEFAULT_FLOOR}</span>
+       </p>
+     </section>
+   );
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index 36926afe5..0e85b64ca 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -1,7 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+-/** A sheet setting: `value` is text (clerk-limit: an amount with two decimals), null when blank. */
++/** A sheet setting: `value` is text (clerk-limit, floor: an amount with two decimals), null when blank. */
+ export type Setting = { sheetId: string; key: string; value: string | null };
+ 
+ export const settingsKey = (sheetId: string) => ['sheet', sheetId, 'settings'];
+@@ -13,3 +13,12 @@ export function useSettings(sheetId: string) {
+     queryFn: () => getJson<Setting[]>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`),
+   });
+ }
++
++/** The floor a sheet has until one is set. */
++export const DEFAULT_FLOOR = '1.00';
++
++/** The sheet's floor: the least a claim's live due may be (two decimals). */
++export function useFloor(sheetId: string): string {
++  const settings = useSettings(sheetId);
++  return settings.data?.find((s) => s.key === 'floor')?.value ?? DEFAULT_FLOOR;
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 6f4e8076e..fb37f91e7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -13,7 +13,7 @@ import net.officefloor.plugin.variable.Val;
+ /**
+  * Moves the claim to its new status: DRAFT to OPEN, OPEN to SETTLED, DRAFT or OPEN to VOID. A voided claim keeps
+  * its number (never given again). Settling fixes the claim's due: its amount at its
+- * person's grade's rate in force on the claim's date, rounded half to even to two decimals (left live when no rate applies),
++ * person's grade's rate in force on the claim's date, rounded half to even to two decimals and at least the sheet's floor (left live when no rate applies),
+  * or the figure a statement bound it to.
+  * Opening records who opened the claim; that user cannot settle it (four eyes). A claim dated inside a closed
+  * period cannot change status. A clerk (any user not made a steward) settles only a claim whose due is at or below the
+@@ -37,7 +37,7 @@ public class ApplyClaimStatus {
+         if (change.to() == ClaimStatus.SETTLED && change.by().equals(claim.openedBy())) {
+             throw new InvalidClaimStatusException("The user who opened a claim cannot settle it");
+         }
+-        BigDecimal settledDue = change.to() == ClaimStatus.SETTLED ? due(claim, people, rates) : claim.due();
++        BigDecimal settledDue = change.to() == ClaimStatus.SETTLED ? due(claim, people, rates, settings) : claim.due();
+         if (change.to() == ClaimStatus.SETTLED && settledDue != null
+                 && !RoleRepository.STEWARD.equals(roles.roleOf(claim.sheetId(), change.by()))) {
+             BigDecimal limit = settings.clerkLimit(claim.sheetId());
+@@ -51,11 +51,11 @@ public class ApplyClaimStatus {
+                 change.to() == ClaimStatus.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue()));
+     }
+ 
+-    private static BigDecimal due(Claim claim, PersonRepository people, RateRepository rates) {
++    private static BigDecimal due(Claim claim, PersonRepository people, RateRepository rates, SettingRepository settings) {
+         if (claim.stated()) {
+             return claim.statedDue();
+         }
+         Person person = people.find(claim.sheetId(), claim.personId());
+-        return person == null ? null : ClaimDue.live(claim, person.grade(), rates);
++        return person == null ? null : ClaimDue.live(claim, person.grade(), rates, settings.floor(claim.sheetId()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java b/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java
+index 03a1c47b3..9f70ec0f0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java
+@@ -22,21 +22,24 @@ public final class ClaimDue {
+         return counts(claim) && !(held && claim.status() == ClaimStatus.OPEN);
+     }
+ 
+-    /** The claim's amount at the grade's rate in force on its date, rounded half to even to two decimals; null
+-     *  when no rate applies. */
+-    public static BigDecimal live(Claim claim, String grade, RateRepository rates) {
++    /** The claim's amount at the grade's rate in force on its date, rounded half to even to two decimals, and at
++     *  least the sheet's floor; null when no rate applies. */
++    public static BigDecimal live(Claim claim, String grade, RateRepository rates, BigDecimal floor) {
+         Rate rate = rates.find(claim.sheetId(), grade, claim.date());
+-        return rate == null ? null
+-                : claim.amount().multiply(rate.rate()).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
++        if (rate == null) {
++            return null;
++        }
++        BigDecimal due = claim.amount().multiply(rate.rate()).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
++        return due.max(floor);
+     }
+ 
+     /** The figure the claim shows: fixed when settled, else the one a statement bound it to, else live; null when
+      *  it has none (n/a). */
+-    public static BigDecimal figure(Claim claim, String grade, RateRepository rates) {
++    public static BigDecimal figure(Claim claim, String grade, RateRepository rates, BigDecimal floor) {
+         if (claim.due() != null) {
+             return claim.due();
+         }
+-        return claim.stated() ? claim.statedDue() : live(claim, grade, rates);
++        return claim.stated() ? claim.statedDue() : live(claim, grade, rates, floor);
+     }
+ 
+     /** Whether the claim keeps a figure whatever the rates are: fixed when settled, or bound by a statement. */
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index c9e5c53b6..992d77d65 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -9,6 +9,7 @@ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+@@ -16,20 +17,22 @@ import net.officefloor.plugin.variable.Val;
+  *  in it, added up (skipping n/a). Closing a period already closed is refused. */
+ public class ClosePeriod {
+     public void close(@Val Period period, @Val PeriodCloseRequest request, PeriodRepository periods,
+-            ClaimRepository claims, PersonRepository people, RateRepository rates, Out<PeriodClose> closed)
++            ClaimRepository claims, PersonRepository people, RateRepository rates, SettingRepository settings,
++            Out<PeriodClose> closed)
+             throws InvalidPeriodException {
+         if (period.closed()) {
+             throw new InvalidPeriodException("The period " + period.name() + " is already closed");
+         }
+         Map<Long, Person> byId = people.list(period.sheetId()).stream()
+                 .collect(Collectors.toMap(Person::id, (p) -> p));
++        BigDecimal floor = settings.floor(period.sheetId());
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+         for (Claim c : claims.list(period.sheetId())) {
+             Person person = byId.get(c.personId());
+             if (!ClaimDue.countsLive(c, person != null && person.held()) || c.date().isBefore(period.from()) || c.date().isAfter(period.to())) {
+                 continue;
+             }
+-            BigDecimal figure = person == null ? c.due() : ClaimDue.figure(c, person.grade(), rates);
++            BigDecimal figure = person == null ? c.due() : ClaimDue.figure(c, person.grade(), rates, floor);
+             if (figure != null) {
+                 total = total.add(figure);
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 282cf0151..b0f1ede8e 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -13,6 +13,7 @@ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import org.springframework.stereotype.Service;
+ 
+@@ -32,20 +33,23 @@ public class Rollup {
+     private final ClaimRepository claims;
+     private final RateRepository rates;
+     private final SheetRepository sheets;
++    private final SettingRepository settings;
+     private final Audit audit;
+ 
+     public Rollup(PersonRepository people, ClaimRepository claims, RateRepository rates, SheetRepository sheets,
+-            Audit audit) {
++            SettingRepository settings, Audit audit) {
+         this.people = people;
+         this.claims = claims;
+         this.rates = rates;
+         this.sheets = sheets;
++        this.settings = settings;
+         this.audit = audit;
+     }
+ 
+     /** Every person's figures on the sheet now, in the order they were added. */
+     public RollupBefore take(String sheetId) {
+         LocalDate today = sheets.today(sheetId);
++        BigDecimal floor = settings.floor(sheetId);
+         List<Claim> all = claims.list(sheetId);
+         Map<Long, Figures> figures = new LinkedHashMap<>();
+         for (Person person : people.list(sheetId)) {
+@@ -58,7 +62,7 @@ public class Rollup {
+                 }
+                 claimed = claimed.add(c.amount());
+                 kept |= ClaimDue.kept(c);
+-                BigDecimal figure = ClaimDue.figure(c, person.grade(), rates);
++                BigDecimal figure = ClaimDue.figure(c, person.grade(), rates, floor);
+                 if (figure != null) {
+                     due = due.add(figure);
+                 }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RecordSettingChanged.java b/src/main/java/net/officefloor/hq/app/setting/RecordSettingChanged.java
+index a7a1b8d83..4120b94ab 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/RecordSettingChanged.java
++++ b/src/main/java/net/officefloor/hq/app/setting/RecordSettingChanged.java
+@@ -1,12 +1,17 @@
+ package net.officefloor.hq.app.setting;
+ 
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupBefore;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Writes SETTING_CHANGED to the audit file once the setting is stored (value= blank for none). */
++/** Writes SETTING_CHANGED to the audit file once the setting is stored (value= blank for none). Then writes the
++ *  figures the change moved (see Rollup). */
+ public class RecordSettingChanged {
+-    public void record(@Val Setting setting, @Val SettingValues values, Audit audit) {
++    public void record(@Val Setting setting, @Val SettingValues values, @Val RollupBefore before, Rollup rollup,
++            Audit audit) {
+         audit.record("SETTING_CHANGED sheet=" + setting.sheetId() + " by=" + values.by() + " key=" + setting.key()
+                 + " value=" + (setting.value() == null ? "" : setting.value()));
++        rollup.record(setting.sheetId(), values.by(), before);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 7f722f8e4..2ee74a718 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -14,6 +14,12 @@ public class SettingRepository {
+     /** The most a clerk may settle a claim for; blank for no limit. */
+     public static final String CLERK_LIMIT = "clerk-limit";
+ 
++    /** The least a claim's live due may be; 1.00 until set. */
++    public static final String FLOOR = "floor";
++
++    /** The floor a sheet has until one is set. */
++    public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
++
+     private final JdbcTemplate jdbc;
+ 
+     public SettingRepository(JdbcTemplate jdbc) {
+@@ -39,6 +45,12 @@ public class SettingRepository {
+         return value == null ? null : new BigDecimal(value);
+     }
+ 
++    /** The sheet's floor: the least a claim's live due may be. */
++    public BigDecimal floor(String sheetId) {
++        String value = value(sheetId, FLOOR);
++        return value == null ? DEFAULT_FLOOR : new BigDecimal(value);
++    }
++
+     /** Stores the setting, replacing the value it had. */
+     public Setting save(Setting setting) {
+         jdbc.update("DELETE FROM setting WHERE sheet_id = ? AND setting_key = ?", setting.sheetId(), setting.key());
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 165aa34dc..772429362 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -7,19 +7,24 @@ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /** Reads the body: the key is clerk-limit, its value blank (no limit) or an amount 0.00 or more with up to two
+- *  decimals, kept with two. */
++ *  decimals; or floor, its value such an amount (not blank). Kept with two decimals. */
+ public class ValidateSetting {
+     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
+ 
+     public void validate(@PathVariable("key") String key, @RequestBody SettingRequest request, Out<SettingValues> values)
+             throws InvalidSettingException {
+         String k = key == null ? "" : key.trim();
+-        if (!SettingRepository.CLERK_LIMIT.equals(k)) {
++        boolean floor = SettingRepository.FLOOR.equals(k);
++        if (!SettingRepository.CLERK_LIMIT.equals(k) && !floor) {
+             throw new InvalidSettingException("Unknown setting " + k);
+         }
+         String value = request == null || request.value() == null ? "" : request.value().trim();
++        if (floor && value.isEmpty()) {
++            throw new InvalidSettingException("The floor must be an amount with up to two decimals");
++        }
+         if (!value.isEmpty() && !AMOUNT.matcher(value).matches()) {
+-            throw new InvalidSettingException("The clerk limit must be an amount with up to two decimals, or blank");
++            throw new InvalidSettingException(floor ? "The floor must be an amount with up to two decimals"
++                    : "The clerk limit must be an amount with up to two decimals, or blank");
+         }
+         values.set(new SettingValues(k, value.isEmpty() ? null : new BigDecimal(value).setScale(2).toPlainString(),
+                 request.by() == null ? "" : request.by().trim()));
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index 8ce10097f..7267493ae 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -7,6 +7,7 @@ import net.officefloor.hq.app.claim.ClaimDue;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+@@ -18,9 +19,10 @@ import net.officefloor.plugin.variable.Val;
+  */
+ public class TakeStatement {
+     public void take(@Val Person person, @Val StatementTaker taker, ClaimRepository claims, RateRepository rates,
+-            SheetRepository sheets, StatementRepository statements, Out<Statement> taken) {
++            SheetRepository sheets, SettingRepository settings, StatementRepository statements, Out<Statement> taken) {
+         String sheetId = person.sheetId();
+         var today = sheets.today(sheetId);
++        BigDecimal floor = settings.floor(sheetId);
+         List<Claim> mine = claims.list(sheetId).stream().filter((c) -> c.personId() == person.id()).toList();
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+         boolean kept = false;
+@@ -30,7 +32,7 @@ public class TakeStatement {
+                 claims.bind(c, false, null);
+                 continue;
+             }
+-            BigDecimal figure = ClaimDue.figure(c, person.grade(), rates);
++            BigDecimal figure = ClaimDue.figure(c, person.grade(), rates, floor);
+             kept |= ClaimDue.kept(c);
+             if (figure != null) {
+                 total = total.add(figure);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings/{key}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings/{key}.PUT.yml
+index 2cee28952..63c03ccfc 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings/{key}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings/{key}.PUT.yml
+@@ -1,8 +1,13 @@
+-# PUT /api/sheets/{sheetId}/settings/{key} — set a sheet setting. The only key is clerk-limit: an amount with up to
+-# two decimals, or blank for no limit. An unknown key or a value that is not such an amount is a 400 and writes
++# PUT /api/sheets/{sheetId}/settings/{key} — set a sheet setting. The keys are clerk-limit: an amount with up to
++# two decimals, or blank for no limit; and floor: an amount with up to two decimals, the least a claim's live due
++# may be (1.00 until set). Writes the figures the change moved (ROLLUP, TOTALS). An unknown key or a value that is not such an amount is a 400 and writes
+ # nothing. Responds with the setting as stored.
+ validate:
+   class: net.officefloor.hq.app.setting.ValidateSetting
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
+   next: save
+ save:
+   class: net.officefloor.hq.app.setting.SaveSetting
