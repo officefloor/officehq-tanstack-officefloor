@@ -12,14 +12,14 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 /**
  * Gives each selected person the grade, in list order (the order they were added), through the very steps of the
- * person form's edit, made from the person's current version with their name and terms kept: ApplyPerson (the grade
+ * person form's edit, made from the person's current version with their name, terms and contact kept: ApplyPerson (the grade
  * recorded from the from-date), SavePerson and RecordPersonEdited (PERSON_EDITED and the figures it moved). One not on
  * the sheet is skipped.
  */
 public class GradePeople {
     public void grade(@PathVariable("sheetId") String sheetId, @Val BulkGradeValues request, PersonRepository people,
             SheetRepository sheets, Rollup rollup, Audit audit, Out<BulkGradeResult> result)
-            throws DuplicatePersonNameException, StalePersonException {
+            throws DuplicatePersonNameException, DuplicatePersonContactException, StalePersonException {
         String sheet = sheetId.trim();
         Set<Long> selected = new HashSet<>(request.personIds());
         ApplyPerson apply = new ApplyPerson();
@@ -35,13 +35,14 @@ public class GradePeople {
                 continue;
             }
             PersonValues values = new PersonValues(person.name(), request.grade(), request.by(), person.version(),
-                    request.from(), person.terms());
+                    request.from(), person.terms(), person.contact());
             RollupBefore before = rollup.take(sheet);
             Person[] changed = new Person[1];
             TermsBefore[] terms = new TermsBefore[1];
-            apply.apply(person, values, sheets, (p) -> changed[0] = p, (t) -> terms[0] = t);
+            ContactBefore[] contact = new ContactBefore[1];
+            apply.apply(person, values, sheets, (p) -> changed[0] = p, (t) -> terms[0] = t, (c) -> contact[0] = c);
             save.save(changed[0], values, people);
-            record.record(changed[0], values, terms[0], before, rollup, audit);
+            record.record(changed[0], values, terms[0], contact[0], before, rollup, audit);
             graded++;
         }
         result.set(new BulkGradeResult(graded));

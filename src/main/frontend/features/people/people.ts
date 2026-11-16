@@ -14,7 +14,8 @@ export type PersonGrade = { grade: string; from: string | null };
  *  is the date the person is retired from, null when not retired: a person with one counts as retired at once. `holds` are
  *  the person's holds, by from-date: an OPEN or PENDING claim of theirs dated within one, and not bound by a statement,
  *  counts in no live total. `held` is whether they have any hold. `terms` are the person's own terms in days (ahead of
- *  their grade's and the sheet's when a claim is added), null when they have none. */
+ *  their grade's and the sheet's when a claim is added), null when they have none. `contact` is the person's contact
+ *  (unique on the sheet; without surrounding spaces, lower-cased), null when none. */
 export type Person = {
   id: number;
   sheetId: string;
@@ -26,6 +27,7 @@ export type Person = {
   grades: PersonGrade[];
   holds: PersonHold[];
   terms: number | null;
+  contact: string | null;
 };
 
 /** A hold on a person from a date until a date (yyyy-MM-dd, both included); a null `to` is open-ended. */

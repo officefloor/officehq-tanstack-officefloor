@@ -10,13 +10,14 @@ import java.util.List;
  *  person is retired from, null when not retired; a person with one counts as retired at once, whatever the date.
  *  {@code holds} are the person's holds, by from-date: an OPEN or PENDING claim of theirs dated within one, and not bound by
  *  a statement, counts in no live total. {@code held} is whether they have any hold. {@code terms} are the person's own
- *  terms (days a claim of theirs has until it is due by, ahead of their grade's and the sheet's), null when none. */
+ *  terms (days a claim of theirs has until it is due by, ahead of their grade's and the sheet's), null when none. {@code contact} is the person's contact (unique on the sheet; kept without
+ *  surrounding spaces, lower-cased), null when none. */
 public record Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
-        List<PersonGrade> grades, List<PersonHold> holds, Integer terms) {
+        List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact) {
 
     public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom,
-            List<PersonGrade> grades, List<PersonHold> holds, Integer terms) {
-        this(id, sheetId, name, grade, version, retiredFrom, !holds.isEmpty(), grades, holds, terms);
+            List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact) {
+        this(id, sheetId, name, grade, version, retiredFrom, !holds.isEmpty(), grades, holds, terms, contact);
     }
 
     /** Whether a hold of the person covers the date. */

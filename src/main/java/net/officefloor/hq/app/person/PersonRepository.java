@@ -21,7 +21,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, version, retired_from, terms";
+    private static final String COLUMNS = "id, sheet_id, name, version, retired_from, terms, contact";
 
     private final JdbcTemplate jdbc;
     private final SheetRepository sheets;
@@ -75,7 +75,7 @@ public class PersonRepository {
         for (Person p : found) {
             List<PersonGrade> mine = List.copyOf(grades.getOrDefault(p.id(), List.of()));
             people.add(new Person(p.id(), p.sheetId(), p.name(), Person.gradeOn(mine, today), p.version(), p.retiredFrom(),
-                    mine, List.copyOf(holds.getOrDefault(p.id(), List.of())), p.terms()));
+                    mine, List.copyOf(holds.getOrDefault(p.id(), List.of())), p.terms(), p.contact()));
         }
         return people;
     }
@@ -88,39 +88,61 @@ public class PersonRepository {
         return n != null && n > 0;
     }
 
-    /** The unique (sheet_id, name_key) index refuses a name taken by a concurrent add or edit. */
-    public Person add(String sheetId, String name, String grade, Integer terms) throws DuplicatePersonNameException {
+    /** Whether a person on the sheet other than {@code exceptId} (0: anyone) has this contact. */
+    public boolean contactTaken(String sheetId, String contact, long exceptId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM person WHERE sheet_id = ? AND contact = ? AND id <> ?",
+                Integer.class, sheetId, contact, exceptId);
+        return n != null && n > 0;
+    }
+
+    /** Whether the refused write broke the unique (sheet_id, contact) index rather than the name's. */
+    private static boolean contactClash(DuplicateKeyException e) {
+        return String.valueOf(e.getMessage()).toUpperCase(java.util.Locale.ROOT).contains("PERSON_SHEET_CONTACT");
+    }
+
+    /** The unique (sheet_id, name_key) and (sheet_id, contact) indexes refuse a name or contact taken by a concurrent
+     *  add or edit. */
+    public Person add(String sheetId, String name, String grade, Integer terms, String contact)
+            throws DuplicatePersonNameException, DuplicatePersonContactException {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         try {
             jdbc.update(con -> {
-                PreparedStatement ps = con.prepareStatement("INSERT INTO person (sheet_id, name, grade, terms, added_on) VALUES (?, ?, ?, ?, ?)",
+                PreparedStatement ps = con.prepareStatement("INSERT INTO person (sheet_id, name, grade, terms, added_on, contact) VALUES (?, ?, ?, ?, ?, ?)",
                         new String[] { "id" });
                 ps.setString(1, sheetId);
                 ps.setString(2, name);
                 ps.setString(3, grade);
                 ps.setObject(4, terms, java.sql.Types.INTEGER);
                 ps.setDate(5, Date.valueOf(sheets.today(sheetId)));
+                ps.setString(6, contact);
                 return ps;
             }, keys);
         } catch (DuplicateKeyException e) {
+            if (contactClash(e)) {
+                throw new DuplicatePersonContactException(contact);
+            }
             throw new DuplicatePersonNameException(name);
         }
         long id = keys.getKey().longValue();
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, from_date, grade) VALUES (?, ?, NULL, ?)", sheetId, id, grade);
         logGrades(sheetId, id, List.of(new PersonGrade(grade, null)));
-        return new Person(id, sheetId, name, grade, 0, null, List.of(new PersonGrade(grade, null)), List.of(), terms);
+        return new Person(id, sheetId, name, grade, 0, null, List.of(new PersonGrade(grade, null)), List.of(), terms, contact);
     }
 
     /** Stores the person as its new version, with its grades, only while the stored one is still {@code fromVersion}:
      *  a save that lands in between refuses this one. */
-    public void update(Person person, long fromVersion) throws DuplicatePersonNameException, StalePersonException {
+    public void update(Person person, long fromVersion)
+            throws DuplicatePersonNameException, DuplicatePersonContactException, StalePersonException {
         List<Integer> termsWas = jdbc.query("SELECT terms FROM person WHERE sheet_id = ? AND id = ?",
                 (rs, n) -> rs.getObject(1, Integer.class), person.sheetId(), person.id());
         int n;
         try {
-            n = jdbc.update("UPDATE person SET name = ?, version = ?, terms = ? WHERE sheet_id = ? AND id = ? AND version = ?",
-                    person.name(), person.version(), person.terms(), person.sheetId(), person.id(), fromVersion);
+            n = jdbc.update("UPDATE person SET name = ?, version = ?, terms = ?, contact = ? WHERE sheet_id = ? AND id = ? AND version = ?",
+                    person.name(), person.version(), person.terms(), person.contact(), person.sheetId(), person.id(), fromVersion);
         } catch (DuplicateKeyException e) {
+            if (contactClash(e)) {
+                throw new DuplicatePersonContactException(person.contact());
+            }
             throw new DuplicatePersonNameException(person.name());
         }
         if (n == 0) {
@@ -198,7 +220,8 @@ public class PersonRepository {
                 + " AND made_on <= ? ORDER BY id DESC LIMIT 1", (rs, n) -> rs.getObject(1, LocalDate.class), sheetId,
                 person.id(), Date.valueOf(date));
         return new Person(person.id(), sheetId, person.name(), Person.gradeOn(grades, date), person.version(),
-                retired.isEmpty() ? null : retired.get(0).toString(), List.copyOf(grades), holds, termsAsOf(person, date));
+                retired.isEmpty() ? null : retired.get(0).toString(), List.copyOf(grades), holds, termsAsOf(person, date),
+                person.contact());
     }
 
     /** The sheet's people as they stood at the end of the date (see #asOf), in the order added: one added while the
@@ -236,6 +259,6 @@ public class PersonRepository {
         Date retired = rs.getDate("retired_from");
         return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
                 retired == null ? null : retired.toLocalDate().toString(), List.of(), List.of(),
-                rs.getObject("terms", Integer.class));
+                rs.getObject("terms", Integer.class), rs.getString("contact"));
     }
 }

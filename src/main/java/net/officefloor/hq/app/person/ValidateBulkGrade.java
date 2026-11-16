@@ -13,7 +13,7 @@ public class ValidateBulkGrade {
             throw new InvalidPersonException("A grade is required");
         }
         // validated as the person form would, with a placeholder name
-        PersonValues checked = PersonValues.from(new PersonRequest("-", request.grade(), request.by(), null, request.from(), null));
+        PersonValues checked = PersonValues.from(new PersonRequest("-", request.grade(), request.by(), null, request.from(), null, null));
         List<Long> ids = request.personIds() == null ? List.of()
                 : request.personIds().stream().filter(Objects::nonNull).distinct().toList();
         values.set(new BulkGradeValues(ids, checked.grade(), checked.gradeFrom(), checked.by()));

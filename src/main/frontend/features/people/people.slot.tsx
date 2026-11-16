@@ -8,9 +8,10 @@ import { claimsKey, type Claim } from '../claims/claims';
 import { GRADES, peopleKey, useEditingPerson, usePeople, useShowRetired, type Person } from './people';
 
 /** The form's values. `gradeFrom` (yyyy-MM-dd) is the date the grade is given from; blank, the sheet's today. A
- *  person's first grade applies from the beginning of time. `terms` are the person's own terms in days; blank, none. */
-type Values = { name: string; grade: string; gradeFrom: string; terms: string };
-const EMPTY: Values = { name: '', grade: 'A', gradeFrom: '', terms: '' };
+ *  person's first grade applies from the beginning of time. `terms` are the person's own terms in days; blank, none. `contact` is the person's contact, kept by the server
+ *  without surrounding spaces and lower-cased; blank, none. */
+type Values = { name: string; grade: string; gradeFrom: string; terms: string; contact: string };
+const EMPTY: Values = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '' };
 
 type Quick = { name: string; amount: string };
 const NO_QUICK: Quick = { name: '', amount: '' };
@@ -109,7 +110,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
       const now = queryClient.getQueryData<Person[]>(peopleKey(sheetId))?.find((p) => p.id === id);
       if (now) {
-        setValues({ name: now.name, grade: now.grade, gradeFrom: '', terms: now.terms === null ? '' : String(now.terms) });
+        setValues({ name: now.name, grade: now.grade, gradeFrom: '', terms: now.terms === null ? '' : String(now.terms), contact: now.contact ?? '' });
         setVersion(now.version);
       }
     },
@@ -122,7 +123,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
   };
   const openEditor = (p: Person) => {
     save.reset();
-    setValues({ name: p.name, grade: p.grade, gradeFrom: '', terms: p.terms === null ? '' : String(p.terms) });
+    setValues({ name: p.name, grade: p.grade, gradeFrom: '', terms: p.terms === null ? '' : String(p.terms), contact: p.contact ?? '' });
     setVersion(p.version);
     setEditingId(String(p.id));
   };
@@ -178,6 +179,10 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
             onChange={(e) => change({ terms: e.target.value })}
           />
         </label>{' '}
+        <label>
+          Contact{' '}
+          <input data-testid="person-form-contact" value={values.contact} onChange={(e) => change({ contact: e.target.value })} />
+        </label>{' '}
         <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
           {editing ? 'Save' : 'Add person'}
         </button>
@@ -191,7 +196,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
             {(save.variables?.name ?? '').trim() === ''
               ? 'A name is required.'
               : save.error instanceof HttpError && save.error.status === 409
-                ? 'That name is already in use on this sheet.'
+                ? 'That name or contact is already in use on this sheet.'
                 : save.error instanceof HttpError && save.error.status === 412
                   ? 'Someone else saved this person since you opened it; the form now shows their values.'
                   : 'Could not save this person.'}
@@ -215,6 +220,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
             <th>Name</th>
             <th>Grade</th>
             <th>Terms</th>
+            <th>Contact</th>
             <PeopleHead.Slot sheetId={sheetId} user={user} />
             <th />
           </tr>
@@ -225,6 +231,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
               <td data-testid="person-terms">{p.terms ?? ''}</td>
+              <td data-testid="person-contact">{p.contact ?? ''}</td>
               <PersonRow.Slot sheetId={sheetId} user={user} person={p} />
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => openEditor(p)}>

@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.quickadd;
 
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.person.DuplicatePersonContactException;
 import net.officefloor.hq.app.person.DuplicatePersonNameException;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -15,12 +16,13 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  figures it moved just as adding a person does. Publishes the person and the figures before the claim is added. */
 public class FindOrAddPerson {
     public void find(@PathVariable("sheetId") String sheetId, @Val PersonValues values, PersonRepository people,
-            Rollup rollup, Audit audit, Out<Person> person, Out<RollupBefore> before) throws DuplicatePersonNameException {
+            Rollup rollup, Audit audit, Out<Person> person, Out<RollupBefore> before) throws DuplicatePersonNameException,
+            DuplicatePersonContactException {
         String sheet = sheetId.trim();
         Person found = people.findByName(sheet, values.name());
         if (found == null) {
             RollupBefore was = rollup.take(sheet);
-            found = people.add(sheet, values.name(), values.grade(), values.terms());
+            found = people.add(sheet, values.name(), values.grade(), values.terms(), values.contact());
             audit.record("PERSON_ADDED sheet=" + found.sheetId() + " by=" + values.by() + " name=" + found.name()
                     + " grade=" + found.grade());
             rollup.record(sheet, values.by(), was);
