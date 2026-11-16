@@ -70,6 +70,13 @@ public class PersonMerger {
             }
         }
 
+        // the crews they lead are led by the person kept (no longer a member of them); their memberships move to them
+        jdbc.update("DELETE FROM crew_member WHERE person_id = ? AND crew_id IN (SELECT id FROM crew WHERE lead_id = ?)", t, f);
+        jdbc.update("UPDATE crew SET lead_id = ? WHERE lead_id = ?", t, f);
+        jdbc.update("DELETE FROM crew_member WHERE person_id = ? AND (crew_id IN (SELECT id FROM crew WHERE lead_id = ?)"
+                + " OR crew_id IN (SELECT crew_id FROM crew_member WHERE person_id = ?))", f, t, t);
+        jdbc.update("UPDATE crew_member SET person_id = ? WHERE person_id = ?", t, f);
+
         StringBuilder grades = new StringBuilder();
         for (PersonGrade g : from.grades()) {
             grades.append(grades.length() == 0 ? "" : ";").append(g.grade()).append('@').append(g.from() == null ? "" : g.from());

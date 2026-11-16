@@ -89,6 +89,11 @@ public class CloneRepository {
         member.put("member_pool_id", (r) -> r.get("member_pool_id") == null ? null : pools.get(r.get("member_pool_id")));
         copy("pool_member", "WHERE pool_id IN (SELECT id FROM pool WHERE sheet_id = ?) ORDER BY id", from, null, member);
 
+        Map<Object, Object> crews = copy("crew", "WHERE sheet_id = ? ORDER BY id", from, to,
+                Map.of("lead_id", (r) -> people.get(r.get("lead_id"))));
+        copy("crew_member", "WHERE crew_id IN (SELECT id FROM crew WHERE sheet_id = ?) ORDER BY id", from, null,
+                Map.of("crew_id", (r) -> crews.get(r.get("crew_id")), "person_id", (r) -> people.get(r.get("person_id"))));
+
         Map<String, Function<Map<String, Object>, Object>> open = new HashMap<>();
         open.put("closed", (r) -> false);
         open.put("soft_closed", (r) -> false);
