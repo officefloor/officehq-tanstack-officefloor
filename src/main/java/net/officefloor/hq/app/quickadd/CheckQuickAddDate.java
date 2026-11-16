@@ -3,6 +3,7 @@ package net.officefloor.hq.app.quickadd;
 import java.time.LocalDate;
 import net.officefloor.hq.app.claim.ClaimRules;
 import net.officefloor.hq.app.claim.InvalidClaimException;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -16,12 +17,12 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  person and no audit record behind. */
 public class CheckQuickAddDate {
     public void check(@PathVariable("sheetId") String sheetId, @Val PersonValues values, SettingRepository settings,
-            PeriodRepository periods, PersonRepository people) throws InvalidClaimException {
+            PeriodRepository periods, PersonRepository people, HolidayRepository holidays) throws InvalidClaimException {
         String sheet = sheetId.trim();
         LocalDate date = settings.claimDate(sheet);
         Person found = people.findByName(sheet, values.name());
-        LocalDate dueBy = found != null ? ClaimRules.dueBy(found, date, settings)
-                : date.plusDays(settings.terms(sheet, values.terms(), values.grade(), date));
+        LocalDate dueBy = found != null ? ClaimRules.dueBy(found, date, settings, holidays)
+                : holidays.notOnHoliday(sheet, date.plusDays(settings.terms(sheet, values.terms(), values.grade(), date)));
         if (periods.closedOn(sheet, dueBy)) {
             throw new InvalidClaimException("The claim's due-by is inside a closed period");
         }

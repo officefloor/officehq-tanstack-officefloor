@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
 
 import java.util.ArrayList;
 import java.util.List;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -15,7 +16,8 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  refuses the whole paste. */
 public class CheckPastedClaims {
     public void check(@PathVariable("sheetId") String sheetId, @Val PastedLines pasted, PersonRepository people,
-            SettingRepository settings, PeriodRepository periods, ClaimRepository claims, Out<PastedClaims> checked)
+            SettingRepository settings, PeriodRepository periods, ClaimRepository claims, HolidayRepository holidays,
+            Out<PastedClaims> checked)
             throws InvalidClaimException {
         String sheet = sheetId.trim();
         List<PastedClaim> all = new ArrayList<>();
@@ -24,7 +26,7 @@ public class CheckPastedClaims {
             if (person == null) {
                 throw new InvalidClaimException("No person named " + line.name() + " on the sheet");
             }
-            all.add(new PastedClaim(person, line.values(), ClaimRules.check(person, line.values(), settings, periods, claims)));
+            all.add(new PastedClaim(person, line.values(), ClaimRules.check(person, line.values(), settings, periods, claims, holidays)));
         }
         checked.set(new PastedClaims(all));
     }
