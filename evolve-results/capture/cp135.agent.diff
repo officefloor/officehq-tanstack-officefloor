@@ -1,0 +1,69 @@
+diff --git a/src/main/frontend/features/export/export.slot.tsx b/src/main/frontend/features/export/export.slot.tsx
+index 2b3fee74d..d776824a5 100644
+--- a/src/main/frontend/features/export/export.slot.tsx
++++ b/src/main/frontend/features/export/export.slot.tsx
+@@ -4,6 +4,7 @@ import { SheetPage } from '../../slots/defs/sheetPage';
+ import { live, useClaims } from '../claims/claims';
+ import { gradeOn, usePeople } from '../people/people';
+ import { periodOf, usePeriods } from '../periods/periods';
++import { usePools } from '../pools/pools';
+ import { claimDue, personDue, rateFor, useRates } from '../rates/rates';
+ import { useCap, useFloor, useLate } from '../settings/settings';
+ 
+@@ -94,7 +95,35 @@ function ExportClaims({ sheetId }: { sheetId: string }) {
+   );
+ }
+ 
++/** The button that downloads the pools as a CSV file: pool, member, share and cut as the pool rows show them (a pool
++ *  member as pool:<name>, an empty cut when none), pools in the order added and each pool's members in the order added.
++ *  Made once the sheet's figures are no longer being re-read. */
++function ExportPools({ sheetId }: { sheetId: string }) {
++  const pools = usePools(sheetId);
++  const fetching = useIsFetching({ queryKey: ['sheet', sheetId] });
++  const [wanted, setWanted] = useState(false);
++
++  useEffect(() => {
++    if (!wanted || fetching > 0 || !pools.data) return;
++    setWanted(false);
++    const lines = ['pool,member,share,cut'];
++    for (const pool of pools.data)
++      for (const m of pool.members)
++        lines.push([pool.name, m.pool === null ? m.name : `pool:${m.pool}`, m.share.toFixed(2), m.cut ?? ''].map(csvValue).join(','));
++    download(`pools-${sheetId}.csv`, lines);
++  }, [wanted, fetching, pools.data, sheetId]);
++
++  return (
++    <p>
++      <button type="button" data-testid="export-pools" onClick={() => setWanted(true)}>
++        Export pools (CSV)
++      </button>
++    </p>
++  );
++}
++
+ export const contributions = [
+   SheetPage.fill({ order: 15, Component: ExportPeople }),
+   SheetPage.fill({ order: 15.5, Component: ExportClaims }),
++  SheetPage.fill({ order: 15.6, Component: ExportPools }),
+ ];
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index 1b20e9328..524264a94 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -81,11 +81,13 @@ public class PoolRepository {
+                         parents.put(memberPool, poolId);
+                     }
+                 }, sheetId);
+-        Map<Long, Pool> pools = new LinkedHashMap<>();
++        Map<Long, Pool> pools = new HashMap<>();
++        List<Pool> inOrder = new ArrayList<>();
+         for (Long id : names.keySet()) {
+-            share(id, names, members, parents, pot, held, pools);
++            // a pool above is built first; the list keeps the order added
++            inOrder.add(share(id, names, members, parents, pot, held, pools));
+         }
+-        return new ArrayList<>(pools.values());
++        return inOrder;
+     }
+ 
+     /** The ids of the sheet's people with a hold whose dates include the day (the sheet's today). */
