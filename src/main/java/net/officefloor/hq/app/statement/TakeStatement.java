@@ -85,7 +85,8 @@ public class TakeStatement {
         SheetAsOf sheet = SheetAsOf.read(sheetId, date, rates, settings);
         LocalDate policy = sheet.policyDate();
         Rounding rounding = new Rounding(policy == null ? date : policy, claims);
-        LateCharge late = new LateCharge(date, sheet::latePct, rounding);
+        LateCharge late = new LateCharge(date, sheet::latePct, rounding,
+                (c) -> sheet.grace(person.gradeOn(c.date()), c.date()));
         Statement last = statements.last(sheetId, person.id());
         boolean boundThen = last != null && last.madeOn() != null && !last.madeOn().isAfter(date);
         Map<Long, List<ClaimLogLine>> logs = log.bySheet(sheetId);

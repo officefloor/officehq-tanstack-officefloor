@@ -159,7 +159,7 @@ function ClaimRow({
       <span data-testid="claim-note">{c.note}</span>{' '}
       <span data-testid="claim-due">{claimDue(c, rate, floor, late)}</span>{' '}
       <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
-      <span data-testid="claim-overdue">{isOverdue(c, late.today) ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="claim-overdue">{isOverdue(c, late) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
       <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}

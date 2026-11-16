@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import type { Late } from '../overdue/late';
+import { gradeOn, usePeople } from '../people/people';
 import { useSheetToday } from '../session/session';
 
-/** A sheet setting: `value` is text (clerk-limit, cap, floor: an amount with two decimals; terms, terms-A, terms-B, terms-C: a whole number of days; late-pct: a percent with two decimals; policy-date, period-numbering-from, entry-date: yyyy-MM-dd), null when blank.
+/** A sheet setting: `value` is text (clerk-limit, cap, floor: an amount with two decimals; terms, terms-A, terms-B, terms-C: a whole number of days; late-pct: a percent with two decimals; grace-A, grace-B, grace-C: a whole number of days; policy-date, period-numbering-from, entry-date: yyyy-MM-dd), null when blank.
  *  `from` is the date the value is in force from (yyyy-MM-dd); null when undated (policy-date, period-numbering-from, entry-date, or a
  *  value from before settings were dated: in force on every date). */
 export type Setting = { sheetId: string; key: string; value: string | null; from: string | null };
@@ -55,11 +56,18 @@ export const DEFAULT_TERMS = '14';
 /** The late percent a sheet has until one is set. */
 export const DEFAULT_LATE_PCT = '0.00';
 
-/** What the sheet's late charge depends on: its today, its late percent (the one in force on each 30-day boundary of an overdue claim) and its
- *  policy date (its today while blank), which decides how claims round. */
+/** What the sheet's late charge depends on: its today, its late percent (the one in force on each 30-day boundary of an overdue claim), its
+ *  policy date (its today while blank), which decides how claims round, and each claim's grace: grace-A, grace-B or grace-C (whole days,
+ *  blank for none) of its person's grade in force on its date, the one in force on that date. */
 export function useLate(sheetId: string): Late {
   const settings = useSettings(sheetId);
+  const people = usePeople(sheetId);
   const today = useSheetToday(sheetId);
   const policy = settings.data?.find((s) => s.key === 'policy-date')?.value ?? today;
-  return { today, pct: (date) => inForce(settings.data, 'late-pct', date)?.value ?? DEFAULT_LATE_PCT, policy };
+  const grace = (claim: { personId: number; date: string }) => {
+    const person = people.data?.find((p) => p.id === claim.personId);
+    const value = person === undefined ? null : inForce(settings.data, `grace-${gradeOn(person, claim.date)}`, claim.date)?.value;
+    return value === null || value === undefined ? 0 : Number(value);
+  };
+  return { today, pct: (date) => inForce(settings.data, 'late-pct', date)?.value ?? DEFAULT_LATE_PCT, policy, grace };
 }

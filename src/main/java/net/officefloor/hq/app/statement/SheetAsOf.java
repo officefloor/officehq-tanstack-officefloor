@@ -101,6 +101,12 @@ public final class SheetAsOf {
         return value == null ? SettingRepository.DEFAULT_LATE_PCT : new BigDecimal(value);
     }
 
+    /** The grace of a grade in force on a date (a claim's date): its days, 0 when it has none. */
+    public int grace(String grade, LocalDate on) {
+        String value = grade == null ? null : value(SettingRepository.GRACE_PREFIX + grade, on);
+        return value == null ? 0 : Integer.parseInt(value);
+    }
+
     /** The cap in force on the date; null when there is none. */
     public BigDecimal cap() {
         String value = value(SettingRepository.CAP, date);

@@ -40,6 +40,10 @@ public class SettingRepository {
     /** The prefix of a grade's own terms: terms-A, terms-B or terms-C; a grade without its own has the sheet's terms. */
     public static final String TERMS_PREFIX = "terms-";
 
+    /** The prefix of a grade's grace: grace-A, grace-B or grace-C, the days added to a claim's due-by before it is
+     *  overdue and its late charge counts (blank: none). */
+    public static final String GRACE_PREFIX = "grace-";
+
     /** The terms a sheet has until they are set. */
     public static final int DEFAULT_TERMS = 14;
 
@@ -163,6 +167,20 @@ public class SettingRepository {
      *  force on the date (see above). */
     public int terms(String sheetId, Integer own, String grade, LocalDate date) {
         return own != null ? own : terms(sheetId, grade, date);
+    }
+
+    /** The grace of a grade in force on the date (a claim's date): its days, 0 when it has none (a null grade has none). */
+    public int grace(String sheetId, String grade, LocalDate date) {
+        String value = grade == null ? null : value(sheetId, GRACE_PREFIX + grade, date);
+        return value == null ? 0 : Integer.parseInt(value);
+    }
+
+    /** The grace a claim of the person dated the date has: that of the person's grade in force on the date (see above). */
+    public int graceOf(String sheetId, long personId, LocalDate date) {
+        List<String> grades = jdbc.queryForList("SELECT grade FROM person_grade WHERE sheet_id = ? AND person_id = ?"
+                + " AND (from_date IS NULL OR from_date <= ?) ORDER BY from_date DESC NULLS LAST LIMIT 1", String.class,
+                sheetId, personId, date);
+        return grades.isEmpty() ? 0 : grace(sheetId, grades.get(0), date);
     }
 
     /** The sheet's late percent in force on the date (a 30-day boundary of an overdue claim): what the claim gains of its

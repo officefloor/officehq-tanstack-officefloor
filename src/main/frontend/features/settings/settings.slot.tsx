@@ -8,17 +8,18 @@ import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, inForce, settingsKey, u
 
 const GRADES = ['A', 'B', 'C'] as const;
 type GradeTerms = `terms-${(typeof GRADES)[number]}`;
+type GradeGrace = `grace-${(typeof GRADES)[number]}`;
 const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
 type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
 const PERM_KEYS: PermKey[] = PERM_ACTIONS.map((a) => `perm-${a}` as PermKey);
-type Key = PermKey | 'clerk-limit' | 'cap' | 'proof-threshold' | 'note-threshold' | 'floor' | 'terms' | GradeTerms | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'entry-date' | 'grace-days';
-const KEYS: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'note-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', ...PERM_KEYS];
+type Key = PermKey | 'clerk-limit' | 'cap' | 'proof-threshold' | 'note-threshold' | 'floor' | 'terms' | GradeTerms | GradeGrace | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'entry-date' | 'grace-days';
+const KEYS: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'note-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'grace-A', 'grace-B', 'grace-C', 'late-pct', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', ...PERM_KEYS];
 const BLANK: Record<Key, string> = {
-  'clerk-limit': '', cap: '', 'proof-threshold': '', 'note-threshold': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', 'entry-date': '', 'grace-days': '',
+  'clerk-limit': '', cap: '', 'proof-threshold': '', 'note-threshold': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', 'entry-date': '', 'grace-days': '',
   ...(Object.fromEntries(PERM_KEYS.map((k) => [k, ''])) as Record<PermKey, string>),
 };
 /** The keys whose values are dated: each saved from a from-date (blank: the sheet's today). */
-const DATED: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'note-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct'];
+const DATED: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'note-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'grace-A', 'grace-B', 'grace-C', 'late-pct'];
 const dated = (key: Key) => DATED.includes(key);
 
 /** The sheet's settings: the clerk limit (the most a clerk may settle a claim's due for; blank for no limit) and the
@@ -26,7 +27,8 @@ const dated = (key: Key) => DATED.includes(key);
  *  the one in force on its date cannot be settled nor approved while it has no proofs; blank for none) and the note threshold (a claim whose due is above the one in force on its date cannot be
  *  opened while its note is empty; blank for none) and the floor (the least a claim's live due may be; 1.00 until set) and the terms (the days from a claim's date to its
  *  due-by, fixed when the claim is added; 14 until set) and each grade's own terms (a grade without its own has the
- *  sheet's) and the late percent (what an overdue claim gains of its figure for every full 30 days
+ *  sheet's) and each grade's grace (whole days added to the due-by of a claim whose person has that grade on its date, the one in force on that date, before
+ *  it is overdue and its late charge counts; blank for none) and the late percent (what an overdue claim gains of its figure for every full 30 days
  *  overdue; 0.00 until set) and the policy date (yyyy-MM-dd; blank: the sheet's today — a claim dated before it rounds
  *  half up, one on or after it half to even) and the period numbering from-date (yyyy-MM-dd; blank: off — while the sheet's
  *  today is on or after it, a claim opened is numbered within its period) and the entry date (yyyy-MM-dd; blank: off — while set, a new claim given no
@@ -119,6 +121,9 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {GRADES.map((g) => (
           <span key={g}>{field(`terms-${g}`, `Terms grade ${g} (days)`, 'numeric')} </span>
         ))}
+        {GRADES.map((g) => (
+          <span key={g}>{field(`grace-${g}`, `Grace grade ${g} (days)`, 'numeric')} </span>
+        ))}
         {field('late-pct', 'Late %')}{' '}
         {field('policy-date', 'Policy date (yyyy-MM-dd)', 'numeric')}{' '}
         {field('period-numbering-from', 'Period numbering from (yyyy-MM-dd)', 'numeric')}{' '}
@@ -133,7 +138,7 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {save.isError && (
           <span data-testid="settings-error">
             The from-date must be yyyy-MM-dd, or blank; the clerk limit must be an amount with up to two decimals, or blank; the cap, the proof threshold and the note threshold likewise; the floor an amount with up to two
-            decimals; the terms, and a grade's terms, a whole number of days, 0 or more; the late percent a percent with up to two decimals; the policy date yyyy-MM-dd, or blank; the period numbering from-date yyyy-MM-dd, or blank; the entry date yyyy-MM-dd, or blank; the grace days a whole number, 0 or more, or blank; a permission roles (clerk, steward) separated by commas, or blank.
+            decimals; the terms, and a grade's terms, a whole number of days, 0 or more; a grade's grace a whole number of days, 0 or more, or blank; the late percent a percent with up to two decimals; the policy date yyyy-MM-dd, or blank; the period numbering from-date yyyy-MM-dd, or blank; the entry date yyyy-MM-dd, or blank; the grace days a whole number, 0 or more, or blank; a permission roles (clerk, steward) separated by commas, or blank.
           </span>
         )}
       </form>
@@ -160,6 +165,11 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         <p key={g}>
           Terms of grade {g} in force{' '}
           <span data-testid={`setting-terms-${g}-current`}>{current(`terms-${g}`) || current('terms') || DEFAULT_TERMS}</span>
+        </p>
+      ))}
+      {GRADES.map((g) => (
+        <p key={`grace-${g}`}>
+          Grace of grade {g} in force <span data-testid={`setting-grace-${g}-current`}>{current(`grace-${g}`)}</span>
         </p>
       ))}
       <p>
