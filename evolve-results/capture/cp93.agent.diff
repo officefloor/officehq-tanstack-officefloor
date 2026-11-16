@@ -1,0 +1,271 @@
+diff --git a/src/main/frontend/features/bulkreassign/bulkreassign.slot.tsx b/src/main/frontend/features/bulkreassign/bulkreassign.slot.tsx
+new file mode 100644
+index 000000000..ce96a1ecf
+--- /dev/null
++++ b/src/main/frontend/features/bulkreassign/bulkreassign.slot.tsx
+@@ -0,0 +1,73 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { SheetPage } from '../../slots/defs/sheetPage';
++import { claimsKey } from '../claims/claims';
++import { useSelectedClaims } from '../claims/selection';
++import { usePeople } from '../people/people';
++
++type Result = { reassigned: number; refused: number };
++
++/** Moves the selected claims to the chosen person together by the signed-in user: each is moved in list order (people
++ *  in order, a person's claims newest first) by the rules of the single move; each that cannot is left as it is. Shows
++ *  how many were moved and how many refused; the counts are cleared while a new press runs. */
++function BulkReassign({ sheetId, user }: { sheetId: string; user: string }) {
++  const queryClient = useQueryClient();
++  const people = usePeople(sheetId);
++  const [selected, setSelected] = useSelectedClaims();
++  const [to, setTo] = useState('');
++  const reassign = useMutation({
++    mutationFn: (claimIds: number[]) =>
++      postJson<Result>(`/api/sheets/${encodeURIComponent(sheetId)}/bulk-reassign`, {
++        claimIds,
++        personId: to === '' ? null : Number(to),
++        by: user,
++      }),
++    onSuccess: async () => {
++      setSelected([]);
++      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
++    },
++  });
++
++  return (
++    <p>
++      <select
++        data-testid="bulk-reassign-to"
++        aria-label="Move selected to"
++        value={to}
++        onChange={(e) => {
++          setTo(e.target.value);
++          reassign.reset();
++        }}
++      >
++        <option value="">Move to…</option>
++        {(people.data ?? []).map((p) => (
++          <option key={p.id} value={String(p.id)}>
++            {p.name}
++          </option>
++        ))}
++      </select>{' '}
++      <button
++        type="button"
++        data-testid="bulk-reassign"
++        disabled={reassign.isPending}
++        onClick={() => {
++          reassign.reset();
++          reassign.mutate(selected);
++        }}
++      >
++        Move selected ({selected.length})
++      </button>
++      {reassign.isSuccess && (
++        <>
++          {' '}
++          Moved <span data-testid="bulk-reassigned">{reassign.data.reassigned}</span>, refused{' '}
++          <span data-testid="bulk-reassign-refused">{reassign.data.refused}</span>
++        </>
++      )}
++      {reassign.isError && <span data-testid="bulk-reassign-error"> Could not move the selected claims.</span>}
++    </p>
++  );
++}
++
++export const contribution = SheetPage.fill({ order: 27, Component: BulkReassign });
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+index c340b9b45..31e7130ea 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+@@ -17,6 +17,13 @@ import net.officefloor.plugin.variable.Val;
+ public class ApplyReassign {
+     public void apply(@Val Claim claim, @Val ReassignRequest request, PersonRepository people, RoleRepository roles,
+             SettingRepository settings,             PeriodRepository periods, Out<ClaimReassignment> reassignment) throws InvalidClaimStatusException {
++        reassignment.set(check(claim, request, people, roles, settings, periods, false));
++    }
++
++    /** The checks of a move; {@code sameAllowed} lets the claim's own person be named (a bulk move keeps it there, listed
++     *  as its newest). */
++    static ClaimReassignment check(Claim claim, ReassignRequest request, PersonRepository people, RoleRepository roles,
++            SettingRepository settings, PeriodRepository periods, boolean sameAllowed) throws InvalidClaimStatusException {
+         if (!settings.permits(claim.sheetId(), "reassign", roles.roleOf(claim.sheetId(), request.by()))) {
+             throw new InvalidClaimStatusException("The sheet's permission does not let this user move a claim");
+         }
+@@ -32,12 +39,12 @@ public class ApplyReassign {
+         }
+         Person from = people.find(claim.sheetId(), claim.personId());
+         Person to = people.find(claim.sheetId(), request.personId());
+-        if (from == null || to == null || to.id() == from.id()) {
++        if (from == null || to == null || (!sameAllowed && to.id() == from.id())) {
+             throw new InvalidClaimStatusException("The claim must move to another person on the sheet");
+         }
+         if (!to.mayClaimOn(claim.date())) {
+             throw new InvalidClaimStatusException("The claim's date is after " + to.name() + "'s retirement");
+         }
+-        reassignment.set(new ClaimReassignment(from, to, request.by()));
++        return new ClaimReassignment(from, to, request.by());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkReassignRequest.java b/src/main/java/net/officefloor/hq/app/claim/BulkReassignRequest.java
+new file mode 100644
+index 000000000..ccf4072a3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkReassignRequest.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++
++/** Body of a bulk move: the ids of the selected claims, the person they move to, and who moves them. */
++public record BulkReassignRequest(List<Long> claimIds, Long personId, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkReassignResult.java b/src/main/java/net/officefloor/hq/app/claim/BulkReassignResult.java
+new file mode 100644
+index 000000000..83566d9dc
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkReassignResult.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** The outcome of a bulk move: how many of the selected claims were moved and how many refused. */
++public record BulkReassignResult(int reassigned, int refused) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java b/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java
+new file mode 100644
+index 000000000..aefec9600
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java
+@@ -0,0 +1,65 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.HashMap;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Map;
++import java.util.Set;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupBefore;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/**
++ * Moves each selected claim to the chosen person, in list order (people in the order they were added, a person's
++ * claims newest first), by the checks of the single move (ApplyReassign: who may, which statuses, corrections, closed
++ * periods, retirement), stored as SaveReassign stores it and written as RecordClaimReassigned writes it
++ * (CLAIM_REASSIGNED and the figures it moved). A claim already the chosen person's counts as moved, listed as its
++ * newest. Each that the move refuses, or is not on the sheet, is left as it is and counted refused.
++ */
++public class ReassignClaims {
++    public void reassign(@PathVariable("sheetId") String sheetId, @Val BulkReassignRequest request,
++            ClaimRepository claims, PersonRepository people, RoleRepository roles, SettingRepository settings,
++            PeriodRepository periods, Rollup rollup, Audit audit, Out<BulkReassignResult> result) {
++        String sheet = sheetId.trim();
++        Set<Long> selected = new HashSet<>(request.claimIds());
++        List<Person> listed = people.list(sheet);
++        Map<Long, Integer> personOrder = new HashMap<>();
++        for (int i = 0; i < listed.size(); i++) {
++            personOrder.put(listed.get(i).id(), i);
++        }
++        List<Claim> chosen = claims.list(sheet).stream().filter((c) -> selected.contains(c.id()))
++                .sorted((a, b) -> Integer.compare(personOrder.getOrDefault(a.personId(), Integer.MAX_VALUE),
++                        personOrder.getOrDefault(b.personId(), Integer.MAX_VALUE)))
++                .toList();
++        ReassignRequest move = new ReassignRequest(request.personId(), request.by());
++        SaveReassign save = new SaveReassign();
++        RecordClaimReassigned record = new RecordClaimReassigned();
++        int reassigned = 0;
++        for (Claim listedClaim : chosen) {
++            Claim claim = claims.find(sheet, listedClaim.id());
++            if (claim == null) {
++                continue;
++            }
++            RollupBefore before = rollup.take(sheet);
++            Claim[] stored = new Claim[1];
++            ClaimReassignment reassignment;
++            try {
++                reassignment = ApplyReassign.check(claim, move, people, roles, settings, periods, true);
++                save.save(claim, reassignment, claims, (c) -> stored[0] = c);
++            } catch (InvalidClaimStatusException refused) {
++                continue;
++            }
++            reassigned++;
++            record.record(stored[0], reassignment, before, rollup, audit);
++        }
++        result.set(new BulkReassignResult(reassigned, selected.size() - reassigned));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkReassign.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkReassign.java
+new file mode 100644
+index 000000000..b5f3836cb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkReassign.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/** Responds with how many of the selected claims were moved and how many refused. */
++public class RespondWithBulkReassign {
++    public void respond(@Val BulkReassignResult result, ObjectResponse<BulkReassignResult> response) {
++        response.send(result);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateBulkReassign.java b/src/main/java/net/officefloor/hq/app/claim/ValidateBulkReassign.java
+new file mode 100644
+index 000000000..393f07567
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateBulkReassign.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++import java.util.Objects;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Reads the body: the selected claim ids (each once; a missing list is none), the person they move to (a move needs
++ *  one) and who moves them. */
++public class ValidateBulkReassign {
++    public void validate(@RequestBody BulkReassignRequest request, Out<BulkReassignRequest> body)
++            throws InvalidClaimStatusException {
++        if (request == null || request.personId() == null) {
++            throw new InvalidClaimStatusException("A move needs the person the claims move to");
++        }
++        List<Long> ids = request.claimIds() == null ? List.of()
++                : request.claimIds().stream().filter(Objects::nonNull).distinct().toList();
++        String by = request.by() == null ? "" : request.by().trim();
++        body.set(new BulkReassignRequest(ids, request.personId(), by));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-reassign.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-reassign.POST.yml
+new file mode 100644
+index 000000000..ec2b55235
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-reassign.POST.yml
+@@ -0,0 +1,14 @@
++# POST /api/sheets/{sheetId}/bulk-reassign — move the selected claims to one person together. Each selected claim is
++# moved by the signed-in user exactly as the single move does (see ApplyReassign), in list order: people in the order
++# they were added, a person's claims newest first; each writes its own CLAIM_REASSIGNED and figure lines. A claim
++# already the person's counts as moved. Each that cannot be moved (or is not on the sheet) is left as it is and counted
++# refused. No person named is a 409. Responds with how many were moved and how many refused.
++validate:
++  class: net.officefloor.hq.app.claim.ValidateBulkReassign
++  next: reassign
++reassign:
++  class: net.officefloor.hq.app.claim.ReassignClaims
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithBulkReassign
