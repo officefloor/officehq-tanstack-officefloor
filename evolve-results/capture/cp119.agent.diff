@@ -1,0 +1,75 @@
+diff --git a/src/main/frontend/features/pools/pools.slot.tsx b/src/main/frontend/features/pools/pools.slot.tsx
+index 5d093790f..adae445c8 100644
+--- a/src/main/frontend/features/pools/pools.slot.tsx
++++ b/src/main/frontend/features/pools/pools.slot.tsx
+@@ -3,8 +3,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { SheetPage } from '../../slots/defs/sheetPage';
+-import { usePeople } from '../people/people';
+-import { poolsKey, usePools, type Pool, type PoolMember } from './pools';
++import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
++import { usePeople, type Person } from '../people/people';
++import { personCutTotal, poolsKey, sheetCutTotal, usePools, type Pool, type PoolMember } from './pools';
+ 
+ /** One pool: its total share and whether it is balanced, each member's line with their share, and the picker that adds
+  *  a person, or another pool (pool:<name>), with a share. A pool already a member of a pool, one that would contain
+@@ -143,4 +144,29 @@ function Pools({ sheetId, user }: { sheetId: string; user: string }) {
+   );
+ }
+ 
+-export const contribution = SheetPage.fill({ order: 9.7, Component: Pools });
++function CutHead() {
++  return <th>Cut total</th>;
++}
++
++/** A person's cut total across the pools they are a member of. */
++function PersonCutTotal({ sheetId, person }: { sheetId: string; person: Person }) {
++  const pools = usePools(sheetId);
++  return <td data-testid="person-cut-total">{personCutTotal(pools.data, person.id)}</td>;
++}
++
++/** The sheet's cut total: everyone's cut total added up. */
++function CutTotal({ sheetId }: { sheetId: string }) {
++  const pools = usePools(sheetId);
++  return (
++    <p>
++      Cut total <span data-testid="rollup-cut-total">{sheetCutTotal(pools.data)}</span>
++    </p>
++  );
++}
++
++export const contributions = [
++  SheetPage.fill({ order: 9.7, Component: Pools }),
++  PeopleHead.fill({ order: 62, Component: CutHead }),
++  PersonRow.fill({ order: 62, Component: PersonCutTotal }),
++  SheetPage.fill({ order: 36, Component: CutTotal }),
++];
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index 1542efdff..450585926 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -22,3 +22,23 @@ export function usePools(sheetId: string) {
+     queryFn: () => getJson<Pool[]>(`/api/sheets/${encodeURIComponent(sheetId)}/pools`),
+   });
+ }
++
++const toCents = (cut: string) => Math.round(Number(cut) * 100);
++const fromCents = (cents: number) => (cents / 100).toFixed(2);
++
++/** A person's cut total: their cuts across every pool they are a member of, added up (a pool that shows no cut adds
++ *  nothing). Two decimals, as text. */
++export function personCutTotal(pools: Pool[] | undefined, personId: number): string {
++  let cents = 0;
++  for (const pool of pools ?? [])
++    for (const m of pool.members) if (m.pool === null && m.personId === personId && m.cut !== null) cents += toCents(m.cut);
++  return fromCents(cents);
++}
++
++/** The sheet's cut total: everyone's cut total added up. Two decimals, as text. */
++export function sheetCutTotal(pools: Pool[] | undefined): string {
++  let cents = 0;
++  for (const pool of pools ?? [])
++    for (const m of pool.members) if (m.pool === null && m.cut !== null) cents += toCents(m.cut);
++  return fromCents(cents);
++}
