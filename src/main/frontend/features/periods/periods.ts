@@ -80,6 +80,29 @@ export function personPeriodDue(
   return sum(mine.map((c) => claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late)));
 }
 
+/** A person's carried figure for a period: the figures (each due as shown now, with its late charge) of their claims
+ *  that count and belong to an earlier period of the sheet (their due-by falls in a period ending before this one
+ *  starts) and that were still OPEN or PENDING at the end of this period's last day (see statusAsOf), the live rules
+ *  otherwise applying as for personPeriodDue, added up (skipping n/a); 0.00 when nothing is carried. */
+export function personPeriodCarried(
+  period: Period,
+  periods: Period[] | undefined,
+  person: Person,
+  claims: Claim[] | undefined,
+  rates: Rate[] | undefined,
+  floor: Dated,
+  late: Late,
+): string {
+  const earlier = (periods ?? []).filter((p) => p.to < period.from);
+  const mine = (claims ?? []).filter((c) => {
+    if (c.personId !== person.id || !earlier.some((p) => p.from <= c.dueBy && c.dueBy <= p.to)) return false;
+    const status = statusAsOf(c, period.to);
+    if (status !== 'OPEN' && status !== 'PENDING') return false;
+    return counts({ ...c, status }) && !(isOpen(c) && !bound(c) && (heldOn(person, c.date) || retiredOn(person, late.today)));
+  });
+  return sum(mine.map((c) => claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late)));
+}
+
 /** A period's due-total: the people's due-totals for it (see personPeriodDue) added up. */
 export function periodDue(
   period: Period,

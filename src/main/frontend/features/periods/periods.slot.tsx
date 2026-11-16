@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
@@ -8,7 +8,7 @@ import { useClaims } from '../claims/claims';
 import { usePeople, type Person } from '../people/people';
 import { useRates } from '../rates/rates';
 import { useFiscalStartMonth, useFloor, useLate } from '../settings/settings';
-import { fiscalYearOf, periodDue, periodsKey, personPeriodDue, usePeriods, type Period } from './periods';
+import { fiscalYearOf, periodDue, periodsKey, personPeriodCarried, personPeriodDue, usePeriods, type Period } from './periods';
 
 type Values = { name: string; from: string; to: string; cap: string };
 const EMPTY: Values = { name: '', from: '', to: '', cap: '' };
@@ -192,13 +192,16 @@ function PeriodsHead({ sheetId }: { sheetId: string }) {
   return (
     <>
       {(periods.data ?? []).map((p) => (
-        <th key={p.id}>{p.name} due</th>
+        <Fragment key={p.id}>
+          <th>{p.name} due</th>
+          <th>{p.name} carried</th>
+        </Fragment>
       ))}
     </>
   );
 }
 
-/** A person's due-total for each period of the sheet (see personPeriodDue). */
+/** A person's due-total and carried figure for each period of the sheet (see personPeriodDue, personPeriodCarried). */
 function PersonPeriods({ sheetId, person }: { sheetId: string; person: Person }) {
   const periods = usePeriods(sheetId);
   const claims = useClaims(sheetId);
@@ -208,9 +211,14 @@ function PersonPeriods({ sheetId, person }: { sheetId: string; person: Person })
   return (
     <>
       {(periods.data ?? []).map((p) => (
-        <td key={p.id} data-testid={`person-period-${p.name}-due-total`}>
-          {personPeriodDue(p, person, claims.data, rates.data, floor, late)}
-        </td>
+        <Fragment key={p.id}>
+          <td data-testid={`person-period-${p.name}-due-total`}>
+            {personPeriodDue(p, person, claims.data, rates.data, floor, late)}
+          </td>
+          <td data-testid={`person-period-${p.name}-carried`}>
+            {personPeriodCarried(p, periods.data, person, claims.data, rates.data, floor, late)}
+          </td>
+        </Fragment>
       ))}
     </>
   );
