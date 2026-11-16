@@ -6,11 +6,13 @@ import { Dashboard } from './Dashboard';
 import { Header } from './Header';
 import { Summary } from './Summary';
 import { TreeSearch } from './TreeSearch';
+import { ExportTree } from './ExportTree';
 
 export const contributions = [
   SheetBody.fill({ order: -100, Component: Header }),
   SheetBody.fill({ order: -99, Component: Consolidated }),
   SheetBody.fill({ order: -98, Component: TreeSearch }),
+  SheetBody.fill({ order: -97.5, Component: ExportTree }),
   SheetBody.fill({ order: -97, Component: Dashboard }),
   SheetBody.fill({ order: 27, Component: Summary }),
   SheetBody.fill({ order: 27.5, Component: CompareSheet }),

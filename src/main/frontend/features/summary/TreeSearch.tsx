@@ -8,8 +8,8 @@ import { heldOf } from '../rates/shares';
 import { useFloor, useLate } from '../settings/api';
 import { listTree, sheetKey, treeKey, useSheetToday } from '../sheet/api';
 
-/** A person as the search finds them: their name, aliases and due-total as their row shows it. */
-type Found = { name: string; shown: string; aliases: string[]; due: string };
+/** A person as the search finds them: their name, grade, aliases and due-total as their row shows it. */
+export type Found = { name: string; grade: string; shown: string; aliases: string[]; due: string };
 
 /** Everyone on a sheet in list order, with their due-total as that sheet's list shows it; undefined until read. */
 function useSheetPeople(sheetId: string, user: string): Found[] | undefined {
@@ -24,6 +24,7 @@ function useSheetPeople(sheetId: string, user: string): Found[] | undefined {
   const byGrade = rateByGrade(rates.data, today);
   return people.data.map((p) => ({
     name: p.name,
+    grade: p.grade,
     shown: shownName(p),
     aliases: p.aliases,
     due: showDue(personDue(liveClaims(claims.data.filter((c) => c.personId === p.id), [p]),
@@ -33,7 +34,7 @@ function useSheetPeople(sheetId: string, user: string): Found[] | undefined {
 }
 
 /** Works out one sheet's people and hands them up; shows nothing. */
-function TreeSheet({ sheetId, user, report }: { sheetId: string; user: string; report: (id: string, f: Found[]) => void }) {
+export function TreeSheet({ sheetId, user, report }: { sheetId: string; user: string; report: (id: string, f: Found[]) => void }) {
   const found = useSheetPeople(sheetId, user);
   const seen = JSON.stringify(found ?? null);
   useEffect(() => {
