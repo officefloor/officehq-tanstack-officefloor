@@ -1,0 +1,384 @@
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index 85699f3a9..077fab315 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -11,10 +11,10 @@ type GradeTerms = `terms-${(typeof GRADES)[number]}`;
+ const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
+ type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
+ const PERM_KEYS: PermKey[] = PERM_ACTIONS.map((a) => `perm-${a}` as PermKey);
+-type Key = PermKey | 'clerk-limit' | 'cap' | 'proof-threshold' | 'floor' | 'terms' | GradeTerms | 'late-pct' | 'policy-date' | 'period-numbering-from';
+-const KEYS: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'period-numbering-from', ...PERM_KEYS];
++type Key = PermKey | 'clerk-limit' | 'cap' | 'proof-threshold' | 'floor' | 'terms' | GradeTerms | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'grace-days';
++const KEYS: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'period-numbering-from', 'grace-days', ...PERM_KEYS];
+ const BLANK: Record<Key, string> = {
+-  'clerk-limit': '', cap: '', 'proof-threshold': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '',
++  'clerk-limit': '', cap: '', 'proof-threshold': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', 'grace-days': '',
+   ...(Object.fromEntries(PERM_KEYS.map((k) => [k, ''])) as Record<PermKey, string>),
+ };
+ /** The keys whose values are dated: each saved from a from-date (blank: the sheet's today). */
+@@ -28,10 +28,11 @@ const dated = (key: Key) => DATED.includes(key);
+  *  sheet's) and the late percent (what an overdue claim gains of its figure for every full 30 days
+  *  overdue; 0.00 until set) and the policy date (yyyy-MM-dd; blank: the sheet's today — a claim dated before it rounds
+  *  half up, one on or after it half to even) and the period numbering from-date (yyyy-MM-dd; blank: off — while the sheet's
+- *  today is on or after it, a claim opened is numbered within its period) and the permission matrix (for each of open, settle,
++ *  today is on or after it, a claim opened is numbered within its period) and the grace days (a whole number; blank: off — when the
++ *  sheet's today changes, every open period whose to-date plus them is before the new today is closed) and the permission matrix (for each of open, settle,
+  *  void, reassign, close and reopen, the roles that may take it, comma separated; blank: the standing rule — open, settle,
+  *  void and close by clerk and steward, reassign and reopen by steward; undated). Every setting but the policy date, the
+- *  period numbering from-date and the permissions is dated: saved with its from-date (blank: the sheet's today) it keeps the values from
++ *  period numbering from-date, the grace days and the permissions is dated: saved with its from-date (blank: the sheet's today) it keeps the values from
+  *  other dates, and what shows in force is the value on the sheet's today (a claim takes its floor, late percent and
+  *  terms, and proof threshold, from its own date). Saving stores the fields entered since the last save
+  *  (a field focused counts, so a blank typed over a blank still saves), the clerk limit when none was. */
+@@ -119,6 +120,7 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+         {field('late-pct', 'Late %')}{' '}
+         {field('policy-date', 'Policy date (yyyy-MM-dd)', 'numeric')}{' '}
+         {field('period-numbering-from', 'Period numbering from (yyyy-MM-dd)', 'numeric')}{' '}
++        {field('grace-days', 'Grace days', 'numeric')}{' '}
+         {PERM_ACTIONS.map((a) => (
+           <span key={a}>{field(`perm-${a}`, `Roles that may ${a} (comma separated)`, 'text')} </span>
+         ))}
+@@ -128,7 +130,7 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+         {save.isError && (
+           <span data-testid="settings-error">
+             The from-date must be yyyy-MM-dd, or blank; the clerk limit must be an amount with up to two decimals, or blank; the cap and the proof threshold likewise; the floor an amount with up to two
+-            decimals; the terms, and a grade's terms, a whole number of days, 0 or more; the late percent a percent with up to two decimals; the policy date yyyy-MM-dd, or blank; the period numbering from-date yyyy-MM-dd, or blank; a permission roles (clerk, steward) separated by commas, or blank.
++            decimals; the terms, and a grade's terms, a whole number of days, 0 or more; the late percent a percent with up to two decimals; the policy date yyyy-MM-dd, or blank; the period numbering from-date yyyy-MM-dd, or blank; the grace days a whole number, 0 or more, or blank; a permission roles (clerk, steward) separated by commas, or blank.
+           </span>
+         )}
+       </form>
+@@ -165,6 +167,9 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+         Period numbering from{' '}
+         <span data-testid="setting-period-numbering-from-current">{current('period-numbering-from')}</span>
+       </p>
++      <p>
++        Grace days <span data-testid="setting-grace-days-current">{current('grace-days')}</span>
++      </p>
+       {PERM_ACTIONS.map((a) => (
+         <p key={a}>
+           Roles that may {a}{' '}
+diff --git a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+new file mode 100644
+index 000000000..521bee3a1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+@@ -0,0 +1,32 @@
++package net.officefloor.hq.app.period;
++
++import java.math.BigDecimal;
++import java.util.Comparator;
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.hq.app.sheet.TodayBy;
++import net.officefloor.plugin.variable.Val;
++
++/** Once the sheet's new today is stored, closes every open period whose to-date plus the sheet's grace days is before
++ *  it (none while the grace days are blank), in order of their to-dates, exactly as a close by hand would, each
++ *  writing PERIOD_CLOSED with auto=yes at its end. */
++public class AutoClosePeriods {
++    public void close(@Val Sheet sheet, @Val TodayBy by, SettingRepository settings, PeriodRepository periods,
++            PeriodCloser closer, Audit audit) throws InvalidPeriodException {
++        Integer grace = settings.graceDays(sheet.id());
++        if (grace == null) {
++            return;
++        }
++        List<Period> due = periods.list(sheet.id()).stream()
++                .filter((p) -> !p.closed() && p.to().plusDays(grace).isBefore(sheet.today()))
++                .sorted(Comparator.comparing(Period::to))
++                .toList();
++        for (Period period : due) {
++            BigDecimal total = closer.close(period);
++            audit.record("PERIOD_CLOSED sheet=" + period.sheetId() + " by=" + by.by() + " period=" + period.name()
++                    + " total=" + total.toPlainString() + " auto=yes");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index 14a415b6f..b31a69201 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -1,23 +1,7 @@
+ package net.officefloor.hq.app.period;
+ 
+-import java.math.BigDecimal;
+-import java.util.LinkedHashMap;
+-import java.util.List;
+-import java.util.Map;
+-import java.util.stream.Collectors;
+-import net.officefloor.hq.app.claim.Claim;
+-import net.officefloor.hq.app.claim.ClaimDue;
+-import net.officefloor.hq.app.claim.ClaimLogLine;
+-import net.officefloor.hq.app.claim.ClaimLogRepository;
+-import net.officefloor.hq.app.claim.ClaimRepository;
+-import net.officefloor.hq.app.claim.ClaimStatus;
+-import net.officefloor.hq.app.claim.LateCharge;
+-import net.officefloor.hq.app.person.Person;
+-import net.officefloor.hq.app.person.PersonRepository;
+-import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.role.RoleRepository;
+ import net.officefloor.hq.app.setting.SettingRepository;
+-import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+@@ -28,46 +12,12 @@ import net.officefloor.plugin.variable.Val;
+  *  claims), added up (skipping n/a). Each person's own due-total for the period is fixed
+  *  too, for every person on the sheet; the period's is the sum of theirs. Closing a period already closed is refused, and so is closing by a role the sheet's close permission does not allow. */
+ public class ClosePeriod {
+-    public void close(@Val Period period, @Val PeriodCloseRequest request, PeriodRepository periods,
+-            ClaimRepository claims, PersonRepository people, RateRepository rates, SettingRepository settings,
+-            SheetRepository sheets, ClaimLogRepository log, RoleRepository roles,
+-            Out<PeriodClose> closed)
++    public void close(@Val Period period, @Val PeriodCloseRequest request, PeriodCloser closer,
++            SettingRepository settings, RoleRepository roles, Out<PeriodClose> closed)
+             throws InvalidPeriodException {
+         if (!settings.permits(period.sheetId(), "close", roles.roleOf(period.sheetId(), request.by()))) {
+             throw new InvalidPeriodException("The sheet's permission does not let this user close a period");
+         }
+-        if (period.closed()) {
+-            throw new InvalidPeriodException("The period " + period.name() + " is already closed");
+-        }
+-        Map<Long, Person> byId = people.list(period.sheetId()).stream()
+-                .collect(Collectors.toMap(Person::id, (p) -> p));
+-        Map<Long, List<ClaimLogLine>> logs = log.bySheet(period.sheetId());
+-        LateCharge late = LateCharge.of(period.sheetId(), sheets, settings, claims);
+-        Map<Long, BigDecimal> perPerson = new LinkedHashMap<>();
+-        for (Long id : byId.keySet()) {
+-            perPerson.put(id, BigDecimal.ZERO.setScale(2));
+-        }
+-        for (Claim c : claims.list(period.sheetId())) {
+-            Person person = byId.get(c.personId());
+-            if (c.date().isBefore(period.from()) || c.date().isAfter(period.to())) {
+-                continue;
+-            }
+-            ClaimStatus status = ClaimDue.statusAsOf(logs.getOrDefault(c.id(), List.of()), period.to());
+-            if (status == null || !ClaimDue.counts(ClaimDue.withStatus(c, status))
+-                    || (ClaimDue.isOpen(c) && !ClaimDue.bound(c) && person != null && person.heldOn(c.date()))
+-                    || ClaimDue.deferred(c, late.today())) {
+-                continue;
+-            }
+-            BigDecimal figure = person == null ? c.due() : late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, settings.floor(c.sheetId(), c.date()), late.rounding()));
+-            if (figure != null) {
+-                perPerson.merge(c.personId(), figure, BigDecimal::add);
+-            }
+-        }
+-        BigDecimal total = perPerson.values().stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
+-        if (!periods.close(period, total)) {
+-            throw new InvalidPeriodException("The period " + period.name() + " is already closed");
+-        }
+-        periods.fixPersonTotals(period, perPerson);
+-        closed.set(new PeriodClose(request.by(), total));
++        closed.set(new PeriodClose(request.by(), closer.close(period)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+new file mode 100644
+index 000000000..c4d51b073
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+@@ -0,0 +1,81 @@
++package net.officefloor.hq.app.period;
++
++import java.math.BigDecimal;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.stream.Collectors;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimDue;
++import net.officefloor.hq.app.claim.ClaimLogLine;
++import net.officefloor.hq.app.claim.ClaimLogRepository;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.claim.ClaimStatus;
++import net.officefloor.hq.app.claim.LateCharge;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import org.springframework.stereotype.Service;
++
++/** Closes an open period, fixing its due-total as it is now (see ClosePeriod): used by a close by hand and by the
++ *  automatic close a change of the sheet's today makes. */
++@Service
++public class PeriodCloser {
++    private final PeriodRepository periods;
++    private final ClaimRepository claims;
++    private final PersonRepository people;
++    private final RateRepository rates;
++    private final SettingRepository settings;
++    private final SheetRepository sheets;
++    private final ClaimLogRepository log;
++
++    public PeriodCloser(PeriodRepository periods, ClaimRepository claims, PersonRepository people, RateRepository rates,
++            SettingRepository settings, SheetRepository sheets, ClaimLogRepository log) {
++        this.periods = periods;
++        this.claims = claims;
++        this.people = people;
++        this.rates = rates;
++        this.settings = settings;
++        this.sheets = sheets;
++        this.log = log;
++    }
++
++    /** Closes the period, returning the due-total it fixed; one already closed is refused. */
++    public BigDecimal close(Period period) throws InvalidPeriodException {
++        if (period.closed()) {
++            throw new InvalidPeriodException("The period " + period.name() + " is already closed");
++        }
++        Map<Long, Person> byId = people.list(period.sheetId()).stream()
++                .collect(Collectors.toMap(Person::id, (p) -> p));
++        Map<Long, List<ClaimLogLine>> logs = log.bySheet(period.sheetId());
++        LateCharge late = LateCharge.of(period.sheetId(), sheets, settings, claims);
++        Map<Long, BigDecimal> perPerson = new LinkedHashMap<>();
++        for (Long id : byId.keySet()) {
++            perPerson.put(id, BigDecimal.ZERO.setScale(2));
++        }
++        for (Claim c : claims.list(period.sheetId())) {
++            Person person = byId.get(c.personId());
++            if (c.date().isBefore(period.from()) || c.date().isAfter(period.to())) {
++                continue;
++            }
++            ClaimStatus status = ClaimDue.statusAsOf(logs.getOrDefault(c.id(), List.of()), period.to());
++            if (status == null || !ClaimDue.counts(ClaimDue.withStatus(c, status))
++                    || (ClaimDue.isOpen(c) && !ClaimDue.bound(c) && person != null && person.heldOn(c.date()))
++                    || ClaimDue.deferred(c, late.today())) {
++                continue;
++            }
++            BigDecimal figure = person == null ? c.due() : late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, settings.floor(c.sheetId(), c.date()), late.rounding()));
++            if (figure != null) {
++                perPerson.merge(c.personId(), figure, BigDecimal::add);
++            }
++        }
++        BigDecimal total = perPerson.values().stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
++        if (!periods.close(period, total)) {
++            throw new InvalidPeriodException("The period " + period.name() + " is already closed");
++        }
++        periods.fixPersonTotals(period, perPerson);
++        return total;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 4cd758e0e..8d52bd8f6 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -52,6 +52,9 @@ public class SettingRepository {
+     /** The date from which an opened claim is numbered within its period (see ClaimNumbering); blank: off. */
+     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
+ 
++    /** The days after a period's to-date before a change of the sheet's today closes it; blank for off (undated). */
++    public static final String GRACE_DAYS = "grace-days";
++
+     /** The prefix of an action's permission: perm-open, perm-settle, perm-void, perm-reassign, perm-close or
+      *  perm-reopen, its value the roles that may take it, comma separated; blank: the standing rule (see PERMISSIONS). */
+     public static final String PERM_PREFIX = "perm-";
+@@ -163,6 +166,12 @@ public class SettingRepository {
+         return value == null ? null : LocalDate.parse(value);
+     }
+ 
++    /** The sheet's grace days, or null when it is blank (off). */
++    public Integer graceDays(String sheetId) {
++        String value = value(sheetId, GRACE_DAYS);
++        return value == null ? null : Integer.valueOf(value);
++    }
++
+     /** Whether the role may take the action (open, settle, void, reassign, close or reopen) on the sheet: the roles its
+      *  permission lists, or the standing rule while it is blank. */
+     public boolean permits(String sheetId, String action, String role) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 7b105d46c..c9c6b890d 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -15,10 +15,10 @@ import org.springframework.web.bind.annotation.RequestBody;
+ /** Reads the body: the key is clerk-limit, its value blank (no limit) or an amount 0.00 or more with up to two
+  *  decimals; or floor or late-pct, its value such an amount (not blank), all kept with two decimals; or terms, its value a
+  *  whole number of days 0 or more (not blank), kept without leading zeros, and so is terms-A, terms-B or terms-C (a
+- *  grade's own terms); or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today); or
++ *  grade's own terms); or grace-days, its value blank (off) or a whole number of days 0 or more (undated); or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today); or
+  *  period-numbering-from, its value a date yyyy-MM-dd or blank (off); or cap or proof-threshold, its value blank (none) or
+  *  an amount like the clerk limit; or perm-open, perm-settle, perm-void, perm-reassign, perm-close or perm-reopen, its value
+- *  blank (the standing rule) or roles (clerk, steward) separated by commas, kept without spaces or repeats. Every key but policy-date, period-numbering-from and the permissions is dated: its from-date is blank (the
++ *  blank (the standing rule) or roles (clerk, steward) separated by commas, kept without spaces or repeats. Every key but policy-date, period-numbering-from, grace-days and the permissions is dated: its from-date is blank (the
+  *  sheet's today) or a date yyyy-MM-dd. */
+ public class ValidateSetting {
+     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
+@@ -35,18 +35,19 @@ public class ValidateSetting {
+         boolean latePct = SettingRepository.LATE_PCT.equals(k);
+         boolean policyDate = SettingRepository.POLICY_DATE.equals(k);
+         boolean numberingFrom = SettingRepository.PERIOD_NUMBERING_FROM.equals(k);
++        boolean graceDays = SettingRepository.GRACE_DAYS.equals(k);
+         boolean cap = SettingRepository.CAP.equals(k);
+         boolean proofThreshold = SettingRepository.PROOF_THRESHOLD.equals(k);
+         boolean perm = k.startsWith(SettingRepository.PERM_PREFIX)
+                 && SettingRepository.PERMISSIONS.containsKey(k.substring(SettingRepository.PERM_PREFIX.length()));
+-        if (!perm && !SettingRepository.CLERK_LIMIT.equals(k) && !cap && !proofThreshold && !floor && !terms && !latePct && !policyDate && !numberingFrom) {
++        if (!perm && !SettingRepository.CLERK_LIMIT.equals(k) && !cap && !proofThreshold && !floor && !terms && !latePct && !policyDate && !numberingFrom && !graceDays) {
+             throw new InvalidSettingException("Unknown setting " + k);
+         }
+         String value = request == null || request.value() == null ? "" : request.value().trim();
+         String by = request == null || request.by() == null ? "" : request.by().trim();
+         String fromText = request == null || request.from() == null ? "" : request.from().trim();
+         LocalDate from = null;
+-        if (!policyDate && !numberingFrom && !fromText.isEmpty()) {
++        if (!policyDate && !numberingFrom && !graceDays && !fromText.isEmpty()) {
+             try {
+                 from = LocalDate.parse(fromText);
+             } catch (DateTimeParseException e) {
+@@ -84,6 +85,17 @@ public class ValidateSetting {
+             }
+             return;
+         }
++        if (graceDays) {
++            if (value.isEmpty()) {
++                values.set(new SettingValues(k, null, null, false, by));
++                return;
++            }
++            if (!DAYS.matcher(value).matches()) {
++                throw new InvalidSettingException("The grace days must be a whole number of days, 0 or more, or blank");
++            }
++            values.set(new SettingValues(k, String.valueOf(Integer.parseInt(value)), null, false, by));
++            return;
++        }
+         if (terms) {
+             if (!DAYS.matcher(value).matches()) {
+                 throw new InvalidSettingException("The terms must be a whole number of days, 0 or more");
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings/{key}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings/{key}.PUT.yml
+index 0c209cfd6..d2465af57 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings/{key}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings/{key}.PUT.yml
+@@ -1,7 +1,8 @@
+ # PUT /api/sheets/{sheetId}/settings/{key} — set a sheet setting. The keys are clerk-limit: an amount with up to
+ # two decimals, or blank for no limit; cap: likewise, the most a person's due-total may be (blank: none); and floor: an amount with up to two decimals, the least a claim's live due
+ # may be (1.00 until set); terms; late-pct; and policy-date: yyyy-MM-dd, or blank for the sheet's today. Writes the figures the change moved (ROLLUP, TOTALS). An unknown key or a value that is not such an amount is a 400 and writes
+-# nothing. Every key but policy-date and period-numbering-from is dated: the body's from (yyyy-MM-dd; blank: the
++# nothing. grace-days: a whole number of days, or blank for off (undated). Every key but policy-date,
++# period-numbering-from and grace-days is dated: the body's from (yyyy-MM-dd; blank: the
+ # sheet's today) is the date its value is in force from, keeping the values from other dates (one from the same date
+ # is replaced); a from that is not such a date is a 400. Responds with the setting as stored.
+ validate:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index d6f3a3c46..6a1216d9d 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -1,5 +1,7 @@
+ # PUT /api/sheets/{sheetId}/today — change the sheet's today. A body that is not a real date is a
+-# 400 and writes nothing. Responds with the sheet as stored.
++# 400 and writes nothing. Once stored, every open period whose to-date plus the sheet's grace days is before the new
++# today is closed (PERIOD_CLOSED ... auto=yes), before the figures it moved are written. Responds with the sheet as
++# stored.
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateToday
+   next: rollup
+@@ -18,6 +20,10 @@ apply:
+ save:
+   class: net.officefloor.hq.app.sheet.SaveSheet
+   govern: [ transaction ]
++  next: autoclose
++autoclose:
++  class: net.officefloor.hq.app.period.AutoClosePeriods
++  govern: [ transaction ]
+   next: audit
+ audit:
+   class: net.officefloor.hq.app.sheet.RecordTodayChanged
