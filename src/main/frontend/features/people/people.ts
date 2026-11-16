@@ -20,7 +20,8 @@ export type PersonGrade = { grade: string; from: string | null };
  *  sorted as names are compared: no alias equals (case ignored) any name or alias on the sheet, and the quick-add bar and
  *  the paste box find a person by one as by the name. `clashing` is whether their name or an alias is used as a name or
  *  alias on another sheet of the sheet's tree (people added before the rule): every edit of them is refused until it
- *  renames them clear. `origin` is the sheet they were last transferred from, null when never transferred here. */
+ *  renames them clear. `origin` is the sheet they were last transferred from, null when never transferred here.
+ *  `retirements` are their past retirements (each ended by unretiring them), in the order they ended. */
 export type Person = {
   id: number;
   sheetId: string;
@@ -36,7 +37,12 @@ export type Person = {
   aliases: string[];
   clashing: boolean;
   origin: string | null;
+  retirements: PersonRetirement[];
 };
+
+/** A past retirement of a person (yyyy-MM-dd): from their retirement date to the sheet's today when they were
+ *  unretired. No claim of theirs may be dated after the from and before the to. */
+export type PersonRetirement = { from: string; to: string };
 
 /** A hold on a person from a date until a date (yyyy-MM-dd, both included); a null `to` is open-ended. */
 export type PersonHold = { from: string; to: string | null };

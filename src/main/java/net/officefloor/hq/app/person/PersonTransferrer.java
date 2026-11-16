@@ -54,7 +54,7 @@ public class PersonTransferrer {
         for (String table : List.of("statement", "person_hold", "watch", "person_retire_log")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", from, id);
         }
-        for (String table : List.of("person_grade", "person_grade_log", "person_terms_log", "person_alias")) {
+        for (String table : List.of("person_grade", "person_grade_log", "person_terms_log", "person_alias", "person_retirement")) {
             jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, from, id);
         }
         jdbc.update("UPDATE person SET sheet_id = ?, added_on = ?, origin = ? WHERE sheet_id = ? AND id = ?", to,

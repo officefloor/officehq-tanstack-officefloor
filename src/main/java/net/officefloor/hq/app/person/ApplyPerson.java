@@ -32,6 +32,7 @@ public class ApplyPerson {
         }
         List<PersonGrade> kept = List.copyOf(grades);
         return new Person(person.id(), person.sheetId(), values.name(), Person.gradeOn(kept, today), person.version() + 1,
-                person.retiredFrom(), kept, person.holds(), values.terms(), values.contact(), person.aliases());
+                person.retiredFrom(), kept, person.holds(), values.terms(), values.contact(), person.aliases())
+                .withRetirements(person.retirements());
     }
 }

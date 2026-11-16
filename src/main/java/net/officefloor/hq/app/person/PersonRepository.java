@@ -103,13 +103,20 @@ public class PersonRepository {
                             .add(new PersonHold(rs.getDate("from_date").toLocalDate(), to == null ? null : to.toLocalDate()));
                 }, sheetId);
         Map<Long, List<String>> aliases = aliases(sheetId);
+        Map<Long, List<PersonRetirement>> retirements = new HashMap<>();
+        jdbc.query("SELECT person_id, from_date, to_date FROM person_retirement WHERE sheet_id = ? ORDER BY person_id, id",
+                (ResultSet rs) -> {
+                    retirements.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(new PersonRetirement(
+                            rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate()));
+                }, sheetId);
         LocalDate today = sheets.today(sheetId);
         List<Person> people = new ArrayList<>();
         for (Person p : found) {
             List<PersonGrade> mine = List.copyOf(grades.getOrDefault(p.id(), List.of()));
             people.add(new Person(p.id(), p.sheetId(), p.name(), Person.gradeOn(mine, today), p.version(), p.retiredFrom(),
                     mine, List.copyOf(holds.getOrDefault(p.id(), List.of())), p.terms(), p.contact(),
-                    List.copyOf(aliases.getOrDefault(p.id(), List.of()))).withOrigin(p.origin()));
+                    List.copyOf(aliases.getOrDefault(p.id(), List.of()))).withOrigin(p.origin())
+                    .withRetirements(List.copyOf(retirements.getOrDefault(p.id(), List.of()))));
         }
         return people;
     }
@@ -300,7 +307,7 @@ public class PersonRepository {
     }
 
     /** The person as they stood at the end of the date: the grades last stored, the holds and aliases added, and the
-     *  retirement date last given while the sheet's today was on or before it (a part never stored by then: none; grades never
+     *  retirement date last given (or unretirement made) and the past retirements ended while the sheet's today was on or before it (a part never stored by then: none; grades never
      *  logged: those they have now). */
     public Person asOf(Person person, LocalDate date) {
         String sheetId = person.sheetId();
@@ -323,12 +330,16 @@ public class PersonRepository {
         List<LocalDate> retired = jdbc.query("SELECT from_date FROM person_retire_log WHERE sheet_id = ? AND person_id = ?"
                 + " AND made_on <= ? ORDER BY id DESC LIMIT 1", (rs, n) -> rs.getObject(1, LocalDate.class), sheetId,
                 person.id(), Date.valueOf(date));
+        List<PersonRetirement> retirements = jdbc.query("SELECT from_date, to_date FROM person_retirement WHERE sheet_id = ?"
+                + " AND person_id = ? AND made_on <= ? ORDER BY id", (rs, n) -> new PersonRetirement(
+                        rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate()),
+                sheetId, person.id(), Date.valueOf(date));
         List<String> given = jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ?"
                 + " AND (added_on IS NULL OR added_on <= ?)", String.class, sheetId, person.id(), Date.valueOf(date));
         List<String> aliases = person.aliases().stream().filter(given::contains).toList();
         return new Person(person.id(), sheetId, person.name(), Person.gradeOn(grades, date), person.version(),
-                retired.isEmpty() ? null : retired.get(0).toString(), List.copyOf(grades), holds, termsAsOf(person, date),
-                person.contact(), aliases).withOrigin(person.origin());
+                retired.isEmpty() || retired.get(0) == null ? null : retired.get(0).toString(), List.copyOf(grades), holds,
+                termsAsOf(person, date), person.contact(), aliases).withOrigin(person.origin()).withRetirements(retirements);
     }
 
     /** The sheet's people as they stood at the end of the date (see #asOf), in list order (see #list; one merged away
@@ -380,6 +391,16 @@ public class PersonRepository {
         jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?", Date.valueOf(from), sheetId, id);
         jdbc.update("INSERT INTO person_retire_log (sheet_id, person_id, from_date, made_on) VALUES (?, ?, ?, ?)", sheetId,
                 id, Date.valueOf(from), Date.valueOf(sheets.today(sheetId)));
+    }
+
+    /** Unretires the person on the date: they are no longer retired, and the retirement is kept, from its date to this. */
+    public void unretire(String sheetId, long id, LocalDate from, LocalDate on) {
+        LocalDate today = sheets.today(sheetId);
+        jdbc.update("UPDATE person SET retired_from = NULL WHERE sheet_id = ? AND id = ?", sheetId, id);
+        jdbc.update("INSERT INTO person_retirement (sheet_id, person_id, from_date, to_date, made_on) VALUES (?, ?, ?, ?, ?)",
+                sheetId, id, Date.valueOf(from), Date.valueOf(on), Date.valueOf(today));
+        jdbc.update("INSERT INTO person_retire_log (sheet_id, person_id, from_date, made_on) VALUES (?, ?, NULL, ?)", sheetId,
+                id, Date.valueOf(today));
     }
 
     /** Adds a hold on the person, from the date until the date (null: open-ended). */

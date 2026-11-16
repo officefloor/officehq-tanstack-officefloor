@@ -224,11 +224,24 @@ public class ClaimRepository {
                 claim.id());
     }
 
-    /** Raises the claim's proofs count by one, but only while it is still DRAFT, OPEN or PENDING; false when it no
-     *  longer is (nothing is written). */
-    public boolean addProof(Claim claim) {
-        return jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE sheet_id = ? AND id = ? AND status IN ('DRAFT', 'OPEN', 'PENDING')",
-                claim.sheetId(), claim.id()) == 1;
+    /** Raises the claim's proofs count by one, logged as added on {@code today}, but only while it is still DRAFT, OPEN
+     *  or PENDING; false when it no longer is (nothing is written). */
+    public boolean addProof(Claim claim, LocalDate today) {
+        if (jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE sheet_id = ? AND id = ? AND status IN ('DRAFT', 'OPEN', 'PENDING')",
+                claim.sheetId(), claim.id()) != 1) {
+            return false;
+        }
+        jdbc.update("INSERT INTO claim_proof_log (claim_id, made_on) VALUES (?, ?)", claim.id(), Date.valueOf(today));
+        return true;
+    }
+
+    /** The number of proofs added to each claim of the sheet after {@code asOf}, by claim id. */
+    public Map<Long, Integer> proofsAfter(String sheetId, LocalDate asOf) {
+        Map<Long, Integer> out = new HashMap<>();
+        jdbc.query("SELECT l.claim_id, COUNT(*) AS n FROM claim_proof_log l JOIN claim c ON c.id = l.claim_id"
+                + " WHERE c.sheet_id = ? AND l.made_on > ? GROUP BY l.claim_id",
+                (rs) -> { out.put(rs.getLong("claim_id"), rs.getInt("n")); }, sheetId, Date.valueOf(asOf));
+        return out;
     }
 
     /** Writes a reminder for the claim on {@code today}, but only while it is still OPEN or PENDING and not yet

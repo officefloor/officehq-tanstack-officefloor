@@ -15,14 +15,16 @@ import java.util.List;
  *  (each kept without surrounding spaces; no alias equals, case ignored, any name or alias on the sheet). {@code clashing}
  *  is whether their name or an alias is used as a name or alias on another sheet of the sheet's tree (see
  *  PersonRepository#treeKeys): set only on the people listed, false elsewhere. {@code origin} is the sheet the person was
- *  last transferred from, null when they were never transferred here. */
+ *  last transferred from, null when they were never transferred here. {@code retirements} are the person's past
+ *  retirements (each ended by unretiring them), in the order they ended. */
 public record Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
         List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases,
-        boolean clashing, String origin) {
+        boolean clashing, String origin, List<PersonRetirement> retirements) {
 
     public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
             List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases) {
-        this(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, false, null);
+        this(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, false, null,
+                List.of());
     }
 
     public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom,
@@ -37,12 +39,24 @@ public record Person(long id, String sheetId, String name, String grade, long ve
 
     /** The person with whether they clash in the sheet's tree. */
     public Person withClashing(boolean clashing) {
-        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin);
+        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements);
     }
 
     /** The person with the sheet they were transferred from (null: none). */
     public Person withOrigin(String origin) {
-        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin);
+        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements);
+    }
+
+    /** The person with their past retirements. */
+    public Person withRetirements(List<PersonRetirement> retirements) {
+        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements);
+    }
+
+    /** The person not retired, the retirement ended on the date kept among their past ones. */
+    public Person unretired(LocalDate on) {
+        List<PersonRetirement> past = new java.util.ArrayList<>(retirements);
+        past.add(new PersonRetirement(LocalDate.parse(retiredFrom), on));
+        return new Person(id, sheetId, name, grade, version, null, held, grades, holds, terms, contact, aliases, clashing, origin, List.copyOf(past));
     }
 
     /** Whether the person's name or any alias is among the name keys (lower-cased names and aliases). */
@@ -65,9 +79,11 @@ public record Person(long id, String sheetId, String name, String grade, long ve
         return retiredFrom != null;
     }
 
-    /** Whether a claim of the person may be dated {@code date}: not after their retirement date. */
+    /** Whether a claim of the person may be dated {@code date}: not after their retirement date, nor after the from and
+     *  before the to of a past retirement. */
     public boolean mayClaimOn(java.time.LocalDate date) {
-        return retiredFrom == null || !date.isAfter(java.time.LocalDate.parse(retiredFrom));
+        return (retiredFrom == null || !date.isAfter(java.time.LocalDate.parse(retiredFrom)))
+                && retirements.stream().noneMatch((r) -> r.excludes(date));
     }
 
     /** The grade in force on a date: the one with the latest from-date on or before it. */

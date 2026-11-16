@@ -41,9 +41,14 @@ public class PoolRepository {
      *  A person with a hold in force on the sheet's today gets no cut (their share still counts toward the total). A
      *  member whose membership dates do not include the sheet's today is left out entirely: not in the total, no cut. */
     public List<Pool> list(String sheetId) {
+        return list(sheetId, null);
+    }
+
+    /** The sheet's pools (see #list) read as of a date (null: now): the date stands in for the sheet's today. */
+    public List<Pool> list(String sheetId, LocalDate asOf) {
         BigDecimal pot = settings.pot(sheetId);
-        LocalDate today = sheets.today(sheetId);
-        Set<Long> held = held(sheetId);
+        LocalDate today = asOf != null ? asOf : sheets.today(sheetId);
+        Set<Long> held = held(sheetId, today);
         Map<Long, String> names = new LinkedHashMap<>();
         jdbc.query("SELECT id, name FROM pool WHERE sheet_id = ? ORDER BY id",
                 rs -> {
@@ -83,9 +88,9 @@ public class PoolRepository {
         return new ArrayList<>(pools.values());
     }
 
-    /** The ids of the sheet's people with a hold whose dates include the sheet's today. */
-    private Set<Long> held(String sheetId) {
-        java.sql.Date today = java.sql.Date.valueOf(sheets.today(sheetId));
+    /** The ids of the sheet's people with a hold whose dates include the day (the sheet's today). */
+    private Set<Long> held(String sheetId, LocalDate on) {
+        java.sql.Date today = java.sql.Date.valueOf(on);
         return Set.copyOf(jdbc.queryForList("SELECT DISTINCT person_id FROM person_hold WHERE sheet_id = ?"
                 + " AND from_date <= ? AND (to_date IS NULL OR to_date >= ?)", Long.class, sheetId, today, today));
     }
