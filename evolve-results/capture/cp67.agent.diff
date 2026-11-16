@@ -1,0 +1,96 @@
+diff --git a/src/main/frontend/features/active/active.slot.tsx b/src/main/frontend/features/active/active.slot.tsx
+new file mode 100644
+index 000000000..b1257e514
+--- /dev/null
++++ b/src/main/frontend/features/active/active.slot.tsx
+@@ -0,0 +1,21 @@
++import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
++import { useClaims } from '../claims/claims';
++import { type Person } from '../people/people';
++import { useLate } from '../settings/settings';
++import { isActive } from './active';
++
++function ActiveHead() {
++  return <th>Active</th>;
++}
++
++/** Whether the person is active: yes or no (see isActive). */
++function PersonActive({ sheetId, person }: { sheetId: string; person: Person }) {
++  const claims = useClaims(sheetId);
++  const late = useLate(sheetId);
++  return <td data-testid="person-active">{isActive(person, claims.data, late.today) ? 'yes' : 'no'}</td>;
++}
++
++export const contributions = [
++  PeopleHead.fill({ order: 27, Component: ActiveHead }),
++  PersonRow.fill({ order: 27, Component: PersonActive }),
++];
+diff --git a/src/main/frontend/features/active/active.ts b/src/main/frontend/features/active/active.ts
+new file mode 100644
+index 000000000..412a7bd31
+--- /dev/null
++++ b/src/main/frontend/features/active/active.ts
+@@ -0,0 +1,13 @@
++import { isOpen, live, type Claim } from '../claims/claims';
++import { type Person } from '../people/people';
++import { plusDays } from '../overdue/late';
++
++/** Whether a person is active on the sheet's today (yyyy-MM-dd): they have an open (OPEN or PENDING) claim that
++ *  counts in the live totals, dated within the 30 days up to and including today. */
++export function isActive(person: Person, claims: Claim[] | undefined, today: string): boolean {
++  if (today === '') return false;
++  const since = plusDays(today, -29);
++  return live(claims?.filter((c) => c.personId === person.id) ?? [], [person]).some(
++    (c) => isOpen(c) && c.date >= since && c.date <= today,
++  );
++}
+diff --git a/src/main/frontend/features/overdue/late.ts b/src/main/frontend/features/overdue/late.ts
+index 8d205f99e..f9bdd4050 100644
+--- a/src/main/frontend/features/overdue/late.ts
++++ b/src/main/frontend/features/overdue/late.ts
+@@ -34,7 +34,7 @@ export function lateSteps(claim: Claim, late: Late): number {
+ }
+ 
+ /** A yyyy-MM-dd date the given days after another. */
+-function plusDays(date: string, days: number): string {
++export function plusDays(date: string, days: number): string {
+   return new Date((day(date) + days) * 86_400_000).toISOString().slice(0, 10);
+ }
+ 
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 7fe89a2f1..9f44dc37c 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -1,4 +1,5 @@
+ import { SheetPage } from '../../slots/defs/sheetPage';
++import { isActive } from '../active/active';
+ import { live, useClaims } from '../claims/claims';
+ import { STATUSES, useStatusCounts } from '../header/totals';
+ import { GRADES, gradeOn, usePeople } from '../people/people';
+@@ -7,7 +8,7 @@ import { personDue, sum, useRates } from '../rates/rates';
+ import { useCap, useFloor, useLate } from '../settings/settings';
+ 
+ /** The sheet's summary, worked out from the same figures the lists show. Per grade: the people on it on the sheet's
+- *  today (retired people excluded) and their due-totals added up (skipping n/a). Per period: its due-total. Per
++ *  today (retired people excluded), their due-totals added up (skipping n/a) and how many of them are active. Per period: its due-total. Per
+  *  status: how many of the sheet's claims have it. */
+ function Summary({ sheetId }: { sheetId: string }) {
+   const people = usePeople(sheetId);
+@@ -37,6 +38,7 @@ function Summary({ sheetId }: { sheetId: string }) {
+             <th>Grade</th>
+             <th>People</th>
+             <th>Due total</th>
++            <th>Active</th>
+           </tr>
+         </thead>
+         <tbody>
+@@ -45,6 +47,9 @@ function Summary({ sheetId }: { sheetId: string }) {
+               <td>{g}</td>
+               <td data-testid={`summary-grade-${g}-count`}>{onGrade(g).length}</td>
+               <td data-testid={`summary-grade-${g}-due-total`}>{gradeDue(g)}</td>
++              <td data-testid={`summary-grade-${g}-active`}>
++                {onGrade(g).filter((p) => isActive(p, claims.data, late.today)).length}
++              </td>
+             </tr>
+           ))}
+         </tbody>
