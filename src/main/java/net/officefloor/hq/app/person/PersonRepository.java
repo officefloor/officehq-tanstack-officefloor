@@ -20,12 +20,12 @@ public class PersonRepository {
     }
 
     public List<Person> list(String sheetId) {
-        return jdbc.query("SELECT id, sheet_id, name, grade FROM person WHERE sheet_id = ? ORDER BY id",
+        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? ORDER BY id",
                 PersonRepository::map, sheetId);
     }
 
     public Person find(String sheetId, long id) {
-        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade FROM person WHERE sheet_id = ? AND id = ?",
+        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? AND id = ?",
                 PersonRepository::map, sheetId, id);
         return found.isEmpty() ? null : found.get(0);
     }
@@ -53,19 +53,25 @@ public class PersonRepository {
         } catch (DuplicateKeyException e) {
             throw new DuplicatePersonNameException(name);
         }
-        return new Person(keys.getKey().longValue(), sheetId, name, grade);
+        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0);
     }
 
-    public void update(Person person) throws DuplicatePersonNameException {
+    /** Stores the person as its new version, only while the stored one is still {@code fromVersion}: a save
+     *  that lands in between refuses this one. */
+    public void update(Person person, long fromVersion) throws DuplicatePersonNameException, StalePersonException {
+        int n;
         try {
-            jdbc.update("UPDATE person SET name = ?, grade = ? WHERE sheet_id = ? AND id = ?",
-                    person.name(), person.grade(), person.sheetId(), person.id());
+            n = jdbc.update("UPDATE person SET name = ?, grade = ?, version = ? WHERE sheet_id = ? AND id = ? AND version = ?",
+                    person.name(), person.grade(), person.version(), person.sheetId(), person.id(), fromVersion);
         } catch (DuplicateKeyException e) {
             throw new DuplicatePersonNameException(person.name());
+        }
+        if (n == 0) {
+            throw new StalePersonException(person.id());
         }
     }
 
     private static Person map(ResultSet rs, int n) throws SQLException {
-        return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"));
+        return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"));
     }
 }

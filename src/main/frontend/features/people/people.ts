@@ -4,8 +4,9 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 
 export const GRADES = ['A', 'B', 'C'] as const;
 
-/** A person on the sheet. `name` is unique on the sheet (case ignored), kept without outer spaces; `grade` is A, B or C. */
-export type Person = { id: number; sheetId: string; name: string; grade: string };
+/** A person on the sheet. `name` is unique on the sheet (case ignored), kept without outer spaces; `grade` is A, B or C.
+ *  `version` goes up by one on each stored edit; an edit sends the version it was made from. */
+export type Person = { id: number; sheetId: string; name: string; grade: string; version: number };
 
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'];
 

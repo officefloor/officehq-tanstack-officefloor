@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { useClaims } from '../claims/claims';
 import { GRADES, usePeople, type Person } from '../people/people';
@@ -18,6 +19,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
   const [pct, setPct] = useState('');
   const [from, setFrom] = useState('');
 
+  const submit = useSubmitOnce();
   const save = useMutation({
     mutationFn: (v: { grade: string; rate: string; from: string }) =>
       putJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates/${encodeURIComponent(v.grade)}`, {
@@ -30,6 +32,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
       setFrom('');
       void queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
     },
+    onSettled: submit.end,
   });
 
   return (
@@ -39,6 +42,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
         data-testid="rate-form"
         onSubmit={(e) => {
           e.preventDefault();
+          if (!submit.begin()) return;
           save.reset();
           save.mutate({ grade, rate: pct, from });
         }}

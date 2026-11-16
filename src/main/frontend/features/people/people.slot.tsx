@@ -3,21 +3,26 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { SheetPage } from '../../slots/defs/sheetPage';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { GRADES, peopleKey, useEditingPerson, usePeople, type Person } from './people';
 
 type Values = { name: string; grade: string };
 const EMPTY: Values = { name: '', grade: 'A' };
 
-/** The sheet's people: a form that adds a person or saves the one being edited, and the list. */
+/** The sheet's people: a form that adds a person or saves the one being edited, and the list. The editor
+ *  remembers the version of the person it loaded; a save refused because someone else saved the person since
+ *  (412) shows the error and puts the current values, and their version, in the form. */
 function People({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
   const queryClient = useQueryClient();
   const [editingId, setEditingId] = useEditingPerson();
   const editing = people.data?.find((p) => String(p.id) === editingId);
   const [values, setValues] = useState<Values>(EMPTY);
+  const [version, setVersion] = useState<number | undefined>(undefined);
+  const submit = useSubmitOnce();
 
   const save = useMutation({
-    mutationFn: ({ id, ...v }: Values & { id?: number }) => {
+    mutationFn: ({ id, ...v }: Values & { id?: number; version?: number }) => {
       const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
       const body = { ...v, by: user };
       return id === undefined ? postJson<Person>(base, body) : putJson<Person>(`${base}/${id}`, body);
@@ -25,8 +30,19 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
     onSuccess: () => {
       setValues(EMPTY);
       setEditingId(undefined);
+      setVersion(undefined);
       void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
     },
+    onError: async (error, { id }) => {
+      if (id === undefined || !(error instanceof HttpError) || error.status !== 412) return;
+      await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      const now = queryClient.getQueryData<Person[]>(peopleKey(sheetId))?.find((p) => p.id === id);
+      if (now) {
+        setValues({ name: now.name, grade: now.grade });
+        setVersion(now.version);
+      }
+    },
+    onSettled: submit.end,
   });
 
   const change = (v: Partial<Values>) => {
@@ -36,11 +52,13 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
   const openEditor = (p: Person) => {
     save.reset();
     setValues({ name: p.name, grade: p.grade });
+    setVersion(p.version);
     setEditingId(String(p.id));
   };
   const cancel = () => {
     save.reset();
     setValues(EMPTY);
+    setVersion(undefined);
     setEditingId(undefined);
   };
 
@@ -51,8 +69,9 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
         data-testid="person-form"
         onSubmit={(e) => {
           e.preventDefault();
+          if (!submit.begin()) return;
           save.reset();
-          save.mutate({ ...values, id: editing?.id });
+          save.mutate(editing ? { ...values, id: editing.id, version } : values);
         }}
       >
         <label>
@@ -83,7 +102,9 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
               ? 'A name is required.'
               : save.error instanceof HttpError && save.error.status === 409
                 ? 'That name is already in use on this sheet.'
-                : 'Could not save this person.'}
+                : save.error instanceof HttpError && save.error.status === 412
+                  ? 'Someone else saved this person since you opened it; the form now shows their values.'
+                  : 'Could not save this person.'}
           </span>
         )}
       </form>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import type { Person } from '../people/people';
 import { claimDue, rateFor, useRates } from '../rates/rates';
@@ -106,6 +107,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
   const [editingId, setEditingId] = useState<number | undefined>(undefined);
   const [values, setValues] = useState<Values>(EMPTY);
 
+  const submit = useSubmitOnce();
   const save = useMutation({
     mutationFn: ({ id, ...v }: Values & { id?: number }) => {
       const base = `/api/sheets/${encodeURIComponent(sheetId)}`;
@@ -119,6 +121,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
       setEditingId(undefined);
       void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
+    onSettled: submit.end,
   });
 
   const change = (v: Partial<Values>) => {
@@ -144,6 +147,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
           data-testid="claim-form"
           onSubmit={(e) => {
             e.preventDefault();
+            if (!submit.begin()) return;
             save.reset();
             save.mutate({ ...values, id: editingId });
           }}
