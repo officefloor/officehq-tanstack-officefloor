@@ -21,7 +21,7 @@ import org.springframework.stereotype.Service;
 /**
  * The sheet's figures as the screen shows them: each person's claimed (their claims that count added up; a person's OPEN or PENDING claims dated within a hold of theirs, not bound by a statement, do not) and
  * due-total (the figures of those claims, each with its late charge, added up; n/a when their grade has no rate today and no counting claim
- * has a figure, kept or at the grade in force on its date), and the sheet's claimed-total and due-total (everyone's added up, skipping n/a).
+ * has a figure, kept or at the grade in force on its date; at most the sheet's cap), and the sheet's claimed-total and due-total (everyone's added up, skipping n/a).
  *
  * A change takes the figures before it ({@link #take}) and, after its own audit lines, writes ROLLUP for every
  * person whose figures moved (a person new to the sheet counts as moved), then TOTALS when the sheet's totals
@@ -51,6 +51,7 @@ public class Rollup {
     public RollupBefore take(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         BigDecimal floor = settings.floor(sheetId);
+        BigDecimal cap = settings.cap(sheetId);
         LateCharge late = LateCharge.of(sheetId, sheets, settings, claims);
         List<Claim> all = claims.list(sheetId);
         Map<Long, Figures> figures = new LinkedHashMap<>();
@@ -70,7 +71,7 @@ public class Rollup {
                 }
             }
             String dueTotal = rates.find(sheetId, person.gradeOn(today), today) == null && !figured ? "n/a"
-                    : due.toPlainString();
+                    : SettingRepository.capped(due, cap).toPlainString();
             figures.put(person.id(), new Figures(person.name(), claimed.toPlainString(), dueTotal));
         }
         return new RollupBefore(figures);

@@ -7,14 +7,14 @@ import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, settingsKey, useSetting
 
 const GRADES = ['A', 'B', 'C'] as const;
 type GradeTerms = `terms-${(typeof GRADES)[number]}`;
-type Key = 'clerk-limit' | 'floor' | 'terms' | GradeTerms | 'late-pct' | 'policy-date' | 'period-numbering-from';
-const KEYS: Key[] = ['clerk-limit', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'period-numbering-from'];
+type Key = 'clerk-limit' | 'cap' | 'floor' | 'terms' | GradeTerms | 'late-pct' | 'policy-date' | 'period-numbering-from';
+const KEYS: Key[] = ['clerk-limit', 'cap', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'period-numbering-from'];
 const BLANK: Record<Key, string> = {
-  'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '',
+  'clerk-limit': '', cap: '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '',
 };
 
 /** The sheet's settings: the clerk limit (the most a clerk may settle a claim's due for; blank for no limit) and the
- *  floor (the least a claim's live due may be; 1.00 until set) and the terms (the days from a claim's date to its
+ *  cap (the most a person's due-total may be; blank for none) and the floor (the least a claim's live due may be; 1.00 until set) and the terms (the days from a claim's date to its
  *  due-by, fixed when the claim is added; 14 until set) and each grade's own terms (a grade without its own has the
  *  sheet's) and the late percent (what an overdue claim gains of its figure for every full 30 days
  *  overdue; 0.00 until set) and the policy date (yyyy-MM-dd; blank: the sheet's today — a claim dated before it rounds
@@ -76,7 +76,7 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
           save.mutate((keys.length > 0 ? keys : (['clerk-limit'] as Key[])).map((k) => [k, values[k]]));
         }}
       >
-        {field('clerk-limit', 'Clerk limit')} {field('floor', 'Floor')}{' '}
+        {field('clerk-limit', 'Clerk limit')} {field('cap', 'Cap')} {field('floor', 'Floor')}{' '}
         {field('terms', 'Terms (days)', 'numeric')}{' '}
         {GRADES.map((g) => (
           <span key={g}>{field(`terms-${g}`, `Terms grade ${g} (days)`, 'numeric')} </span>
@@ -89,7 +89,7 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="settings-error">
-            The clerk limit must be an amount with up to two decimals, or blank; the floor an amount with up to two
+            The clerk limit must be an amount with up to two decimals, or blank; the cap likewise; the floor an amount with up to two
             decimals; the terms, and a grade's terms, a whole number of days, 0 or more; the late percent a percent with up to two decimals; the policy date yyyy-MM-dd, or blank; the period numbering from-date yyyy-MM-dd, or blank.
           </span>
         )}
@@ -97,6 +97,9 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
       {settings.isError && <p data-testid="settings-load-error">Could not load settings.</p>}
       <p>
         Clerk limit in force <span data-testid="setting-clerk-limit-current">{current('clerk-limit')}</span>
+      </p>
+      <p>
+        Cap in force <span data-testid="setting-cap-current">{current('cap')}</span>
       </p>
       <p>
         Floor in force <span data-testid="setting-floor-current">{current('floor') || DEFAULT_FLOOR}</span>

@@ -6,7 +6,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { live, useClaims } from '../claims/claims';
 import { usePeople, type Person } from '../people/people';
 import { personDue, sum, useRates } from '../rates/rates';
-import { useFloor, useLate } from '../settings/settings';
+import { useCap, useFloor, useLate } from '../settings/settings';
 import { patronsKey, usePatrons, type Patron } from './patrons';
 
 function PatronsHead() {
@@ -29,6 +29,7 @@ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: strin
   const rates = useRates(sheetId);
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
+  const cap = useCap(sheetId);
   const queryClient = useQueryClient();
   const [chosen, setChosen] = useState('');
 
@@ -50,7 +51,7 @@ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: strin
   const names = mine.map((p) => p.name).sort((a, b) => a.localeCompare(b));
   const backing = sum(
     mine.map((p) =>
-      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor),
+      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor, cap),
     ),
   );
   const others = (people.data ?? []).filter((p) => p.id !== person.id);

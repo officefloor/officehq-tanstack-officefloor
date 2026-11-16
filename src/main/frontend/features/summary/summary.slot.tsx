@@ -4,7 +4,7 @@ import { STATUSES, useStatusCounts } from '../header/totals';
 import { GRADES, gradeOn, usePeople } from '../people/people';
 import { periodDue, usePeriods } from '../periods/periods';
 import { personDue, sum, useRates } from '../rates/rates';
-import { useFloor, useLate } from '../settings/settings';
+import { useCap, useFloor, useLate } from '../settings/settings';
 
 /** The sheet's summary, worked out from the same figures the lists show. Per grade: the people on it on the sheet's
  *  today (retired people excluded) and their due-totals added up (skipping n/a). Per period: its due-total. Per
@@ -16,13 +16,14 @@ function Summary({ sheetId }: { sheetId: string }) {
   const rates = useRates(sheetId);
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
+  const cap = useCap(sheetId);
 
   const active = (people.data ?? []).filter((p) => p.retiredFrom === null);
   const onGrade = (grade: string) => active.filter((p) => gradeOn(p, late.today) === grade);
   const gradeDue = (grade: string) =>
     sum(
       onGrade(grade).map((p) =>
-        personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor),
+        personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor, cap),
       ),
     );
   const withStatus = useStatusCounts(sheetId);

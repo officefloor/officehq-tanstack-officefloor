@@ -4,7 +4,7 @@ import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { personDue, useRates } from '../rates/rates';
-import { useFloor, useLate } from '../settings/settings';
+import { useCap, useFloor, useLate } from '../settings/settings';
 
 /** A CSV value: wrapped in double quotes, any quote inside doubled, when it holds a comma, a quote or a line break. */
 function csvValue(v: string): string {
@@ -20,6 +20,7 @@ function ExportPeople({ sheetId }: { sheetId: string }) {
   const rates = useRates(sheetId);
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
+  const cap = useCap(sheetId);
   const fetching = useIsFetching({ queryKey: ['sheet', sheetId] });
   const [wanted, setWanted] = useState(false);
 
@@ -28,7 +29,7 @@ function ExportPeople({ sheetId }: { sheetId: string }) {
     setWanted(false);
     const lines = ['name,grade,retired-from,due-total'];
     for (const p of people.data) {
-      const due = personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor);
+      const due = personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor, cap);
       lines.push([p.name, p.grade, p.retiredFrom ?? '', due].map(csvValue).join(','));
     }
     const url = URL.createObjectURL(new Blob([lines.join('\n') + '\n'], { type: 'text/csv' }));

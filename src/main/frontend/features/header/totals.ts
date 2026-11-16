@@ -2,7 +2,7 @@ import { live, useClaims, type ClaimStatus } from '../claims/claims';
 import { overdue } from '../overdue/overdue';
 import { usePeople } from '../people/people';
 import { personDue, sum, useRates } from '../rates/rates';
-import { useFloor, useLate } from '../settings/settings';
+import { useCap, useFloor, useLate } from '../settings/settings';
 
 // The sheet-wide figures shown in more than one place (the rollups, the summary and the header), worked out once
 // here so every place that shows one shows the same value.
@@ -17,9 +17,10 @@ export function useSheetDueTotal(sheetId: string): string {
   const rates = useRates(sheetId);
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
+  const cap = useCap(sheetId);
   return sum(
     (people.data ?? []).map((p) =>
-      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor),
+      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor, cap),
     ),
   );
 }

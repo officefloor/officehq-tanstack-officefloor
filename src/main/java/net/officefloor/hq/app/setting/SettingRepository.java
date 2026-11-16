@@ -15,6 +15,9 @@ public class SettingRepository {
     /** The most a clerk may settle a claim for; blank for no limit. */
     public static final String CLERK_LIMIT = "clerk-limit";
 
+    /** The most a person's due-total may be; blank for none. */
+    public static final String CAP = "cap";
+
     /** The least a claim's live due may be; 1.00 until set. */
     public static final String FLOOR = "floor";
 
@@ -65,6 +68,17 @@ public class SettingRepository {
     public BigDecimal clerkLimit(String sheetId) {
         String value = value(sheetId, CLERK_LIMIT);
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The sheet's cap, or null when there is none. */
+    public BigDecimal cap(String sheetId) {
+        String value = value(sheetId, CAP);
+        return value == null ? null : new BigDecimal(value);
+    }
+
+    /** A due-total held to the cap: the cap when the total is above it (a null cap holds nothing). */
+    public static BigDecimal capped(BigDecimal total, BigDecimal cap) {
+        return cap != null && total.compareTo(cap) > 0 ? cap.setScale(2) : total;
     }
 
     /** The sheet's floor: the least a claim's live due may be. */

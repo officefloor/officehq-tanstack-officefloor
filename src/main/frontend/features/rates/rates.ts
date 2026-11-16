@@ -80,14 +80,30 @@ export function claimDue(claim: Claim, rate: string | undefined, floor: string, 
   return steps === 0 ? figure : shown(hundredths(figure) + percentOf(figure, late.pct, steps, halfUp));
 }
 
-/** A person's due-total: the figures of their claims that count (each at the rate, of the grade in force, on its
- *  date, with its late charge) added up; 'n/a' when their grade has no rate today and none of those claims has a
- *  figure. */
-export function personDue(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: string): string {
+/** The sum of a person's figures: the figures of their claims that count (each at the rate, of the grade in force,
+ *  on its date, with its late charge) added up; 'n/a' when their grade has no rate today and none of those claims has
+ *  a figure. */
+function personFigures(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: string): string {
   const counted = claims.filter(counts);
   const figures = counted.map((c) => claimDue(c, rateFor(rates, gradeOn(person, c.date), c.date), floor, late));
   if (rateFor(rates, gradeOn(person, late.today), late.today) === undefined && figures.every((f) => f === 'n/a')) return 'n/a';
   return sum(figures);
+}
+
+/** A person's due-total: the sum of their figures (see personFigures), at most the sheet's cap (null: none); 'n/a'
+ *  is not capped. */
+export function personDue(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: string, cap: string | null): string {
+  const total = personFigures(claims, rates, person, late, floor);
+  return total !== 'n/a' && cap !== null && hundredths(total) > hundredths(cap) ? shown(hundredths(cap)) : total;
+}
+
+/** A person's excess: how far the sum of their figures is above the sheet's cap; 0.00 when it is not (or with no
+ *  cap, or an n/a due-total). */
+export function personExcess(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: string, cap: string | null): string {
+  const total = personFigures(claims, rates, person, late, floor);
+  return total !== 'n/a' && cap !== null && hundredths(total) > hundredths(cap)
+    ? shown(hundredths(total) - hundredths(cap))
+    : '0.00';
 }
 
 /** Two-decimal values added up, skipping 'n/a'. */

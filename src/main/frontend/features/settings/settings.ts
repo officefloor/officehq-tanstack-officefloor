@@ -3,7 +3,7 @@ import { getJson } from '../../api/http';
 import type { Late } from '../overdue/late';
 import { useSheetToday } from '../session/session';
 
-/** A sheet setting: `value` is text (clerk-limit, floor: an amount with two decimals; terms, terms-A, terms-B, terms-C: a whole number of days; late-pct: a percent with two decimals; policy-date, period-numbering-from: yyyy-MM-dd), null when blank. */
+/** A sheet setting: `value` is text (clerk-limit, cap, floor: an amount with two decimals; terms, terms-A, terms-B, terms-C: a whole number of days; late-pct: a percent with two decimals; policy-date, period-numbering-from: yyyy-MM-dd), null when blank. */
 export type Setting = { sheetId: string; key: string; value: string | null };
 
 export const settingsKey = (sheetId: string) => ['sheet', sheetId, 'settings'];
@@ -23,6 +23,12 @@ export const DEFAULT_FLOOR = '1.00';
 export function useFloor(sheetId: string): string {
   const settings = useSettings(sheetId);
   return settings.data?.find((s) => s.key === 'floor')?.value ?? DEFAULT_FLOOR;
+}
+
+/** The sheet's cap: the most a person's due-total may be (two decimals); null when blank (none). */
+export function useCap(sheetId: string): string | null {
+  const settings = useSettings(sheetId);
+  return settings.data?.find((s) => s.key === 'cap')?.value ?? null;
 }
 
 /** The terms a sheet has until they are set. */

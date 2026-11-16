@@ -8,8 +8,8 @@ import { live, useClaims } from '../claims/claims';
 import { useSheetDueTotal } from '../header/totals';
 import { GRADES, type Person } from '../people/people';
 import { useSheetToday } from '../session/session';
-import { useFloor, useLate } from '../settings/settings';
-import { personDue, rateFor, ratesKey, useRates, type Rate } from './rates';
+import { useCap, useFloor, useLate } from '../settings/settings';
+import { personDue, personExcess, rateFor, ratesKey, useRates, type Rate } from './rates';
 
 /** The sheet's rates: the form that sets one (from an optional from-date, through an optional to-date), each grade's rate in force on the
  *  sheet's today, and every rate set. */
@@ -140,17 +140,29 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
 }
 
 function DueHead() {
-  return <th>Due total</th>;
+  return (
+    <>
+      <th>Due total</th>
+      <th>Excess</th>
+    </>
+  );
 }
 
-/** A person's due-total: the sum of their claims' due figures (see personDue). */
+/** A person's due-total: the sum of their claims' due figures, at most the sheet's cap (see personDue), and their
+ *  excess over the cap (see personExcess). */
 function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }) {
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
+  const cap = useCap(sheetId);
   const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person]);
-  return <td data-testid="person-due-total">{personDue(mine, rates.data, person, late, floor)}</td>;
+  return (
+    <>
+      <td data-testid="person-due-total">{personDue(mine, rates.data, person, late, floor, cap)}</td>
+      <td data-testid="person-excess">{personExcess(mine, rates.data, person, late, floor, cap)}</td>
+    </>
+  );
 }
 
 /** The sheet's due-total: everyone's due-total added up, skipping n/a. */
