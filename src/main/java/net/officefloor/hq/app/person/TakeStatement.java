@@ -94,7 +94,15 @@ public class TakeStatement {
         }
         boolean na = RateRepository.inForce(sheetRates, then.getGrade(), on.toString()) == null && !kept;
         if (cap != null && total.compareTo(cap) > 0) total = cap.setScale(2);
-        person.stated(na ? null : total.toPlainString(), on.toString(), figures.size());
+        String stated = na ? null : total.toPlainString();
+        if (asof == null || asof.isBlank()) {
+            // Taken now, it records the due-total their row shows: their parts of others' shared claims
+            // count, and the parts others hold of theirs do not.
+            Rollup.Figures now = Rollup.of(sheetId, people, claims, rates, sheets, settings, pools).people()
+                    .get(person.getId());
+            if (now != null) stated = now.dueTotal();
+        }
+        person.stated(stated, on.toString(), figures.size());
         people.updateStatements(person);
     }
 }

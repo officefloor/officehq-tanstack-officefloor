@@ -40,12 +40,16 @@ public class AsOfFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String asOf = request.getParameter("shown-asof");
         Matcher sheet = SHEET.matcher(request.getRequestURI().substring(request.getContextPath().length()));
-        if (asOf == null || asOf.isBlank() || !sheet.matches()) {
+        if (!sheet.matches()) {
             chain.doFilter(request, response);
             return;
         }
         boolean read = "GET".equals(request.getMethod())
                 || ("POST".equals(request.getMethod()) && "/open".equals(sheet.group(2)));
+        if (asOf == null || asOf.isBlank()) {
+            preview(request, response, chain, sheet, read);
+            return;
+        }
         if (!read) {
             refuse(response, HttpStatus.FORBIDDEN, "The sheet is shown as of a date: nothing can be changed");
             return;
@@ -58,6 +62,39 @@ public class AsOfFilter extends OncePerRequestFilter {
             return;
         }
         String schema = store.view(UriUtils.decode(sheet.group(1), StandardCharsets.UTF_8).trim(), date);
+        AsOfView.enter(schema);
+        try {
+            chain.doFilter(request, response);
+        } finally {
+            AsOfView.leave();
+            store.drop(schema);
+        }
+    }
+
+    /**
+     * A read carrying {@code shown-preview=<yyyy-MM-dd>} comes from a screen previewing that date: it is
+     * answered from what the sheet holds now with the date as its today. A change is never previewed: it
+     * goes by the sheet's real today. The view is thrown away after, so nothing a read does stays.
+     */
+    private void preview(HttpServletRequest request, HttpServletResponse response, FilterChain chain, Matcher sheet,
+            boolean read) throws ServletException, IOException {
+        String preview = request.getParameter("shown-preview");
+        if (!read || preview == null || preview.isBlank()) {
+            chain.doFilter(request, response);
+            return;
+        }
+        LocalDate date;
+        try {
+            date = LocalDate.parse(preview.trim());
+        } catch (DateTimeParseException e) {
+            refuse(response, HttpStatus.BAD_REQUEST, "Not a date: " + preview);
+            return;
+        }
+        String schema = store.preview(UriUtils.decode(sheet.group(1), StandardCharsets.UTF_8).trim(), date);
+        if (schema == null) {
+            chain.doFilter(request, response);
+            return;
+        }
         AsOfView.enter(schema);
         try {
             chain.doFilter(request, response);

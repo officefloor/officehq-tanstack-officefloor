@@ -74,15 +74,26 @@ public class AsOfStore {
     }
 
     /** A new schema holding the sheet as of the date, with the date as its today. */
-    public synchronized String view(String sheetId, LocalDate asOf) {
-        String schema = "ASOF_" + views.incrementAndGet();
+    public String view(String sheetId, LocalDate asOf) {
+        return view(sheetId, asOf, false);
+    }
+
+    /** A new schema holding what the sheet holds now, with the date as its today (a preview of that
+     *  date over its current records); null when the sheet was never loaded. */
+    public String preview(String sheetId, LocalDate date) {
+        return view(sheetId, date, true);
+    }
+
+    private synchronized String view(String sheetId, LocalDate asOf, boolean preview) {
+        String schema = (preview ? "PREVIEW_" : "ASOF_") + views.incrementAndGet();
         try (Connection c = dataSource.getConnection()) {
             c.setAutoCommit(true);
             String[] sheet = liveSheet(c, sheetId);
+            if (preview && sheet == null) return null;
             String source;
             // The day the source was taken on: its SNAPSHOT lines for that day were written as it was left.
             LocalDate leftFrom = asOf;
-            if (sheet != null && !LocalDate.parse(sheet[1]).isAfter(asOf)) {
+            if (preview || (sheet != null && !LocalDate.parse(sheet[1]).isAfter(asOf))) {
                 source = LIVE;
             } else {
                 source = null;
@@ -160,11 +171,14 @@ public class AsOfStore {
                 }
             }
             // A SNAPSHOT is written when its day is left: as of that day (or before) it was not there yet.
-            try (PreparedStatement ps = c.prepareStatement(
-                    "DELETE FROM " + q(schema) + ".PERSON_SNAPSHOT WHERE SHEET_ID = ? AND DAY_LEFT >= ?")) {
-                ps.setString(1, sheetId);
-                ps.setObject(2, leftFrom);
-                ps.executeUpdate();
+            // A preview keeps every record the sheet holds now.
+            if (!preview) {
+                try (PreparedStatement ps = c.prepareStatement(
+                        "DELETE FROM " + q(schema) + ".PERSON_SNAPSHOT WHERE SHEET_ID = ? AND DAY_LEFT >= ?")) {
+                    ps.setString(1, sheetId);
+                    ps.setObject(2, leftFrom);
+                    ps.executeUpdate();
+                }
             }
             try (PreparedStatement ps = c.prepareStatement(
                     "UPDATE " + q(schema) + ".SHEET SET TODAY = ? WHERE ID = ?")) {

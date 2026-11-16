@@ -9,6 +9,7 @@ import { useSheetId, useUser } from '../session/session';
 import { openSheet, sheetKey } from './api';
 import { SheetToday } from './SheetToday';
 import { AsOf } from './AsOf';
+import { Preview } from './Preview';
 
 /** The loaded sheet: its id, then everything kept on it (the sheet.body region). It shows once its
  *  people, claims and notes are read too, and the user's role and the crews (which decide who has a row),
@@ -61,6 +62,7 @@ export function ActiveSheet() {
       </h2>
       <SheetToday key={sheet.data.id} sheet={sheet.data} user={user} />
       <AsOf />
+      <Preview />
       <SheetBody.Slot sheetId={sheet.data.id} user={user} />
     </section>
   );

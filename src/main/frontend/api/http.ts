@@ -7,9 +7,9 @@ export class HttpError extends Error {
   }
 }
 
-/** The date the screen shows the sheet as of ('': as it is now), from the URL (`asof`). */
-function asOf(): string {
-  const raw = new URLSearchParams(window.location.search).get('asof') ?? '';
+/** A value the screen keeps in the URL under `key` ('': none). */
+function dateParam(key: string): string {
+  const raw = new URLSearchParams(window.location.search).get(key) ?? '';
   try {
     const parsed: unknown = JSON.parse(raw);
     return typeof parsed === 'string' ? parsed : raw;
@@ -18,16 +18,28 @@ function asOf(): string {
   }
 }
 
-/** While the screen shows the sheet as of a date, every request about it says so: the server answers
- *  a read as the sheet stood then and refuses every change. */
-function withAsOf(path: string, live: boolean): string {
-  const date = live ? '' : asOf();
-  if (date === '' || !path.startsWith('/api/sheets/')) return path;
-  return `${path}${path.includes('?') ? '&' : '?'}shown-asof=${encodeURIComponent(date)}`;
+/** While the screen shows the sheet as of a date (`asof`), every request about it says so: the server
+ *  answers a read as the sheet stood then and refuses every change. Otherwise, while the screen previews
+ *  a date (`preview`), every read says so: the server answers it from the sheet's current records with
+ *  that date as its today; a change is sent as it is, so it goes by the sheet's real today. */
+function withAsOf(path: string, live: boolean, read: boolean): string {
+  if (live || !path.startsWith('/api/sheets/')) return path;
+  const sep = path.includes('?') ? '&' : '?';
+  const date = dateParam('asof');
+  if (date !== '') return `${path}${sep}shown-asof=${encodeURIComponent(date)}`;
+  // The preview is the signed-in user's: one left in the URL by someone signed in before is not theirs.
+  const preview = dateParam('preview-by') === dateParam('user') ? dateParam('preview') : '';
+  if (preview !== '' && read) return `${path}${sep}shown-preview=${encodeURIComponent(preview)}`;
+  return path;
+}
+
+/** A read: any GET, and loading the sheet. */
+function isRead(path: string, init?: RequestInit): boolean {
+  return (init?.method ?? 'GET') === 'GET' || /^\/api\/sheets\/[^/?]+\/open(\?|$)/.test(path);
 }
 
 async function send<T>(path: string, init?: RequestInit, live = false): Promise<T> {
-  const res = await fetch(withAsOf(path, live), init);
+  const res = await fetch(withAsOf(path, live, isRead(path, init)), init);
   if (!res.ok) {
     throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);
   }
