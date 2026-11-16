@@ -22,7 +22,7 @@ function PersonOverdue({ sheetId, person }: { sheetId: string; person: Person })
   const rates = useRates(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person]);
+  const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person], late.today);
   const o = overdue(mine, rates.data, person, late, floor);
   return (
     <>

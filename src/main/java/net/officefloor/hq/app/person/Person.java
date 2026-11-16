@@ -24,6 +24,12 @@ public record Person(long id, String sheetId, String name, String grade, long ve
         return holds.stream().anyMatch((h) -> h.covers(date));
     }
 
+    /** Whether the person's retirement date is reached on the day: it is on or before it. From then on their OPEN or
+     *  PENDING claims not bound by a statement count in no live total, as a hold's would. */
+    public boolean retiredOn(LocalDate date) {
+        return retiredFrom != null && !LocalDate.parse(retiredFrom).isAfter(date);
+    }
+
     public boolean retired() {
         return retiredFrom != null;
     }

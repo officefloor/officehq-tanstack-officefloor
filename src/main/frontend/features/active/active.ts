@@ -7,7 +7,7 @@ import { plusDays } from '../overdue/late';
 export function isActive(person: Person, claims: Claim[] | undefined, today: string): boolean {
   if (today === '') return false;
   const since = plusDays(today, -29);
-  return live(claims?.filter((c) => c.personId === person.id) ?? [], [person]).some(
+  return live(claims?.filter((c) => c.personId === person.id) ?? [], [person], today).some(
     (c) => isOpen(c) && c.date >= since && c.date <= today,
   );
 }

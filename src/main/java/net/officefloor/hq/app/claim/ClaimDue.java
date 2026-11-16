@@ -35,10 +35,18 @@ public final class ClaimDue {
     }
 
     /** Whether a claim counts toward the live totals on the given today: as {@link #countsLive(Claim,
-     *  net.officefloor.hq.app.person.Person)}, unless it is deferred. */
+     *  net.officefloor.hq.app.person.Person)}, unless it is deferred, or it is open, not bound by a statement, and its
+     *  person's retirement date is reached on today. */
     public static boolean countsLive(Claim claim, net.officefloor.hq.app.person.Person person,
             java.time.LocalDate today) {
-        return countsLive(claim, person) && !deferred(claim, today);
+        return countsLive(claim, person) && !deferred(claim, today) && !retiredOut(claim, person, today);
+    }
+
+    /** Whether a claim leaves the live totals for its person's retirement: it is open (OPEN or PENDING), not bound by
+     *  a statement, and its person's retirement date is on or before today (null person: never). */
+    public static boolean retiredOut(Claim claim, net.officefloor.hq.app.person.Person person,
+            java.time.LocalDate today) {
+        return isOpen(claim) && !bound(claim) && person != null && person.retiredOn(today);
     }
 
     /** The claim's rate figure: its amount at the grade's rate in force on its date, rounded to two decimals by the

@@ -156,7 +156,7 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
   const cap = useCap(sheetId);
-  const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person]);
+  const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person], late.today);
   return (
     <>
       <td data-testid="person-due-total">{personDue(mine, rates.data, person, late, floor, cap)}</td>

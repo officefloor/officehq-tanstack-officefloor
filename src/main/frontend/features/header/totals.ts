@@ -21,7 +21,7 @@ export function useSheetDueTotal(sheetId: string): string {
   const cap = useCap(sheetId);
   return trimmedSum(
     (people.data ?? []).map((p) =>
-      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor, cap),
+      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap),
     ),
   );
 }
@@ -35,7 +35,7 @@ export function useSheetOverdue(sheetId: string): { count: number; total: string
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const all = (people.data ?? []).map((p) =>
-    overdue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor),
+    overdue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor),
   );
   return { count: all.reduce((n, o) => n + o.count, 0), total: trimmedSum(all.map((o) => o.total)) };
 }

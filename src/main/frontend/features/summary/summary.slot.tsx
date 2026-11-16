@@ -24,7 +24,7 @@ function Summary({ sheetId }: { sheetId: string }) {
   const gradeDue = (grade: string) =>
     sum(
       onGrade(grade).map((p) =>
-        personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor, cap),
+        personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap),
       ),
     );
   const withStatus = useStatusCounts(sheetId);

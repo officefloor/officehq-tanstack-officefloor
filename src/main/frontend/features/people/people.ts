@@ -35,6 +35,11 @@ export type PersonHold = { from: string; to: string | null };
 export const heldOn = (person: Pick<Person, 'holds'>, on: string) =>
   (person.holds ?? []).some((h) => h.from <= on && (h.to === null || on <= h.to));
 
+/** Whether the person's retirement date is reached on the day (yyyy-MM-dd): it is on or before it. From then on their
+ *  open (OPEN or PENDING) claims not bound by a statement count in no live total, as a hold's would. */
+export const retiredOn = (person: Pick<Person, 'retiredFrom'>, on: string) =>
+  person.retiredFrom !== null && on !== '' && person.retiredFrom <= on;
+
 /** The person's grade in force on a date (yyyy-MM-dd): the one with the latest from-date on or before it. */
 export function gradeOn(person: Pick<Person, 'grade' | 'grades'>, on: string): string {
   let found: PersonGrade | undefined;

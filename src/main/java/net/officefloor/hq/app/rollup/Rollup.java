@@ -19,7 +19,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.stereotype.Service;
 
 /**
- * The sheet's figures as the screen shows them: each person's claimed (their claims that count added up; a person's OPEN or PENDING claims dated within a hold of theirs, not bound by a statement, do not, nor do deferred claims) and
+ * The sheet's figures as the screen shows them: each person's claimed (their claims that count added up; a person's OPEN or PENDING claims dated within a hold of theirs, or any once their retirement date is reached, not bound by a statement, do not, nor do deferred claims) and
  * due-total (the figures of those claims, each with its late charge, added up; n/a when their grade has no rate today and no counting claim
  * has a figure, kept or at the grade in force on its date; at most the sheet's cap), overdue-total (the figures, late charge included, of those claims that are overdue — open, their due-by before
  * today — added up, skipping n/a; not capped), and the sheet's claimed-total, due-total and overdue-total (everyone's added up, skipping n/a; the due-total and

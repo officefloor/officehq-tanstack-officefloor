@@ -29,7 +29,7 @@ function ExportPeople({ sheetId }: { sheetId: string }) {
     setWanted(false);
     const lines = ['name,grade,retired-from,due-total'];
     for (const p of people.data) {
-      const due = personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor, cap);
+      const due = personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap);
       lines.push([p.name, p.grade, p.retiredFrom ?? '', due].map(csvValue).join(','));
     }
     const url = URL.createObjectURL(new Blob([lines.join('\n') + '\n'], { type: 'text/csv' }));

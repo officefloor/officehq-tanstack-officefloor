@@ -12,6 +12,7 @@ import { dueBy, isOverdue } from '../overdue/overdue';
 import { useFloor, useLate, type Dated } from '../settings/settings';
 import { claimsKey, live, logLine, total, useClaims, type Claim } from './claims';
 import { useSelectedClaims } from './selection';
+import { useSheetToday } from '../session/session';
 
 type Values = { amount: string; date: string; note: string; corrects: string };
 const EMPTY: Values = { amount: '', date: '', note: '', corrects: '' };
@@ -424,6 +425,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId).data;
   const floor = useFloor(sheetId);
+  const today = useSheetToday(sheetId);
   const queryClient = useQueryClient();
   const mine = claims.data?.filter((c) => c.personId === person.id) ?? [];
   const [editingId, setEditingId] = useState<number | undefined>(undefined);
@@ -479,7 +481,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
 
   return (
     <>
-      <td data-testid="person-claimed">{total(live(mine, [person]))}</td>
+      <td data-testid="person-claimed">{total(live(mine, [person], today))}</td>
       <td>
         <form
           data-testid="claim-form"
@@ -535,13 +537,14 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
   );
 }
 
-/** The sheet's claimed-total: everyone's claimed (OPEN, PENDING and SETTLED claims, but no OPEN or PENDING ones dated within a hold of their person and not bound by a statement) added up. */
+/** The sheet's claimed-total: everyone's claimed (OPEN, PENDING and SETTLED claims, but no OPEN or PENDING ones dated within a hold of their person, or of one whose retirement date is reached, and not bound by a statement) added up. */
 function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
+  const today = useSheetToday(sheetId);
   return (
     <p>
-      Claimed total <span data-testid="rollup-claimed-total">{total(live(claims.data ?? [], people.data))}</span>
+      Claimed total <span data-testid="rollup-claimed-total">{total(live(claims.data ?? [], people.data, today))}</span>
       {claims.isError && <span data-testid="claims-load-error"> Could not load claims.</span>}
     </p>
   );

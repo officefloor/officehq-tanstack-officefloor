@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { bound, counts, isOpen, type Claim, type ClaimStatus } from '../claims/claims';
 import type { Late } from '../overdue/late';
-import { gradeOn, heldOn, type Person } from '../people/people';
+import { gradeOn, heldOn, retiredOn, type Person } from '../people/people';
 import { claimDue, rateFor, sum, type Rate } from '../rates/rates';
 import type { Dated } from '../settings/settings';
 
@@ -48,7 +48,8 @@ export function statusAsOf(claim: Claim, day: string): ClaimStatus | undefined {
 /** A person's due-total for a period: the figures (each due as shown now, with its late charge) of their claims
  *  whose date falls in it and that counted by the status each had at the end of the period's last day (see
  *  statusAsOf; a claim added after it does not count), the live rules otherwise applying (a deferred claim does
- *  not count, nor a claim open now dated within a hold of its person, not bound by a statement), added up (skipping
+ *  not count, nor a claim open now dated within a hold of its person, or of a person whose retirement date is reached,
+ *  not bound by a statement), added up (skipping
  *  n/a); for a closed or soft-closed period, their figure fixed when it was (soft-)closed (0.00 for a person added after). */
 export function personPeriodDue(
   period: Period,
@@ -62,7 +63,7 @@ export function personPeriodDue(
   const mine = (claims ?? []).filter((c) => {
     if (c.personId !== person.id || c.date < period.from || period.to < c.date) return false;
     const status = statusAsOf(c, period.to);
-    return status !== undefined && counts({ ...c, status }) && !(isOpen(c) && !bound(c) && heldOn(person, c.date));
+    return status !== undefined && counts({ ...c, status }) && !(isOpen(c) && !bound(c) && (heldOn(person, c.date) || retiredOn(person, late.today)));
   });
   return sum(mine.map((c) => claimDue(c, rateFor(rates, gradeOn(person, c.date), c.date), floor, late)));
 }

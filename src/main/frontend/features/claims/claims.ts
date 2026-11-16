@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { heldOn, type Person } from '../people/people';
+import { heldOn, retiredOn, type Person } from '../people/people';
 
 /** A claim's status: DRAFT when added, then OPEN and SETTLED; a clerk settling above the clerk limit makes it PENDING
  *  until a steward approves (SETTLED) or rejects (OPEN) it; a DRAFT, OPEN or PENDING claim may be VOID, as may a SETTLED one
@@ -77,12 +77,13 @@ export const counts = (c: Claim) => (isOpen(c) || c.status === 'SETTLED') && !c.
 export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
 
 /** The claims that count in the live totals (claimed, due-totals, a period's due-total): a person's open (OPEN or
- *  PENDING) claims dated within a hold of theirs, and not bound by a statement, do not; their other claims still do. */
-export function live(claims: Claim[], people: Person[] | undefined): Claim[] {
+ *  PENDING) claims dated within a hold of theirs, or any once their retirement date is reached on the sheet's today
+ *  (yyyy-MM-dd), and not bound by a statement, do not; their other claims still do. */
+export function live(claims: Claim[], people: Person[] | undefined, today: string): Claim[] {
   const byId = new Map((people ?? []).map((p) => [p.id, p]));
   return claims.filter((c) => {
     const p = byId.get(c.personId);
-    return counts(c) && !(isOpen(c) && !bound(c) && p !== undefined && heldOn(p, c.date));
+    return counts(c) && !(isOpen(c) && !bound(c) && p !== undefined && (heldOn(p, c.date) || retiredOn(p, today)));
   });
 }
 

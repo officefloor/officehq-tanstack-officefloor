@@ -16,7 +16,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Takes the person's statement on the sheet's today: their due-total now (the figures of their claims that count
  * added up, each with its late charge; n/a when their grade has no rate today and no counting claim has a
- * figure, kept or at the grade in force on its date; at most the sheet's cap), and binds every claim of theirs that counts (a person's OPEN or PENDING claims dated within a hold of theirs, not bound by a statement, do not, nor do deferred claims) to its rate figure now
+ * figure, kept or at the grade in force on its date; at most the sheet's cap), and binds every claim of theirs that counts (a person's OPEN or PENDING claims dated within a hold of theirs, or any once their retirement date is reached, not bound by a statement, do not, nor do deferred claims) to its rate figure now
  * (never the floor nor its late charge, which keep following today); one that does not count is unbound (live again).
  */
 public class TakeStatement {
