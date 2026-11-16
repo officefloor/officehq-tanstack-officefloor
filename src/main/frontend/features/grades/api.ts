@@ -37,7 +37,8 @@ export function retireGrade(sheetId: string, by: string, grade: string): Promise
 /** How many people a grade merge gave the other grade. */
 export type GradeMerged = { merged: number };
 
-/** Merge a grade into another: everyone on it today is given the other from the sheet's today.
+/** Merge a grade into another: everyone on it today is given the other from the sheet's today, and
+ *  retroactively every grade record of theirs on it becomes the other.
  *  Refused (rejects) for the same grade twice, or for anyone but a steward. */
 export function mergeGrade(sheetId: string, by: string, from: string, into: string): Promise<GradeMerged> {
   return postJson<GradeMerged>(`${sheetBase(sheetId)}/grade-merge?by=${encodeURIComponent(by)}`, { from, into });

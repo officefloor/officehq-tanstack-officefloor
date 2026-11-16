@@ -415,6 +415,16 @@ public class PersonRepository {
         gradeHistory(person.getSheetId(), person.getId(), given.grade(), from);
     }
 
+    /** Make every grade record of the person's on grade {@code from} grade {@code into}, keeping
+     *  each from-date (a retroactive grade merge), each kept in their history. */
+    public void regrade(Person person, String from, String into, String user) {
+        for (GradeFrom g : person.getGrades()) {
+            if (from.equals(g.grade())) {
+                saveGrade(person, new GradeFrom(into, g.from()), user);
+            }
+        }
+    }
+
     /** Record the dated terms the person was just given (see {@link Person#giveTermsFrom}), replacing
      *  those with the same from-date. */
     public void saveTerms(Person person, TermsFrom given, String user) {

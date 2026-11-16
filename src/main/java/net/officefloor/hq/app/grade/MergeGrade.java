@@ -23,7 +23,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** Merges a grade into another: recorded as GRADE_MERGED, then everyone whose grade in force on the
  *  sheet's today is the merged grade is given the other from the sheet's today, in list order, each
  *  as the person form would (its PERSON_EDITED line, then the rollup lines it moved); then the rollup
- *  lines of what moved over the whole merge. Refused, with
+ *  lines of what moved over the whole merge, once every grade record of theirs on the merged grade
+ *  has become the other (retroactive). Refused, with
  *  nothing written, for anyone but a steward, on an archived sheet, or into a retired grade when
  *  anyone would be given it. */
 public class MergeGrade {
@@ -74,6 +75,12 @@ public class MergeGrade {
             }
             before = after;
         }
+        // The merge is retroactive: every grade record of theirs on the merged grade becomes the
+        // other, so all their claims, whatever their date, use the other grade.
+        for (Person listed : merged) {
+            people.regrade(people.find(id, listed.getId()), request.from(), request.into(), user);
+        }
+        before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
         // Then the merge's own rollup lines: what moved over the whole merge.
         for (String line : before.changesSince(start, id, user)) {
             audit.record(line);
