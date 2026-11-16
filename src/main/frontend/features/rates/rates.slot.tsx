@@ -3,10 +3,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { SheetPage } from '../../slots/defs/sheetPage';
-import { total, useClaims } from '../claims/claims';
+import { useClaims } from '../claims/claims';
 import { GRADES, usePeople, type Person } from '../people/people';
 import { useSheetToday } from '../session/session';
-import { due, rateFor, ratesKey, sum, useRates, type Rate } from './rates';
+import { personDue, rateFor, ratesKey, sum, useRates, type Rate } from './rates';
 
 /** The sheet's rates: the form that sets one (from an optional from-date), each grade's rate in force on the
  *  sheet's today, and every rate set. */
@@ -121,13 +121,13 @@ function DueHead() {
   return <th>Due total</th>;
 }
 
-/** A person's due-total: their claimed at their grade's rate in force on the sheet's today. */
+/** A person's due-total: the sum of their claims' due figures (see personDue). */
 function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }) {
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
   const today = useSheetToday(sheetId);
-  const claimed = total(claims.data?.filter((c) => c.personId === person.id) ?? []);
-  return <td data-testid="person-due-total">{due(claimed, rateFor(rates.data, person.grade, today))}</td>;
+  const mine = claims.data?.filter((c) => c.personId === person.id) ?? [];
+  return <td data-testid="person-due-total">{personDue(mine, rates.data, person.grade, today)}</td>;
 }
 
 /** The sheet's due-total: everyone's due-total added up, skipping n/a. */
@@ -137,7 +137,7 @@ function DueTotal({ sheetId }: { sheetId: string }) {
   const rates = useRates(sheetId);
   const today = useSheetToday(sheetId);
   const dues = (people.data ?? []).map((p) =>
-    due(total(claims.data?.filter((c) => c.personId === p.id) ?? []), rateFor(rates.data, p.grade, today)),
+    personDue(claims.data?.filter((c) => c.personId === p.id) ?? [], rates.data, p.grade, today),
   );
   return (
     <p>

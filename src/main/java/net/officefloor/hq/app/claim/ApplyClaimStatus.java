@@ -36,6 +36,6 @@ public class ApplyClaimStatus {
         Person person = people.find(claim.sheetId(), claim.personId());
         Rate rate = person == null ? null : rates.find(claim.sheetId(), person.grade(), claim.date());
         return rate == null ? null
-                : claim.amount().multiply(rate.rate()).movePointLeft(2).setScale(2, RoundingMode.HALF_UP);
+                : claim.amount().multiply(rate.rate()).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
     }
 }
