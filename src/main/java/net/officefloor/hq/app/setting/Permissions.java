@@ -14,6 +14,7 @@ public final class Permissions {
     public static final String REASSIGN = "reassign";
     public static final String CLOSE = "close";
     public static final String REOPEN = "reopen";
+    public static final String TODAY = "today";
 
     /** The key prefix of an action's entry. */
     public static final String PREFIX = "perm-";
@@ -25,7 +26,8 @@ public final class Permissions {
             VOID, List.of(Role.CLERK, Role.STEWARD),
             CLOSE, List.of(Role.CLERK, Role.STEWARD),
             REASSIGN, List.of(Role.STEWARD),
-            REOPEN, List.of(Role.STEWARD));
+            REOPEN, List.of(Role.STEWARD),
+            TODAY, List.of(Role.CLERK, Role.STEWARD, Role.RESTRICTED));
 
     private Permissions() {
     }

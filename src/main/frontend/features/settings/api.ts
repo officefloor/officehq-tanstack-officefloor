@@ -66,12 +66,12 @@ export type Role = { sheetId: string; user: string; role: string };
  *  A grade's clerk limit (clerk-limit-<grade>, two decimals; blank means none; dated): a claim whose person's
  *  grade on the sheet's today has one in force then goes by it instead of the sheet's clerk limit. */
 export const SETTING_KEYS = ['clerk-limit', 'clerk-limit-A', 'clerk-limit-B', 'clerk-limit-C', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'rounding',
-  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'pending-sla', 'max-open', 'score-mid', 'score-high', 'score-log', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'] as const;
+  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'pending-sla', 'max-open', 'score-mid', 'score-high', 'score-log', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'perm-today', 'parent', 'fiscal-start-month', 'default-grade'] as const;
 
 /** The roles that may take each action of the permission matrix while its entry is blank. */
 export const PERMISSION_STANDING: Record<string, string> = {
   open: 'clerk,steward', settle: 'clerk,steward', void: 'clerk,steward', close: 'clerk,steward',
-  reassign: 'steward', reopen: 'steward',
+  reassign: 'steward', reopen: 'steward', today: 'clerk,steward,restricted',
 };
 
 /** A setting's value until it is first set. */
@@ -79,7 +79,7 @@ export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: 
 
 /** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
 export const UNDATED_KEYS: readonly string[] = ['pot', 'proof-kinds', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'pending-sla', 'max-open', 'score-mid', 'score-high', 'score-log', 'perm-open', 'perm-settle', 'perm-void',
-  'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'];
+  'perm-reassign', 'perm-close', 'perm-reopen', 'perm-today', 'parent', 'fiscal-start-month', 'default-grade'];
 
 /** The fiscal year a date (yyyy-MM-dd) falls in, FY<yyyy>, for a fiscal year start month (1 to 12). */
 export function fiscalYearOf(date: string, startMonth: number): string {
