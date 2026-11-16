@@ -12,11 +12,12 @@ import java.util.List;
  *  when it was added; deferred is whether it is deferred on the sheet's today (see ClaimDue#deferred) and deferredUntil
  *  (yyyy-MM-dd) the date it was last deferred until (shown even once that date has passed), null when never deferred; proofs is its proofs count; splitFrom is the number of the claim it was split from (null for any other claim); log is its status log, oldest first: each status it has had, who made the change, the sheet's
  *  today (yyyy-MM-dd) then, and its due as shown at that moment (two decimals, or n/a); lockedBy is who has its editor
- *  open (null when no one does); lateEntry is whether it was added while its period was soft-closed. */
+ *  open (null when no one does); lateEntry is whether it was added while its period was soft-closed; reminded (yyyy-MM-dd) is the last day a
+ *  reminder was written for it, null when none. */
 public record ClaimResponse(long id, String sheetId, long personId, String amount, String date, String note,
         String status, String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
         String roundsOn, String dueBy, boolean deferred, String deferredUntil, int proofs, String splitFrom, List<LogLine> log,
-        String lockedBy, boolean lateEntry) {
+        String lockedBy, boolean lateEntry, String reminded) {
 
     /** One line of a claim's status log as sent to the screen. */
     public record LogLine(String status, String by, String date, String due) {
@@ -28,11 +29,11 @@ public record ClaimResponse(long id, String sheetId, long personId, String amoun
 
     public static ClaimResponse from(Claim claim, ClaimRepository claims, List<ClaimLogLine> log, LocalDate today) {
         return from(claim, claims, log, today, claims.lockedBy(claim.sheetId(), claim.id()),
-                claims.lateEntry(claim.sheetId(), claim.id()));
+                claims.lateEntry(claim.sheetId(), claim.id()), claims.remindedOn(claim.sheetId(), claim.id()));
     }
 
     public static ClaimResponse from(Claim claim, ClaimRepository claims, List<ClaimLogLine> log, LocalDate today, String lockedBy,
-            boolean lateEntry) {
+            boolean lateEntry, LocalDate reminded) {
         boolean deferred = ClaimDue.deferred(claim, today);
         return new ClaimResponse(claim.id(), claim.sheetId(), claim.personId(), claim.amount().toPlainString(),
                 claim.date().toString(), claim.note(), claim.status().name(), claim.number(),
@@ -41,6 +42,6 @@ public record ClaimResponse(long id, String sheetId, long personId, String amoun
                 Rounding.roundsOn(claim, claims).toString(), claim.dueBy().toString(),
                 deferred, claim.deferredUntil() == null ? null : claim.deferredUntil().toString(), claim.proofs(), claim.splitFrom(),
                 log.stream().map((l) -> new LogLine(l.status().name(), l.by(), l.date().toString(), l.due())).toList(),
-                lockedBy, lateEntry);
+                lockedBy, lateEntry, reminded == null ? null : reminded.toString());
     }
 }

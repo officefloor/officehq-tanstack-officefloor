@@ -37,7 +37,7 @@ type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
  *  shows the claim's error. An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one whose due-by is inside a closed period); a claim with no proofs whose due is above the proof threshold on its date cannot be settled nor approved; a claim with an empty note whose due is above the note threshold on its date cannot be opened (alone or in bulk). A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). A steward re-dates an OPEN or PENDING claim to the date typed beside Re-date (its due-by and any statement figure stay; refused, with the claim's error, for anyone else, any other claim, or a date after the person's retirement). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
- *  with the claim's error, for anyone else or any other claim). Split takes the amount typed beside it off an OPEN claim (not deferred, nor with its due-by inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Only a DRAFT whose due-by is not inside a closed period can be edited: Edit opens the editor and locks the claim for the user until it
+ *  with the claim's error, for anyone else or any other claim). Remind writes a reminder for an OPEN or PENDING claim, once per sheet-today, which becomes its reminded date (refused, with the claim's error, for any other claim or a second reminder that day). Split takes the amount typed beside it off an OPEN claim (not deferred, nor with its due-by inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Only a DRAFT whose due-by is not inside a closed period can be edited: Edit opens the editor and locks the claim for the user until it
  *  is saved or cancelled (Cancel) or the sheet's today changes; Edit on any other claim, on a claim another user holds, or by a
  *  viewer shows the claim's error instead and takes no lock. */
 function ClaimRow({
@@ -118,6 +118,10 @@ function ClaimRow({
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
   });
+  const remind = useMutation({
+    mutationFn: () => postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/remind`, { by: user }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
   const [editRefused, setEditRefused] = useState<string | null>(null);
   const lock = useMutation({
     mutationFn: () => putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/lock`, { by: user }),
@@ -136,6 +140,7 @@ function ClaimRow({
     redate.reset();
     proof.reset();
     split.reset();
+    remind.reset();
     status.reset();
     status.mutate(action);
   };
@@ -164,6 +169,7 @@ function ClaimRow({
       <span data-testid="claim-proofs">{c.proofs}</span>{' '}
       <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
       <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="claim-reminded">{c.reminded ?? ''}</span>{' '}
       <span data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</span>{' '}
       <button
         type="button"
@@ -175,6 +181,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          remind.reset();
           lock.reset();
           setEditRefused(null);
           // refused at once when the screen already knows the claim cannot be edited; else the server decides
@@ -241,6 +248,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          remind.reset();
           proof.mutate();
         }}
       >
@@ -257,6 +265,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          remind.reset();
         }}
       />
       <button
@@ -272,6 +281,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          remind.reset();
           defer.mutate(deferUntil.trim());
         }}
       >
@@ -300,6 +310,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          remind.reset();
           redate.mutate(newDate.trim());
         }}
       >
@@ -313,6 +324,7 @@ function ClaimRow({
         onChange={(e) => {
           setSplitAmount(e.target.value);
           split.reset();
+          remind.reset();
         }}
       />
       <button
@@ -328,6 +340,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          remind.reset();
           split.mutate(splitAmount.trim());
         }}
       >
@@ -364,10 +377,30 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          remind.reset();
           reassign.mutate(Number(moveTo));
         }}
       >
         Move
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="claim-remind"
+        disabled={remind.isPending}
+        onClick={() => {
+          setEditRefused(null);
+          lock.reset();
+          status.reset();
+          reassign.reset();
+          defer.reset();
+          redate.reset();
+          proof.reset();
+          split.reset();
+          remind.reset();
+          remind.mutate();
+        }}
+      >
+        Remind
       </button>
       {editRefused !== null && <span data-testid="claim-error"> {editRefused}</span>}
       {status.isError && (
@@ -406,6 +439,12 @@ function ClaimRow({
           {' '}
           Only an open claim, not deferred, nor with its due-by inside a closed period, can be split, by an amount more than 0.00 and less than
           its amount, and only by a role the sheet lets open a claim.
+        </span>
+      )}
+      {remind.isError && (
+        <span data-testid="claim-error">
+          {' '}
+          Only an open or pending claim can be reminded, and only once a day.
         </span>
       )}
       <ol data-testid="claim-log">

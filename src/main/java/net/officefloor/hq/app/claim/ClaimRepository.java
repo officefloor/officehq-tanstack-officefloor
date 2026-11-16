@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import javax.sql.DataSource;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
@@ -72,8 +73,13 @@ public class ClaimRepository {
     }
 
     /** Stores the claim's values and releases its lock, but only while it is still a DRAFT and no one but {@code by}
-     *  holds its lock; false otherwise (nothing is written). */
-    public boolean update(Claim claim, String by) {
+     *  holds its lock; false otherwise (nothing is written). The values it had are kept with {@code today}, the sheet's
+     *  today, so the claim can be shown as it stood before (see editedAfter). */
+    public boolean update(Claim claim, String by, LocalDate today) {
+        jdbc.update("INSERT INTO claim_edit (sheet_id, claim_id, amount, claim_date, note, corrects, made_on) "
+                + "SELECT sheet_id, id, amount, claim_date, note, corrects, ? FROM claim WHERE sheet_id = ? AND id = ? AND status = ? "
+                + "AND (locked_by IS NULL OR locked_by = ?)",
+                Date.valueOf(today), claim.sheetId(), claim.id(), ClaimStatus.DRAFT.name(), by);
         return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, locked_by = NULL WHERE sheet_id = ? AND id = ? AND status = ? "
                 + "AND (locked_by IS NULL OR locked_by = ?)",
                 claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.corrects(), claim.sheetId(), claim.id(),
@@ -181,6 +187,50 @@ public class ClaimRepository {
     public boolean addProof(Claim claim) {
         return jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE sheet_id = ? AND id = ? AND status IN ('DRAFT', 'OPEN', 'PENDING')",
                 claim.sheetId(), claim.id()) == 1;
+    }
+
+    /** Writes a reminder for the claim on {@code today}, but only while it is still OPEN or PENDING and not yet
+     *  reminded that day; false otherwise (nothing is written). */
+    public boolean remind(Claim claim, LocalDate today) {
+        try {
+            return jdbc.update("INSERT INTO claim_reminder (sheet_id, claim_id, reminded_on) SELECT c.sheet_id, c.id, ? FROM claim c "
+                    + "WHERE c.sheet_id = ? AND c.id = ? AND c.status IN ('OPEN', 'PENDING') AND NOT EXISTS "
+                    + "(SELECT 1 FROM claim_reminder r WHERE r.sheet_id = c.sheet_id AND r.claim_id = c.id AND r.reminded_on = ?)",
+                    Date.valueOf(today), claim.sheetId(), claim.id(), Date.valueOf(today)) == 1;
+        } catch (DuplicateKeyException e) {
+            return false;
+        }
+    }
+
+    /** The last day a reminder was written for the claim; null when none. */
+    public LocalDate remindedOn(String sheetId, long id) {
+        return jdbc.queryForObject("SELECT MAX(reminded_on) FROM claim_reminder WHERE sheet_id = ? AND claim_id = ?",
+                LocalDate.class, sheetId, id);
+    }
+
+    /** The last day a reminder was written for each reminded claim of the sheet, on or before {@code asOf} (null: any
+     *  day), by claim id. */
+    public Map<Long, LocalDate> reminders(String sheetId, LocalDate asOf) {
+        Map<Long, LocalDate> out = new HashMap<>();
+        jdbc.query("SELECT claim_id, MAX(reminded_on) AS reminded_on FROM claim_reminder WHERE sheet_id = ? "
+                + "AND (CAST(? AS DATE) IS NULL OR reminded_on <= ?) GROUP BY claim_id",
+                (rs) -> { out.put(rs.getLong("claim_id"), rs.getObject("reminded_on", LocalDate.class)); }, sheetId,
+                asOf == null ? null : Date.valueOf(asOf), asOf == null ? null : Date.valueOf(asOf));
+        return out;
+    }
+
+    /** For each claim of the sheet edited after {@code date} (while the sheet's today was later), the values it had
+     *  before its first such edit, by claim id: the claim as it stood at the end of the date. */
+    public Map<Long, Claim> editedAfter(String sheetId, LocalDate date) {
+        Map<Long, Claim> out = new HashMap<>();
+        jdbc.query("SELECT claim_id, amount, claim_date, note, corrects FROM claim_edit WHERE sheet_id = ? AND made_on > ? ORDER BY id",
+                (rs) -> {
+                    out.putIfAbsent(rs.getLong("claim_id"), new Claim(rs.getLong("claim_id"), sheetId, 0,
+                            rs.getBigDecimal("amount").setScale(2), rs.getObject("claim_date", LocalDate.class),
+                            rs.getString("note"), null, null, null, null, false, null, rs.getString("corrects"), null,
+                            null, 0, null));
+                }, sheetId, Date.valueOf(date));
+        return out;
     }
 
     /** Unbinds every claim of the person bound by their last statement (live again). */

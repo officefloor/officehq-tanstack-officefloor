@@ -45,6 +45,8 @@ export type Claim = {
   lockedBy: string | null;
   /** Whether it was added while the period its date falls in was soft-closed. */
   lateEntry: boolean;
+  /** The last day (yyyy-MM-dd) a reminder was written for it; null when never reminded. */
+  reminded: string | null;
 };
 
 /** One line of a claim's status log: the status it took, who made the change, the sheet's today (yyyy-MM-dd) when
