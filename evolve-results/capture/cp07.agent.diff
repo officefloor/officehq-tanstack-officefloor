@@ -1,0 +1,495 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 7ee7a977b..6e32ecfad 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -4,6 +4,7 @@ import { postJson, putJson } from '../../api/http';
+ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
+ import { SheetPage } from '../../slots/defs/sheetPage';
+ import type { Person } from '../people/people';
++import { due, rateFor, useRates } from '../rates/rates';
+ import { claimsKey, total, useClaims, type Claim } from './claims';
+ 
+ type Values = { amount: string; date: string; note: string };
+@@ -22,6 +23,7 @@ function ClaimsHead() {
+  *  being edited. A blank date takes the sheet's today (the server applies it). */
+ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+   const claims = useClaims(sheetId);
++  const rate = rateFor(useRates(sheetId).data, person.grade);
+   const queryClient = useQueryClient();
+   const mine = claims.data?.filter((c) => c.personId === person.id) ?? [];
+   const [editingId, setEditingId] = useState<number | undefined>(undefined);
+@@ -90,6 +92,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
+             <li key={c.id} data-testid={`claim-row-${c.id}`}>
+               <span data-testid="claim-amount">{c.amount}</span> <span data-testid="claim-date">{c.date}</span>{' '}
+               <span data-testid="claim-note">{c.note}</span>{' '}
++              <span data-testid="claim-due">{due(c.amount, rate)}</span>{' '}
+               <button type="button" data-testid="claim-edit" onClick={() => openEditor(c)}>
+                 Edit
+               </button>
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+new file mode 100644
+index 000000000..7984df578
+--- /dev/null
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -0,0 +1,126 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
++import { SheetPage } from '../../slots/defs/sheetPage';
++import { total, useClaims } from '../claims/claims';
++import { GRADES, usePeople, type Person } from '../people/people';
++import { due, rateFor, ratesKey, sum, useRates, type Rate } from './rates';
++
++/** The sheet's rate for each grade: the form that sets one, and each grade's current rate. */
++function Rates({ sheetId, user }: { sheetId: string; user: string }) {
++  const rates = useRates(sheetId);
++  const queryClient = useQueryClient();
++  const [grade, setGrade] = useState<string>(GRADES[0]);
++  const [pct, setPct] = useState('');
++
++  const save = useMutation({
++    mutationFn: (v: { grade: string; rate: string }) =>
++      putJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates/${encodeURIComponent(v.grade)}`, {
++        rate: v.rate,
++        by: user,
++      }),
++    onSuccess: () => {
++      setPct('');
++      void queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
++    },
++  });
++
++  return (
++    <section data-testid="rates">
++      <h3>Rates</h3>
++      <form
++        data-testid="rate-form"
++        onSubmit={(e) => {
++          e.preventDefault();
++          save.reset();
++          save.mutate({ grade, rate: pct });
++        }}
++      >
++        <label>
++          Grade{' '}
++          <select
++            data-testid="rate-form-grade"
++            value={grade}
++            onChange={(e) => {
++              setGrade(e.target.value);
++              save.reset();
++            }}
++          >
++            {GRADES.map((g) => (
++              <option key={g} value={g}>
++                {g}
++              </option>
++            ))}
++          </select>
++        </label>{' '}
++        <label>
++          Rate %{' '}
++          <input
++            data-testid="rate-form-pct"
++            inputMode="decimal"
++            value={pct}
++            onChange={(e) => {
++              setPct(e.target.value);
++              save.reset();
++            }}
++          />
++        </label>{' '}
++        <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
++          Set rate
++        </button>
++        {save.isError && (
++          <span data-testid="rate-form-error">The rate must be a percent 0.00 or more, with up to two decimals.</span>
++        )}
++      </form>
++      {rates.isError && <p data-testid="rates-load-error">Could not load rates.</p>}
++      <table data-testid="rates-table">
++        <tbody>
++          {GRADES.map((g) => {
++            const rate = rateFor(rates.data, g);
++            return (
++              <tr key={g} data-testid={rate === undefined ? undefined : `rate-row-${g}-start`}>
++                <td>{g}</td>
++                <td data-testid={`rate-current-${g}`}>{rate === undefined ? 'n/a' : <span data-testid="rate-pct">{rate}</span>}</td>
++              </tr>
++            );
++          })}
++        </tbody>
++      </table>
++    </section>
++  );
++}
++
++function DueHead() {
++  return <th>Due total</th>;
++}
++
++/** A person's due-total: their claimed at their grade's rate. */
++function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }) {
++  const claims = useClaims(sheetId);
++  const rates = useRates(sheetId);
++  const claimed = total(claims.data?.filter((c) => c.personId === person.id) ?? []);
++  return <td data-testid="person-due-total">{due(claimed, rateFor(rates.data, person.grade))}</td>;
++}
++
++/** The sheet's due-total: everyone's due-total added up, skipping n/a. */
++function DueTotal({ sheetId }: { sheetId: string }) {
++  const people = usePeople(sheetId);
++  const claims = useClaims(sheetId);
++  const rates = useRates(sheetId);
++  const dues = (people.data ?? []).map((p) =>
++    due(total(claims.data?.filter((c) => c.personId === p.id) ?? []), rateFor(rates.data, p.grade)),
++  );
++  return (
++    <p>
++      Due total <span data-testid="rollup-due-total">{sum(dues)}</span>
++    </p>
++  );
++}
++
++export const contributions = [
++  SheetPage.fill({ order: 5, Component: Rates }),
++  PeopleHead.fill({ order: 20, Component: DueHead }),
++  PersonRow.fill({ order: 20, Component: PersonDueTotal }),
++  SheetPage.fill({ order: 30, Component: DueTotal }),
++];
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+new file mode 100644
+index 000000000..d1885e2fb
+--- /dev/null
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -0,0 +1,48 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++/** A grade's rate on the sheet: `rate` is a percent as text with two decimals (never a float). */
++export type Rate = { sheetId: string; grade: string; rate: string };
++
++export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'];
++
++/** The sheet's rate for each grade that has one. */
++export function useRates(sheetId: string) {
++  return useQuery({
++    queryKey: ratesKey(sheetId),
++    queryFn: () => getJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`),
++  });
++}
++
++/** The rate for a grade, or undefined when the grade has none. */
++export function rateFor(rates: Rate[] | undefined, grade: string): string | undefined {
++  return rates?.find((r) => r.grade === grade)?.rate;
++}
++
++/** A two-decimal number ("12.34") in hundredths, exactly. */
++function hundredths(value: string): bigint {
++  const [whole, frac = ''] = value.trim().split('.');
++  return BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2));
++}
++
++/** Hundredths shown with two decimals. */
++function shown(h: bigint): string {
++  const sign = h < 0n ? '-' : '';
++  const a = h < 0n ? -h : h;
++  return `${sign}${a / 100n}.${String(a % 100n).padStart(2, '0')}`;
++}
++
++/** What is due on an amount at a rate: amount × rate / 100, rounded half up (away from zero) to two
++ *  decimals; 'n/a' when there is no rate. */
++export function due(amount: string, rate: string | undefined): string {
++  if (rate === undefined) return 'n/a';
++  const p = hundredths(amount) * hundredths(rate); // in 1/10000 of a hundredth
++  const a = p < 0n ? -p : p;
++  const r = (a + 5000n) / 10000n;
++  return shown(p < 0n ? -r : r);
++}
++
++/** Two-decimal values added up, skipping 'n/a'. */
++export function sum(values: string[]): string {
++  return shown(values.filter((v) => v !== 'n/a').reduce((s, v) => s + hundredths(v), 0n));
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/HandleInvalidRate.java b/src/main/java/net/officefloor/hq/app/rate/HandleInvalidRate.java
+new file mode 100644
+index 000000000..20e5f5426
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/HandleInvalidRate.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.rate;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidRate {
++    public void handle(@Parameter InvalidRateException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/InvalidRateException.java b/src/main/java/net/officefloor/hq/app/rate/InvalidRateException.java
+new file mode 100644
+index 000000000..dcf5a2ee4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/InvalidRateException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.rate;
++
++/** A rate that cannot be kept: a grade other than A, B or C, or a percent that is not 0.00 or more with up to two decimals. */
++public class InvalidRateException extends Exception {
++    public InvalidRateException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rate.java b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+new file mode 100644
+index 000000000..a27e610ae
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.rate;
++
++import java.math.BigDecimal;
++
++/** A sheet's rate for a grade: a percent with two decimals. */
++public record Rate(String sheetId, String grade, BigDecimal rate) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+new file mode 100644
+index 000000000..edfd61f3f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -0,0 +1,33 @@
++package net.officefloor.hq.app.rate;
++
++import java.sql.ResultSet;
++import java.sql.SQLException;
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** The stored rates, one per grade per sheet. A grade with no row has no rate. */
++@Repository
++public class RateRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public RateRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    public List<Rate> list(String sheetId) {
++        return jdbc.query("SELECT sheet_id, grade, rate FROM rate WHERE sheet_id = ? ORDER BY grade",
++                RateRepository::map, sheetId);
++    }
++
++    public Rate save(Rate rate) {
++        jdbc.update("MERGE INTO rate (sheet_id, grade, rate) KEY (sheet_id, grade) VALUES (?, ?, ?)",
++                rate.sheetId(), rate.grade(), rate.rate());
++        return rate;
++    }
++
++    private static Rate map(ResultSet rs, int n) throws SQLException {
++        return new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("rate").setScale(2));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRequest.java b/src/main/java/net/officefloor/hq/app/rate/RateRequest.java
+new file mode 100644
+index 000000000..92eee6d21
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.rate;
++
++/** Body of setting a grade's rate: the percent as text, and who sets it. */
++public record RateRequest(String rate, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateResponse.java b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+new file mode 100644
+index 000000000..332dcf70c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.rate;
++
++/** A rate as sent to the screen: the percent as text with two decimals, so it is never rounded through a float. */
++public record RateResponse(String sheetId, String grade, String rate) {
++    public static RateResponse from(Rate rate) {
++        return new RateResponse(rate.sheetId(), rate.grade(), rate.rate().toPlainString());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateValues.java b/src/main/java/net/officefloor/hq/app/rate/RateValues.java
+new file mode 100644
+index 000000000..a0a09a123
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/RateValues.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.rate;
++
++import java.math.BigDecimal;
++
++/** A grade's rate once validated, and who sets it. */
++public record RateValues(String grade, BigDecimal rate, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RecordRateSet.java b/src/main/java/net/officefloor/hq/app/rate/RecordRateSet.java
+new file mode 100644
+index 000000000..1e88f857d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/RecordRateSet.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.rate;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Writes RATE_SET to the audit file once the rate is stored. */
++public class RecordRateSet {
++    public void record(@Val Rate rate, @Val RateValues values, Audit audit) {
++        audit.record("RATE_SET sheet=" + rate.sheetId() + " by=" + values.by() + " grade=" + rate.grade()
++                + " rate=" + rate.rate().toPlainString());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithRate.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithRate.java
+new file mode 100644
+index 000000000..f047a9efb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithRate.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.rate;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithRate {
++    public void respond(@Val Rate rate, ObjectResponse<RateResponse> response) {
++        response.send(RateResponse.from(rate));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+new file mode 100644
+index 000000000..9fa750704
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.rate;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** The sheet's rates, by grade. */
++public class RespondWithRates {
++    public void respond(@PathVariable("sheetId") String sheetId, RateRepository rates,
++            ObjectResponse<List<RateResponse>> response) {
++        response.send(rates.list(sheetId.trim()).stream().map(RateResponse::from).toList());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/SaveRate.java b/src/main/java/net/officefloor/hq/app/rate/SaveRate.java
+new file mode 100644
+index 000000000..7c044c9de
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/SaveRate.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.rate;
++
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Sets the grade's rate on the sheet, replacing any rate it had. */
++public class SaveRate {
++    public void save(@PathVariable("sheetId") String sheetId, @Val RateValues values, RateRepository rates,
++            Out<Rate> rate) {
++        rate.set(rates.save(new Rate(sheetId.trim(), values.grade(), values.rate())));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+new file mode 100644
+index 000000000..39c448c73
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+@@ -0,0 +1,27 @@
++package net.officefloor.hq.app.rate;
++
++import java.math.BigDecimal;
++import java.util.Set;
++import java.util.regex.Pattern;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Reads the body: the grade is A, B or C; the rate a percent 0.00 or more with up to two decimals. */
++public class ValidateRate {
++    private static final Set<String> GRADES = Set.of("A", "B", "C");
++    private static final Pattern RATE = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?");
++
++    public void validate(@PathVariable("grade") String grade, @RequestBody RateRequest request, Out<RateValues> values)
++            throws InvalidRateException {
++        String g = grade == null ? "" : grade.trim();
++        if (!GRADES.contains(g)) {
++            throw new InvalidRateException("Grade must be A, B or C");
++        }
++        String rate = request == null || request.rate() == null ? "" : request.rate().trim();
++        if (!RATE.matcher(rate).matches()) {
++            throw new InvalidRateException("The rate must be a percent 0.00 or more with up to two decimals");
++        }
++        values.set(new RateValues(g, new BigDecimal(rate).setScale(2), request.by() == null ? "" : request.by().trim()));
++    }
++}
+diff --git a/src/main/resources/db/migration/V5__rate.sql b/src/main/resources/db/migration/V5__rate.sql
+new file mode 100644
+index 000000000..0694dfa38
+--- /dev/null
++++ b/src/main/resources/db/migration/V5__rate.sql
+@@ -0,0 +1,8 @@
++-- The sheet's rate for each grade: a percent kept exactly with two decimals. A grade with no row
++-- here has no rate (its claims' due is n/a).
++CREATE TABLE rate (
++    sheet_id VARCHAR(200)  NOT NULL,
++    grade    VARCHAR(1)    NOT NULL,
++    rate     DECIMAL(7, 2) NOT NULL,
++    PRIMARY KEY (sheet_id, grade)
++);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.rate.InvalidRateException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.rate.InvalidRateException.yml
+new file mode 100644
+index 000000000..87a5a07a2
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.rate.InvalidRateException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.rate.HandleInvalidRate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.GET.yml
+new file mode 100644
+index 000000000..062275340
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.GET.yml
+@@ -0,0 +1,4 @@
++# GET /api/sheets/{sheetId}/rates — the sheet's rate for each grade that has one, by grade.
++respond:
++  class: net.officefloor.hq.app.rate.RespondWithRates
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates/{grade}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates/{grade}.PUT.yml
+new file mode 100644
+index 000000000..b228a0180
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates/{grade}.PUT.yml
+@@ -0,0 +1,16 @@
++# PUT /api/sheets/{sheetId}/rates/{grade} — set a grade's rate, a percent with two decimals,
++# replacing any it had. A grade other than A, B or C, or a rate that is not a number 0.00 or more
++# with up to two decimals, is a 400 and writes nothing. Responds with the rate as stored.
++validate:
++  class: net.officefloor.hq.app.rate.ValidateRate
++  next: save
++save:
++  class: net.officefloor.hq.app.rate.SaveRate
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.rate.RecordRateSet
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.rate.RespondWithRate
