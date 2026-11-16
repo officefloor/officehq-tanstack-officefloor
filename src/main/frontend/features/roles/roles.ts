@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-/** The role a user name has on the sheet: clerk (any name not given one) or steward. */
+/** The role a user name has on the sheet: clerk (any name not given one), steward or viewer (sees everything, changes nothing). */
 export type Role = { sheetId: string; user: string; role: string };
 
 export const rolesKey = (sheetId: string) => ['sheet', sheetId, 'roles'];

@@ -6,12 +6,13 @@ import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** The stored roles, one per user name per sheet. A name with no row is a clerk. */
+/** The stored roles (clerk, steward or viewer), one per user name per sheet. A name with no row is a clerk. */
 @Repository
 public class RoleRepository {
 
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
+    public static final String VIEWER = "viewer";
 
     private final JdbcTemplate jdbc;
 

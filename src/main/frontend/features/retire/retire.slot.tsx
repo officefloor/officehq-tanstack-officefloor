@@ -4,6 +4,7 @@ import { postJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { peopleKey, type Person } from '../people/people';
+import { usePersonRowAction } from '../people/rowAction';
 
 function RetireHead() {
   return (
@@ -22,6 +23,7 @@ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string
   const queryClient = useQueryClient();
   const [from, setFrom] = useState('');
   const submit = useSubmitOnce();
+  const rowAction = usePersonRowAction(sheetId, person.id, 'retire');
   const retire = useMutation({
     mutationFn: (date: string) =>
       postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/retire`, { from: date, by: user }),
@@ -52,13 +54,14 @@ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string
           disabled={retire.isPending}
           onClick={() => {
             if (!submit.begin()) return;
+            rowAction.take();
             retire.reset();
             retire.mutate(from.trim());
           }}
         >
           Retire
         </button>
-        {retire.isError && <span data-testid="person-error"> Could not retire this person.</span>}
+        {retire.isError && rowAction.isLatest && <span data-testid="person-error"> Could not retire this person.</span>}
       </td>
     </>
   );

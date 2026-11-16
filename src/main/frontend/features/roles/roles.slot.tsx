@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { rolesKey, useRoles, type Role } from './roles';
 
-/** The sheet's roles: the form that gives a user name a role (clerk or steward), and every role given. */
+/** The sheet's roles: the form that gives a user name a role (clerk, steward or viewer — a viewer sees everything and changes nothing), and every role given. */
 function Roles({ sheetId, user }: { sheetId: string; user: string }) {
   const roles = useRoles(sheetId);
   const queryClient = useQueryClient();
@@ -64,13 +64,14 @@ function Roles({ sheetId, user }: { sheetId: string; user: string }) {
           <datalist id="role-choices">
             <option value="clerk" />
             <option value="steward" />
+            <option value="viewer" />
           </datalist>
         </label>{' '}
         <button type="submit" data-testid="role-form-submit" disabled={save.isPending}>
           Set role
         </button>
         {save.isError && (
-          <span data-testid="role-form-error">The user name must not be blank and the role must be clerk or steward.</span>
+          <span data-testid="role-form-error">The user name must not be blank and the role must be clerk, steward or viewer.</span>
         )}
       </form>
       {roles.isError && <p data-testid="roles-load-error">Could not load roles.</p>}

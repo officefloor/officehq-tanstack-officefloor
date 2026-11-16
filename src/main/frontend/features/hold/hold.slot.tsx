@@ -4,6 +4,7 @@ import { postJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { peopleKey, type Person } from '../people/people';
+import { usePersonRowAction } from '../people/rowAction';
 
 function HoldHead() {
   return (
@@ -22,6 +23,7 @@ function PersonHold({ sheetId, user, person }: { sheetId: string; user: string; 
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const submit = useSubmitOnce();
+  const rowAction = usePersonRowAction(sheetId, person.id, 'hold');
   const hold = useMutation({
     mutationFn: (dates: { from: string; to: string }) =>
       postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/hold`, { ...dates, by: user }),
@@ -66,13 +68,14 @@ function PersonHold({ sheetId, user, person }: { sheetId: string; user: string; 
           disabled={hold.isPending}
           onClick={() => {
             if (!submit.begin()) return;
+            rowAction.take();
             hold.reset();
             hold.mutate({ from: from.trim(), to: to.trim() });
           }}
         >
           Hold
         </button>
-        {hold.isError && <span data-testid="person-error"> Could not hold this person.</span>}
+        {hold.isError && rowAction.isLatest && <span data-testid="person-error"> Could not hold this person.</span>}
       </td>
     </>
   );

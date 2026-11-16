@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import type { Person } from '../people/people';
+import { usePersonRowAction } from '../people/rowAction';
 import { claimsKey } from '../claims/claims';
 import { statementsKey, useStatements } from './statements';
 
@@ -22,6 +23,7 @@ function PersonStatements({ sheetId, user, person }: { sheetId: string; user: st
   const statements = useStatements(sheetId);
   const queryClient = useQueryClient();
   const mine = statements.data?.find((s) => s.personId === person.id);
+  const rowAction = usePersonRowAction(sheetId, person.id, 'statement');
   const take = useMutation({
     mutationFn: () =>
       postJson(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/statements`, { by: user }),
@@ -43,13 +45,14 @@ function PersonStatements({ sheetId, user, person }: { sheetId: string; user: st
           data-testid="person-statement"
           disabled={take.isPending}
           onClick={() => {
+            rowAction.take();
             take.reset();
             take.mutate();
           }}
         >
           Statement
         </button>
-        {take.isError && <span data-testid="person-error"> Could not take a statement for this person.</span>}
+        {take.isError && rowAction.isLatest && <span data-testid="person-error"> Could not take a statement for this person.</span>}
       </td>
     </>
   );
