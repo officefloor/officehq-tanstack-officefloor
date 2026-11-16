@@ -15,12 +15,14 @@ function StatementsHead({ user }: { user: string }) {
       {shown('statement-count') && <th>Statements</th>}
       {shown('stated-total') && <th>Stated total</th>}
       {shown('statement-date') && <th>Stated on</th>}
+      <th>Statement lines</th>
       <th />
     </>
   );
 }
 
-/** A person's statement count, their last statement's due-total and date, and the date (blank: now) and button that
+/** A person's statement count, their last statement's due-total and date, a line per statement in force (oldest
+ *  first), and the date (blank: now) and button that
  *  take one: it records their due-total as of that date and binds each of their claims that counted then to its rate
  *  figure then (not floored); and
  *  the button that cancels their last statement (a steward only), making the claims it bound live again. */
@@ -60,6 +62,13 @@ function PersonStatements({ sheetId, user, person }: { sheetId: string; user: st
       {shown('statement-count') && <td data-testid="person-statement-count">{mine?.count ?? 0}</td>}
       {shown('stated-total') && <td data-testid="person-stated-total">{mine?.dueTotal ?? ''}</td>}
       {shown('statement-date') && <td data-testid="person-statement-date">{mine?.date ?? ''}</td>}
+      <td data-testid="person-statement-lines">
+        {(mine?.lines ?? []).map((line, i) => (
+          <div key={i} data-testid="person-statement-line-line">
+            {line}
+          </div>
+        ))}
+      </td>
       <td>
         <input
           data-testid="person-statement-asof"
