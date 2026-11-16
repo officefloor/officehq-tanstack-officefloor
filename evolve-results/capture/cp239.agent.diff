@@ -1,0 +1,49 @@
+diff --git a/src/main/frontend/features/periods/Periods.tsx b/src/main/frontend/features/periods/Periods.tsx
+index 31dbd33f0..b55ba0df5 100644
+--- a/src/main/frontend/features/periods/Periods.tsx
++++ b/src/main/frontend/features/periods/Periods.tsx
+@@ -6,7 +6,7 @@ import { listPeople, peopleKey } from '../people/api';
+ import { listRates, ratesKey } from '../rates/api';
+ import { fiscalYearOf, useFiscalStartMonth, useFloor, useLate } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+-import { addPeriod, closePeriod, generateFiscalYear, generatePeriods, generateQuarters, listPeriods, lockPeriod, periodDueTotal, periodsKey, reopenPeriod, softClosePeriod, type PeriodInput } from './api';
++import { addPeriod, closePeriod, generateFiscalYear, generatePeriods, generateQuarters, listPeriods, lockPeriod, periodClaimsCount, periodDueTotal, periodsKey, reopenPeriod, softClosePeriod, type PeriodInput } from './api';
+ import { Fig } from '../session/Fig';
+ import { ImportOpenings } from './ImportOpenings';
+ import { Rollover } from './Rollover';
+@@ -17,7 +17,7 @@ const EMPTY: PeriodInput = { name: '', from: '', to: '', cap: '' };
+ 
+ /** The sheet's periods: a form that adds one, and each period by from-date with its due-total (the
+  *  due of the claims that count whose date falls in it, n/a ones and OPEN unbound ones dated within their person's hold skipped; once closed, the one fixed
+- *  when it was closed or soft-closed), the fiscal year its from-date falls in, its cap on each person's open claims (blank for none), whether it is closed (yes, soft or no), whether it is locked (yes or no), and buttons that close, soft-close and reopen it (each by the roles the permission matrix allows) and lock and unlock it (a steward only). */
++ *  when it was closed or soft-closed), the fiscal year its from-date falls in, its cap on each person's open claims (blank for none), whether it is closed (yes, soft or no), whether it is locked (yes or no), its claims count (VOID and DELETED ones left out), and buttons that close, soft-close and reopen it (each by the roles the permission matrix allows) and lock and unlock it (a steward only). */
+ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
+   const queryClient = useQueryClient();
+   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
+@@ -198,6 +198,9 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
+               <td>
+                 <span data-testid="period-fy">{fiscalYearOf(p.from, fiscalStart)}</span>
+               </td>
++              <td>
++                Claims <span data-testid="period-claims-count">{periodClaimsCount(p, claims.data ?? [])}</span>
++              </td>
+               <td>
+                 Cap <span data-testid="period-cap"><Fig>{p.cap ?? ''}</Fig></span>
+               </td>
+diff --git a/src/main/frontend/features/periods/api.ts b/src/main/frontend/features/periods/api.ts
+index 206f582da..5edf68539 100644
+--- a/src/main/frontend/features/periods/api.ts
++++ b/src/main/frontend/features/periods/api.ts
+@@ -174,6 +174,12 @@ export function periodDueTotal(p: Period, claims: Claim[], people: Person[] | un
+   return sumDues((people ?? []).map((q) => personPeriodDue(p, q, claims, people, rates, floor, late)));
+ }
+ 
++/** A period's claims count: how many claims are due by a day in it, VOID and DELETED ones left out. */
++export function periodClaimsCount(p: Period, claims: Claim[]): number {
++  return claims.filter((c) => c.status !== 'VOID' && c.status !== 'DELETED')
++    .filter((c) => p.from <= c.dueBy && c.dueBy <= p.to).length;
++}
++
+ /** A period's classic due-total: once closed or soft-closed, the one fixed when it was closed; else the due as
+  *  shown now of everyone's claims due by a day in it whose status now is OPEN, PENDING or SETTLED, less those the
+  *  live rules leave out (see `liveClaims`), n/a ones skipped. */
