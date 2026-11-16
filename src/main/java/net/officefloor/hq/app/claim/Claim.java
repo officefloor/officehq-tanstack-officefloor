@@ -12,6 +12,6 @@ import java.time.LocalDate;
  * claim of the same person it corrects ({@code corrects}; null for any other claim).
  */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-        ClaimStatus status, Long number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
-        Long corrects) {
+        ClaimStatus status, String number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
+        String corrects) {
 }

@@ -12,19 +12,21 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupBefore;
+import net.officefloor.hq.app.setting.SettingRepository;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /**
  * Opens each selected claim that can be opened, in list order (people in the order they were added, a person's
- * claims newest first): as the single open does, it must be a DRAFT not dated inside a closed period, takes the
- * sheet's next number and records who opened it, then writes CLAIM_OPENED and the figures it moved (see Rollup).
+ * claims newest first): as the single open does, it must be a DRAFT not dated inside a closed period, takes its
+ * number (see ClaimNumbering) and records who opened it, then writes CLAIM_OPENED and the figures it moved (see Rollup).
  * Each that cannot, or is not on the sheet, is left as it is and counted refused.
  */
 public class OpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenRequest request, ClaimRepository claims,
-            PersonRepository people, PeriodRepository periods, Rollup rollup, Audit audit,
+            PersonRepository people, PeriodRepository periods, SettingRepository settings, SheetRepository sheets, Rollup rollup, Audit audit,
             Out<BulkOpenResult> result) {
         String sheet = sheetId.trim();
         Set<Long> selected = new HashSet<>(request.claimIds());
@@ -44,7 +46,7 @@ public class OpenClaims {
                 continue;
             }
             RollupBefore before = rollup.take(sheet);
-            long number = claims.nextNumber(sheet);
+            String number = ClaimNumbering.next(claim, claims, periods, settings, sheets);
             Claim toSave = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                     claim.note(), ClaimStatus.OPEN, number, claim.due(), request.by(), claim.stated(),
                     claim.statedDue(), claim.corrects());

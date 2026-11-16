@@ -10,7 +10,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /** Reads the body: the key is clerk-limit, its value blank (no limit) or an amount 0.00 or more with up to two
  *  decimals; or floor or late-pct, its value such an amount (not blank), all kept with two decimals; or terms, its value a
- *  whole number of days 0 or more (not blank), kept without leading zeros; or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today). */
+ *  whole number of days 0 or more (not blank), kept without leading zeros; or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today); or
+ *  period-numbering-from, its value a date yyyy-MM-dd or blank (off). */
 public class ValidateSetting {
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
@@ -22,12 +23,13 @@ public class ValidateSetting {
         boolean terms = SettingRepository.TERMS.equals(k);
         boolean latePct = SettingRepository.LATE_PCT.equals(k);
         boolean policyDate = SettingRepository.POLICY_DATE.equals(k);
-        if (!SettingRepository.CLERK_LIMIT.equals(k) && !floor && !terms && !latePct && !policyDate) {
+        boolean numberingFrom = SettingRepository.PERIOD_NUMBERING_FROM.equals(k);
+        if (!SettingRepository.CLERK_LIMIT.equals(k) && !floor && !terms && !latePct && !policyDate && !numberingFrom) {
             throw new InvalidSettingException("Unknown setting " + k);
         }
         String value = request == null || request.value() == null ? "" : request.value().trim();
         String by = request == null || request.by() == null ? "" : request.by().trim();
-        if (policyDate) {
+        if (policyDate || numberingFrom) {
             if (value.isEmpty()) {
                 values.set(new SettingValues(k, null, by));
                 return;
@@ -35,7 +37,8 @@ public class ValidateSetting {
             try {
                 values.set(new SettingValues(k, LocalDate.parse(value).toString(), by));
             } catch (DateTimeParseException e) {
-                throw new InvalidSettingException("The policy date must be yyyy-MM-dd, or blank");
+                throw new InvalidSettingException((policyDate ? "The policy date" : "The period numbering from-date")
+                        + " must be yyyy-MM-dd, or blank");
             }
             return;
         }

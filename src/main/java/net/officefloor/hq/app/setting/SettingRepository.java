@@ -36,6 +36,9 @@ public class SettingRepository {
     /** The date from which a claim's live figures round half to even (before it, half up); blank: the sheet's today. */
     public static final String POLICY_DATE = "policy-date";
 
+    /** The date from which an opened claim is numbered within its period (see ClaimNumbering); blank: off. */
+    public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
+
     private final JdbcTemplate jdbc;
 
     public SettingRepository(JdbcTemplate jdbc) {
@@ -82,6 +85,12 @@ public class SettingRepository {
     /** The sheet's policy date, or null when it is blank (the sheet's today applies). */
     public LocalDate policyDate(String sheetId) {
         String value = value(sheetId, POLICY_DATE);
+        return value == null ? null : LocalDate.parse(value);
+    }
+
+    /** The sheet's period numbering from-date, or null when it is blank (off). */
+    public LocalDate periodNumberingFrom(String sheetId) {
+        String value = value(sheetId, PERIOD_NUMBERING_FROM);
         return value == null ? null : LocalDate.parse(value);
     }
 

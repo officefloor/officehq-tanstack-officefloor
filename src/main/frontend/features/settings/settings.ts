@@ -3,7 +3,7 @@ import { getJson } from '../../api/http';
 import type { Late } from '../overdue/late';
 import { useSheetToday } from '../session/session';
 
-/** A sheet setting: `value` is text (clerk-limit, floor: an amount with two decimals; terms: a whole number of days; late-pct: a percent with two decimals; policy-date: yyyy-MM-dd), null when blank. */
+/** A sheet setting: `value` is text (clerk-limit, floor: an amount with two decimals; terms: a whole number of days; late-pct: a percent with two decimals; policy-date, period-numbering-from: yyyy-MM-dd), null when blank. */
 export type Setting = { sheetId: string; key: string; value: string | null };
 
 export const settingsKey = (sheetId: string) => ['sheet', sheetId, 'settings'];

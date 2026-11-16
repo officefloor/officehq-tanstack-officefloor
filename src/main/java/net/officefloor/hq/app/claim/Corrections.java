@@ -11,7 +11,7 @@ public final class Corrections {
 
     /** The number the claim with these values corrects (null when it is not a correction); a correction that does
      *  not name a SETTLED claim of the person is refused. */
-    public static Long check(String sheetId, long personId, ClaimValues values, ClaimRepository claims)
+    public static String check(String sheetId, long personId, ClaimValues values, ClaimRepository claims)
             throws InvalidClaimException {
         if (values.amount().signum() >= 0) {
             return null;

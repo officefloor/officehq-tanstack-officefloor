@@ -49,6 +49,13 @@ public class PeriodRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** The period of the sheet whose dates contain the date, or null when none does. */
+    public Period containing(String sheetId, LocalDate date) {
+        List<Period> found = jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ? AND from_date <= ? AND to_date >= ?",
+                PeriodRepository::map, sheetId, Date.valueOf(date), Date.valueOf(date));
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     /** Whether a closed period of the sheet contains the date. */
     public boolean closedOn(String sheetId, LocalDate date) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM period WHERE sheet_id = ? AND closed = TRUE "

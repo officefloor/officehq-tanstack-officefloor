@@ -5,7 +5,7 @@ import type { Person } from '../people/people';
 /** A claim's status: DRAFT when added, then OPEN and SETTLED; a DRAFT or OPEN claim may be VOID. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
-/** A claim of a person. `amount` is text with two decimals (never a float); `date` is yyyy-MM-dd; `number` is given
+/** A claim of a person. `amount` is text with two decimals (never a float); `date` is yyyy-MM-dd; `number` (text: 1, 2, ..., or P1-1, X-1 when numbered per period) is given
  *  when the claim is opened (null for a draft or a voided claim); `due` is the due fixed when it was settled (null
  *  while its due is live, worked out from its grade's current rate); `openedBy` is who opened it (null when never
  *  opened); `stated` is whether its person's last statement bound it to the figure `statedDue` (null when it had
@@ -20,12 +20,12 @@ export type Claim = {
   date: string;
   note: string;
   status: ClaimStatus;
-  number: number | null;
+  number: string | null;
   due: string | null;
   openedBy: string | null;
   stated: boolean;
   statedDue: string | null;
-  corrects: number | null;
+  corrects: string | null;
   roundsOn: string;
 };
 

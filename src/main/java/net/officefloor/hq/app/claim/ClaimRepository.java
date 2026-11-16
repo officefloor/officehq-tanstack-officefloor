@@ -39,7 +39,7 @@ public class ClaimRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, Long corrects) {
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
@@ -50,14 +50,14 @@ public class ClaimRepository {
             ps.setBigDecimal(3, amount);
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
-            ps.setObject(6, corrects, java.sql.Types.BIGINT);
+            ps.setString(6, corrects);
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects);
     }
 
     /** The person's claim with the given number on the sheet; null when there is none. */
-    public Claim findByNumber(String sheetId, long personId, long number) {
+    public Claim findByNumber(String sheetId, long personId, String number) {
         List<Claim> found = jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? AND claim_number = ?",
                 ClaimRepository::map, sheetId, personId, number);
         return found.isEmpty() ? null : found.get(0);
@@ -97,6 +97,35 @@ public class ClaimRepository {
     }
 
     /**
+     * The next number in the sheet's per-period sequence {@code key} (a period's name, or X for no period): 1 for the
+     * first, then one more each time, its counter row locked until the transaction ends as for {@link #nextNumber}.
+     */
+    public long nextPeriodNumber(String sheetId, String key) {
+        ensurePeriodNumberRow(sheetId, key);
+        jdbc.update("UPDATE claim_period_number_seq SET last_number = last_number + 1 WHERE sheet_id = ? AND seq_key = ?",
+                sheetId, key);
+        return jdbc.queryForObject("SELECT last_number FROM claim_period_number_seq WHERE sheet_id = ? AND seq_key = ?",
+                Long.class, sheetId, key);
+    }
+
+    /** Adds the per-period sequence's counter row if it has none, committed at once (see ensureNumberRow). */
+    private synchronized void ensurePeriodNumberRow(String sheetId, String key) {
+        try (Connection con = dataSource.getConnection()) {
+            con.setAutoCommit(true);
+            try (PreparedStatement ps = con.prepareStatement("INSERT INTO claim_period_number_seq (sheet_id, seq_key, last_number) "
+                    + "SELECT ?, ?, 0 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM claim_period_number_seq WHERE sheet_id = ? AND seq_key = ?)")) {
+                ps.setString(1, sheetId);
+                ps.setString(2, key);
+                ps.setString(3, sheetId);
+                ps.setString(4, key);
+                ps.executeUpdate();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
      * Adds the sheet's counter row if it has none, on its own connection so the row is committed at once and two
      * openings at the same moment never both try to add it.
      */
@@ -120,8 +149,8 @@ public class ClaimRepository {
         return new Claim(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
                 rs.getBigDecimal("amount").setScale(2), rs.getObject("claim_date", LocalDate.class),
                 rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
-                rs.getObject("claim_number", Long.class), due == null ? null : due.setScale(2),
+                rs.getString("claim_number"), due == null ? null : due.setScale(2),
                 rs.getString("opened_by"), rs.getBoolean("stated"), statedDue == null ? null : statedDue.setScale(2),
-                rs.getObject("corrects", Long.class));
+                rs.getString("corrects"));
     }
 }

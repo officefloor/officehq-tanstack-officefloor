@@ -162,7 +162,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
   };
   const openEditor = (c: Claim) => {
     save.reset();
-    setValues({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects === null ? '' : String(c.corrects) });
+    setValues({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
     setEditingId(c.id);
   };
   const cancel = () => {

@@ -7,7 +7,7 @@ package net.officefloor.hq.app.claim;
  *  correction corrects (null for any other claim); roundsOn is the date that decides how its live figures round
  *  (the corrected claim's date for a correction, else its own; see Rounding). */
 public record ClaimResponse(long id, String sheetId, long personId, String amount, String date, String note,
-        String status, Long number, String due, String openedBy, boolean stated, String statedDue, Long corrects,
+        String status, String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
         String roundsOn) {
     public static ClaimResponse from(Claim claim, ClaimRepository claims) {
         return new ClaimResponse(claim.id(), claim.sheetId(), claim.personId(), claim.amount().toPlainString(),
