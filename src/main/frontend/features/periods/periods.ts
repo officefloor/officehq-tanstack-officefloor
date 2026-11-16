@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { live, type Claim } from '../claims/claims';
+import { live, type Claim, type ClaimStatus } from '../claims/claims';
 import type { Late } from '../overdue/late';
 import { gradeOn, type Person } from '../people/people';
 import { claimDue, rateFor, sum, type Rate } from '../rates/rates';
@@ -36,10 +36,18 @@ export function periodOf(periods: Period[] | undefined, date: string): Period | 
   return periods?.find((p) => p.from <= date && date <= p.to);
 }
 
-/** A person's due-total for a period: the figures of their claims that count, each with its late charge (a
- *  person's OPEN claims dated within a hold of theirs, not bound by a statement, do not), whose date falls in it,
- *  added up (skipping n/a); for a closed period, their figure fixed when it was closed (0.00 for a person added
- *  after). */
+/** The status a claim had at the end of a day (yyyy-MM-dd), as its status log records it: the last line made on
+ *  or before that day; undefined when the claim was added after it. */
+export function statusAsOf(claim: Claim, day: string): ClaimStatus | undefined {
+  const made = claim.log.filter((l) => l.date <= day);
+  return made.length === 0 ? undefined : made[made.length - 1].status;
+}
+
+/** A person's due-total for a period: the figures (each due as shown now, with its late charge) of their claims
+ *  whose date falls in it and that counted by the status each had at the end of the period's last day (see
+ *  statusAsOf; a claim added after it does not count), the live rules otherwise applying (a deferred claim does
+ *  not count, nor an open claim dated within a hold of its person, not bound by a statement), added up (skipping
+ *  n/a); for a closed period, their figure fixed when it was closed (0.00 for a person added after). */
 export function personPeriodDue(
   period: Period,
   person: Person,
@@ -49,9 +57,11 @@ export function personPeriodDue(
   late: Late,
 ): string {
   if (period.closed) return period.personTotals?.[String(person.id)] ?? '0.00';
-  const mine = live((claims ?? []).filter((c) => c.personId === person.id), [person]).filter(
-    (c) => period.from <= c.date && c.date <= period.to,
-  );
+  const mine = (claims ?? []).filter((c) => {
+    if (c.personId !== person.id || c.date < period.from || period.to < c.date) return false;
+    const status = statusAsOf(c, period.to);
+    return status !== undefined && live([{ ...c, status }], [person]).length === 1;
+  });
   return sum(mine.map((c) => claimDue(c, rateFor(rates, gradeOn(person, c.date), c.date), floor, late)));
 }
 

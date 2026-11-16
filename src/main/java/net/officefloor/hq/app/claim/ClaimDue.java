@@ -76,4 +76,22 @@ public final class ClaimDue {
     public static boolean bound(Claim claim) {
         return claim.stated() && claim.status() != ClaimStatus.PENDING;
     }
+
+    /** The status a claim had at the end of a day, as its status log (oldest first) records it: that of the last line
+     *  made on or before the day; null when the claim was added after it. */
+    public static ClaimStatus statusAsOf(java.util.List<ClaimLogLine> log, java.time.LocalDate day) {
+        ClaimStatus status = null;
+        for (ClaimLogLine line : log) {
+            if (!line.date().isAfter(day)) {
+                status = line.status();
+            }
+        }
+        return status;
+    }
+
+    /** The claim as it would be with another status, all else kept. */
+    public static Claim withStatus(Claim c, ClaimStatus status) {
+        return new Claim(c.id(), c.sheetId(), c.personId(), c.amount(), c.date(), c.note(), status, c.number(), c.due(),
+                c.openedBy(), c.stated(), c.statedDue(), c.corrects(), c.dueBy(), c.deferredUntil(), c.proofs());
+    }
 }
