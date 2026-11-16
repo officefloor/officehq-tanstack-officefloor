@@ -1,0 +1,277 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 9d4473bf2..4c971cada 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -4,7 +4,7 @@ import { postJson, putJson } from '../../api/http';
+ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
+ import { SheetPage } from '../../slots/defs/sheetPage';
+ import type { Person } from '../people/people';
+-import { due, rateFor, useRates } from '../rates/rates';
++import { claimDue, rateFor, useRates } from '../rates/rates';
+ import { claimsKey, total, useClaims, type Claim } from './claims';
+ 
+ type Values = { amount: string; date: string; note: string };
+@@ -56,7 +56,7 @@ function ClaimRow({
+       <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
+       <span data-testid="claim-amount">{c.amount}</span> <span data-testid="claim-date">{c.date}</span>{' '}
+       <span data-testid="claim-note">{c.note}</span>{' '}
+-      <span data-testid="claim-due">{due(c.amount, rate)}</span>{' '}
++      <span data-testid="claim-due">{claimDue(c, rate)}</span>{' '}
+       <span data-testid="claim-status">{c.status}</span>{' '}
+       <button
+         type="button"
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 0615ff5f5..98f7c4302 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -5,7 +5,8 @@ import { getJson } from '../../api/http';
+ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+ 
+ /** A claim of a person. `amount` is text with two decimals (never a float); `date` is yyyy-MM-dd; `number` is given
+- *  when the claim is opened (null for a draft or a voided claim). */
++ *  when the claim is opened (null for a draft or a voided claim); `due` is the due fixed when it was settled (null
++ *  while its due is live, worked out from its grade's current rate). */
+ export type Claim = {
+   id: number;
+   sheetId: string;
+@@ -15,6 +16,7 @@ export type Claim = {
+   note: string;
+   status: ClaimStatus;
+   number: number | null;
++  due: string | null;
+ };
+ 
+ export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'];
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index d1885e2fb..628a42574 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import type { Claim } from '../claims/claims';
+ 
+ /** A grade's rate on the sheet: `rate` is a percent as text with two decimals (never a float). */
+ export type Rate = { sheetId: string; grade: string; rate: string };
+@@ -42,6 +43,11 @@ export function due(amount: string, rate: string | undefined): string {
+   return shown(p < 0n ? -r : r);
+ }
+ 
++/** A claim's due: the figure fixed when it was settled, otherwise its amount at the current rate. */
++export function claimDue(claim: Claim, rate: string | undefined): string {
++  return claim.due ?? due(claim.amount, rate);
++}
++
+ /** Two-decimal values added up, skipping 'n/a'. */
+ export function sum(values: string[]): string {
+   return shown(values.filter((v) => v !== 'n/a').reduce((s, v) => s + hundredths(v), 0n));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index f8268d083..0cf4ba492 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -8,6 +8,6 @@ public class ApplyClaim {
+     public void apply(@Val Claim claim, @Val ClaimValues values, SheetRepository sheets, Out<Claim> changed) {
+         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), values.amount(),
+                 values.date() != null ? values.date() : sheets.today(claim.sheetId()), values.note(), claim.status(),
+-                claim.number()));
++                claim.number(), claim.due()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 6dd2ae942..629626873 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -1,15 +1,22 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
++import java.math.RoundingMode;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.Rate;
++import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * Moves the claim to its new status: DRAFT to OPEN, OPEN to SETTLED, DRAFT or OPEN to VOID. Voiding clears the
+- * claim's number; the number it had is kept for the audit line.
++ * claim's number; the number it had is kept for the audit line. Settling fixes the claim's due: its amount at its
++ * person's grade's rate now, rounded half up to two decimals (left live when the grade has no rate).
+  */
+ public class ApplyClaimStatus {
+-    public void apply(@Val Claim claim, @Val ClaimStatusChange change, Out<Claim> changed, Out<ClaimNumber> number)
+-            throws InvalidClaimStatusException {
++    public void apply(@Val Claim claim, @Val ClaimStatusChange change, PersonRepository people, RateRepository rates,
++            Out<Claim> changed, Out<ClaimNumber> number) throws InvalidClaimStatusException {
+         boolean allowed = switch (change.to()) {
+             case OPEN -> claim.status() == ClaimStatus.DRAFT;
+             case SETTLED -> claim.status() == ClaimStatus.OPEN;
+@@ -21,6 +28,14 @@ public class ApplyClaimStatus {
+         }
+         number.set(new ClaimNumber(claim.number()));
+         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
+-                claim.note(), change.to(), change.to() == ClaimStatus.VOID ? null : claim.number()));
++                claim.note(), change.to(), change.to() == ClaimStatus.VOID ? null : claim.number(),
++                change.to() == ClaimStatus.SETTLED ? due(claim, people, rates) : claim.due()));
++    }
++
++    private static BigDecimal due(Claim claim, PersonRepository people, RateRepository rates) {
++        Person person = people.find(claim.sheetId(), claim.personId());
++        Rate rate = person == null ? null : rates.find(claim.sheetId(), person.grade());
++        return rate == null ? null
++                : claim.amount().multiply(rate.rate()).movePointLeft(2).setScale(2, RoundingMode.HALF_UP);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 03971acda..a748cfd68 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -5,8 +5,9 @@ import java.time.LocalDate;
+ 
+ /**
+  * A claim of a person on a sheet: an amount (0.00 or more, two decimals), a date, a note (may be empty), its status
+- * and its number (given when opened; null for a draft or a voided claim).
++ * its number (given when opened; null for a draft or a voided claim) and its due fixed when settled (null when not
++ * settled, or settled while its grade had no rate).
+  */
+ public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+-        ClaimStatus status, Long number) {
++        ClaimStatus status, Long number, BigDecimal due) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 7b64b1c1c..beb8cf92a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class ClaimRepository {
+ 
+-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number";
++    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due";
+ 
+     private final JdbcTemplate jdbc;
+     private final DataSource dataSource;
+@@ -52,7 +52,7 @@ public class ClaimRepository {
+             ps.setString(5, note);
+             return ps;
+         }, keys);
+-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null);
++        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null);
+     }
+ 
+     public void update(Claim claim) {
+@@ -61,12 +61,12 @@ public class ClaimRepository {
+     }
+ 
+     /**
+-     * Stores the claim's status and number, but only while its status is still {@code from}; false when another
++     * Stores the claim's status, number and fixed due, but only while its status is still {@code from}; false when another
+      * change got there first (nothing is written).
+      */
+     public boolean updateStatus(Claim claim, ClaimStatus from) {
+-        return jdbc.update("UPDATE claim SET status = ?, claim_number = ? WHERE sheet_id = ? AND id = ? AND status = ?",
+-                claim.status().name(), claim.number(), claim.sheetId(), claim.id(), from.name()) == 1;
++        return jdbc.update("UPDATE claim SET status = ?, claim_number = ?, due = ? WHERE sheet_id = ? AND id = ? AND status = ?",
++                claim.status().name(), claim.number(), claim.due(), claim.sheetId(), claim.id(), from.name()) == 1;
+     }
+ 
+     /**
+@@ -99,9 +99,10 @@ public class ClaimRepository {
+     }
+ 
+     private static Claim map(ResultSet rs, int n) throws SQLException {
++        BigDecimal due = rs.getBigDecimal("due");
+         return new Claim(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
+                 rs.getBigDecimal("amount").setScale(2), rs.getObject("claim_date", LocalDate.class),
+                 rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
+-                rs.getObject("claim_number", Long.class));
++                rs.getObject("claim_number", Long.class), due == null ? null : due.setScale(2));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index 38e6c3787..aa29c7f61 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -1,11 +1,13 @@
+ package net.officefloor.hq.app.claim;
+ 
+ /** A claim as sent to the screen: the amount as text with two decimals, so it is never rounded through a float;
+- *  the number is null when the claim has none. */
++ *  the number is null when the claim has none; due is the due fixed when settled (two decimals), null while it is
++ *  live. */
+ public record ClaimResponse(long id, String sheetId, long personId, String amount, String date, String note,
+-        String status, Long number) {
++        String status, Long number, String due) {
+     public static ClaimResponse from(Claim claim) {
+         return new ClaimResponse(claim.id(), claim.sheetId(), claim.personId(), claim.amount().toPlainString(),
+-                claim.date().toString(), claim.note(), claim.status().name(), claim.number());
++                claim.date().toString(), claim.note(), claim.status().name(), claim.number(),
++                claim.due() == null ? null : claim.due().toPlainString());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
+index 7a8f580c2..0bb8f8159 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
+@@ -6,7 +6,8 @@ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Writes CLAIM_OPENED, CLAIM_SETTLED or CLAIM_VOIDED to the audit file once the status is stored, ending
+- * with number=<number> when the claim has (or, voided, had) one. */
++ * with number=<number> when the claim has (or, voided, had) one; CLAIM_SETTLED then ends with the due it fixed
++ * (due=n/a when its grade had no rate). */
+ public class RecordClaimStatusChanged {
+     public void record(@Val Claim claim, @Val ClaimStatusChange change, @Val ClaimNumber number,
+             PersonRepository people, Audit audit) {
+@@ -19,6 +20,8 @@ public class RecordClaimStatusChanged {
+         Person person = people.find(claim.sheetId(), claim.personId());
+         audit.record(event + " sheet=" + claim.sheetId() + " by=" + change.by() + " person="
+                 + (person == null ? "" : person.name()) + " amount=" + claim.amount().toPlainString()
+-                + " date=" + claim.date() + (number.value() == null ? "" : " number=" + number.value()));
++                + " date=" + claim.date() + (number.value() == null ? "" : " number=" + number.value())
++                + (claim.status() == ClaimStatus.SETTLED
++                        ? " due=" + (claim.due() == null ? "n/a" : claim.due().toPlainString()) : ""));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
+index 22fd99919..465174e33 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
+@@ -14,7 +14,7 @@ public class SaveClaimStatus {
+         if (claim.status() == ClaimStatus.OPEN) {
+             long next = claims.nextNumber(claim.sheetId());
+             toSave = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
+-                    claim.note(), claim.status(), next);
++                    claim.note(), claim.status(), next, claim.due());
+             number.set(new ClaimNumber(next));
+         }
+         ClaimStatus from = switch (claim.status()) {
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index edfd61f3f..659bea225 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -21,6 +21,13 @@ public class RateRepository {
+                 RateRepository::map, sheetId);
+     }
+ 
++    /** The sheet's rate for a grade, or null when the grade has none. */
++    public Rate find(String sheetId, String grade) {
++        List<Rate> found = jdbc.query("SELECT sheet_id, grade, rate FROM rate WHERE sheet_id = ? AND grade = ?",
++                RateRepository::map, sheetId, grade);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
+     public Rate save(Rate rate) {
+         jdbc.update("MERGE INTO rate (sheet_id, grade, rate) KEY (sheet_id, grade) VALUES (?, ?, ?)",
+                 rate.sheetId(), rate.grade(), rate.rate());
+diff --git a/src/main/resources/db/migration/V8__claim_due.sql b/src/main/resources/db/migration/V8__claim_due.sql
+new file mode 100644
+index 000000000..2fdb94d64
+--- /dev/null
++++ b/src/main/resources/db/migration/V8__claim_due.sql
+@@ -0,0 +1,4 @@
++-- A settled claim's due, fixed when it is settled: its amount at its person's grade's rate at that
++-- moment, so later rate changes do not alter it. Null while the claim is not settled, and for a
++-- claim settled while its grade had no rate (its due stays live).
++ALTER TABLE claim ADD COLUMN due DECIMAL(19, 2);
