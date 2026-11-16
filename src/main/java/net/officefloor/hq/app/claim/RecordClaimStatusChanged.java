@@ -5,9 +5,11 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.plugin.variable.Val;
 
-/** Writes CLAIM_OPENED, CLAIM_SETTLED or CLAIM_VOIDED to the audit file once the status is stored. */
+/** Writes CLAIM_OPENED, CLAIM_SETTLED or CLAIM_VOIDED to the audit file once the status is stored, ending
+ * with number=<number> when the claim has (or, voided, had) one. */
 public class RecordClaimStatusChanged {
-    public void record(@Val Claim claim, @Val ClaimStatusChange change, PersonRepository people, Audit audit) {
+    public void record(@Val Claim claim, @Val ClaimStatusChange change, @Val ClaimNumber number,
+            PersonRepository people, Audit audit) {
         String event = switch (claim.status()) {
             case OPEN -> "CLAIM_OPENED";
             case SETTLED -> "CLAIM_SETTLED";
@@ -17,6 +19,6 @@ public class RecordClaimStatusChanged {
         Person person = people.find(claim.sheetId(), claim.personId());
         audit.record(event + " sheet=" + claim.sheetId() + " by=" + change.by() + " person="
                 + (person == null ? "" : person.name()) + " amount=" + claim.amount().toPlainString()
-                + " date=" + claim.date());
+                + " date=" + claim.date() + (number.value() == null ? "" : " number=" + number.value()));
     }
 }

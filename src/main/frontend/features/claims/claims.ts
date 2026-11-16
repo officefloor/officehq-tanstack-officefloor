@@ -4,7 +4,8 @@ import { getJson } from '../../api/http';
 /** A claim's status: DRAFT when added, then OPEN and SETTLED; a DRAFT or OPEN claim may be VOID. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
-/** A claim of a person. `amount` is text with two decimals (never a float); `date` is yyyy-MM-dd. */
+/** A claim of a person. `amount` is text with two decimals (never a float); `date` is yyyy-MM-dd; `number` is given
+ *  when the claim is opened (null for a draft or a voided claim). */
 export type Claim = {
   id: number;
   sheetId: string;
@@ -13,6 +14,7 @@ export type Claim = {
   date: string;
   note: string;
   status: ClaimStatus;
+  number: number | null;
 };
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'];
