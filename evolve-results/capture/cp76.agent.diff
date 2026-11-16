@@ -1,0 +1,54 @@
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RecordSnapshot.java b/src/main/java/net/officefloor/hq/app/sheet/RecordSnapshot.java
+new file mode 100644
+index 000000000..461712653
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RecordSnapshot.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app.sheet;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.rollup.Figures;
++import net.officefloor.hq.app.rollup.RollupBefore;
++import net.officefloor.plugin.variable.Val;
++
++/** Before a new today takes effect, writes SNAPSHOT for every person, in list order, with their due-total as it stood
++ *  on the day being left — ahead of any period it closes and the figures it moves. A today equal to the stored one
++ *  changes nothing and writes nothing. */
++public class RecordSnapshot {
++    public void record(@Val Sheet sheet, @Val LocalDate today, @Val TodayBy by, @Val RollupBefore before, Audit audit) {
++        if (today.equals(sheet.today())) {
++            return;
++        }
++        for (Figures f : before.figures().values()) {
++            audit.record("SNAPSHOT sheet=" + sheet.id() + " by=" + by.by() + " name=" + f.name() + " due-total="
++                    + f.dueTotal());
++        }
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index 8e3fe935a..56dd9d73f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -1,7 +1,9 @@
+ # PUT /api/sheets/{sheetId}/today — change the sheet's today. A body that is not a real date is a
+ # 400 and writes nothing. Once stored, every open period whose to-date plus the sheet's grace days is before the new
+ # today is closed (PERIOD_CLOSED ... auto=yes), before the figures it moved are written. Responds with the sheet as
+-# stored. A today that differs from the stored one releases every claim's lock (closes every open claim editor).
++# stored. A today that differs from the stored one first writes SNAPSHOT for every person, in list order, with
++# their due-total on the day being left, before any period closes; it also releases every claim's lock (closes every
++# open claim editor).
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateToday
+   next: rollup
+@@ -12,6 +14,10 @@ rollup:
+ load:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
++  next: snapshot
++snapshot:
++  class: net.officefloor.hq.app.sheet.RecordSnapshot
++  govern: [ transaction ]
+   next: unlock
+ unlock:
+   class: net.officefloor.hq.app.claim.ReleaseClaimLocks
