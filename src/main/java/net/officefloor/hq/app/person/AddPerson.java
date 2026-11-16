@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.person;
 
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
@@ -10,9 +11,11 @@ public class AddPerson {
     public void add(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by,
             @Val PersonRequest request, SheetRepository sheets, PersonRepository people,
+            GradeRepository grades,
             Out<Person> person) throws InvalidPersonException {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
+        grades.requireChoosable(id, request.grade());
         if (people.nameTaken(id, request.name(), null) || people.nameTakenInTree(id, request.name())) {
             throw new InvalidPersonException("The name is already in use");
         }

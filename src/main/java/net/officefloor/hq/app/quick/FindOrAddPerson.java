@@ -2,6 +2,7 @@ package net.officefloor.hq.app.quick;
 
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.PeriodClosedException;
 import net.officefloor.hq.app.period.PeriodRepository;
@@ -17,7 +18,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** The person named (ignoring case and surrounding spaces), or a new one with the sheet's default grade, recorded as
+/** The person named (ignoring case and surrounding spaces), or a new one with the sheet's default grade (A when it is retired), recorded as
  *  the person form records an add. The claim's own rules are checked first, so a claim that would
  *  be refused adds no one. */
 public class FindOrAddPerson {
@@ -25,7 +26,7 @@ public class FindOrAddPerson {
             @RequestParam(name = "by", required = false) String by, @Val QuickAddName name,
             @Val Rollup before, SheetRepository sheets, PersonRepository people,
             ClaimRepository claims, RateRepository rates, PeriodRepository periods,
-            SettingRepository settings, HolidayRepository holidays, Audit audit,
+            SettingRepository settings, HolidayRepository holidays, GradeRepository grades, Audit audit,
             Out<Person> person) throws PeriodClosedException, InvalidPersonException {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
@@ -38,6 +39,10 @@ public class FindOrAddPerson {
             throw new InvalidPersonException("The name is already in use on the sheet's tree");
         }
         String grade = settings.defaultGrade(id);
+        // A retired default grade cannot be chosen: the new person falls back to A.
+        if (grades.isRetired(id, grade)) {
+            grade = "A";
+        }
         // The claim would be refused when its due-by (the default grade's terms in business days after its date) falls in a closed period.
         java.time.LocalDate date = settings.entryDate(id);
         periods.requireOpen(id, holidays.dueBy(id, date, settings.terms(id, grade, sheets.today(id).toString())).toString());

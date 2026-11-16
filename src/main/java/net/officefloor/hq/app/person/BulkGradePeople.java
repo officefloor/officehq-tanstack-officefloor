@@ -5,6 +5,7 @@ import java.util.HashSet;
 import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.Role;
@@ -26,8 +27,8 @@ public class BulkGradePeople {
     public void grade(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by, @Val BulkGradeRequest request,
             PersonRepository people, ClaimRepository claims, RateRepository rates,
-            SheetRepository sheets, SettingRepository settings, RoleRepository roles, Audit audit, Out<BulkGradeResult> result)
-            throws PersonConflictException, SheetArchivedException {
+            SheetRepository sheets, SettingRepository settings, RoleRepository roles, GradeRepository grades, Audit audit, Out<BulkGradeResult> result)
+            throws PersonConflictException, SheetArchivedException, InvalidPersonException {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
         if (sheets.isArchived(id)) {
@@ -38,6 +39,15 @@ public class BulkGradePeople {
             return;
         }
         Set<Long> selected = new HashSet<>(request.personIds());
+        // A retired grade cannot be given: refused before anyone is graded.
+        if (grades.isRetired(id, request.grade())) {
+            for (Person listed : people.list(id)) {
+                if (selected.contains(listed.getId())
+                        && (request.from() != null || !request.grade().equals(listed.getGrade()))) {
+                    throw new InvalidPersonException("The grade is retired: " + request.grade());
+                }
+            }
+        }
         LocalDate today = sheets.today(id);
         int graded = 0;
         Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);

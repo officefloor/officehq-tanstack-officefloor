@@ -8,6 +8,7 @@ import java.util.Locale;
 import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.SettingRepository;
@@ -27,7 +28,7 @@ public class ImportPeople {
     public void importPeople(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by, @Val ImportLines lines,
             PersonRepository people, SheetRepository sheets, ClaimRepository claims, RateRepository rates,
-            SettingRepository settings, Audit audit, Out<ImportResult> result) throws InvalidPersonException {
+            SettingRepository settings, GradeRepository grades, Audit audit, Out<ImportResult> result) throws InvalidPersonException {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
         List<Person> matched = new ArrayList<>();
@@ -36,6 +37,10 @@ public class ImportPeople {
         for (PersonRequest request : lines.people()) {
             Person person = people.findByName(id, request.name());
             matched.add(person);
+            // A retired grade cannot be chosen: for a new person, or as a change of a person's grade.
+            if (person == null || !request.grade().equals(person.getGrade())) {
+                grades.requireChoosable(id, request.grade());
+            }
             if (person == null) {
                 if (people.nameTakenInTree(id, request.name())) {
                     throw new InvalidPersonException("The name is already in use: " + request.name());

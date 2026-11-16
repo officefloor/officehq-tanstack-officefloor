@@ -1,14 +1,19 @@
 package net.officefloor.hq.app.person;
 
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 
 public class ApplyPerson {
     public void apply(@Val PersonRequest request, @Val Person person, PersonRepository people,
-            SheetRepository sheets)
+            SheetRepository sheets, GradeRepository grades)
             throws InvalidPersonException, PersonConflictException {
         if (request.version() != null && request.version() != person.getVersion()) {
             throw new PersonConflictException(person.getId());
+        }
+        // A retired grade cannot be given; a save leaving it as it was, with no from-date, gives none.
+        if (request.gradeFrom() != null || !request.grade().equals(person.getGrade())) {
+            grades.requireChoosable(person.getSheetId(), request.grade());
         }
         if (people.nameTaken(person.getSheetId(), request.name(), person.getId())) {
             throw new InvalidPersonException("The name is already in use");

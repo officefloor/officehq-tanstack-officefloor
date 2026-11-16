@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
 
 /**
  * Copies a sheet into a new, never used one. The clone gets the sheet's today, settings, roles, rates,
- * holidays, void reasons, templates and tags, its people (with their grades, terms, contacts, aliases,
+ * holidays, void reasons, templates, tags and retired grades, its people (with their grades, terms, contacts, aliases,
  * holds, retirements and patrons), pools with their members, crews with their members, periods (all open, their fixed totals
  * dropped) and claims (with their status, frozen figures, dates, notes, tags, logs and comments) and
  * the history the sheet keeps of them. Statements are not copied: every statement count starts at 0
@@ -45,7 +45,7 @@ public class SheetCloner {
         jdbc.update("INSERT INTO sheet_source (sheet_id, source_id) VALUES (?, ?)", to, from);
         Map<String, Object> none = Map.of();
         for (String table : List.of("sheet_setting", "setting_history", "sheet_role", "rate", "rate_history", "rate_version",
-                "holiday", "void_reason", "claim_template", "sheet_tag")) {
+                "holiday", "void_reason", "claim_template", "sheet_tag", "grade_retired")) {
             copy(table, from, to, Map.of(), none);
         }
         Map<String, Object> unstated = new HashMap<>();
