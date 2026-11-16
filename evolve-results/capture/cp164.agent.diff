@@ -1,0 +1,143 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index e5a32e5e9..bba142f2f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -31,6 +31,6 @@ public class ApplyClaim {
+         ClaimRules.checkRef(claim.sheetId(), values, claim.id(), claims);
+         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), values.amount(), date, values.note(), claim.status(),
+                 claim.number(), claim.due(), claim.openedBy(), claim.stated(), claim.statedDue(),
+-                Corrections.check(claim.sheetId(), claim.personId(), values, claims), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), values.ref(), values.tags()));
++                Corrections.check(claim.sheetId(), claim.personId(), values, claim.id(), claims), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), values.ref(), values.tags()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Corrections.java b/src/main/java/net/officefloor/hq/app/claim/Corrections.java
+index 7e14a4f03..2cb35a757 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Corrections.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Corrections.java
+@@ -1,8 +1,12 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
++
+ /**
+  * A claim with a negative amount is a correction: allowed only when it names, by number, a SETTLED claim of the same
+- * person that it corrects. Any other claim corrects nothing (a number given with it is not kept).
++ * person that it corrects, and only up to what remains of that claim: its amount less the amounts of the corrections
++ * already made against it (VOID or DELETED ones left out). Any other claim corrects nothing (a number given with it is not
++ * kept).
+  */
+ public final class Corrections {
+ 
+@@ -13,6 +17,13 @@ public final class Corrections {
+      *  not name a SETTLED claim of the person is refused. */
+     public static String check(String sheetId, long personId, ClaimValues values, ClaimRepository claims)
+             throws InvalidClaimException {
++        return check(sheetId, personId, values, null, claims);
++    }
++
++    /** As check, for the claim {@code self} being edited (null for an add), whose own amount does not count against
++     *  what remains of the claim it corrects; a correction larger than what remains is refused. */
++    public static String check(String sheetId, long personId, ClaimValues values, Long self, ClaimRepository claims)
++            throws InvalidClaimException {
+         if (values.amount().signum() >= 0) {
+             return null;
+         }
+@@ -23,6 +34,23 @@ public final class Corrections {
+         if (corrected == null || corrected.status() != ClaimStatus.SETTLED) {
+             throw new InvalidClaimException("A correction must name a settled claim of the same person");
+         }
++        if (remaining(corrected, self, claims).add(values.amount()).signum() < 0) {
++            throw new InvalidClaimException("A correction may not exceed what remains of the claim it corrects");
++        }
+         return values.corrects();
+     }
++
++    /** The claim's amount less the amounts of the corrections made against it (VOID or DELETED ones, and {@code self},
++     *  left out). */
++    private static BigDecimal remaining(Claim corrected, Long self, ClaimRepository claims) {
++        BigDecimal remaining = corrected.amount();
++        for (Claim c : claims.list(corrected.sheetId())) {
++            if (c.personId() == corrected.personId() && corrected.number().equals(c.corrects())
++                    && c.status() != ClaimStatus.VOID && c.status() != ClaimStatus.DELETED
++                    && (self == null || c.id() != self)) {
++                remaining = remaining.add(c.amount());
++            }
++        }
++        return remaining;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index b3a053f22..8daeecdb9 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -38,6 +38,24 @@ public class RateRepository {
+         return chain;
+     }
+ 
++    /** As chain, as of a date: the parent the sheet had then (see SettingRepository#parentAsOf), none when it had
++     *  none, then that parent's ancestors as they are now. */
++    public List<String> chainAsOf(String sheetId, LocalDate asOf) {
++        List<String> chain = new ArrayList<>();
++        chain.add(sheetId);
++        String parent = settings.parentAsOf(sheetId, asOf);
++        if (parent != null && !parent.equals(sheetId)) {
++            chain.add(parent);
++            for (String up : settings.ancestors(parent, SettingRepository.PARENT_LEVELS - 1)) {
++                if (up.equals(sheetId) || chain.contains(up)) {
++                    break;
++                }
++                chain.add(up);
++            }
++        }
++        return chain;
++    }
++
+     /** The sheet's rates, by grade, then from-date (one with none first). */
+     public List<Rate> list(String sheetId) {
+         return jdbc.query("SELECT " + VERSIONED + " FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST",
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+index 690c4fb2b..7419faa0a 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+@@ -12,7 +12,8 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** The sheet's rates, by grade, then those of its parent, the parent's parent, up to three levels up (each with its
+  *  level), which apply to a grade on a date the sheet has no rate for; read as of a date (see AsOf), the sheet's own
+- *  as they stood then (see SheetAsOf) and those inherited as they are now (a parent keeps its own today, so the date
++ *  as they stood then (see SheetAsOf) and those inherited from the parent it had then (see RateRepository#chainAsOf)
++ *  as they are now (a parent keeps its own today, so the date
+  *  says nothing of when its rates were stored). */
+ public class RespondWithRates {
+     public void respond(@PathVariable("sheetId") String sheetId,
+@@ -20,7 +21,7 @@ public class RespondWithRates {
+             SettingRepository settings, ObjectResponse<List<RateResponse>> response) {
+         LocalDate date = AsOf.parse(asOf);
+         List<RateResponse> shown = new ArrayList<>();
+-        List<String> chain = rates.chain(sheetId.trim());
++        List<String> chain = date == null ? rates.chain(sheetId.trim()) : rates.chainAsOf(sheetId.trim(), date);
+         if (date != null) {
+             SheetAsOf sheet = SheetAsOf.read(chain.get(0), date, rates, settings);
+             for (Rate rate : sheet.rates()) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index df3980c1f..7105cb3ad 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -301,6 +301,18 @@ public class SettingRepository {
+         return value(sheetId, PARENT);
+     }
+ 
++    /** The sheet's parent sheet id as it stood once every setting stored while its today was on or before the date
++     *  was stored (see storedBy), or null when it had none then. */
++    public String parentAsOf(String sheetId, LocalDate madeOn) {
++        String value = null;
++        for (Setting s : storedBy(sheetId, madeOn)) {
++            if (PARENT.equals(s.key())) {
++                value = s.value();
++            }
++        }
++        return value == null || value.isBlank() ? null : value.trim();
++    }
++
+     /** The sheet's ancestors, nearest first, up to the given number of levels (stopping at a sheet already seen). */
+     public List<String> ancestors(String sheetId, int levels) {
+         List<String> found = new java.util.ArrayList<>();
