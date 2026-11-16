@@ -1,0 +1,319 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 4fc11f309..b9e26ac31 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -7,7 +7,9 @@ import { SheetPage } from '../../slots/defs/sheetPage';
+ import { usePeople, type Person } from '../people/people';
+ import { periodOf, usePeriods } from '../periods/periods';
+ import { claimDue, rateFor, useRates } from '../rates/rates';
+-import { useFloor } from '../settings/settings';
++import { dueBy, isOverdue } from '../overdue/overdue';
++import { useSheetToday } from '../session/session';
++import { useFloor, useTerms } from '../settings/settings';
+ import { claimsKey, live, total, useClaims, type Claim } from './claims';
+ 
+ type Values = { amount: string; date: string; note: string };
+@@ -24,7 +26,7 @@ function ClaimsHead() {
+ 
+ type Action = 'open' | 'settle' | 'void';
+ 
+-/** One claim: its values, status, due and the period its date falls in, with the buttons that edit it or change its status. An action
++/** One claim: its values, status, due, due-by (its date plus the sheet's terms), whether it is overdue, and the period its date falls in, with the buttons that edit it or change its status. An action
+  *  the status does not allow, or settling a claim the user opened, is refused by the server and shows the claim's
+  *  error. Only a DRAFT can be edited: Edit on any other claim shows the claim's error instead of opening the editor. */
+ function ClaimRow({
+@@ -48,6 +50,8 @@ function ClaimRow({
+ }) {
+   const queryClient = useQueryClient();
+   const periods = usePeriods(sheetId);
++  const terms = useTerms(sheetId);
++  const today = useSheetToday(sheetId);
+   const status = useMutation({
+     mutationFn: (action: Action) =>
+       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/status`, { action, by: user }),
+@@ -66,6 +70,8 @@ function ClaimRow({
+       <span data-testid="claim-amount">{c.amount}</span> <span data-testid="claim-date">{c.date}</span>{' '}
+       <span data-testid="claim-note">{c.note}</span>{' '}
+       <span data-testid="claim-due">{claimDue(c, rate, floor)}</span>{' '}
++      <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
++      <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
+       <span data-testid="claim-status">{c.status}</span>{' '}
+       <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
+       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
+diff --git a/src/main/frontend/features/overdue/overdue.slot.tsx b/src/main/frontend/features/overdue/overdue.slot.tsx
+new file mode 100644
+index 000000000..0aede6850
+--- /dev/null
++++ b/src/main/frontend/features/overdue/overdue.slot.tsx
+@@ -0,0 +1,59 @@
++import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
++import { SheetPage } from '../../slots/defs/sheetPage';
++import { live, useClaims } from '../claims/claims';
++import { usePeople, type Person } from '../people/people';
++import { sum, useRates } from '../rates/rates';
++import { useSheetToday } from '../session/session';
++import { useFloor, useTerms } from '../settings/settings';
++import { overdue } from './overdue';
++
++function OverdueHead() {
++  return (
++    <>
++      <th>Overdue</th>
++      <th>Overdue total</th>
++    </>
++  );
++}
++
++/** A person's overdue count and overdue-total, over their claims that count in the live totals. */
++function PersonOverdue({ sheetId, person }: { sheetId: string; person: Person }) {
++  const claims = useClaims(sheetId);
++  const rates = useRates(sheetId);
++  const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
++  const terms = useTerms(sheetId);
++  const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person]);
++  const o = overdue(mine, rates.data, person.grade, terms, today, floor);
++  return (
++    <>
++      <td data-testid="person-overdue-count">{o.count}</td>
++      <td data-testid="person-overdue-total">{o.total}</td>
++    </>
++  );
++}
++
++/** The sheet's overdue count and overdue-total: everyone's added up. */
++function OverdueTotal({ sheetId }: { sheetId: string }) {
++  const people = usePeople(sheetId);
++  const claims = useClaims(sheetId);
++  const rates = useRates(sheetId);
++  const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
++  const terms = useTerms(sheetId);
++  const all = (people.data ?? []).map((p) =>
++    overdue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p.grade, terms, today, floor),
++  );
++  return (
++    <p>
++      Overdue <span data-testid="rollup-overdue-count">{all.reduce((n, o) => n + o.count, 0)}</span>, total{' '}
++      <span data-testid="rollup-overdue-total">{sum(all.map((o) => o.total))}</span>
++    </p>
++  );
++}
++
++export const contributions = [
++  PeopleHead.fill({ order: 25, Component: OverdueHead }),
++  PersonRow.fill({ order: 25, Component: PersonOverdue }),
++  SheetPage.fill({ order: 35, Component: OverdueTotal }),
++];
+diff --git a/src/main/frontend/features/overdue/overdue.ts b/src/main/frontend/features/overdue/overdue.ts
+new file mode 100644
+index 000000000..68e02342f
+--- /dev/null
++++ b/src/main/frontend/features/overdue/overdue.ts
+@@ -0,0 +1,26 @@
++import type { Claim } from '../claims/claims';
++import { claimDue, rateFor, sum, type Rate } from '../rates/rates';
++
++/** A claim's due-by (yyyy-MM-dd): its date plus the sheet's terms in days. */
++export function dueBy(claim: Claim, terms: number): string {
++  const [y, m, d] = claim.date.split('-').map(Number);
++  return new Date(Date.UTC(y, m - 1, d + terms)).toISOString().slice(0, 10);
++}
++
++/** Whether a claim is overdue: it is OPEN and its due-by is before the sheet's today. */
++export function isOverdue(claim: Claim, terms: number, today: string): boolean {
++  return claim.status === 'OPEN' && today !== '' && dueBy(claim, terms) < today;
++}
++
++/** The overdue count and overdue-total (their dues added up, skipping n/a) of the given claims that count. */
++export function overdue(
++  claims: Claim[],
++  rates: Rate[] | undefined,
++  grade: string,
++  terms: number,
++  today: string,
++  floor: string,
++): { count: number; total: string } {
++  const late = claims.filter((c) => isOverdue(c, terms, today));
++  return { count: late.length, total: sum(late.map((c) => claimDue(c, rateFor(rates, grade, c.date), floor))) };
++}
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index 6eece4f33..4212df4ad 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -3,18 +3,20 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { SheetPage } from '../../slots/defs/sheetPage';
+-import { DEFAULT_FLOOR, settingsKey, useSettings, type Setting } from './settings';
++import { DEFAULT_FLOOR, DEFAULT_TERMS, settingsKey, useSettings, type Setting } from './settings';
+ 
+-type Key = 'clerk-limit' | 'floor';
+-const KEYS: Key[] = ['clerk-limit', 'floor'];
++type Key = 'clerk-limit' | 'floor' | 'terms';
++const KEYS: Key[] = ['clerk-limit', 'floor', 'terms'];
++const BLANK: Record<Key, string> = { 'clerk-limit': '', floor: '', terms: '' };
+ 
+ /** The sheet's settings: the clerk limit (the most a clerk may settle a claim's due for; blank for no limit) and the
+- *  floor (the least a claim's live due may be; 1.00 until set). Saving stores the fields entered since the last save
++ *  floor (the least a claim's live due may be; 1.00 until set) and the terms (the days from a claim's date to its
++ *  due-by; 14 until set). Saving stores the fields entered since the last save
+  *  (a field focused counts, so a blank typed over a blank still saves), the clerk limit when none was. */
+ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+   const settings = useSettings(sheetId);
+   const queryClient = useQueryClient();
+-  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '' });
++  const [values, setValues] = useState<Record<Key, string>>(BLANK);
+   const touched = useRef(new Set<Key>());
+ 
+   const submit = useSubmitOnce();
+@@ -25,7 +27,7 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+       }
+     },
+     onSuccess: () => {
+-      setValues({ 'clerk-limit': '', floor: '' });
++      setValues(BLANK);
+       touched.current.clear();
+     },
+     onSettled: () => {
+@@ -35,12 +37,12 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+   });
+   const current = (key: Key) => settings.data?.find((s) => s.key === key)?.value ?? '';
+ 
+-  const field = (key: Key, label: string) => (
++  const field = (key: Key, label: string, inputMode: 'decimal' | 'numeric' = 'decimal') => (
+     <label>
+       {label}{' '}
+       <input
+         data-testid={`setting-${key}`}
+-        inputMode="decimal"
++        inputMode={inputMode}
+         value={values[key]}
+         onFocus={() => touched.current.add(key)}
+         onChange={(e) => {
+@@ -67,13 +69,14 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+         }}
+       >
+         {field('clerk-limit', 'Clerk limit')} {field('floor', 'Floor')}{' '}
++        {field('terms', 'Terms (days)', 'numeric')}{' '}
+         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
+           Save settings
+         </button>
+         {save.isError && (
+           <span data-testid="settings-error">
+             The clerk limit must be an amount with up to two decimals, or blank; the floor an amount with up to two
+-            decimals.
++            decimals; the terms a whole number of days, 0 or more.
+           </span>
+         )}
+       </form>
+@@ -84,6 +87,9 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+       <p>
+         Floor in force <span data-testid="setting-floor-current">{current('floor') || DEFAULT_FLOOR}</span>
+       </p>
++      <p>
++        Terms in force <span data-testid="setting-terms-current">{current('terms') || DEFAULT_TERMS}</span>
++      </p>
+     </section>
+   );
+ }
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index 0e85b64ca..24d0a5aba 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -1,7 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+-/** A sheet setting: `value` is text (clerk-limit, floor: an amount with two decimals), null when blank. */
++/** A sheet setting: `value` is text (clerk-limit, floor: an amount with two decimals; terms: a whole number of days), null when blank. */
+ export type Setting = { sheetId: string; key: string; value: string | null };
+ 
+ export const settingsKey = (sheetId: string) => ['sheet', sheetId, 'settings'];
+@@ -22,3 +22,12 @@ export function useFloor(sheetId: string): string {
+   const settings = useSettings(sheetId);
+   return settings.data?.find((s) => s.key === 'floor')?.value ?? DEFAULT_FLOOR;
+ }
++
++/** The terms a sheet has until they are set. */
++export const DEFAULT_TERMS = '14';
++
++/** The sheet's terms: the days from a claim's date to its due-by. */
++export function useTerms(sheetId: string): number {
++  const settings = useSettings(sheetId);
++  return Number(settings.data?.find((s) => s.key === 'terms')?.value ?? DEFAULT_TERMS);
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 2ee74a718..cf9a86d3d 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -20,6 +20,12 @@ public class SettingRepository {
+     /** The floor a sheet has until one is set. */
+     public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
+ 
++    /** The days a claim has from its date until it is due by; 14 until set. */
++    public static final String TERMS = "terms";
++
++    /** The terms a sheet has until they are set. */
++    public static final int DEFAULT_TERMS = 14;
++
+     private final JdbcTemplate jdbc;
+ 
+     public SettingRepository(JdbcTemplate jdbc) {
+@@ -51,6 +57,12 @@ public class SettingRepository {
+         return value == null ? DEFAULT_FLOOR : new BigDecimal(value);
+     }
+ 
++    /** The sheet's terms: the days a claim has from its date until it is due by. */
++    public int terms(String sheetId) {
++        String value = value(sheetId, TERMS);
++        return value == null ? DEFAULT_TERMS : Integer.parseInt(value);
++    }
++
+     /** Stores the setting, replacing the value it had. */
+     public Setting save(Setting setting) {
+         jdbc.update("DELETE FROM setting WHERE sheet_id = ? AND setting_key = ?", setting.sheetId(), setting.key());
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 772429362..67aefc3c9 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -7,18 +7,29 @@ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /** Reads the body: the key is clerk-limit, its value blank (no limit) or an amount 0.00 or more with up to two
+- *  decimals; or floor, its value such an amount (not blank). Kept with two decimals. */
++ *  decimals; or floor, its value such an amount (not blank), both kept with two decimals; or terms, its value a
++ *  whole number of days 0 or more (not blank), kept without leading zeros. */
+ public class ValidateSetting {
+     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
++    private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
+ 
+     public void validate(@PathVariable("key") String key, @RequestBody SettingRequest request, Out<SettingValues> values)
+             throws InvalidSettingException {
+         String k = key == null ? "" : key.trim();
+         boolean floor = SettingRepository.FLOOR.equals(k);
+-        if (!SettingRepository.CLERK_LIMIT.equals(k) && !floor) {
++        boolean terms = SettingRepository.TERMS.equals(k);
++        if (!SettingRepository.CLERK_LIMIT.equals(k) && !floor && !terms) {
+             throw new InvalidSettingException("Unknown setting " + k);
+         }
+         String value = request == null || request.value() == null ? "" : request.value().trim();
++        String by = request == null || request.by() == null ? "" : request.by().trim();
++        if (terms) {
++            if (!DAYS.matcher(value).matches()) {
++                throw new InvalidSettingException("The terms must be a whole number of days, 0 or more");
++            }
++            values.set(new SettingValues(k, String.valueOf(Integer.parseInt(value)), by));
++            return;
++        }
+         if (floor && value.isEmpty()) {
+             throw new InvalidSettingException("The floor must be an amount with up to two decimals");
+         }
+@@ -27,6 +38,6 @@ public class ValidateSetting {
+                     : "The clerk limit must be an amount with up to two decimals, or blank");
+         }
+         values.set(new SettingValues(k, value.isEmpty() ? null : new BigDecimal(value).setScale(2).toPlainString(),
+-                request.by() == null ? "" : request.by().trim()));
++                by));
+     }
+ }
