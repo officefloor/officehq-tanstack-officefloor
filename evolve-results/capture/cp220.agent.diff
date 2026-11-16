@@ -1,0 +1,205 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index 704564fab..6008657c5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -1,8 +1,5 @@
+ package net.officefloor.hq.app.claim;
+ 
+-import java.math.BigDecimal;
+-import java.time.LocalDate;
+-import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.hq.app.period.PeriodClosedException;
+@@ -10,41 +7,12 @@ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** Edits a claim: only a DRAFT can be edited (to change an open claim, void it and add a new one),
+- *  and not to a date after its person's retirement date; a correction as when added. Its due-by (and so
+- *  its period) stays as fixed when it was added; refused when that falls in a closed period. Refused while
+- *  another user's open editor locks it. A claim with lines keeps their total as its amount: an edit typing
+- *  another amount is refused. */
++/** Edits a claim by the claim form's rules ({@link ClaimEdit}). */
+ public class ApplyClaim {
+     public void apply(@RequestParam(name = "by", required = false) String by, @Val ValidClaim request,
+             @Val Claim claim, SheetRepository sheets,
+             PeriodRepository periods, PersonRepository people, ClaimRepository claims, ClaimLineRepository lines)
+             throws ClaimStatusException, PeriodClosedException, InvalidClaimException, ClaimLockedException {
+-        if (!ClaimStatus.DRAFT.name().equals(claim.getStatus())) {
+-            throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be edited");
+-        }
+-        periods.requireOpen(claim.getSheetId(), claim.getDueBy());
+-        if (claim.getLockedBy() != null && !claim.getLockedBy().equals(by == null ? "" : by)) {
+-            throw new ClaimLockedException("The claim is being edited by " + claim.getLockedBy());
+-        }
+-        BigDecimal lined = lines.total(claim);
+-        if (lined != null && lined.compareTo(request.amount()) != 0) {
+-            throw new InvalidClaimException("A claim with lines has their total as its amount: " + lined.toPlainString());
+-        }
+-        LocalDate date = request.date() != null ? request.date() : sheets.today(claim.getSheetId());
+-        Person person = people.find(claim.getSheetId(), claim.getPersonId());
+-        if (person != null && person.retiredBefore(date)) {
+-            throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
+-        }
+-        String corrects = Corrections.check(request, claim.getSheetId(), claim.getPersonId(), claims, claim.getId());
+-        claims.requireRefFree(claim.getSheetId(), request.ref(), claim.getId());
+-        claim.setAmount(request.amount().toPlainString());
+-        claim.setCorrects(corrects);
+-        claim.setRoundDate(corrects == null ? null : claims.findByNumber(claim.getSheetId(), corrects).getDate());
+-        claim.setDate(date.toString());
+-        claim.setNote(request.note());
+-        claim.setRef(request.ref());
+-        claim.setTags(request.tags());
+-        claim.setEditedBy(by == null ? "" : by);
++        ClaimEdit.apply(by, request, claim, sheets, periods, people, claims, lines);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimEdit.java b/src/main/java/net/officefloor/hq/app/claim/ClaimEdit.java
+new file mode 100644
+index 000000000..78fb6aa72
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimEdit.java
+@@ -0,0 +1,51 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.hq.app.period.PeriodClosedException;
++import net.officefloor.hq.app.period.PeriodRepository;
++
++/** The claim form's rules for editing a claim: only a DRAFT can be edited (to change an open claim, void it and add a new one),
++ *  and not to a date after its person's retirement date; a correction as when added. Its due-by (and so
++ *  its period) stays as fixed when it was added; refused when that falls in a closed period. Refused while
++ *  another user's open editor locks it. A claim with lines keeps their total as its amount: an edit typing
++ *  another amount is refused. */
++public final class ClaimEdit {
++    private ClaimEdit() {
++    }
++
++    /** Applies the request to the claim, refused by the rules above. */
++    public static void apply(String by, ValidClaim request, Claim claim, SheetRepository sheets,
++            PeriodRepository periods, PersonRepository people, ClaimRepository claims, ClaimLineRepository lines)
++            throws ClaimStatusException, PeriodClosedException, InvalidClaimException, ClaimLockedException {
++        if (!ClaimStatus.DRAFT.name().equals(claim.getStatus())) {
++            throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be edited");
++        }
++        periods.requireOpen(claim.getSheetId(), claim.getDueBy());
++        if (claim.getLockedBy() != null && !claim.getLockedBy().equals(by == null ? "" : by)) {
++            throw new ClaimLockedException("The claim is being edited by " + claim.getLockedBy());
++        }
++        BigDecimal lined = lines.total(claim);
++        if (lined != null && lined.compareTo(request.amount()) != 0) {
++            throw new InvalidClaimException("A claim with lines has their total as its amount: " + lined.toPlainString());
++        }
++        LocalDate date = request.date() != null ? request.date() : sheets.today(claim.getSheetId());
++        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++        if (person != null && person.retiredBefore(date)) {
++            throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
++        }
++        String corrects = Corrections.check(request, claim.getSheetId(), claim.getPersonId(), claims, claim.getId());
++        claims.requireRefFree(claim.getSheetId(), request.ref(), claim.getId());
++        claim.setAmount(request.amount().toPlainString());
++        claim.setCorrects(corrects);
++        claim.setRoundDate(corrects == null ? null : claims.findByNumber(claim.getSheetId(), corrects).getDate());
++        claim.setDate(date.toString());
++        claim.setNote(request.note());
++        claim.setRef(request.ref());
++        claim.setTags(request.tags());
++        claim.setEditedBy(by == null ? "" : by);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/ChangePlanAmount.java b/src/main/java/net/officefloor/hq/app/plan/ChangePlanAmount.java
+index 77349b566..03e4d6461 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/ChangePlanAmount.java
++++ b/src/main/java/net/officefloor/hq/app/plan/ChangePlanAmount.java
+@@ -1,20 +1,54 @@
+ package net.officefloor.hq.app.plan;
+ 
+ import java.math.BigDecimal;
++import java.time.LocalDate;
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.ClaimEdit;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimLineRepository;
++import net.officefloor.hq.app.claim.ClaimLockedException;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.claim.ClaimStatus;
++import net.officefloor.hq.app.claim.ClaimStatusException;
++import net.officefloor.hq.app.claim.InvalidClaimException;
++import net.officefloor.hq.app.claim.ValidClaim;
++import net.officefloor.hq.app.period.PeriodClosedException;
++import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** Changes the plan's amount from the sheet's today (PLAN_CHANGED): the claims it makes from then on are of
+- *  the new amount, the claims it has made keep theirs. */
++ *  the new amount. The claims it has made that are still DRAFT take the new amount, each edited as the claim
++ *  form would edit it (CLAIM_EDITED); one the form would refuse, and a claim in any other status, keeps its own. */
+ public class ChangePlanAmount {
+     public void change(@RequestParam(name = "by", required = false) String by, @Val ValidPlanAmount request,
+-            @Val Plan plan, @Val Person person, PlanRepository plans, SheetRepository sheets, Audit audit) {
++            @Val Plan plan, @Val Person person, PlanRepository plans, SheetRepository sheets, Audit audit,
++            ClaimRepository claims, PeriodRepository periods, PersonRepository people, ClaimLineRepository lines) {
++        String user = by == null ? "" : by;
+         BigDecimal amount = request.amount();
+         plans.changeAmount(plan.id(), sheets.today(plan.sheetId()), amount);
+-        audit.record("PLAN_CHANGED sheet=" + plan.sheetId() + " by=" + (by == null ? "" : by)
++        audit.record("PLAN_CHANGED sheet=" + plan.sheetId() + " by=" + user
+                 + " name=" + person.getName() + " start=" + plan.start() + " amount=" + amount.toPlainString());
++        String on = plan.targetSheet() == null ? plan.sheetId() : plan.targetSheet();
++        for (long claimId : plans.madeClaims(plan.id())) {
++            Claim claim = claims.find(on, claimId);
++            if (claim == null || !ClaimStatus.DRAFT.name().equals(claim.getStatus())) continue;
++            ValidClaim edit = new ValidClaim(amount, LocalDate.parse(claim.getDate()), claim.getNote(),
++                    claim.getCorrects(), claim.getRef(), claim.getTags());
++            try {
++                ClaimEdit.apply(user, edit, claim, sheets, periods, people, claims, lines);
++            } catch (ClaimStatusException | PeriodClosedException | InvalidClaimException | ClaimLockedException refused) {
++                continue;
++            }
++            claims.update(claim);
++            Person owner = people.find(claim.getSheetId(), claim.getPersonId());
++            audit.record("CLAIM_EDITED sheet=" + claim.getSheetId() + " by=" + user
++                    + " person=" + (owner == null ? "" : owner.getName())
++                    + " amount=" + claim.getAmount() + " date=" + claim.getDate()
++                    + claim.getAuditNumber());
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java b/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java
+index ebe152690..dac0e2b6c 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java
+@@ -102,6 +102,12 @@ public class PlanRepository {
+                 (rs, n) -> rs.getDate("claim_date").toLocalDate(), planId));
+     }
+ 
++    /** The claims the plan has made, in the order it made them. */
++    public List<Long> madeClaims(long planId) {
++        return jdbc.query("SELECT claim_id FROM plan_claim WHERE plan_id = ? AND claim_id IS NOT NULL ORDER BY claim_id",
++                (rs, n) -> rs.getLong("claim_id"), planId);
++    }
++
+     /** Keeps that the plan made the claim for that plan date. */
+     public void recordMade(long planId, LocalDate date, long claimId) {
+         jdbc.update("INSERT INTO plan_claim (plan_id, claim_date, claim_id) VALUES (?, ?, ?)",
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml
+index 1b94cb104..a74e3fa1a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml
+@@ -1,5 +1,6 @@
+ # POST /api/sheets/{sheetId}/plans/{planId}/amount — change the plan's amount from the sheet's today; an amount
+-# the claim form would refuse (or negative) is refused. Claims already made keep their amount.
++# the claim form would refuse (or negative) is refused. Claims already made that are still DRAFT take the new
++# amount, each edited as the claim form would edit it (CLAIM_EDITED); the others keep theirs.
+ # A viewer may change nothing: refused before anything is read or written.
+ guard:
+   class: net.officefloor.hq.app.setting.RefuseViewer
