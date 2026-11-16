@@ -1,0 +1,184 @@
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index c5fa5d740..dc9d8e9cb 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -3,11 +3,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { SheetPage } from '../../slots/defs/sheetPage';
+-import { live, useClaims } from '../claims/claims';
+-import { gradeOn, usePeople } from '../people/people';
+-import { claimDue, rateFor, sum, useRates } from '../rates/rates';
++import { useClaims } from '../claims/claims';
++import { usePeople } from '../people/people';
++import { useRates } from '../rates/rates';
+ import { useFloor, useLate } from '../settings/settings';
+-import { periodsKey, usePeriods, type Period } from './periods';
++import { periodDue, periodsKey, usePeriods, type Period } from './periods';
+ 
+ type Values = { name: string; from: string; to: string };
+ const EMPTY: Values = { name: '', from: '', to: '' };
+@@ -40,17 +40,6 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
+     save.reset();
+   };
+ 
+-  const dueTotal = (p: Period) => {
+-    const byId = new Map((people.data ?? []).map((person) => [person.id, person]));
+-    const inPeriod = live(claims.data ?? [], people.data).filter((c) => p.from <= c.date && c.date <= p.to);
+-    return sum(
+-      inPeriod.map((c) => {
+-        const person = byId.get(c.personId);
+-        return claimDue(c, person === undefined ? undefined : rateFor(rates.data, gradeOn(person, c.date), c.date), floor, late);
+-      }),
+-    );
+-  };
+-
+   return (
+     <section data-testid="periods">
+       <h3>Periods</h3>
+@@ -87,7 +76,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
+               <td data-testid="period-name">{p.name}</td>
+               <td data-testid="period-from">{p.from}</td>
+               <td data-testid="period-to">{p.to}</td>
+-              <td data-testid="period-due-total">{p.closed && p.closedTotal !== null ? p.closedTotal : dueTotal(p)}</td>
++              <td data-testid="period-due-total">{periodDue(p, claims.data, people.data, rates.data, floor, late)}</td>
+               <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+               <td>
+                 <PeriodClose sheetId={sheetId} user={user} period={p} />
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index 3aacbf831..36916eaf4 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -1,5 +1,9 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import { live, type Claim } from '../claims/claims';
++import type { Late } from '../overdue/late';
++import { gradeOn, type Person } from '../people/people';
++import { claimDue, rateFor, sum, type Rate } from '../rates/rates';
+ 
+ /** A period of the sheet: `name` is unique on the sheet (case ignored); `from` and `to` (yyyy-MM-dd) are both
+  *  inclusive. No two periods of a sheet overlap. A closed period keeps `closedTotal`, the due-total fixed when it
+@@ -28,3 +32,25 @@ export function usePeriods(sheetId: string) {
+ export function periodOf(periods: Period[] | undefined, date: string): Period | undefined {
+   return periods?.find((p) => p.from <= date && date <= p.to);
+ }
++
++/** A period's due-total: the figures of the claims that count, each with its late charge (a held person's OPEN
++ *  claims do not), whose date falls in it, added up (skipping n/a); for a closed period, the due-total fixed when it
++ *  was closed. */
++export function periodDue(
++  period: Period,
++  claims: Claim[] | undefined,
++  people: Person[] | undefined,
++  rates: Rate[] | undefined,
++  floor: string,
++  late: Late,
++): string {
++  if (period.closed && period.closedTotal !== null) return period.closedTotal;
++  const byId = new Map((people ?? []).map((person) => [person.id, person]));
++  const inPeriod = live(claims ?? [], people).filter((c) => period.from <= c.date && c.date <= period.to);
++  return sum(
++    inPeriod.map((c) => {
++      const person = byId.get(c.personId);
++      return claimDue(c, person === undefined ? undefined : rateFor(rates, gradeOn(person, c.date), c.date), floor, late);
++    }),
++  );
++}
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+new file mode 100644
+index 000000000..30d3b60af
+--- /dev/null
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -0,0 +1,91 @@
++import { SheetPage } from '../../slots/defs/sheetPage';
++import { live, useClaims } from '../claims/claims';
++import { GRADES, gradeOn, usePeople } from '../people/people';
++import { periodDue, usePeriods } from '../periods/periods';
++import { personDue, sum, useRates } from '../rates/rates';
++import { useFloor, useLate } from '../settings/settings';
++
++/** The statuses the summary counts claims by. */
++const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
++
++/** The sheet's summary, worked out from the same figures the lists show. Per grade: the people on it on the sheet's
++ *  today (retired people excluded) and their due-totals added up (skipping n/a). Per period: its due-total. Per
++ *  status: how many of the sheet's claims have it. */
++function Summary({ sheetId }: { sheetId: string }) {
++  const people = usePeople(sheetId);
++  const claims = useClaims(sheetId);
++  const periods = usePeriods(sheetId);
++  const rates = useRates(sheetId);
++  const late = useLate(sheetId);
++  const floor = useFloor(sheetId);
++
++  const active = (people.data ?? []).filter((p) => p.retiredFrom === null);
++  const onGrade = (grade: string) => active.filter((p) => gradeOn(p, late.today) === grade);
++  const gradeDue = (grade: string) =>
++    sum(
++      onGrade(grade).map((p) =>
++        personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p]), rates.data, p, late, floor),
++      ),
++    );
++  const withStatus = (status: string) => (claims.data ?? []).filter((c) => c.status === status).length;
++
++  return (
++    <section data-testid="summary">
++      <h3>Summary</h3>
++      <table data-testid="summary-grades">
++        <thead>
++          <tr>
++            <th>Grade</th>
++            <th>People</th>
++            <th>Due total</th>
++          </tr>
++        </thead>
++        <tbody>
++          {GRADES.map((g) => (
++            <tr key={g}>
++              <td>{g}</td>
++              <td data-testid={`summary-grade-${g}-count`}>{onGrade(g).length}</td>
++              <td data-testid={`summary-grade-${g}-due-total`}>{gradeDue(g)}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++      <table data-testid="summary-periods">
++        <thead>
++          <tr>
++            <th>Period</th>
++            <th>Due total</th>
++          </tr>
++        </thead>
++        <tbody>
++          {(periods.data ?? []).map((p) => (
++            <tr key={p.id}>
++              <td>{p.name}</td>
++              <td data-testid={`summary-period-${p.name}-due-total`}>
++                {periodDue(p, claims.data, people.data, rates.data, floor, late)}
++              </td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++      <table data-testid="summary-statuses">
++        <thead>
++          <tr>
++            <th>Status</th>
++            <th>Claims</th>
++          </tr>
++        </thead>
++        <tbody>
++          {STATUSES.map((s) => (
++            <tr key={s}>
++              <td>{s}</td>
++              <td data-testid={`summary-status-${s}-count`}>{withStatus(s)}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++    </section>
++  );
++}
++
++export const contribution = SheetPage.fill({ order: 40, Component: Summary });
