@@ -466,6 +466,45 @@ public class ClaimRepository {
     }
 
     /**
+     * The next claim number of the tree's sequence for a fiscal year ({@code FY<yyyy>}): one more than the last number
+     * given in that fiscal year on any sheet of the tree, 1 for the first, its counter rows locked until the
+     * transaction ends as for {@link #nextNumber}.
+     */
+    public long nextFiscalYearNumber(String sheetId, List<String> tree, String fiscalYear) {
+        Set<String> all = new TreeSet<>(tree);
+        all.add(sheetId);
+        long last = 0;
+        for (String s : all) {
+            ensureFiscalYearNumberRow(s, fiscalYear);
+            jdbc.update("UPDATE claim_fy_number_seq SET last_number = last_number WHERE sheet_id = ? AND fiscal_year = ?",
+                    s, fiscalYear);
+            last = Math.max(last, jdbc.queryForObject(
+                    "SELECT last_number FROM claim_fy_number_seq WHERE sheet_id = ? AND fiscal_year = ?",
+                    Long.class, s, fiscalYear));
+        }
+        jdbc.update("UPDATE claim_fy_number_seq SET last_number = ? WHERE sheet_id = ? AND fiscal_year = ?",
+                last + 1, sheetId, fiscalYear);
+        return last + 1;
+    }
+
+    /** Adds the fiscal year sequence's counter row if it has none, committed at once (see ensureNumberRow). */
+    private synchronized void ensureFiscalYearNumberRow(String sheetId, String fiscalYear) {
+        try (Connection con = dataSource.getConnection()) {
+            con.setAutoCommit(true);
+            try (PreparedStatement ps = con.prepareStatement("INSERT INTO claim_fy_number_seq (sheet_id, fiscal_year, last_number) "
+                    + "SELECT ?, ?, 0 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM claim_fy_number_seq WHERE sheet_id = ? AND fiscal_year = ?)")) {
+                ps.setString(1, sheetId);
+                ps.setString(2, fiscalYear);
+                ps.setString(3, sheetId);
+                ps.setString(4, fiscalYear);
+                ps.executeUpdate();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
      * The next number in the sheet's per-period sequence {@code key} (a period's name, or X for no period): 1 for the
      * first, then one more each time, its counter row locked until the transaction ends as for {@link #nextNumber}.
      */

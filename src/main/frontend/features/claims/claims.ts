@@ -9,7 +9,7 @@ import { heldOn, retiredOn, type Person } from '../people/people';
  *  sheet-today it was deleted. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
 
-/** A claim of a person. `amount` is text with two decimals (never a float); `date` is yyyy-MM-dd; `number` (text: 1, 2, ..., or P1-1, X-1 when numbered per period) is given
+/** A claim of a person. `amount` is text with two decimals (never a float); `date` is yyyy-MM-dd; `number` (text: FY2026-1, FY2026-2, ... (older claims 1, 2, ...), or P1-1, X-1 when numbered per period) is given
  *  when the claim is opened (null for a draft or a voided claim); `due` is the due fixed when it was settled (null
  *  while its due is live, worked out from its grade's current rate); `openedBy` is who opened it (null when never
  *  opened); `stated` is whether its person's last statement bound it to the figure `statedDue` (null when it had
