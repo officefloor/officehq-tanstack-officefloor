@@ -1,0 +1,76 @@
+diff --git a/src/main/frontend/features/grades/api.ts b/src/main/frontend/features/grades/api.ts
+index bf6a81035..0852da1ed 100644
+--- a/src/main/frontend/features/grades/api.ts
++++ b/src/main/frontend/features/grades/api.ts
+@@ -37,7 +37,8 @@ export function retireGrade(sheetId: string, by: string, grade: string): Promise
+ /** How many people a grade merge gave the other grade. */
+ export type GradeMerged = { merged: number };
+ 
+-/** Merge a grade into another: everyone on it today is given the other from the sheet's today.
++/** Merge a grade into another: everyone on it today is given the other from the sheet's today, and
++ *  retroactively every grade record of theirs on it becomes the other.
+  *  Refused (rejects) for the same grade twice, or for anyone but a steward. */
+ export function mergeGrade(sheetId: string, by: string, from: string, into: string): Promise<GradeMerged> {
+   return postJson<GradeMerged>(`${sheetBase(sheetId)}/grade-merge?by=${encodeURIComponent(by)}`, { from, into });
+diff --git a/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java b/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
+index 2bd71b979..c1d5023c3 100644
+--- a/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
++++ b/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
+@@ -23,7 +23,8 @@ import org.springframework.web.bind.annotation.RequestParam;
+ /** Merges a grade into another: recorded as GRADE_MERGED, then everyone whose grade in force on the
+  *  sheet's today is the merged grade is given the other from the sheet's today, in list order, each
+  *  as the person form would (its PERSON_EDITED line, then the rollup lines it moved); then the rollup
+- *  lines of what moved over the whole merge. Refused, with
++ *  lines of what moved over the whole merge, once every grade record of theirs on the merged grade
++ *  has become the other (retroactive). Refused, with
+  *  nothing written, for anyone but a steward, on an archived sheet, or into a retired grade when
+  *  anyone would be given it. */
+ public class MergeGrade {
+@@ -74,6 +75,12 @@ public class MergeGrade {
+             }
+             before = after;
+         }
++        // The merge is retroactive: every grade record of theirs on the merged grade becomes the
++        // other, so all their claims, whatever their date, use the other grade.
++        for (Person listed : merged) {
++            people.regrade(people.find(id, listed.getId()), request.from(), request.into(), user);
++        }
++        before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+         // Then the merge's own rollup lines: what moved over the whole merge.
+         for (String line : before.changesSince(start, id, user)) {
+             audit.record(line);
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 7b2c1cae6..6d213b085 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -415,6 +415,16 @@ public class PersonRepository {
+         gradeHistory(person.getSheetId(), person.getId(), given.grade(), from);
+     }
+ 
++    /** Make every grade record of the person's on grade {@code from} grade {@code into}, keeping
++     *  each from-date (a retroactive grade merge), each kept in their history. */
++    public void regrade(Person person, String from, String into, String user) {
++        for (GradeFrom g : person.getGrades()) {
++            if (from.equals(g.grade())) {
++                saveGrade(person, new GradeFrom(into, g.from()), user);
++            }
++        }
++    }
++
+     /** Record the dated terms the person was just given (see {@link Person#giveTermsFrom}), replacing
+      *  those with the same from-date. */
+     public void saveTerms(Person person, TermsFrom given, String user) {
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grade-merge.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grade-merge.POST.yml
+index aeb9916be..c15b294e6 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grade-merge.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grade-merge.POST.yml
+@@ -2,7 +2,8 @@
+ # on the sheet's today is the merged grade is given the other from the sheet's today, in list order,
+ # each as the person form would. Refused (400) for the same grade twice, a grade not A, B or C, into a
+ # retired grade, or anyone but a steward; refused on an archived sheet. Responds with how many were
+-# given the other grade.
++# given the other grade. The merge is retroactive: for each person it moves, every grade record of
++# theirs on the merged grade then becomes the other grade, whatever its from-date.
+ validate:
+   class: net.officefloor.hq.app.grade.ValidateMergeGrade
+   next: merge
