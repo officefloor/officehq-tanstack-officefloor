@@ -1,0 +1,54 @@
+diff --git a/src/main/frontend/features/months/months.slot.tsx b/src/main/frontend/features/months/months.slot.tsx
+new file mode 100644
+index 000000000..33f27ea90
+--- /dev/null
++++ b/src/main/frontend/features/months/months.slot.tsx
+@@ -0,0 +1,48 @@
++import { SheetPage } from '../../slots/defs/sheetPage';
++import { live, useClaims } from '../claims/claims';
++import { gradeOn, usePeople } from '../people/people';
++import { claimDue, rateFor, sum, useRates } from '../rates/rates';
++import { useFloor, useLate } from '../settings/settings';
++
++/** The sheet's due-total per calendar month: for every month (yyyy-mm) any claim on the sheet is dated in, the
++ *  figures (each due as shown, with its late charge) of the claims dated in it that count in the live totals (see
++ *  live) added up, skipping n/a; 0.00 when none of them counts. By month, oldest first. */
++function Months({ sheetId }: { sheetId: string }) {
++  const people = usePeople(sheetId);
++  const claims = useClaims(sheetId);
++  const rates = useRates(sheetId);
++  const late = useLate(sheetId);
++  const floor = useFloor(sheetId);
++
++  const all = claims.data ?? [];
++  const months = [...new Set(all.map((c) => c.date.slice(0, 7)))].sort();
++  const byId = new Map((people.data ?? []).map((p) => [p.id, p]));
++  const counted = live(all, people.data, late.today);
++  const monthDue = (month: string) =>
++    sum(
++      counted
++        .filter((c) => c.date.slice(0, 7) === month && byId.has(c.personId))
++        .map((c) => claimDue(c, rateFor(rates.data, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late)),
++    );
++
++  return (
++    <table data-testid="months">
++      <thead>
++        <tr>
++          <th>Month</th>
++          <th>Due total</th>
++        </tr>
++      </thead>
++      <tbody>
++        {months.map((m) => (
++          <tr key={m}>
++            <td>{m}</td>
++            <td data-testid={`month-${m}-due-total`}>{monthDue(m)}</td>
++          </tr>
++        ))}
++      </tbody>
++    </table>
++  );
++}
++
++export const contribution = SheetPage.fill({ order: 35, Component: Months });
