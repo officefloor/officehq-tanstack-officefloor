@@ -78,6 +78,10 @@ public class SettingRepository {
     /** The days after a period's to-date before a change of the sheet's today closes it; blank for off (undated). */
     public static final String GRACE_DAYS = "grace-days";
 
+    /** The escalation gap: reminding a claim whose previous reminder was at least this many days before the sheet's
+     *  today escalates it (once per claim); blank for off (undated). */
+    public static final String ESCALATE_AFTER = "escalate-after";
+
     /** The sheet's pot, shared out as each balanced pool's cuts (two decimals); blank for none (undated). */
     public static final String POT = "pot";
 
@@ -263,6 +267,12 @@ public class SettingRepository {
     /** The sheet's grace days, or null when it is blank (off). */
     public Integer graceDays(String sheetId) {
         String value = value(sheetId, GRACE_DAYS);
+        return value == null ? null : Integer.valueOf(value);
+    }
+
+    /** The sheet's escalation gap in days, or null when it is blank (off). */
+    public Integer escalateAfter(String sheetId) {
+        String value = value(sheetId, ESCALATE_AFTER);
         return value == null ? null : Integer.valueOf(value);
     }
 

@@ -14,10 +14,10 @@ type GradeProof = `proof-threshold-${(typeof GRADES)[number]}`;
 const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
 type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
 const PERM_KEYS: PermKey[] = PERM_ACTIONS.map((a) => `perm-${a}` as PermKey);
-type Key = PermKey | 'clerk-limit' | 'cap' | 'proof-threshold' | 'note-threshold' | 'review-threshold' | 'floor' | 'terms' | GradeTerms | GradeGrace | GradeProof | 'late-pct' | 'rounding' | 'policy-date' | 'period-numbering-from' | 'entry-date' | 'grace-days' | 'pot' | 'alert-threshold' | 'fiscal-start-month' | 'parent';
-const KEYS: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'note-threshold', 'review-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'late-pct', 'rounding', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'pot', 'alert-threshold', 'fiscal-start-month', 'parent', ...PERM_KEYS];
+type Key = PermKey | 'clerk-limit' | 'cap' | 'proof-threshold' | 'note-threshold' | 'review-threshold' | 'floor' | 'terms' | GradeTerms | GradeGrace | GradeProof | 'late-pct' | 'rounding' | 'policy-date' | 'period-numbering-from' | 'entry-date' | 'grace-days' | 'escalate-after' | 'pot' | 'alert-threshold' | 'fiscal-start-month' | 'parent';
+const KEYS: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'note-threshold', 'review-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'late-pct', 'rounding', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'pot', 'alert-threshold', 'fiscal-start-month', 'parent', ...PERM_KEYS];
 const BLANK: Record<Key, string> = {
-  'clerk-limit': '', cap: '', 'proof-threshold': '', 'note-threshold': '', 'review-threshold': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'late-pct': '', rounding: '', 'policy-date': '', 'period-numbering-from': '', 'entry-date': '', 'grace-days': '', pot: '', 'alert-threshold': '', 'fiscal-start-month': '', parent: '',
+  'clerk-limit': '', cap: '', 'proof-threshold': '', 'note-threshold': '', 'review-threshold': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'late-pct': '', rounding: '', 'policy-date': '', 'period-numbering-from': '', 'entry-date': '', 'grace-days': '', 'escalate-after': '', pot: '', 'alert-threshold': '', 'fiscal-start-month': '', parent: '',
   ...(Object.fromEntries(PERM_KEYS.map((k) => [k, ''])) as Record<PermKey, string>),
 };
 /** The keys whose values are dated: each saved from a from-date (blank: the sheet's today). */
@@ -36,10 +36,12 @@ const dated = (key: Key) => DATED.includes(key);
  *  one in force rounds its live figures by it instead of by the policy date) and the period numbering from-date (yyyy-MM-dd; blank: off — while the sheet's
  *  today is on or after it, a claim opened is numbered within its period) and the entry date (yyyy-MM-dd; blank: off — while set, a new claim given no
  *  date, by the claim form, the quick-add bar, a paste or a correction, is dated it instead of the sheet's today) and the pot (two decimals; blank: none — shared out as each balanced pool's cuts; undated) and the alert threshold (two decimals; blank: off — a person whose due-total rises above it is alerted in the audit; undated) and the fiscal year start month (1 to 12; 1 until set; undated) and the parent sheet (the id of a sheet that exists, not this one nor one with this one as an ancestor; blank: none — a grade with no rate in force on a date takes its parent's, then the parent's parent's, up to three levels up; undated) and the grace days (a whole number; blank: off — when the
- *  sheet's today changes, every open period whose to-date plus them is before the new today is closed) and the permission matrix (for each of open, settle,
+ *  sheet's today changes, every open period whose to-date plus them is before the new today is closed) and the escalation gap
+ *  (a whole number of days; blank: off — reminding a claim whose previous reminder was at least that many days before the
+ *  sheet's today escalates it, once per claim; undated) and the permission matrix (for each of open, settle,
  *  void, reassign, close and reopen, the roles that may take it, comma separated; blank: the standing rule — open, settle,
  *  void and close by clerk and steward, reassign and reopen by steward; undated). Every setting but the policy date, the
- *  period numbering from-date, the entry date, the grace days, the fiscal year start month and the permissions is dated: saved with its from-date (blank: the sheet's today) it keeps the values from
+ *  period numbering from-date, the entry date, the grace days, the escalation gap, the fiscal year start month and the permissions is dated: saved with its from-date (blank: the sheet's today) it keeps the values from
  *  other dates, and what shows in force is the value on the sheet's today (a claim takes its floor, late percent and
  *  terms, and proof and note thresholds, from its own date). Saving stores the fields entered since the last save
  *  (a field focused counts, so a blank typed over a blank still saves), the clerk limit when none was. */
@@ -139,6 +141,7 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {field('period-numbering-from', 'Period numbering from (yyyy-MM-dd)', 'numeric')}{' '}
         {field('entry-date', 'Entry date (yyyy-MM-dd)', 'numeric')}{' '}
         {field('grace-days', 'Grace days', 'numeric')}{' '}
+        {field('escalate-after', 'Escalate after (days)', 'numeric')}{' '}
         {field('pot', 'Pot')}{' '}
         {field('alert-threshold', 'Alert threshold')}{' '}
         {field('fiscal-start-month', 'Fiscal year start month (1 to 12)', 'numeric')}{' '}
@@ -214,6 +217,9 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
       </p>
       <p>
         Grace days <span data-testid="setting-grace-days-current">{current('grace-days')}</span>
+      </p>
+      <p>
+        Escalate after <span data-testid="setting-escalate-after-current">{current('escalate-after')}</span>
       </p>
       <p>
         Pot <span data-testid="setting-pot-current">{current('pot')}</span>

@@ -368,6 +368,12 @@ public class ClaimRepository {
         return n != null && n > 0;
     }
 
+    /** Marks the claim escalated, but only when it never was; false otherwise (nothing is written). */
+    public boolean escalate(Claim claim) {
+        return jdbc.update("UPDATE claim SET escalated = TRUE WHERE sheet_id = ? AND id = ? AND escalated = FALSE",
+                claim.sheetId(), claim.id()) == 1;
+    }
+
     /** The last day a reminder was written for the claim; null when none. */
     public LocalDate remindedOn(String sheetId, long id) {
         return jdbc.queryForObject("SELECT MAX(reminded_on) FROM claim_reminder WHERE sheet_id = ? AND claim_id = ?",
