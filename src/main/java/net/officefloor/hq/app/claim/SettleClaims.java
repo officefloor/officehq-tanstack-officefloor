@@ -24,7 +24,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /**
- * Settles each selected claim, in list order (people in the order they were added, a person's claims newest first),
+ * Settles each selected claim, in list order (people in list order, see PersonRepository#list; a person's claims newest first),
  * through the very steps of the single settle: ApplyClaimStatus (its rules, a clerk's settle above the clerk limit
  * making it PENDING), SaveClaimStatus (its status log line) and RecordClaimStatusChanged (CLAIM_SETTLED or
  * CLAIM_PENDING and the figures it moved). A claim made PENDING counts as settled. All or nothing: when any selected

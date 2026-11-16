@@ -61,7 +61,7 @@ export function gradeOn(person: Pick<Person, 'grade' | 'grades'>, on: string): s
 
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'];
 
-/** The sheet's people, in the order they were added. */
+/** The sheet's people, in list order (new people at the end; see the move buttons). */
 export function usePeople(sheetId: string) {
   const now = useReadNow();
   return useQuery({

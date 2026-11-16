@@ -6,7 +6,7 @@ import net.officefloor.hq.app.sheet.AsOf;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** The sheet's people, in the order they were added; read as of a date (see AsOf), as they stood then. Each is marked
+/** The sheet's people, in list order (see PersonRepository#list); read as of a date (see AsOf), as they stood then. Each is marked
  *  with whether they clash (see PersonRepository#withClashing). */
 public class RespondWithPeople {
     public void respond(@PathVariable("sheetId") String sheetId,

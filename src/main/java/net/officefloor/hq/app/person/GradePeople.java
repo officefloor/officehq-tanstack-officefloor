@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /**
- * Gives each selected person the grade, in list order (the order they were added), through the very steps of the
+ * Gives each selected person the grade, in list order (see PersonRepository#list), through the very steps of the
  * person form's edit, made from the person's current version with their name, terms and contact kept: ApplyPerson (the grade
  * recorded from the from-date), SavePerson and RecordPersonEdited (PERSON_EDITED and the figures it moved). One not on
  * the sheet is skipped.

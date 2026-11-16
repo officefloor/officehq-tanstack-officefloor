@@ -16,7 +16,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
-/** The stored people, kept per sheet. Ids are assigned in the order people are added. A person's grades are kept
+/** The stored people, kept per sheet. Ids are assigned in the order people are added; people are listed by their
+ *  position, new ones at the end (see #move). A person's grades are kept
  *  dated in person_grade, and their holds in person_hold; a person read carries them all, and the grade in force on the
  *  sheet's today. */
 @Repository
@@ -62,7 +63,7 @@ public class PersonRepository {
     }
 
     public List<Person> list(String sheetId) {
-        return withGrades(sheetId, jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY id",
+        return withGrades(sheetId, jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY position, id",
                 PersonRepository::map, sheetId));
     }
 
@@ -189,9 +190,47 @@ public class PersonRepository {
             throw new DuplicatePersonNameException(name);
         }
         long id = keys.getKey().longValue();
+        toEnd(sheetId, id);
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, from_date, grade) VALUES (?, ?, NULL, ?)", sheetId, id, grade);
         logGrades(sheetId, id, List.of(new PersonGrade(grade, null)));
         return new Person(id, sheetId, name, grade, 0, null, List.of(new PersonGrade(grade, null)), List.of(), terms, contact);
+    }
+
+    /** Puts the person at the end of the sheet's list: their position is their id (ids only go up), or one after the
+     *  last on the sheet when that is higher. */
+    public void toEnd(String sheetId, long id) {
+        Long last = jdbc.queryForObject("SELECT MAX(position) FROM person WHERE sheet_id = ? AND id <> ?", Long.class,
+                sheetId, id);
+        jdbc.update("UPDATE person SET position = ? WHERE sheet_id = ? AND id = ?", last == null ? id : Math.max(id, last + 1),
+                sheetId, id);
+    }
+
+    /** Swaps the person with the one above (up) or below them in the sheet's list, returning their new position
+     *  (counting from 1); null when they are already at the top (up) or bottom (down), nothing then being written. */
+    public Integer move(String sheetId, long id, boolean up) {
+        List<long[]> order = jdbc.query("SELECT id, position FROM person WHERE sheet_id = ? ORDER BY position, id",
+                (rs, n) -> new long[] { rs.getLong("id"), rs.getLong("position") }, sheetId);
+        int at = -1;
+        for (int i = 0; i < order.size(); i++) {
+            if (order.get(i)[0] == id) {
+                at = i;
+            }
+        }
+        int to = up ? at - 1 : at + 1;
+        if (at < 0 || to < 0 || to >= order.size()) {
+            return null;
+        }
+        long[] mine = order.get(at);
+        long[] theirs = order.get(to);
+        long mineTo = theirs[1];
+        long theirsTo = mine[1];
+        if (mineTo == theirsTo) {
+            // Same position (added at once): the id breaks the tie, so make the two distinct around it.
+            mineTo = up ? theirs[1] - 1 : theirs[1] + 1;
+        }
+        jdbc.update("UPDATE person SET position = ? WHERE sheet_id = ? AND id = ?", mineTo, sheetId, mine[0]);
+        jdbc.update("UPDATE person SET position = ? WHERE sheet_id = ? AND id = ?", theirsTo, sheetId, theirs[0]);
+        return to + 1;
     }
 
     /** Stores the person as its new version, with its grades, only while the stored one is still {@code fromVersion}:
@@ -292,13 +331,16 @@ public class PersonRepository {
                 person.contact(), aliases);
     }
 
-    /** The sheet's people as they stood at the end of the date (see #asOf), in the order added: one added while the
+    /** The sheet's people as they stood at the end of the date (see #asOf), in list order (see #list; one merged away
+     *  in the place they were added): one added while the
      *  sheet's today was after it is left out, and one merged into another while it was after it is still listed. */
     public List<Person> listAsOf(String sheetId, LocalDate date) {
         Map<Long, LocalDate> added = new HashMap<>();
-        jdbc.query("SELECT id, added_on FROM person WHERE sheet_id = ?",
+        Map<Long, Long> positions = new HashMap<>();
+        jdbc.query("SELECT id, added_on, position FROM person WHERE sheet_id = ?",
                 (ResultSet rs) -> {
                     added.put(rs.getLong("id"), rs.getObject("added_on", LocalDate.class));
+                    positions.put(rs.getLong("id"), rs.getLong("position"));
                 }, sheetId);
         List<Person> people = new ArrayList<>();
         for (Person p : list(sheetId)) {
@@ -308,7 +350,8 @@ public class PersonRepository {
             }
         }
         people.addAll(mergedAsOf(sheetId, date));
-        people.sort(java.util.Comparator.comparingLong(Person::id));
+        people.sort(java.util.Comparator.<Person>comparingLong((p) -> positions.getOrDefault(p.id(), p.id()))
+                .thenComparingLong(Person::id));
         return people;
     }
 

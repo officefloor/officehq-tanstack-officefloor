@@ -49,7 +49,7 @@ public class Rollup {
         this.audit = audit;
     }
 
-    /** Every person's figures on the sheet now, in the order they were added. */
+    /** Every person's figures on the sheet now, in list order (see PersonRepository#list). */
     public RollupBefore take(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         BigDecimal cap = settings.cap(sheetId);

@@ -19,7 +19,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /**
- * Moves each selected claim to the chosen person, in list order (people in the order they were added, a person's
+ * Moves each selected claim to the chosen person, in list order (people in list order, see PersonRepository#list; a person's
  * claims newest first), by the checks of the single move (ApplyReassign: who may, which statuses, corrections, closed
  * periods, retirement), stored as SaveReassign stores it and written as RecordClaimReassigned writes it
  * (CLAIM_REASSIGNED and the figures it moved). A claim already the chosen person's counts as moved, listed as its

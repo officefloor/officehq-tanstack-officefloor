@@ -12,15 +12,17 @@ public class PersonTransferrer {
 
     private final JdbcTemplate jdbc;
     private final SheetRepository sheets;
+    private final PersonRepository people;
 
-    public PersonTransferrer(JdbcTemplate jdbc, SheetRepository sheets) {
+    public PersonTransferrer(JdbcTemplate jdbc, SheetRepository sheets, PersonRepository people) {
         this.jdbc = jdbc;
         this.sheets = sheets;
+        this.people = people;
     }
 
     /**
      * Moves the person to the other sheet with their grades (and from-dates), terms, contact and aliases, added there on
-     * its today; and their claims with their status, dates, notes, tags, frozen figures, logs, comments and reminders,
+     * its today at the end of its list; and their claims with their status, dates, notes, tags, frozen figures, logs, comments and reminders,
      * listed there as its newest claims in the order they were listed, each unbound from any statement figure, without its
      * reference, lock or settle batch. Their statements, holds, watchers, patron links (either way), pool memberships,
      * period totals and retirement log are dropped: they leave this sheet entirely. Returns the ids of the moved claims
@@ -57,6 +59,7 @@ public class PersonTransferrer {
         }
         jdbc.update("UPDATE person SET sheet_id = ?, added_on = ? WHERE sheet_id = ? AND id = ?", to,
                 Date.valueOf(sheets.today(to)), from, id);
+        people.toEnd(to, id);
         return numbered;
     }
 }

@@ -21,7 +21,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /**
- * Opens each selected claim that can be opened, in list order (people in the order they were added, a person's
+ * Opens each selected claim that can be opened, in list order (people in list order, see PersonRepository#list; a person's
  * claims newest first): as the single open does, it must be a DRAFT whose due-by is not inside a closed period, nor one with an empty note whose due is above the note threshold
  * (see ApplyClaimStatus#needsNote), takes its
  * number (see ClaimNumbering) and records who opened it, adds its OPEN line to its status log (see ClaimLog), then writes CLAIM_OPENED and the figures it moved (see Rollup).
