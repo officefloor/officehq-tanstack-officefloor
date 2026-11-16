@@ -14,14 +14,15 @@ import java.util.List;
  *  surrounding spaces, lower-cased), null when none. {@code aliases} are the person's aliases, sorted as names are compared
  *  (each kept without surrounding spaces; no alias equals, case ignored, any name or alias on the sheet). {@code clashing}
  *  is whether their name or an alias is used as a name or alias on another sheet of the sheet's tree (see
- *  PersonRepository#treeKeys): set only on the people listed, false elsewhere. */
+ *  PersonRepository#treeKeys): set only on the people listed, false elsewhere. {@code origin} is the sheet the person was
+ *  last transferred from, null when they were never transferred here. */
 public record Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
         List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases,
-        boolean clashing) {
+        boolean clashing, String origin) {
 
     public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
             List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases) {
-        this(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, false);
+        this(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, false, null);
     }
 
     public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom,
@@ -36,7 +37,12 @@ public record Person(long id, String sheetId, String name, String grade, long ve
 
     /** The person with whether they clash in the sheet's tree. */
     public Person withClashing(boolean clashing) {
-        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing);
+        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin);
+    }
+
+    /** The person with the sheet they were transferred from (null: none). */
+    public Person withOrigin(String origin) {
+        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin);
     }
 
     /** Whether the person's name or any alias is among the name keys (lower-cased names and aliases). */

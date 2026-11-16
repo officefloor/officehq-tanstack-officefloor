@@ -23,7 +23,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, version, retired_from, terms, contact";
+    private static final String COLUMNS = "id, sheet_id, name, version, retired_from, terms, contact, origin";
 
     private final JdbcTemplate jdbc;
     private final SheetRepository sheets;
@@ -109,7 +109,7 @@ public class PersonRepository {
             List<PersonGrade> mine = List.copyOf(grades.getOrDefault(p.id(), List.of()));
             people.add(new Person(p.id(), p.sheetId(), p.name(), Person.gradeOn(mine, today), p.version(), p.retiredFrom(),
                     mine, List.copyOf(holds.getOrDefault(p.id(), List.of())), p.terms(), p.contact(),
-                    List.copyOf(aliases.getOrDefault(p.id(), List.of()))));
+                    List.copyOf(aliases.getOrDefault(p.id(), List.of()))).withOrigin(p.origin()));
         }
         return people;
     }
@@ -328,7 +328,7 @@ public class PersonRepository {
         List<String> aliases = person.aliases().stream().filter(given::contains).toList();
         return new Person(person.id(), sheetId, person.name(), Person.gradeOn(grades, date), person.version(),
                 retired.isEmpty() ? null : retired.get(0).toString(), List.copyOf(grades), holds, termsAsOf(person, date),
-                person.contact(), aliases);
+                person.contact(), aliases).withOrigin(person.origin());
     }
 
     /** The sheet's people as they stood at the end of the date (see #asOf), in list order (see #list; one merged away
@@ -392,6 +392,6 @@ public class PersonRepository {
         Date retired = rs.getDate("retired_from");
         return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
                 retired == null ? null : retired.toLocalDate().toString(), List.of(), List.of(),
-                rs.getObject("terms", Integer.class), rs.getString("contact"));
+                rs.getObject("terms", Integer.class), rs.getString("contact")).withOrigin(rs.getString("origin"));
     }
 }

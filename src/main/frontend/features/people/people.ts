@@ -20,7 +20,7 @@ export type PersonGrade = { grade: string; from: string | null };
  *  sorted as names are compared: no alias equals (case ignored) any name or alias on the sheet, and the quick-add bar and
  *  the paste box find a person by one as by the name. `clashing` is whether their name or an alias is used as a name or
  *  alias on another sheet of the sheet's tree (people added before the rule): every edit of them is refused until it
- *  renames them clear. */
+ *  renames them clear. `origin` is the sheet they were last transferred from, null when never transferred here. */
 export type Person = {
   id: number;
   sheetId: string;
@@ -35,6 +35,7 @@ export type Person = {
   contact: string | null;
   aliases: string[];
   clashing: boolean;
+  origin: string | null;
 };
 
 /** A hold on a person from a date until a date (yyyy-MM-dd, both included); a null `to` is open-ended. */

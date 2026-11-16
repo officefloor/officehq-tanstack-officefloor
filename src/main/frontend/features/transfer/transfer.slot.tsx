@@ -6,6 +6,15 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import type { Person } from '../people/people';
 import { usePersonRowAction } from '../people/rowAction';
 
+function OriginHead() {
+  return <th>From sheet</th>;
+}
+
+/** The sheet the person was transferred from; empty for anyone never transferred here. */
+function PersonOrigin({ person }: { sheetId: string; user: string; person: Person }) {
+  return <td data-testid="person-origin">{person.origin ?? ''}</td>;
+}
+
 function TransferHead() {
   return <th>Transfer</th>;
 }
@@ -59,6 +68,8 @@ function PersonTransfer({ sheetId, user, person }: { sheetId: string; user: stri
 }
 
 export const contributions = [
+  PeopleHead.fill({ order: 84, Component: OriginHead }),
+  PersonRow.fill({ order: 84, Component: PersonOrigin }),
   PeopleHead.fill({ order: 85, Component: TransferHead }),
   PersonRow.fill({ order: 85, Component: PersonTransfer }),
 ];

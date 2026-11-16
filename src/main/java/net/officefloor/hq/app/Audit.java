@@ -94,6 +94,21 @@ public class Audit {
         return found;
     }
 
+    /** The lines about the person (see #lines) on the sheet they were transferred from to {@code to}, newest first,
+     *  from the last PERSON_TRANSFERRED of them to that sheet back: what the sheet recorded about them while they were there. */
+    public synchronized List<String> history(String fromSheet, String name, String to) {
+        List<String> found = lines(fromSheet, name);
+        for (int i = 0; i < found.size(); i++) {
+            String line = found.get(i);
+            Matcher head = HEAD.matcher(line);
+            if (head.find() && head.group(1).equals("PERSON_TRANSFERRED")
+                    && (line + " ").contains(" to=" + to + " ")) {
+                return found.subList(i, found.size());
+            }
+        }
+        return found;
+    }
+
     private static boolean about(String line, String key) {
         Matcher m = ABOUT.matcher(line);
         while (m.find()) {
