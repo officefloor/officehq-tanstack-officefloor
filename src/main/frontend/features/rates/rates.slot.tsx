@@ -9,7 +9,7 @@ import { useSheetDueTotal, useSheetSplit } from '../header/totals';
 import { GRADES, usePeople, type Person } from '../people/people';
 import { useSheetToday } from '../session/session';
 import { useCap, useFloor, useLate } from '../settings/settings';
-import { personDue, personExcess, personSplit, RATE_PATTERN, ratePreview, rateFor, ratesKey, useRates, type Rate } from './rates';
+import { ownRates, personDue, personExcess, personSplit, RATE_PATTERN, ratePreview, rateFor, ratesKey, useRates, type Rate } from './rates';
 
 /** The sheet's rates: the form that sets one (from an optional from-date, through an optional to-date), each grade's rate in force on the
  *  sheet's today, and every rate set. */
@@ -126,7 +126,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
       </table>
       <table data-testid="rates-table">
         <tbody>
-          {(rates.data ?? []).map((r) => (
+          {ownRates(rates.data).map((r) => (
             <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
               <td>{r.grade}</td>
               <td data-testid="rate-pct">{r.rate}</td>

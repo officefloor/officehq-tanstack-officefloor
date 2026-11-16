@@ -16,7 +16,7 @@ public class SheetRepository {
     }
 
     public Sheet find(String id) {
-        return new Sheet(id, today(id), archived(id));
+        return new Sheet(id, today(id), archived(id), parent(id));
     }
 
     /** The sheet as it stood at the end of the date: the date stands in for its today, and it is archived only when it
@@ -27,7 +27,7 @@ public class SheetRepository {
         }
         List<LocalDate> archivedOn = jdbc.query("SELECT archived_on FROM sheet_archived WHERE sheet_id = ?",
                 (rs, n) -> rs.getObject(1, LocalDate.class), id);
-        return new Sheet(id, asOf, !archivedOn.isEmpty() && AsOf.counts(archivedOn.get(0), asOf));
+        return new Sheet(id, asOf, !archivedOn.isEmpty() && AsOf.counts(archivedOn.get(0), asOf), parent(id));
     }
 
     /**
@@ -53,6 +53,25 @@ public class SheetRepository {
         }
         jdbc.update("INSERT INTO sheet_archived (sheet_id, archived_by, archived_on) VALUES (?, ?, ?)", id, by, today(id));
         return true;
+    }
+
+    /** The sheet's parent sheet id as set now (the parent setting), or null when none. */
+    public String parent(String id) {
+        List<String> found = jdbc.queryForList("SELECT setting_value FROM setting WHERE sheet_id = ? AND setting_key = 'parent'",
+                String.class, id);
+        return found.isEmpty() || found.get(0) == null || found.get(0).isBlank() ? null : found.get(0);
+    }
+
+    /** Notes that the sheet has been loaded: from then on it exists. */
+    public void markLoaded(String id) {
+        jdbc.update("MERGE INTO sheet_loaded (id) KEY (id) VALUES (?)", id);
+    }
+
+    /** Whether the sheet exists: it has been loaded, or has its own today. */
+    public boolean exists(String id) {
+        Integer found = jdbc.queryForObject("SELECT (SELECT COUNT(*) FROM sheet_loaded WHERE id = ?)"
+                + " + (SELECT COUNT(*) FROM sheet WHERE id = ?)", Integer.class, id, id);
+        return found != null && found > 0;
     }
 
     public void saveToday(String id, LocalDate today) {

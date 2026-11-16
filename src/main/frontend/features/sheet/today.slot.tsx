@@ -50,6 +50,7 @@ function SheetToday({ sheetId, user }: { sheetId: string; user: string }) {
       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
         Set today
       </button>{' '}
+      Parent <span data-testid="sheet-parent">{sheet.data?.parent ?? ''}</span>{' '}
       Archived <span data-testid="sheet-archived">{sheet.data?.archived ? 'yes' : 'no'}</span>{' '}
       <button
         type="button"

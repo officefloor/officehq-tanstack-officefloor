@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import net.officefloor.hq.app.role.RoleRepository;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,7 +20,9 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  more, kept without leading zeros; or grace-days, its value blank (off) or a whole number of days 0 or more (undated); or pot, its value blank (none) or an amount with up to two decimals, kept with two (undated); or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today); or
  *  period-numbering-from or entry-date, its value a date yyyy-MM-dd or blank (off); or cap, proof-threshold, proof-threshold-A, -B or -C (a grade's own) or note-threshold, its value blank (none) or
  *  an amount like the clerk limit; or perm-open, perm-settle, perm-void, perm-reassign, perm-close or perm-reopen, its value
- *  blank (the standing rule) or roles (clerk, steward) separated by commas, kept without spaces or repeats. Every key but policy-date, period-numbering-from, entry-date, grace-days, pot and the permissions is dated: its from-date is blank (the
+ *  blank (the standing rule) or roles (clerk, steward) separated by commas, kept without spaces or repeats; or parent, its
+ *  value blank (none) or the id of a sheet that exists (has been loaded), is not this sheet and does not have this sheet
+ *  as an ancestor (undated). Every key but policy-date, period-numbering-from, entry-date, grace-days, pot and the permissions is dated: its from-date is blank (the
  *  sheet's today) or a date yyyy-MM-dd. */
 public class ValidateSetting {
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
@@ -27,8 +30,9 @@ public class ValidateSetting {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
     private static final Set<String> ROLES = Set.of(RoleRepository.CLERK, RoleRepository.STEWARD);
 
-    public void validate(@PathVariable("key") String key, @RequestBody SettingRequest request, Out<SettingValues> values)
-            throws InvalidSettingException {
+    public void validate(@PathVariable("sheetId") String sheetId, @PathVariable("key") String key,
+            @RequestBody SettingRequest request, SettingRepository settings, SheetRepository sheets,
+            Out<SettingValues> values) throws InvalidSettingException {
         String k = key == null ? "" : key.trim();
         boolean floor = SettingRepository.FLOOR.equals(k);
         boolean terms = SettingRepository.TERMS.equals(k) || (k.startsWith(SettingRepository.TERMS_PREFIX)
@@ -47,9 +51,10 @@ public class ValidateSetting {
                 && GRADES.contains(k.substring(SettingRepository.PROOF_THRESHOLD_PREFIX.length()));
         proofThreshold = proofThreshold || gradeProofThreshold;
         boolean noteThreshold = SettingRepository.NOTE_THRESHOLD.equals(k);
+        boolean parent = SettingRepository.PARENT.equals(k);
         boolean perm = k.startsWith(SettingRepository.PERM_PREFIX)
                 && SettingRepository.PERMISSIONS.containsKey(k.substring(SettingRepository.PERM_PREFIX.length()));
-        if (!perm && !SettingRepository.CLERK_LIMIT.equals(k) && !cap && !proofThreshold && !noteThreshold && !floor && !terms && !grace && !latePct && !policyDate && !numberingFrom && !graceDays && !entryDate && !pot) {
+        if (!parent && !perm && !SettingRepository.CLERK_LIMIT.equals(k) && !cap && !proofThreshold && !noteThreshold && !floor && !terms && !grace && !latePct && !policyDate && !numberingFrom && !graceDays && !entryDate && !pot) {
             throw new InvalidSettingException("Unknown setting " + k);
         }
         String value = request == null || request.value() == null ? "" : request.value().trim();
@@ -62,6 +67,24 @@ public class ValidateSetting {
             } catch (DateTimeParseException e) {
                 throw new InvalidSettingException("The from-date must be yyyy-MM-dd, or blank");
             }
+        }
+        if (parent) {
+            String sheet = sheetId.trim();
+            if (value.isEmpty()) {
+                values.set(new SettingValues(k, null, null, false, by));
+                return;
+            }
+            if (value.equals(sheet)) {
+                throw new InvalidSettingException("A sheet cannot be its own parent");
+            }
+            if (!sheets.exists(value)) {
+                throw new InvalidSettingException("The parent must be a sheet that exists");
+            }
+            if (settings.hasAncestor(value, sheet)) {
+                throw new InvalidSettingException("The parent cannot be a sheet that has this sheet as an ancestor");
+            }
+            values.set(new SettingValues(k, value, null, false, by));
+            return;
         }
         if (perm) {
             if (value.isEmpty()) {

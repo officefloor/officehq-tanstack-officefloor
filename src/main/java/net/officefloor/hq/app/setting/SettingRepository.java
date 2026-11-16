@@ -71,6 +71,13 @@ public class SettingRepository {
     /** The sheet's pot, shared out as each balanced pool's cuts (two decimals); blank for none (undated). */
     public static final String POT = "pot";
 
+    /** The sheet's parent sheet: its id, or blank for none (undated). A grade with no rate in force on a date takes
+     *  the parent's, then the parent's parent's, up to PARENT_LEVELS levels up. */
+    public static final String PARENT = "parent";
+
+    /** How many levels up the parent chain a rate is looked for. */
+    public static final int PARENT_LEVELS = 3;
+
     /** The prefix of an action's permission: perm-open, perm-settle, perm-void, perm-reassign, perm-close or
      *  perm-reopen, its value the roles that may take it, comma separated; blank: the standing rule (see PERMISSIONS). */
     public static final String PERM_PREFIX = "perm-";
@@ -237,6 +244,30 @@ public class SettingRepository {
     public BigDecimal pot(String sheetId) {
         String value = value(sheetId, POT);
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The sheet's parent sheet id, or null when it has none. */
+    public String parent(String sheetId) {
+        return value(sheetId, PARENT);
+    }
+
+    /** The sheet's ancestors, nearest first, up to the given number of levels (stopping at a sheet already seen). */
+    public List<String> ancestors(String sheetId, int levels) {
+        List<String> found = new java.util.ArrayList<>();
+        String at = sheetId;
+        while (found.size() < levels) {
+            at = parent(at);
+            if (at == null || at.equals(sheetId) || found.contains(at)) {
+                break;
+            }
+            found.add(at);
+        }
+        return found;
+    }
+
+    /** Whether the sheet has the other as an ancestor, at any level. */
+    public boolean hasAncestor(String sheetId, String ancestor) {
+        return ancestors(sheetId, Integer.MAX_VALUE).contains(ancestor);
     }
 
     /** Whether the role may take the action (open, settle, void, reassign, close or reopen) on the sheet: the roles its

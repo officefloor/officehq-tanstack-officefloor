@@ -4,7 +4,9 @@ import java.sql.Date;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -17,10 +19,21 @@ public class RateRepository {
 
     private final JdbcTemplate jdbc;
     private final SheetRepository sheets;
+    private final SettingRepository settings;
 
-    public RateRepository(JdbcTemplate jdbc, SheetRepository sheets) {
+    public RateRepository(JdbcTemplate jdbc, SheetRepository sheets, SettingRepository settings) {
         this.jdbc = jdbc;
         this.sheets = sheets;
+        this.settings = settings;
+    }
+
+    /** The sheets whose rates the sheet uses, in the order looked at: itself, then its parent, the parent's parent,
+     *  up to SettingRepository#PARENT_LEVELS levels up. */
+    public List<String> chain(String sheetId) {
+        List<String> chain = new ArrayList<>();
+        chain.add(sheetId);
+        chain.addAll(settings.ancestors(sheetId, SettingRepository.PARENT_LEVELS));
+        return chain;
     }
 
     /** The sheet's rates, by grade, then from-date (one with none first). */
@@ -29,9 +42,21 @@ public class RateRepository {
                 RateRepository::map, sheetId);
     }
 
+    /** The grade's rate in force on a date on the sheet (see own), or, when it has none, the one in force on its
+     *  parent, then the parent's parent, up to three levels up; null when none of them has one. */
+    public Rate find(String sheetId, String grade, LocalDate on) {
+        for (String sheet : chain(sheetId)) {
+            Rate rate = own(sheet, grade, on);
+            if (rate != null) {
+                return rate;
+            }
+        }
+        return null;
+    }
+
     /** The grade's rate in force on a date — the latest from-date on or before it, a rate with none applying
      *  from the beginning of time — or null when no rate applies, or that rate's to-date is before the date. */
-    public Rate find(String sheetId, String grade, LocalDate on) {
+    public Rate own(String sheetId, String grade, LocalDate on) {
         List<Rate> found = jdbc.query("SELECT " + COLUMNS + " FROM rate WHERE sheet_id = ? AND grade = ?"
                 + " AND (from_date IS NULL OR from_date <= ?) ORDER BY from_date DESC NULLS LAST LIMIT 1",
                 RateRepository::map, sheetId, grade, Date.valueOf(on));

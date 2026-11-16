@@ -8,8 +8,9 @@ export const useUser = () => useSearchParam('user', asString);
 export const useSheetId = () => useSearchParam('sheet', asString);
 
 /** `today` (yyyy-MM-dd) is the sheet's own date: every date decision and default date on the
- *  sheet uses it, never the browser's clock. An `archived` sheet stays visible and refuses every change. */
-export type Sheet = { id: string; today: string; archived: boolean };
+ *  sheet uses it, never the browser's clock. An `archived` sheet stays visible and refuses every change. `parent` is the
+ *  id of its parent sheet (whose rates apply where it has none), null when none. */
+export type Sheet = { id: string; today: string; archived: boolean; parent: string | null };
 
 /** The active sheet as the store holds it. Keyed ['sheet', id]: every per-sheet key starts so. */
 export function useSheet(sheetId: string) {

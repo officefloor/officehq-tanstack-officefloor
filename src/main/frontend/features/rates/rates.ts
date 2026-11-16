@@ -6,12 +6,13 @@ import { gradeOn, type Person } from '../people/people';
 import type { Dated } from '../settings/settings';
 
 /** A grade's rate on the sheet: `rate` is a percent as text with two decimals (never a float), in force from
- *  `from` (yyyy-MM-dd; null: from the beginning of time) through `to` (yyyy-MM-dd; null: no end). */
-export type Rate = { sheetId: string; grade: string; rate: string; from: string | null; to: string | null };
+ *  `from` (yyyy-MM-dd; null: from the beginning of time) through `to` (yyyy-MM-dd; null: no end). `level` is how far
+ *  up the parent chain its sheet is: 0 the sheet's own, 1 its parent's, up to 3 (absent: 0). */
+export type Rate = { sheetId: string; grade: string; rate: string; from: string | null; to: string | null; level?: number };
 
 export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'];
 
-/** The sheet's rates, by grade then from-date. */
+/** The sheet's rates, by grade then from-date, then those of its parent, the parent's parent ... (see Rate.level). */
 export function useRates(sheetId: string) {
   return useQuery({
     queryKey: ratesKey(sheetId),
@@ -19,12 +20,28 @@ export function useRates(sheetId: string) {
   });
 }
 
-/** The grade's rate in force on a date (yyyy-MM-dd): the one with the latest from-date on or before it, a rate
- *  with no from-date applying from the beginning of time; undefined when none applies, or that rate's to-date is
- *  before the date. */
+/** The sheet's own rates: those not inherited from a parent sheet. */
+export function ownRates(rates: Rate[] | undefined): Rate[] {
+  return (rates ?? []).filter((r) => (r.level ?? 0) === 0);
+}
+
+/** The grade's rate in force on a date (yyyy-MM-dd) on the sheet (see levelRate), or, when it has none, on its parent,
+ *  then the parent's parent, up the levels the rates carry; undefined when none of them has one. */
 export function rateFor(rates: Rate[] | undefined, grade: string, on: string): string | undefined {
+  const levels = [...new Set((rates ?? []).map((r) => r.level ?? 0))].sort((a, b) => a - b);
+  for (const level of levels) {
+    const found = levelRate((rates ?? []).filter((r) => (r.level ?? 0) === level), grade, on);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/** The grade's rate in force on a date among one sheet's rates: the one with the latest from-date on or before it, a
+ *  rate with no from-date applying from the beginning of time; undefined when none applies, or that rate's to-date is
+ *  before the date. */
+function levelRate(rates: Rate[], grade: string, on: string): string | undefined {
   let found: Rate | undefined;
-  for (const r of rates ?? []) {
+  for (const r of rates) {
     if (r.grade !== grade || (r.from !== null && r.from > on)) continue;
     if (found === undefined || (found.from ?? '') < (r.from ?? '')) found = r;
   }
