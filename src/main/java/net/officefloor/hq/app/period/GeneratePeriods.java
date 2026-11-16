@@ -20,7 +20,7 @@ public class GeneratePeriods {
             if (periods.nameTaken(sheet, name) || periods.overlaps(sheet, month.atDay(1), month.atEndOfMonth())) {
                 continue;
             }
-            Period period = periods.add(sheet, name, month.atDay(1), month.atEndOfMonth());
+            Period period = periods.add(sheet, name, month.atDay(1), month.atEndOfMonth(), null);
             audit.record("PERIOD_ADDED sheet=" + period.sheetId() + " by=" + values.by() + " period=" + period.name()
                     + " from=" + period.from() + " to=" + period.to());
             made++;

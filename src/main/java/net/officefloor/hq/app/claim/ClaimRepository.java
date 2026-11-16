@@ -87,6 +87,13 @@ public class ClaimRepository {
         }
     }
 
+    /** How many of the person's claims are OPEN or PENDING with a due-by from..to, both inclusive. */
+    public int heldIn(String sheetId, long personId, LocalDate from, LocalDate to) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ? AND status IN ('OPEN', 'PENDING')"
+                + " AND due_by >= ? AND due_by <= ?", Integer.class, sheetId, personId, Date.valueOf(from), Date.valueOf(to));
+        return n == null ? 0 : n;
+    }
+
     /** Whether a claim of the sheet other than {@code self} (null: none) has the reference, comparing without regard to case. */
     public boolean refUsed(String sheetId, String ref, Long self) {
         return jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND ref_key = ? AND (CAST(? AS BIGINT) IS NULL OR id <> ?)",

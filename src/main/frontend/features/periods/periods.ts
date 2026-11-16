@@ -21,6 +21,8 @@ export type Period = {
   closedTotal: string | null;
   /** Closed or soft-closed, each person's due-total for the period fixed when it was closed, by person id. */
   personTotals: Record<string, string>;
+  /** The most OPEN or PENDING claims a person may have in it (by due-by); null for no cap. */
+  cap: number | null;
 };
 
 export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'];

@@ -8,6 +8,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class AddPeriod {
     public void add(@PathVariable("sheetId") String sheetId, @Val PeriodValues values, PeriodRepository periods,
             Out<Period> period) {
-        period.set(periods.add(sheetId.trim(), values.name(), values.from(), values.to()));
+        period.set(periods.add(sheetId.trim(), values.name(), values.from(), values.to(), values.cap()));
     }
 }

@@ -10,13 +10,13 @@ import { useRates } from '../rates/rates';
 import { useFiscalStartMonth, useFloor, useLate } from '../settings/settings';
 import { fiscalYearOf, periodDue, periodsKey, personPeriodDue, usePeriods, type Period } from './periods';
 
-type Values = { name: string; from: string; to: string };
-const EMPTY: Values = { name: '', from: '', to: '' };
+type Values = { name: string; from: string; to: string; cap: string };
+const EMPTY: Values = { name: '', from: '', to: '', cap: '' };
 
 /** The sheet's periods: the form that adds one, and each period with its due-total — the figures of the claims
  *  that count, each with its late charge (a person's OPEN or PENDING claims dated within a hold of theirs, not bound by a statement, do not) whose due-by falls in it, added up (skipping n/a); a closed period
  *  shows the due-total fixed when it was closed, a soft-closed one that fixed when it was soft-closed. Each period
- *  shows the fiscal year its from-date falls in (see fiscalYearOf). */
+ *  shows the fiscal year its from-date falls in (see fiscalYearOf), and its cap on each person's OPEN or PENDING claims in it (blank: none). */
 function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const periods = usePeriods(sheetId);
   const people = usePeople(sheetId);
@@ -62,12 +62,15 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
         <label>
           To <input type="date" data-testid="period-form-to" value={values.to} onChange={(e) => change({ to: e.target.value })} />
         </label>{' '}
+        <label>
+          Cap <input data-testid="period-form-cap" inputMode="numeric" placeholder="none" value={values.cap} onChange={(e) => change({ cap: e.target.value })} />
+        </label>{' '}
         <button type="submit" data-testid="period-form-submit" disabled={save.isPending}>
           Add period
         </button>
         {save.isError && (
           <span data-testid="period-form-error">
-            A period needs a name not already on the sheet, and dates from on or before to that overlap no other period.
+            A period needs a name not already on the sheet, and dates from on or before to that overlap no other period, and a cap (if any) that is a whole number above 0.
           </span>
         )}
       </form>
@@ -83,6 +86,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid="period-due-total">{periodDue(p, claims.data, people.data, rates.data, floor, late)}</td>
               <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
               <td data-testid="period-fy">{fiscalYearOf(p.from, fiscalStart)}</td>
+              <td data-testid="period-cap">{p.cap ?? ''}</td>
               <td>
                 <PeriodClose sheetId={sheetId} user={user} period={p} />
               </td>

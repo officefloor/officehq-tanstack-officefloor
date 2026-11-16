@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PeriodRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, from_date, to_date, closed, closed_total, soft_closed";
+    private static final String COLUMNS = "id, sheet_id, name, from_date, to_date, closed, closed_total, soft_closed, cap";
 
     private final JdbcTemplate jdbc;
     private final SheetRepository sheets;
@@ -187,25 +187,26 @@ public class PeriodRepository {
     }
 
     /** Stores a new period and returns it with its id. */
-    public Period add(String sheetId, String name, LocalDate from, LocalDate to) {
+    public Period add(String sheetId, String name, LocalDate from, LocalDate to, Integer cap) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update((con) -> {
-            var ps = con.prepareStatement("INSERT INTO period (sheet_id, name, from_date, to_date, added_on) VALUES (?, ?, ?, ?, ?)",
+            var ps = con.prepareStatement("INSERT INTO period (sheet_id, name, from_date, to_date, added_on, cap) VALUES (?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setDate(3, Date.valueOf(from));
             ps.setDate(4, Date.valueOf(to));
             ps.setDate(5, Date.valueOf(sheets.today(sheetId)));
+            ps.setObject(6, cap);
             return ps;
         }, keys);
-        return new Period(keys.getKey().longValue(), sheetId, name, from, to, false, null, false);
+        return new Period(keys.getKey().longValue(), sheetId, name, from, to, false, null, false, cap);
     }
 
     private static Period map(ResultSet rs, int n) throws SQLException {
         BigDecimal total = rs.getBigDecimal("closed_total");
         return new Period(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
                 rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate(), rs.getBoolean("closed"), total == null ? null : total.setScale(2),
-                rs.getBoolean("soft_closed"));
+                rs.getBoolean("soft_closed"), rs.getObject("cap", Integer.class));
     }
 }

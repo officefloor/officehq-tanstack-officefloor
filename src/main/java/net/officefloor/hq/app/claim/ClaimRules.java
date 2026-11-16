@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
 
 import java.time.LocalDate;
 import net.officefloor.hq.app.holiday.HolidayRepository;
+import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.setting.SettingRepository;
@@ -49,6 +50,14 @@ public final class ClaimRules {
      *  that date. The claim keeps them, so its due-by can be worked out again when a holiday is added (see ClaimRepository#refixDueBys). */
     public static int terms(Person person, LocalDate date, SettingRepository settings) {
         return settings.terms(person.sheetId(), person.terms(), person.gradeOn(date), date);
+    }
+
+    /** Whether opening the claim would take its person past the cap of the period its due-by falls in: they already have
+     *  that many OPEN or PENDING claims in it (a period with no cap, or no period: never). */
+    public static boolean overCap(Claim claim, PeriodRepository periods, ClaimRepository claims) {
+        Period period = periods.containing(claim.sheetId(), claim.dueBy());
+        return period != null && period.cap() != null
+                && claims.heldIn(claim.sheetId(), claim.personId(), period.from(), period.to()) >= period.cap();
     }
 
     /** A claim's date, the number it corrects (null when none), its due-by and the terms it was fixed with, once its rules are kept. */
