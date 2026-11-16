@@ -10,7 +10,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 /**
  * The late charge on a sheet as of its today: an overdue claim (OPEN or PENDING, its due-by — fixed when it was added — plus
  * its grace before today; see lateFrom) gains, for every full 30 days it is overdue, the late percent in force on that boundary
- * date (its due-by plus its grace plus 30, 60, 90 ... days) of its figure, each rounded to two decimals by the claim's rounding (see Rounding), added up; a
+ * date (its due-by plus its grace plus 30, 60, 90 ... days) of its figure plus the charges of the boundaries before it (compounding), each rounded to two decimals by the claim's rounding (see Rounding), added up; a
  * boundary whose percent is 0.00 adds nothing. The charge is never bound by a statement (it follows today); settling freezes it into the claim's due.
  * The floor is applied last: a claim's live due is the greater of the floor in force on its date and its figure plus its charge.
  */
@@ -46,7 +46,7 @@ public record LateCharge(LocalDate today, Function<LocalDate, BigDecimal> pct, R
         BigDecimal charge = BigDecimal.ZERO.setScale(2);
         for (long step = 1; step <= steps; step++) {
             BigDecimal boundary = pct.apply(from.plusDays(step * DAYS));
-            charge = charge.add(figure.multiply(boundary).movePointLeft(2).setScale(2, rounding.mode(claim)));
+            charge = charge.add(figure.add(charge).multiply(boundary).movePointLeft(2).setScale(2, rounding.mode(claim)));
         }
         return charge;
     }

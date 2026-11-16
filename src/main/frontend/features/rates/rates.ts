@@ -68,7 +68,7 @@ function percentOf(value: string, pct: string, times: number, halfUp: boolean): 
 /** A claim's due: the figure fixed when it was settled, otherwise the one its person's last statement bound it to (never while PENDING),
  *  otherwise its amount at the rate in force on its date. Given the sheet's late charge, an overdue claim's figure gains,
  *  for every full 30 days overdue, the late percent in force on that boundary (its due-by plus 30, 60, 90 ... days) of
- *  it, each rounded like the claim and added up (never bound by a statement; frozen in when settled). Last, the live
+ *  it plus the charges of the boundaries before it (compounding), each rounded like the claim and added up (never bound by a statement; frozen in when settled). Last, the live
  *  due is at least the sheet's floor in force on its date (a correction has no floor). Both round by the sheet's
  *  policy date (see Late). */
 export function claimDue(claim: Claim, rate: string | undefined, floor: Dated, late?: Late): string {
@@ -77,7 +77,7 @@ export function claimDue(claim: Claim, rate: string | undefined, floor: Dated, l
   const figure = claim.stated && claim.status !== 'PENDING' ? (claim.statedDue ?? 'n/a') : due(claim.amount, rate, halfUp);
   if (figure === 'n/a') return figure;
   const boundaries = late === undefined ? [] : lateBoundaries(claim, late);
-  const charged = hundredths(figure) + boundaries.reduce((t, b) => t + percentOf(figure, late!.pct(b), 1, halfUp), 0n);
+  const charged = boundaries.reduce((t, b) => t + percentOf(shown(t), late!.pct(b), 1, halfUp), hundredths(figure));
   const f = hundredths(floor(claim.date));
   return shown(charged < f && hundredths(claim.amount) >= 0n ? f : charged);
 }
