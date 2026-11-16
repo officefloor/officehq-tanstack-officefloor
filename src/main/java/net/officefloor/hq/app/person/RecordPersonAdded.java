@@ -5,12 +5,12 @@ import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupBefore;
 import net.officefloor.plugin.variable.Val;
 
-/** Writes PERSON_ADDED to the audit file once the person is stored. Then writes the
+/** Writes PERSON_ADDED to the audit file once the person is stored, with terms= at the end when they were given. Then writes the
  * figures the change moved (see Rollup). */
 public class RecordPersonAdded {
     public void record(@Val Person person, @Val PersonValues values, @Val RollupBefore before, Rollup rollup, Audit audit) {
         audit.record("PERSON_ADDED sheet=" + person.sheetId() + " by=" + values.by() + " name=" + person.name()
-                + " grade=" + person.grade());
+                + " grade=" + person.grade() + (person.terms() == null ? "" : " terms=" + person.terms()));
         rollup.record(person.sheetId(), values.by(), before);
     }
 }

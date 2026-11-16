@@ -147,6 +147,12 @@ public class SettingRepository {
         return value == null ? terms(sheetId, date) : Integer.parseInt(value);
     }
 
+    /** The terms a claim of the date has: the person's own when they have them (non-null), else their grade's in
+     *  force on the date (see above). */
+    public int terms(String sheetId, Integer own, String grade, LocalDate date) {
+        return own != null ? own : terms(sheetId, grade, date);
+    }
+
     /** The sheet's late percent in force on the date (a 30-day boundary of an overdue claim): what the claim gains of its
      *  figure for that boundary. */
     public BigDecimal latePct(String sheetId, LocalDate date) {

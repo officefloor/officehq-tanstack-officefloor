@@ -20,7 +20,7 @@ public class FindOrAddPerson {
         Person found = people.findByName(sheet, values.name());
         if (found == null) {
             RollupBefore was = rollup.take(sheet);
-            found = people.add(sheet, values.name(), values.grade());
+            found = people.add(sheet, values.name(), values.grade(), values.terms());
             audit.record("PERSON_ADDED sheet=" + found.sheetId() + " by=" + values.by() + " name=" + found.name()
                     + " grade=" + found.grade());
             rollup.record(sheet, values.by(), was);

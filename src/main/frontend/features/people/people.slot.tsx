@@ -8,9 +8,9 @@ import { claimsKey, type Claim } from '../claims/claims';
 import { GRADES, peopleKey, useEditingPerson, usePeople, useShowRetired, type Person } from './people';
 
 /** The form's values. `gradeFrom` (yyyy-MM-dd) is the date the grade is given from; blank, the sheet's today. A
- *  person's first grade applies from the beginning of time. */
-type Values = { name: string; grade: string; gradeFrom: string };
-const EMPTY: Values = { name: '', grade: 'A', gradeFrom: '' };
+ *  person's first grade applies from the beginning of time. `terms` are the person's own terms in days; blank, none. */
+type Values = { name: string; grade: string; gradeFrom: string; terms: string };
+const EMPTY: Values = { name: '', grade: 'A', gradeFrom: '', terms: '' };
 
 type Quick = { name: string; amount: string };
 const NO_QUICK: Quick = { name: '', amount: '' };
@@ -73,7 +73,8 @@ function QuickAdd({ sheetId, user }: { sheetId: string; user: string }) {
 
 /** The sheet's people: a form that adds a person or saves the one being edited, and the list. The editor
  *  remembers the version of the person it loaded; a save refused because someone else saved the person since
- *  (412) shows the error and puts the current values, and their version, in the form. */
+ *  (412) shows the error and puts the current values, and their version, in the form; an edit refused otherwise shows the
+ *  error and closes the editor. */
 function People({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
   const [showRetired, setShowRetired] = useShowRetired();
@@ -97,11 +98,18 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
       void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
     },
     onError: async (error, { id }) => {
-      if (id === undefined || !(error instanceof HttpError) || error.status !== 412) return;
+      if (id === undefined) return;
+      if (!(error instanceof HttpError) || error.status !== 412) {
+        // a refused edit closes the editor, its error still showing: the form is back to adding
+        setValues(EMPTY);
+        setVersion(undefined);
+        setEditingId(undefined);
+        return;
+      }
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
       const now = queryClient.getQueryData<Person[]>(peopleKey(sheetId))?.find((p) => p.id === id);
       if (now) {
-        setValues({ name: now.name, grade: now.grade, gradeFrom: '' });
+        setValues({ name: now.name, grade: now.grade, gradeFrom: '', terms: now.terms === null ? '' : String(now.terms) });
         setVersion(now.version);
       }
     },
@@ -114,7 +122,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
   };
   const openEditor = (p: Person) => {
     save.reset();
-    setValues({ name: p.name, grade: p.grade, gradeFrom: '' });
+    setValues({ name: p.name, grade: p.grade, gradeFrom: '', terms: p.terms === null ? '' : String(p.terms) });
     setVersion(p.version);
     setEditingId(String(p.id));
   };
@@ -160,6 +168,16 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
             onChange={(e) => change({ gradeFrom: e.target.value })}
           />
         </label>{' '}
+        <label>
+          Terms{' '}
+          <input
+            data-testid="person-form-terms"
+            placeholder="days"
+            inputMode="numeric"
+            value={values.terms}
+            onChange={(e) => change({ terms: e.target.value })}
+          />
+        </label>{' '}
         <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
           {editing ? 'Save' : 'Add person'}
         </button>
@@ -170,7 +188,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
         )}
         {save.isError && (
           <span data-testid="person-form-error">
-            {values.name.trim() === ''
+            {(save.variables?.name ?? '').trim() === ''
               ? 'A name is required.'
               : save.error instanceof HttpError && save.error.status === 409
                 ? 'That name is already in use on this sheet.'
@@ -196,6 +214,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
           <tr>
             <th>Name</th>
             <th>Grade</th>
+            <th>Terms</th>
             <PeopleHead.Slot sheetId={sheetId} user={user} />
             <th />
           </tr>
@@ -205,6 +224,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
+              <td data-testid="person-terms">{p.terms ?? ''}</td>
               <PersonRow.Slot sheetId={sheetId} user={user} person={p} />
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => openEditor(p)}>

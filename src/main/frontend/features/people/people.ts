@@ -13,7 +13,8 @@ export type PersonGrade = { grade: string; from: string | null };
  *  `version` goes up by one on each stored edit; an edit sends the version it was made from. `retiredFrom` (yyyy-MM-dd)
  *  is the date the person is retired from, null when not retired: a person with one counts as retired at once. `holds` are
  *  the person's holds, by from-date: an OPEN or PENDING claim of theirs dated within one, and not bound by a statement,
- *  counts in no live total. `held` is whether they have any hold. */
+ *  counts in no live total. `held` is whether they have any hold. `terms` are the person's own terms in days (ahead of
+ *  their grade's and the sheet's when a claim is added), null when they have none. */
 export type Person = {
   id: number;
   sheetId: string;
@@ -24,6 +25,7 @@ export type Person = {
   held: boolean;
   grades: PersonGrade[];
   holds: PersonHold[];
+  terms: number | null;
 };
 
 /** A hold on a person from a date until a date (yyyy-MM-dd, both included); a null `to` is open-ended. */

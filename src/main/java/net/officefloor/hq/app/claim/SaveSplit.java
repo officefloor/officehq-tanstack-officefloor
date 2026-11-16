@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Stores the claim's remaining amount, but only while it is still OPEN with the amount the split started from (a
  * change another user made first is refused), then adds the new claim: the split-off amount, the same person, date
- * and note, its due-by fixed now from the terms of the person's grade in force on its date, OPEN with the sheet's next
+ * and note, its due-by fixed now from the person's own terms, else those of their grade in force on its date, OPEN with the sheet's next
  * number (see ClaimNumbering), opened by the user who split, and the original's number as split-from. The new claim's
  * status log starts with its OPEN line (see ClaimLog).
  */
@@ -25,7 +25,7 @@ public class SaveSplit {
         Person person = people.find(claim.sheetId(), claim.personId());
         String grade = person == null ? null : person.gradeOn(claim.date());
         Claim added = claims.add(claim.sheetId(), claim.personId(), split.amount(), claim.date(), claim.note(), null,
-                claim.date().plusDays(settings.terms(claim.sheetId(), grade, claim.date())));
+                claim.date().plusDays(settings.terms(claim.sheetId(), person == null ? null : person.terms(), grade, claim.date())));
         String number = ClaimNumbering.next(added, claims, periods, settings, sheets);
         Claim opened = new Claim(added.id(), added.sheetId(), added.personId(), added.amount(), added.date(),
                 added.note(), ClaimStatus.OPEN, number, null, split.by(), false, null, null, added.dueBy(), null, 0,

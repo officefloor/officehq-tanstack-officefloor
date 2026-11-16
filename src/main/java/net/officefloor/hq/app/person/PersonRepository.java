@@ -21,7 +21,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, version, retired_from";
+    private static final String COLUMNS = "id, sheet_id, name, version, retired_from, terms";
 
     private final JdbcTemplate jdbc;
     private final SheetRepository sheets;
@@ -75,7 +75,7 @@ public class PersonRepository {
         for (Person p : found) {
             List<PersonGrade> mine = List.copyOf(grades.getOrDefault(p.id(), List.of()));
             people.add(new Person(p.id(), p.sheetId(), p.name(), Person.gradeOn(mine, today), p.version(), p.retiredFrom(),
-                    mine, List.copyOf(holds.getOrDefault(p.id(), List.of()))));
+                    mine, List.copyOf(holds.getOrDefault(p.id(), List.of())), p.terms()));
         }
         return people;
     }
@@ -89,15 +89,16 @@ public class PersonRepository {
     }
 
     /** The unique (sheet_id, name_key) index refuses a name taken by a concurrent add or edit. */
-    public Person add(String sheetId, String name, String grade) throws DuplicatePersonNameException {
+    public Person add(String sheetId, String name, String grade, Integer terms) throws DuplicatePersonNameException {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         try {
             jdbc.update(con -> {
-                PreparedStatement ps = con.prepareStatement("INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)",
+                PreparedStatement ps = con.prepareStatement("INSERT INTO person (sheet_id, name, grade, terms) VALUES (?, ?, ?, ?)",
                         new String[] { "id" });
                 ps.setString(1, sheetId);
                 ps.setString(2, name);
                 ps.setString(3, grade);
+                ps.setObject(4, terms, java.sql.Types.INTEGER);
                 return ps;
             }, keys);
         } catch (DuplicateKeyException e) {
@@ -105,7 +106,7 @@ public class PersonRepository {
         }
         long id = keys.getKey().longValue();
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, from_date, grade) VALUES (?, ?, NULL, ?)", sheetId, id, grade);
-        return new Person(id, sheetId, name, grade, 0, null, List.of(new PersonGrade(grade, null)), List.of());
+        return new Person(id, sheetId, name, grade, 0, null, List.of(new PersonGrade(grade, null)), List.of(), terms);
     }
 
     /** Stores the person as its new version, with its grades, only while the stored one is still {@code fromVersion}:
@@ -113,8 +114,8 @@ public class PersonRepository {
     public void update(Person person, long fromVersion) throws DuplicatePersonNameException, StalePersonException {
         int n;
         try {
-            n = jdbc.update("UPDATE person SET name = ?, version = ? WHERE sheet_id = ? AND id = ? AND version = ?",
-                    person.name(), person.version(), person.sheetId(), person.id(), fromVersion);
+            n = jdbc.update("UPDATE person SET name = ?, version = ?, terms = ? WHERE sheet_id = ? AND id = ? AND version = ?",
+                    person.name(), person.version(), person.terms(), person.sheetId(), person.id(), fromVersion);
         } catch (DuplicateKeyException e) {
             throw new DuplicatePersonNameException(person.name());
         }
@@ -142,6 +143,7 @@ public class PersonRepository {
     private static Person map(ResultSet rs, int n) throws SQLException {
         Date retired = rs.getDate("retired_from");
         return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
-                retired == null ? null : retired.toLocalDate().toString(), List.of(), List.of());
+                retired == null ? null : retired.toLocalDate().toString(), List.of(), List.of(),
+                rs.getObject("terms", Integer.class));
     }
 }
