@@ -29,7 +29,7 @@ import { QuickAdd } from './QuickAdd';
 import { ColumnChooser, useColumns } from './Columns';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { SortBy, sortPeople, useSortBy } from './SortBy';
-import { addAlias, addPatron, addPerson, cancelStatement, flagPerson, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, setApprover, shownName, takeStatement, transferPerson, undoMerge, undoTransfer, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
+import { addAlias, addPatron, addPerson, cancelStatement, flagPerson, gradeOn, holdPerson, listPeople, listWatches, mergePerson, movePerson, peopleKey, retirePerson, setApprover, shownName, takeStatement, timeline, transferPerson, undoMerge, undoTransfer, unretirePerson, updatePerson, watchPerson, watchesKey, type Person, type PersonInput } from './api';
 import { Fig } from '../session/Fig';
 
 const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFrom: '', contact: '', tags: '' };
@@ -823,6 +823,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   </button>{' '}
                   {p.retirements.map((r, i) => (
                     <Fragment key={i}><span data-testid="person-retirement-line">{r.from} to {r.to}</span>; </Fragment>
+                  ))}
+                  Timeline{' '}
+                  {timeline(p, own).map((line, i) => (
+                    <Fragment key={i}><span data-testid="person-timeline-line">{line}</span>; </Fragment>
                   ))}
                   Snapshots{' '}
                   {p.snapshots.map((s, i) => (

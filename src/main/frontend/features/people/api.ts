@@ -85,6 +85,26 @@ export function gradeOn(p: Person, date: string): string {
   return found?.grade ?? '';
 }
 
+/** The person's timeline: one line per dated thing about them (`<date> grade <grade>` for each dated
+ *  grade, `<date> claim <amount> <status>` for each of their `claims`, `<date> hold [to <date>]` for each
+ *  hold, `<date> retired` for each retirement past or present, `<date> unretired` for each past one),
+ *  by date, a date's grades then claims (by their line's text) then holds then retirements then unretirements. */
+export function timeline(p: Person, claims: Claim[]): string[] {
+  const lines: { date: string; kind: number; order: number | string; text: string }[] = [];
+  p.grades.forEach((g, i) => {
+    if (g.from !== null) lines.push({ date: g.from, kind: 0, order: i, text: `grade ${g.grade}` });
+  });
+  claims.forEach((c) => lines.push({ date: c.date, kind: 1, order: `claim ${c.amount} ${c.status}`, text: `claim ${c.amount} ${c.status}` }));
+  p.holds.forEach((h, i) => lines.push({ date: h.from, kind: 2, order: i, text: h.to === null ? 'hold' : `hold to ${h.to}` }));
+  p.retirements.forEach((r, i) => {
+    lines.push({ date: r.from, kind: 3, order: i, text: 'retired' });
+    lines.push({ date: r.to, kind: 4, order: i, text: 'unretired' });
+  });
+  if (p.retiredFrom !== null) lines.push({ date: p.retiredFrom, kind: 3, order: p.retirements.length, text: 'retired' });
+  lines.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.kind - b.kind || (a.order < b.order ? -1 : a.order > b.order ? 1 : 0)));
+  return lines.map((l) => `${l.date} ${l.text}`);
+}
+
 /** A person's name as the screen shows it: `<name> (<grade in force on the sheet's today>)`. */
 export function shownName(p: Person): string {
   return `${p.name} (${p.grade})`;

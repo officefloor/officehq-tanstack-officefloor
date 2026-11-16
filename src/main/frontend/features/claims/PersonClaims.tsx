@@ -101,6 +101,14 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       setEditing(null);
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
+    // A refused save of the editor shows its error and puts the form back to adding, the claim's
+    // lock released: the next submit adds a claim rather than re-trying the refused edit.
+    onError: (_e, v) => {
+      if (v.id === null) return;
+      setForm(EMPTY);
+      setEditing(null);
+      unlocking.mutate(v.id);
+    },
   });
 
   // Opening a claim's editor takes its lock; a refusal leaves the editor open (a save is refused too)
