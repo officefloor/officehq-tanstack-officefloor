@@ -31,9 +31,9 @@ export function usePersonDues(sheetId: string, user: string, current = false): A
   );
 }
 
-/** The sheet's settled-total and open-total (see `splitDues`) and the due of open claims by age (see `agedDues`):
- *  everyone's simply added up, not trimmed. */
-function useSplitTotals(sheetId: string, user: string) {
+/** Each person's settled-total and open-total (see `splitDues`) as their row shows them, and the due of their
+ *  open claims by age (see `agedDues`), in list order. */
+function usePersonSplits(sheetId: string, user: string) {
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
@@ -46,9 +46,23 @@ function useSplitTotals(sheetId: string, user: string) {
     const dueOf = (c: (typeof own)[number]) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges);
     return { ...splitDues(own, dueOf, heldOf(p.id, claims.data ?? [], people.data, rates.data, floor, charges)), aged: agedDues(own, today, dueOf) };
   });
+  return splits;
+}
+
+/** Each person's settled-total and open-total as their row shows them, in list order. */
+export function usePersonSettledOpen(sheetId: string, user: string): { settled: string[]; open: string[] } {
+  const splits = usePersonSplits(sheetId, user);
+  return { settled: splits.map((s) => s.settled), open: splits.map((s) => s.open) };
+}
+
+/** The sheet's settled-total and open-total: everyone's added up, less the single highest and lowest when
+ *  three or more have one (see `trimmedSum`); and the due of open claims by age (see `agedDues`): everyone's
+ *  simply added up, not trimmed. */
+function useSplitTotals(sheetId: string, user: string) {
+  const splits = usePersonSplits(sheetId, user);
   return {
-    settled: sumDues(splits.map((s) => s.settled)),
-    open: sumDues(splits.map((s) => s.open)),
+    settled: trimmedSum(splits.map((s) => s.settled)),
+    open: trimmedSum(splits.map((s) => s.open)),
     upTo30: sumDues(splits.map((s) => s.aged.upTo30)),
     upTo60: sumDues(splits.map((s) => s.aged.upTo60)),
     over60: sumDues(splits.map((s) => s.aged.over60)),

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useIsFetching, useQuery } from '@tanstack/react-query';
 import { listPeople, peopleKey } from '../people/api';
-import { usePersonDues } from '../rates/DueTotal';
+import { usePersonDues, usePersonSettledOpen } from '../rates/DueTotal';
+import { usePersonCuts } from '../pools/CutTotal';
 import { useOverdue } from '../rates/Overdue';
 import { formatCents, hundredths, trimmedSum } from '../rates/api';
 import { useAsOf } from '../sheet/AsOf';
@@ -10,9 +11,10 @@ import { Fig } from '../session/Fig';
 import { claimsKey, listClaims } from '../claims/api';
 import { STATUSES, statusCount, useGradeDues } from './Summary';
 
-/** A sheet's own figures: each person's names (their name and aliases), due-total and overdue-total as
- *  their row shows them, and per grade and status the figures as the sheet's summary shows them. */
-type Figures = { names: string[][]; dues: Array<string | null>; overdues: string[]; grades: Record<string, string>;
+/** A sheet's own figures: each person's names (their name and aliases), due-total, overdue-total,
+ *  settled-total, open-total and cut total as their row shows them, and per grade and status the figures as the sheet's summary shows them. */
+type Figures = { names: string[][]; dues: Array<string | null>; overdues: string[];
+  settleds: string[]; opens: string[]; cuts: string[]; grades: Record<string, string>;
   statuses: Record<string, number> };
 
 const nameKey = (name: string) => name.trim().toLowerCase();
@@ -35,9 +37,12 @@ function distinctPeople(names: string[][]): number {
 function useFigures(sheetId: string, user: string): Figures {
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
+  const split = usePersonSettledOpen(sheetId, user);
+  const cuts = usePersonCuts(sheetId);
   const statuses = Object.fromEntries(STATUSES.map((s) => [s, statusCount(claims.data, s)]));
   return { names: (people.data ?? []).map((p) => [p.name, ...p.aliases]), dues: usePersonDues(sheetId, user),
-    overdues: useOverdue(sheetId, user).perPerson, grades: useGradeDues(sheetId, user), statuses };
+    overdues: useOverdue(sheetId, user).perPerson,
+    settleds: split.settled, opens: split.open, cuts, grades: useGradeDues(sheetId, user), statuses };
 }
 
 /** Works out one descendant sheet's own figures and hands them up; shows nothing. */
@@ -49,7 +54,7 @@ function Descendant({ sheetId, user, report }: { sheetId: string; user: string; 
 
 /** The consolidated figures over the sheet and all its descendants (its children, theirs, ...): the
  *  number of people, each counted once (people whose names or aliases match, as names are compared, are
- *  one); the due- and overdue-total of every person of the tree as their row shows it, added up leaving
+ *  one); the due-, overdue-, settled-, open- and cut total of every person of the tree as their row shows it, added up leaving
  *  out the single highest and lowest over the whole tree when three or more have one; per grade,
  *  each sheet's due-total of that grade (retired people left out, as its summary shows it) added up; per
  *  status, the number of claims in it over the tree.
@@ -77,6 +82,9 @@ export function Consolidated({ sheetId, user }: { sheetId: string; user: string 
       Consolidated: people <span data-testid="consolidated-people-count">{ready ? distinctPeople(all.flatMap((f) => f.names)) : ''}</span>
       {' · '}due <span data-testid="consolidated-due-total"><Fig>{ready ? trimmedSum(all.flatMap((f) => f.dues)) : ''}</Fig></span>
       {' · '}overdue <span data-testid="consolidated-overdue-total"><Fig>{ready ? trimmedSum(all.flatMap((f) => f.overdues)) : ''}</Fig></span>
+      {' · '}settled <span data-testid="consolidated-settled-total"><Fig>{ready ? trimmedSum(all.flatMap((f) => f.settleds)) : ''}</Fig></span>
+      {' · '}open <span data-testid="consolidated-open-total"><Fig>{ready ? trimmedSum(all.flatMap((f) => f.opens)) : ''}</Fig></span>
+      {' · '}cut <span data-testid="consolidated-cut-total"><Fig>{ready ? trimmedSum(all.flatMap((f) => f.cuts)) : ''}</Fig></span>
       {grades.map((g) => (
         <span key={g}>{' · '}grade {g} due <span data-testid={`consolidated-grade-${g}-due-total`}>
           <Fig>{ready ? sum((f) => f.grades[g] ?? '0.00') : ''}</Fig></span></span>
