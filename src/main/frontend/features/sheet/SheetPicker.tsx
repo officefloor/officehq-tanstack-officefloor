@@ -19,8 +19,9 @@ export function SheetPicker() {
           setError(true);
           return;
         }
-        // Loading a sheet re-reads it from the store, even when it was on screen before.
-        queryClient.removeQueries({ queryKey: sheetKey(trimmed) });
+        // Loading a sheet re-reads it from the store, even when it was on screen before. Reset, not
+        // removed: whatever is on screen keeps watching the same queries and reads them afresh.
+        queryClient.resetQueries({ queryKey: sheetKey(trimmed) });
         setSheetId(trimmed);
       }}
     >
