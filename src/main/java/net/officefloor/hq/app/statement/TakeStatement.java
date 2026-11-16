@@ -26,8 +26,9 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Takes the person's statement on the sheet's today: their due-total now (the figures of their claims that count
  * added up, each with its late charge; n/a when their grade has no rate today and no counting claim has a
- * figure, kept or at the grade in force on its date; at most the sheet's cap), and binds every claim of theirs that counts (a person's OPEN or PENDING claims dated within a hold of theirs, or any once their retirement date is reached, not bound by a statement, do not, nor do deferred claims) to its rate figure now
- * (never the floor nor its late charge, which keep following today); one that does not count is unbound (live again).
+ * figure, kept or at the grade in force on its date; at most the sheet's cap), and binds every claim of theirs that counts (a person's OPEN or PENDING claims dated within a hold of theirs, or any once their retirement date is reached, not bound by a statement, do not, nor do deferred claims) to its due
+ * as shown, its late charge (and the floor) included, so its late charge no longer follows today while bound (a claim
+ * already bound keeps its bound figure); one that does not count is unbound (live again).
  *
  * Taken as of a date (on or before the sheet's today; a later one is refused, as is one before the person was added),
  * it is the same with the sheet as it stood at the end of that date (see SheetAsOf, PersonRepository#asOf): each claim
@@ -56,11 +57,12 @@ public class TakeStatement {
             }
             BigDecimal figure = ClaimDue.figure(c, person.gradeOn(c.date()), rates, late.rounding());
             figured |= figure != null;
-            if (figure != null) {
-                total = total.add(late.add(c, figure, settings.floor(sheetId, c.date())));
+            BigDecimal shown = late.add(c, figure, settings.floor(sheetId, c.date()));
+            if (shown != null) {
+                total = total.add(shown);
             }
             counted++;
-            claims.bind(c, true, figure);
+            claims.bind(c, true, shown);
         }
         String dueTotal = rates.find(sheetId, person.gradeOn(today), today) == null && !figured ? "n/a" : SettingRepository.capped(total, settings.cap(sheetId)).toPlainString();
         Statement statement = new Statement(sheetId, person.id(), today, dueTotal, counted, taker.by());
@@ -105,11 +107,12 @@ public class TakeStatement {
             }
             BigDecimal figure = figure(then, person.gradeOn(c.date()), sheet, rounding, rates);
             figured |= figure != null;
-            if (figure != null) {
-                total = total.add(late.add(then, figure, sheet.floor(c.date())));
+            BigDecimal shown = late.add(then, figure, sheet.floor(c.date()));
+            if (shown != null) {
+                total = total.add(shown);
             }
             counted++;
-            claims.bind(c, true, figure);
+            claims.bind(c, true, shown);
         }
         String dueTotal = sheet.rate(person.gradeOn(date), date) == null && !figured ? "n/a"
                 : SettingRepository.capped(total, sheet.cap()).toPlainString();

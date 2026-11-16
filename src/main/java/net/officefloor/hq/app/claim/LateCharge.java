@@ -11,7 +11,8 @@ import net.officefloor.hq.app.sheet.SheetRepository;
  * The late charge on a sheet as of its today: an overdue claim (OPEN or PENDING, its due-by — fixed when it was added — plus
  * its grace before today; see lateFrom) gains, for every full 30 days it is overdue, the late percent in force on that boundary
  * date (its due-by plus its grace plus 30, 60, 90 ... days) of its figure plus the charges of the boundaries before it (compounding), each rounded to two decimals by the claim's rounding (see Rounding), added up; a
- * boundary whose percent is 0.00 adds nothing. The charge is never bound by a statement (it follows today); settling freezes it into the claim's due.
+ * boundary whose percent is 0.00 adds nothing. A statement binds the claim's due as shown, the charge included: while
+ * bound it no longer follows today (see #add); settling freezes it into the claim's due.
  * A claim whose late charge a steward waived bears none (see ApplyWaive).
  * The floor is applied last: a claim's live due is the greater of the floor in force on its date and its figure plus its charge.
  */
@@ -59,10 +60,14 @@ public record LateCharge(LocalDate today, Function<LocalDate, BigDecimal> pct, R
     }
 
     /** The claim's due: the figure with its charge added on top, at least the floor (none for a correction, nor for a
-     *  settled figure, which stays frozen); null when it has none. */
+     *  settled figure, which stays frozen); null when it has none. A claim bound by a statement (not settled) has the
+     *  due it was bound to, its figure, as it is. */
     public BigDecimal add(Claim claim, BigDecimal figure, BigDecimal floor) {
         if (figure == null) {
             return null;
+        }
+        if (claim.due() == null && ClaimDue.bound(claim)) {
+            return figure;
         }
         BigDecimal due = figure.add(on(claim, figure));
         return claim.due() != null || ClaimDue.isCorrection(claim) ? due : due.max(floor);

@@ -7,7 +7,7 @@ import java.time.LocalDate;
  * A claim of a person on a sheet: an amount (two decimals; negative only for a correction), a date, a note (may be empty), its status
  * its number (given when opened; kept when voided; null for a draft) and its due fixed when settled (null when not
  * settled, or settled while its grade had no rate), who opened it (null when never opened),
- * whether it is bound to the figure it had at its person's last statement ({@code stated}) and that figure
+ * whether it is bound to the due it showed (late charge included) at its person's last statement ({@code stated}) and that due
  * ({@code statedDue}; null when it had none), and for a correction (a negative amount) the number of the SETTLED
  * claim of the same person it corrects ({@code corrects}; null for any other claim), and its due-by ({@code dueBy}), fixed
  * when it is added from its person's own terms, else those of their grade in force on its date (see SettingRepository#terms), and the
