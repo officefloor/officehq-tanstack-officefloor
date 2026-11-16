@@ -1,0 +1,79 @@
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index f94cdfa95..d3b7f4954 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -29,7 +29,8 @@ export const isBound = (c: Claim) => c.stated && c.statedDue !== null;
+  *  sheet's today then (the person's own, else their grade's that day, else the sheet's). `log` is its status log, oldest
+  *  first: `<STATUS> by <user> on <date> due=<due>`, the sheet's today and its due at each change.
+  *  `deferredUntil` is the date it was last deferred until (null: never), and `deferred` whether it is
+- *  deferred on the sheet's today (OPEN, or VOID voided while deferred, and deferred until a later date): a deferred claim counts in no
++ *  deferred on the sheet's today (OPEN, or VOID voided while deferred, or SETTLED settled while bound after it was deferred;
++ *  not bound by a statement — a bound claim's deferral takes effect once the binding ends; and deferred until a later date): a deferred claim counts in no
+  *  total, is not overdue, cannot be settled and is left unbound by a statement. `proofs` is how many
+  *  proofs it has, `photoProofs` how many of them are photos (the rest are receipts): one whose due is
+  *  above the proof threshold in force on its date cannot be settled or approved with none (while the
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 0d619bf15..a465b86fe 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -137,8 +137,9 @@ public class Claim {
+     /** The date it was last deferred until (yyyy-MM-dd; none: never deferred). */
+     public String getDeferredUntil() { return deferredUntil; }
+ 
+-    /** Whether it is deferred on the sheet's today: OPEN (or VOID, voided while deferred) and deferred
+-     *  until a later date. A deferred
++    /** Whether it is deferred on the sheet's today: OPEN (or VOID, voided while deferred, or SETTLED, settled
++     *  while bound after it was deferred), not bound by a statement, and deferred until a later date. A bound
++     *  claim's deferral takes effect only once the binding ends. A deferred
+      *  claim counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
+     public boolean isDeferred() { return deferred; }
+ 
+@@ -147,9 +148,9 @@ public class Claim {
+         this.deferred = deferred;
+     }
+ 
+-    /** Defer it until a date after the sheet's today. */
++    /** Defer it until a date after the sheet's today: while a statement binds it, only once the binding ends. */
+     public void defer(String until) {
+-        setDeferral(until, true);
++        setDeferral(until, !stated);
+     }
+ 
+     /** How many proofs it has (0 until one is added). */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 147fcb8a0..8d35eb785 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -18,9 +18,10 @@ import org.springframework.stereotype.Repository;
+ public class ClaimRepository {
+ 
+     private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, photo_proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, void_reason, edited_by, settle_batch, waived_on, held, review_assignee, "
+-            // Deferred now: OPEN (or VOID, voided while deferred: it keeps showing the deferral) and
+-            // deferred until a date after the sheet's today.
+-            + "(status IN ('OPEN', 'VOID') AND deferred_until IS NOT NULL AND deferred_until > "
++            // Deferred now: OPEN (or VOID, voided while deferred: it keeps showing the deferral; or SETTLED,
++            // settled while a statement bound it after it was deferred), not bound by a statement (a
++            // deferral takes effect only once the binding ends) and deferred until a date after the sheet's today.
++            + "(status IN ('OPEN', 'VOID', 'SETTLED') AND NOT stated AND deferred_until IS NOT NULL AND deferred_until > "
+             + "(SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred, "
+             // The date it rounds by: a correction's is the date of the claim it corrects.
+             + "COALESCE((SELECT k.claim_date FROM claim k WHERE k.sheet_id = claim.sheet_id AND k.number = claim.corrects), "
+@@ -337,7 +338,7 @@ public class ClaimRepository {
+ 
+     /** The person's claims as they stood at the end of the date, newest first: each as its last change
+      *  made while the sheet's today was on or before the date left it (a claim of theirs then, and only
+-     *  claims there were then), deferred when OPEN and deferred until after the date. */
++     *  claims there were then), deferred when OPEN or SETTLED, not bound, and deferred until after the date. */
+     public List<Claim> listOfAsOf(String sheetId, long personId, LocalDate asOf) {
+         return jdbc.query("SELECT h.claim_id, h.person_id, h.amount, h.claim_date, h.status, h.settled_due, h.stated, "
+                 + "h.stated_due, h.deferred_until, h.due_by, h.held, c.note, c.ref, c.tags, c.number, c.opened_by, c.corrects, c.waived_on, c.review_assignee, "
+@@ -365,7 +366,8 @@ public class ClaimRepository {
+                     return withCorrects(claim, rs.getString("corrects"),
+                             rs.getObject("round_date", LocalDate.class).toString(),
+                             rs.getObject("due_by", LocalDate.class).toString(), until,
+-                            ClaimStatus.OPEN.name().equals(status) && until != null && until.isAfter(asOf),
++                            (ClaimStatus.OPEN.name().equals(status) || ClaimStatus.SETTLED.name().equals(status))
++                                    && !rs.getBoolean("stated") && until != null && until.isAfter(asOf),
+                             0, 0, null, null, false);
+                 }, sheetId, personId, asOf);
+     }
