@@ -1,0 +1,234 @@
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 1296392fa..78eee4cce 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -20,7 +20,7 @@ export type PersonGrade = { grade: string; from: string | null };
+  *  sorted as names are compared: no alias equals (case ignored) any name or alias on the sheet, and the quick-add bar and
+  *  the paste box find a person by one as by the name. `clashing` is whether their name or an alias is used as a name or
+  *  alias on another sheet of the sheet's tree (people added before the rule): every edit of them is refused until it
+- *  renames them clear. */
++ *  renames them clear. `origin` is the sheet they were last transferred from, null when never transferred here. */
+ export type Person = {
+   id: number;
+   sheetId: string;
+@@ -35,6 +35,7 @@ export type Person = {
+   contact: string | null;
+   aliases: string[];
+   clashing: boolean;
++  origin: string | null;
+ };
+ 
+ /** A hold on a person from a date until a date (yyyy-MM-dd, both included); a null `to` is open-ended. */
+diff --git a/src/main/frontend/features/transfer/transfer.slot.tsx b/src/main/frontend/features/transfer/transfer.slot.tsx
+index 736b51ee5..009f383d8 100644
+--- a/src/main/frontend/features/transfer/transfer.slot.tsx
++++ b/src/main/frontend/features/transfer/transfer.slot.tsx
+@@ -6,6 +6,15 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import type { Person } from '../people/people';
+ import { usePersonRowAction } from '../people/rowAction';
+ 
++function OriginHead() {
++  return <th>From sheet</th>;
++}
++
++/** The sheet the person was transferred from; empty for anyone never transferred here. */
++function PersonOrigin({ person }: { sheetId: string; user: string; person: Person }) {
++  return <td data-testid="person-origin">{person.origin ?? ''}</td>;
++}
++
+ function TransferHead() {
+   return <th>Transfer</th>;
+ }
+@@ -59,6 +68,8 @@ function PersonTransfer({ sheetId, user, person }: { sheetId: string; user: stri
+ }
+ 
+ export const contributions = [
++  PeopleHead.fill({ order: 84, Component: OriginHead }),
++  PersonRow.fill({ order: 84, Component: PersonOrigin }),
+   PeopleHead.fill({ order: 85, Component: TransferHead }),
+   PersonRow.fill({ order: 85, Component: PersonTransfer }),
+ ];
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index 1af40b7ec..0e4dfbdb0 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -94,6 +94,21 @@ public class Audit {
+         return found;
+     }
+ 
++    /** The lines about the person (see #lines) on the sheet they were transferred from to {@code to}, newest first,
++     *  from the last PERSON_TRANSFERRED of them to that sheet back: what the sheet recorded about them while they were there. */
++    public synchronized List<String> history(String fromSheet, String name, String to) {
++        List<String> found = lines(fromSheet, name);
++        for (int i = 0; i < found.size(); i++) {
++            String line = found.get(i);
++            Matcher head = HEAD.matcher(line);
++            if (head.find() && head.group(1).equals("PERSON_TRANSFERRED")
++                    && (line + " ").contains(" to=" + to + " ")) {
++                return found.subList(i, found.size());
++            }
++        }
++        return found;
++    }
++
+     private static boolean about(String line, String key) {
+         Matcher m = ABOUT.matcher(line);
+         while (m.find()) {
+diff --git a/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java b/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
+index b8fe4f17c..775762092 100644
+--- a/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
++++ b/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
+@@ -1,17 +1,29 @@
+ package net.officefloor.hq.app.audit;
+ 
++import java.util.ArrayList;
+ import java.util.List;
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** The sheet's audit lines exactly as the file holds them, newest first; with a name, only those about that person
+- *  (see Audit#lines). Read from the file: the viewer is not a second record. */
++ *  (see Audit#lines). Read from the file: the viewer is not a second record. When the name is of a person transferred
++ *  here, the lines about them on the sheet they came from follow, newest first, from the transfer that brought them
++ *  here back (see Audit#history). */
+ public class RespondWithAuditLines {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "name", required = false) String name, Audit audit,
++            @RequestParam(value = "name", required = false) String name, Audit audit, PersonRepository people,
+             ObjectResponse<List<String>> response) {
+-        response.send(audit.lines(sheetId.trim(), name == null ? "" : name));
++        String sheet = sheetId.trim();
++        String filter = name == null ? "" : name;
++        List<String> lines = new ArrayList<>(audit.lines(sheet, filter));
++        Person person = filter.isBlank() ? null : people.findByName(sheet, filter.trim());
++        if (person != null && person.origin() != null) {
++            lines.addAll(audit.history(person.origin(), person.name(), sheet));
++        }
++        response.send(lines);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 514b27ff6..d21c22fbf 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -14,14 +14,15 @@ import java.util.List;
+  *  surrounding spaces, lower-cased), null when none. {@code aliases} are the person's aliases, sorted as names are compared
+  *  (each kept without surrounding spaces; no alias equals, case ignored, any name or alias on the sheet). {@code clashing}
+  *  is whether their name or an alias is used as a name or alias on another sheet of the sheet's tree (see
+- *  PersonRepository#treeKeys): set only on the people listed, false elsewhere. */
++ *  PersonRepository#treeKeys): set only on the people listed, false elsewhere. {@code origin} is the sheet the person was
++ *  last transferred from, null when they were never transferred here. */
+ public record Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
+         List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases,
+-        boolean clashing) {
++        boolean clashing, String origin) {
+ 
+     public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
+             List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases) {
+-        this(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, false);
++        this(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, false, null);
+     }
+ 
+     public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom,
+@@ -36,7 +37,12 @@ public record Person(long id, String sheetId, String name, String grade, long ve
+ 
+     /** The person with whether they clash in the sheet's tree. */
+     public Person withClashing(boolean clashing) {
+-        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing);
++        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin);
++    }
++
++    /** The person with the sheet they were transferred from (null: none). */
++    public Person withOrigin(String origin) {
++        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin);
+     }
+ 
+     /** Whether the person's name or any alias is among the name keys (lower-cased names and aliases). */
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index ed3cd819d..e252dbcea 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -23,7 +23,7 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class PersonRepository {
+ 
+-    private static final String COLUMNS = "id, sheet_id, name, version, retired_from, terms, contact";
++    private static final String COLUMNS = "id, sheet_id, name, version, retired_from, terms, contact, origin";
+ 
+     private final JdbcTemplate jdbc;
+     private final SheetRepository sheets;
+@@ -109,7 +109,7 @@ public class PersonRepository {
+             List<PersonGrade> mine = List.copyOf(grades.getOrDefault(p.id(), List.of()));
+             people.add(new Person(p.id(), p.sheetId(), p.name(), Person.gradeOn(mine, today), p.version(), p.retiredFrom(),
+                     mine, List.copyOf(holds.getOrDefault(p.id(), List.of())), p.terms(), p.contact(),
+-                    List.copyOf(aliases.getOrDefault(p.id(), List.of()))));
++                    List.copyOf(aliases.getOrDefault(p.id(), List.of()))).withOrigin(p.origin()));
+         }
+         return people;
+     }
+@@ -328,7 +328,7 @@ public class PersonRepository {
+         List<String> aliases = person.aliases().stream().filter(given::contains).toList();
+         return new Person(person.id(), sheetId, person.name(), Person.gradeOn(grades, date), person.version(),
+                 retired.isEmpty() ? null : retired.get(0).toString(), List.copyOf(grades), holds, termsAsOf(person, date),
+-                person.contact(), aliases);
++                person.contact(), aliases).withOrigin(person.origin());
+     }
+ 
+     /** The sheet's people as they stood at the end of the date (see #asOf), in list order (see #list; one merged away
+@@ -392,6 +392,6 @@ public class PersonRepository {
+         Date retired = rs.getDate("retired_from");
+         return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
+                 retired == null ? null : retired.toLocalDate().toString(), List.of(), List.of(),
+-                rs.getObject("terms", Integer.class), rs.getString("contact"));
++                rs.getObject("terms", Integer.class), rs.getString("contact")).withOrigin(rs.getString("origin"));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java b/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
+index a858d0b5a..9da8c4a04 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
+@@ -22,7 +22,7 @@ public class PersonTransferrer {
+ 
+     /**
+      * Moves the person to the other sheet with their grades (and from-dates), terms, contact and aliases, added there on
+-     * its today at the end of its list; and their claims with their status, dates, notes, tags, frozen figures, logs, comments and reminders,
++     * its today (the sheet they left kept as their origin) at the end of its list; and their claims with their status, dates, notes, tags, frozen figures, logs, comments and reminders,
+      * listed there as its newest claims in the order they were listed, each unbound from any statement figure, without its
+      * reference, lock or settle batch. Their statements, holds, watchers, patron links (either way), pool memberships,
+      * period totals and retirement log are dropped: they leave this sheet entirely. Returns the ids of the moved claims
+@@ -57,8 +57,8 @@ public class PersonTransferrer {
+         for (String table : List.of("person_grade", "person_grade_log", "person_terms_log", "person_alias")) {
+             jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", to, from, id);
+         }
+-        jdbc.update("UPDATE person SET sheet_id = ?, added_on = ? WHERE sheet_id = ? AND id = ?", to,
+-                Date.valueOf(sheets.today(to)), from, id);
++        jdbc.update("UPDATE person SET sheet_id = ?, added_on = ?, origin = ? WHERE sheet_id = ? AND id = ?", to,
++                Date.valueOf(sheets.today(to)), from, from, id);
+         people.toEnd(to, id);
+         return numbered;
+     }
+diff --git a/src/main/resources/db/migration/V63__person_origin.sql b/src/main/resources/db/migration/V63__person_origin.sql
+new file mode 100644
+index 000000000..9029eaee2
+--- /dev/null
++++ b/src/main/resources/db/migration/V63__person_origin.sql
+@@ -0,0 +1,3 @@
++-- The sheet a person was last transferred from (null: never transferred), shown on their row and used by the audit
++-- viewer to follow their history back to that sheet.
++ALTER TABLE person ADD COLUMN origin VARCHAR(255);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml
+index c4ffcc19b..16c2a6e56 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml
+@@ -1,4 +1,6 @@
+ # GET /api/sheets/{sheetId}/audit?name= — the sheet's audit lines as the file holds them, newest first;
+-# with a name, only the lines carrying name=<it> or person=<it> (compared as names are).
++# with a name, only the lines carrying name=<it> or person=<it> (compared as names are), followed, for a person
++# transferred here, by the lines about them on the sheet they came from.
+ respond:
+   class: net.officefloor.hq.app.audit.RespondWithAuditLines
++  govern: [ readonly-transaction ]
