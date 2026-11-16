@@ -24,6 +24,9 @@ public class SettingRepository {
     /** The days a claim has from its date until it is due by; 14 until set. */
     public static final String TERMS = "terms";
 
+    /** The prefix of a grade's own terms: terms-A, terms-B or terms-C; a grade without its own has the sheet's terms. */
+    public static final String TERMS_PREFIX = "terms-";
+
     /** The terms a sheet has until they are set. */
     public static final int DEFAULT_TERMS = 14;
 
@@ -74,6 +77,12 @@ public class SettingRepository {
     public int terms(String sheetId) {
         String value = value(sheetId, TERMS);
         return value == null ? DEFAULT_TERMS : Integer.parseInt(value);
+    }
+
+    /** The terms of a grade: its own when set, else the sheet's (a null grade has the sheet's). */
+    public int terms(String sheetId, String grade) {
+        String value = grade == null ? null : value(sheetId, TERMS_PREFIX + grade);
+        return value == null ? terms(sheetId) : Integer.parseInt(value);
     }
 
     /** The sheet's late percent: what an overdue claim gains of its figure for every full 30 days overdue. */

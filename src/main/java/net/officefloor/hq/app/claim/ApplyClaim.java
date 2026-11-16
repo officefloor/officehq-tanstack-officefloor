@@ -26,6 +26,6 @@ public class ApplyClaim {
         }
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), values.amount(), date, values.note(), claim.status(),
                 claim.number(), claim.due(), claim.openedBy(), claim.stated(), claim.statedDue(),
-                Corrections.check(claim.sheetId(), claim.personId(), values, claims)));
+                Corrections.check(claim.sheetId(), claim.personId(), values, claims), claim.dueBy()));
     }
 }

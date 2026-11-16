@@ -5,13 +5,18 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, settingsKey, useSettings, type Setting } from './settings';
 
-type Key = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date' | 'period-numbering-from';
-const KEYS: Key[] = ['clerk-limit', 'floor', 'terms', 'late-pct', 'policy-date', 'period-numbering-from'];
-const BLANK: Record<Key, string> = { 'clerk-limit': '', floor: '', terms: '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '' };
+const GRADES = ['A', 'B', 'C'] as const;
+type GradeTerms = `terms-${(typeof GRADES)[number]}`;
+type Key = 'clerk-limit' | 'floor' | 'terms' | GradeTerms | 'late-pct' | 'policy-date' | 'period-numbering-from';
+const KEYS: Key[] = ['clerk-limit', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'period-numbering-from'];
+const BLANK: Record<Key, string> = {
+  'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '',
+};
 
 /** The sheet's settings: the clerk limit (the most a clerk may settle a claim's due for; blank for no limit) and the
  *  floor (the least a claim's live due may be; 1.00 until set) and the terms (the days from a claim's date to its
- *  due-by; 14 until set) and the late percent (what an overdue claim gains of its figure for every full 30 days
+ *  due-by, fixed when the claim is added; 14 until set) and each grade's own terms (a grade without its own has the
+ *  sheet's) and the late percent (what an overdue claim gains of its figure for every full 30 days
  *  overdue; 0.00 until set) and the policy date (yyyy-MM-dd; blank: the sheet's today — a claim dated before it rounds
  *  half up, one on or after it half to even) and the period numbering from-date (yyyy-MM-dd; blank: off — while the sheet's
  *  today is on or after it, a claim opened is numbered within its period). Saving stores the fields entered since the last save
@@ -72,7 +77,11 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         }}
       >
         {field('clerk-limit', 'Clerk limit')} {field('floor', 'Floor')}{' '}
-        {field('terms', 'Terms (days)', 'numeric')} {field('late-pct', 'Late %')}{' '}
+        {field('terms', 'Terms (days)', 'numeric')}{' '}
+        {GRADES.map((g) => (
+          <span key={g}>{field(`terms-${g}`, `Terms grade ${g} (days)`, 'numeric')} </span>
+        ))}
+        {field('late-pct', 'Late %')}{' '}
         {field('policy-date', 'Policy date (yyyy-MM-dd)', 'numeric')}{' '}
         {field('period-numbering-from', 'Period numbering from (yyyy-MM-dd)', 'numeric')}{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
@@ -81,7 +90,7 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {save.isError && (
           <span data-testid="settings-error">
             The clerk limit must be an amount with up to two decimals, or blank; the floor an amount with up to two
-            decimals; the terms a whole number of days, 0 or more; the late percent a percent with up to two decimals; the policy date yyyy-MM-dd, or blank; the period numbering from-date yyyy-MM-dd, or blank.
+            decimals; the terms, and a grade's terms, a whole number of days, 0 or more; the late percent a percent with up to two decimals; the policy date yyyy-MM-dd, or blank; the period numbering from-date yyyy-MM-dd, or blank.
           </span>
         )}
       </form>
@@ -95,6 +104,12 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
       <p>
         Terms in force <span data-testid="setting-terms-current">{current('terms') || DEFAULT_TERMS}</span>
       </p>
+      {GRADES.map((g) => (
+        <p key={g}>
+          Terms of grade {g} in force{' '}
+          <span data-testid={`setting-terms-${g}-current`}>{current(`terms-${g}`) || current('terms') || DEFAULT_TERMS}</span>
+        </p>
+      ))}
       <p>
         Late percent in force{' '}
         <span data-testid="setting-late-pct-current">{current('late-pct') || DEFAULT_LATE_PCT}</span>

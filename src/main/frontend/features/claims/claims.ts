@@ -12,7 +12,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  opened); `stated` is whether its person's last statement bound it to the figure `statedDue` (null when it had
  *  none), which it shows while its due is not fixed; `corrects` is, for a correction (a negative amount),
  *  the number of the SETTLED claim of the same person it corrects (null for any other claim); `roundsOn` (yyyy-MM-dd)
- *  is the date that decides how its live figures round: the corrected claim's date for a correction, else its own. */
+ *  is the date that decides how its live figures round: the corrected claim's date for a correction, else its own;
+ *  `dueBy` (yyyy-MM-dd) is its due-by, fixed when it was added from the terms of its person's grade on its date. */
 export type Claim = {
   id: number;
   sheetId: string;
@@ -28,6 +29,7 @@ export type Claim = {
   statedDue: string | null;
   corrects: string | null;
   roundsOn: string;
+  dueBy: string;
 };
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'];

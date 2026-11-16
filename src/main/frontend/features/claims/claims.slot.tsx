@@ -26,7 +26,7 @@ function ClaimsHead() {
 
 type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void';
 
-/** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, due-by (its date plus the sheet's terms), whether it is overdue, and the period its date falls in, with the buttons that edit it or change its status. A clerk's settle above the clerk limit makes it PENDING; a
+/** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, due-by (fixed when it was added), whether it is overdue, and the period its date falls in, with the buttons that edit it or change its status. A clerk's settle above the clerk limit makes it PENDING; a
  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
  *  shows the claim's error. A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
@@ -98,8 +98,8 @@ function ClaimRow({
       <span data-testid="claim-amount">{c.amount}</span> <span data-testid="claim-date">{c.date}</span>{' '}
       <span data-testid="claim-note">{c.note}</span>{' '}
       <span data-testid="claim-due">{claimDue(c, rate, floor, late)}</span>{' '}
-      <span data-testid="claim-due-by">{dueBy(c, late.terms)}</span>{' '}
-      <span data-testid="claim-overdue">{isOverdue(c, late.terms, late.today) ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
+      <span data-testid="claim-overdue">{isOverdue(c, late.today) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
       <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}

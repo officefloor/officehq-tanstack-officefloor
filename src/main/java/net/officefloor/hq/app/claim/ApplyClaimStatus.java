@@ -60,7 +60,7 @@ public class ApplyClaimStatus {
         number.set(new ClaimNumber(claim.number()));
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                 claim.note(), to, claim.number(), settledDue,
-                change.action() == ClaimAction.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects()));
+                change.action() == ClaimAction.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy()));
     }
 
     private static BigDecimal due(Claim claim, PersonRepository people, RateRepository rates, SettingRepository settings,

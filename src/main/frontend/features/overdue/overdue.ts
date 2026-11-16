@@ -14,6 +14,6 @@ export function overdue(
   late: Late,
   floor: string,
 ): { count: number; total: string } {
-  const over = claims.filter((c) => isOverdue(c, late.terms, late.today));
+  const over = claims.filter((c) => isOverdue(c, late.today));
   return { count: over.length, total: sum(over.map((c) => claimDue(c, rateFor(rates, gradeOn(person, c.date), c.date), floor, late))) };
 }

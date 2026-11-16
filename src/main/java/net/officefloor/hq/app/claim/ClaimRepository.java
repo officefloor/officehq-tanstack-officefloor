@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects, due_by";
 
     private final JdbcTemplate jdbc;
     private final DataSource dataSource;
@@ -39,11 +39,12 @@ public class ClaimRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
+            LocalDate dueBy) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -51,11 +52,12 @@ public class ClaimRepository {
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
             ps.setString(6, corrects);
+            ps.setDate(7, Date.valueOf(dueBy));
             return ps;
         }, keys);
         jdbc.update("UPDATE claim SET listed = (SELECT COALESCE(MAX(c.listed), 0) + 1 FROM claim c WHERE c.sheet_id = ?) WHERE id = ?",
                 sheetId, keys.getKey().longValue());
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects);
+        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects, dueBy);
     }
 
     /** The person's claim with the given number on the sheet; null when there is none. */
@@ -165,6 +167,6 @@ public class ClaimRepository {
                 rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
                 rs.getString("claim_number"), due == null ? null : due.setScale(2),
                 rs.getString("opened_by"), rs.getBoolean("stated"), statedDue == null ? null : statedDue.setScale(2),
-                rs.getString("corrects"));
+                rs.getString("corrects"), rs.getObject("due_by", LocalDate.class));
     }
 }
