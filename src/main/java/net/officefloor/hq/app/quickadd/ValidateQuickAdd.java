@@ -10,7 +10,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Reads the body by the person form's rules (a new person takes grade A) and the claim form's rules (no date, so the
- *  sheet's today; an empty note). */
+ *  sheet's entry date, else its today; an empty note). */
 public class ValidateQuickAdd {
     public void validate(@RequestBody QuickAddRequest request, Out<PersonValues> person, Out<ClaimValues> claim)
             throws InvalidPersonException, InvalidClaimException {

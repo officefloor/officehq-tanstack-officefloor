@@ -3,8 +3,8 @@ import { getJson } from '../../api/http';
 import type { Late } from '../overdue/late';
 import { useSheetToday } from '../session/session';
 
-/** A sheet setting: `value` is text (clerk-limit, cap, floor: an amount with two decimals; terms, terms-A, terms-B, terms-C: a whole number of days; late-pct: a percent with two decimals; policy-date, period-numbering-from: yyyy-MM-dd), null when blank.
- *  `from` is the date the value is in force from (yyyy-MM-dd); null when undated (policy-date, period-numbering-from, or a
+/** A sheet setting: `value` is text (clerk-limit, cap, floor: an amount with two decimals; terms, terms-A, terms-B, terms-C: a whole number of days; late-pct: a percent with two decimals; policy-date, period-numbering-from, entry-date: yyyy-MM-dd), null when blank.
+ *  `from` is the date the value is in force from (yyyy-MM-dd); null when undated (policy-date, period-numbering-from, entry-date, or a
  *  value from before settings were dated: in force on every date). */
 export type Setting = { sheetId: string; key: string; value: string | null; from: string | null };
 

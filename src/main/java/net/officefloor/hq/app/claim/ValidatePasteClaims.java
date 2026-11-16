@@ -6,7 +6,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Reads the body: each non-blank line is name,amount,date,note (the note may hold commas and may be absent; a blank
- *  date takes the sheet's today), read by the claim form's rules. A line with no name, or a paste with no lines, is refused. */
+ *  date takes the sheet's entry date, else its today), read by the claim form's rules. A line with no name, or a paste with no lines, is refused. */
 public class ValidatePasteClaims {
     public void validate(@RequestBody PasteClaimsRequest request, Out<PastedLines> pasted) throws InvalidClaimException {
         String text = request == null || request.text() == null ? "" : request.text();

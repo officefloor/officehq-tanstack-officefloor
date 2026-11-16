@@ -420,7 +420,7 @@ function ClaimRow({
 }
 
 /** A person's claimed, and their claims (newest first) with the form that adds one or saves the one
- *  being edited. A blank date takes the sheet's today (the server applies it). */
+ *  being edited. A blank date takes the sheet's entry date, else its today (the server applies it). */
 function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId).data;

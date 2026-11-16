@@ -55,6 +55,9 @@ public class SettingRepository {
     /** The date from which an opened claim is numbered within its period (see ClaimNumbering); blank: off. */
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
 
+    /** The default date of a new claim while set (instead of the sheet's today); blank: off (undated). */
+    public static final String ENTRY_DATE = "entry-date";
+
     /** The days after a period's to-date before a change of the sheet's today closes it; blank for off (undated). */
     public static final String GRACE_DAYS = "grace-days";
 
@@ -179,6 +182,18 @@ public class SettingRepository {
     public LocalDate periodNumberingFrom(String sheetId) {
         String value = value(sheetId, PERIOD_NUMBERING_FROM);
         return value == null ? null : LocalDate.parse(value);
+    }
+
+    /** The sheet's entry date, or null when it is blank (off). */
+    public LocalDate entryDate(String sheetId) {
+        String value = value(sheetId, ENTRY_DATE);
+        return value == null ? null : LocalDate.parse(value);
+    }
+
+    /** The date a new claim given no date takes: the sheet's entry date while set, else the sheet's today. */
+    public LocalDate claimDate(String sheetId) {
+        LocalDate entry = entryDate(sheetId);
+        return entry != null ? entry : sheets.today(sheetId);
     }
 
     /** The sheet's grace days, or null when it is blank (off). */
