@@ -1,6 +1,7 @@
 import { live, useClaims, type ClaimStatus } from '../claims/claims';
+import { crewDueTotal, useCrews } from '../crews/crews';
 import { overdue } from '../overdue/overdue';
-import { usePeople } from '../people/people';
+import { usePeople, type Person } from '../people/people';
 import { personDue, personSplit, sum, trimmedSum, useRates } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../settings/settings';
 
@@ -75,6 +76,14 @@ export function useSheetOverdue(sheetId: string): { count: number; total: string
   return { count: all.reduce((n, o) => n + o.count, 0), total: trimmedSum(all.map((o) => o.total)) };
 }
 
+/** The person on the sheet whose name or an alias is the user's name (as names are compared: case ignored), or
+ *  undefined when there is no such person. */
+function findUser(people: Person[], user: string): Person | undefined {
+  const key = user.trim().toLowerCase();
+  if (key === '') return undefined;
+  return people.find((x) => [x.name, ...(x.aliases ?? [])].some((n) => n.trim().toLowerCase() === key));
+}
+
 /** The signed-in user's own due-total and overdue-total: those of the person on the sheet whose name or an alias is the
  *  user's name (as names are compared: case ignored), or null when there is no such person. */
 export function useMyFigures(sheetId: string, user: string): { due: string; overdue: string } | null {
@@ -84,14 +93,25 @@ export function useMyFigures(sheetId: string, user: string): { due: string; over
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
   const cap = useCap(sheetId);
-  const key = user.trim().toLowerCase();
-  const p = (people.data ?? []).find((x) => [x.name, ...(x.aliases ?? [])].some((n) => n.trim().toLowerCase() === key));
-  if (!p || key === '') return null;
+  const p = findUser(people.data ?? [], user);
+  if (!p) return null;
   const mine = live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today);
   return {
     due: personDue(mine, rates.data, p, late, floor, cap),
     overdue: overdue(mine, rates.data, p, late, floor).total,
   };
+}
+
+/** The signed-in user's crew total: the due-totals of the crews led by the user's person (as their rows show them)
+ *  added up, or null when there is no such person or they lead no crew. */
+export function useMyCrewDue(sheetId: string, user: string): string | null {
+  const people = usePeople(sheetId);
+  const crews = useCrews(sheetId);
+  const due = usePeopleDue(sheetId);
+  const p = findUser(people.data ?? [], user);
+  const led = p ? (crews.data ?? []).filter((c) => c.leadId === p.id) : [];
+  if (led.length === 0) return null;
+  return sum(led.map((c) => crewDueTotal(c, due)));
 }
 
 /** How many of the sheet's claims have each status. */
