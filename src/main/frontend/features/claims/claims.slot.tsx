@@ -206,7 +206,10 @@ function ClaimRow({
       <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
       <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
       <span data-testid="claim-tags">{c.tags.join(', ')}</span>{' '}
-      <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
+      {/* a claim voided while deferred still shows the deferral until its date passes (it counts in no total either way) */}
+      <span data-testid="claim-deferred">
+        {c.deferred || (c.status === 'VOID' && c.deferredUntil !== null && today !== '' && c.deferredUntil > today) ? 'yes' : 'no'}
+      </span>{' '}
       <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
       <span data-testid="claim-proofs">{c.proofs}</span>{' '}
       <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}

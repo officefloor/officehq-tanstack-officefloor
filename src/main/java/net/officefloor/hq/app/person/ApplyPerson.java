@@ -28,6 +28,6 @@ public class ApplyPerson {
         contactBefore.set(new ContactBefore(person.contact()));
         List<PersonGrade> kept = List.copyOf(grades);
         changed.set(new Person(person.id(), person.sheetId(), values.name(), Person.gradeOn(kept, today), person.version() + 1,
-                person.retiredFrom(), kept, person.holds(), values.terms(), values.contact()));
+                person.retiredFrom(), kept, person.holds(), values.terms(), values.contact(), person.aliases()));
     }
 }

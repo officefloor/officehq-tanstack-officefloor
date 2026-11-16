@@ -11,13 +11,19 @@ import java.util.List;
  *  {@code holds} are the person's holds, by from-date: an OPEN or PENDING claim of theirs dated within one, and not bound by
  *  a statement, counts in no live total. {@code held} is whether they have any hold. {@code terms} are the person's own
  *  terms (days a claim of theirs has until it is due by, ahead of their grade's and the sheet's), null when none. {@code contact} is the person's contact (unique on the sheet; kept without
- *  surrounding spaces, lower-cased), null when none. */
+ *  surrounding spaces, lower-cased), null when none. {@code aliases} are the person's aliases, sorted as names are compared
+ *  (each kept without surrounding spaces; no alias equals, case ignored, any name or alias on the sheet). */
 public record Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
-        List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact) {
+        List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases) {
+
+    public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom,
+            List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases) {
+        this(id, sheetId, name, grade, version, retiredFrom, !holds.isEmpty(), grades, holds, terms, contact, aliases);
+    }
 
     public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom,
             List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact) {
-        this(id, sheetId, name, grade, version, retiredFrom, !holds.isEmpty(), grades, holds, terms, contact);
+        this(id, sheetId, name, grade, version, retiredFrom, grades, holds, terms, contact, List.of());
     }
 
     /** Whether a hold of the person covers the date. */

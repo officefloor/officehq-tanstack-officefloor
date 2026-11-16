@@ -41,10 +41,11 @@ public class PersonRepository {
                 PersonRepository::map, sheetId, id));
     }
 
-    /** The person on the sheet with this name, case ignored; null when there is none. */
+    /** The person on the sheet with this name or alias, case ignored; null when there is none. */
     public Person findByName(String sheetId, String name) {
-        return first(sheetId, jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND name_key = LOWER(?)",
-                PersonRepository::map, sheetId, name));
+        return first(sheetId, jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND (name_key = LOWER(?)"
+                + " OR id IN (SELECT person_id FROM person_alias WHERE sheet_id = ? AND alias_key = LOWER(?)))",
+                PersonRepository::map, sheetId, name, sheetId, name));
     }
 
     private Person first(String sheetId, List<Person> found) {
@@ -70,22 +71,55 @@ public class PersonRepository {
                     holds.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())
                             .add(new PersonHold(rs.getDate("from_date").toLocalDate(), to == null ? null : to.toLocalDate()));
                 }, sheetId);
+        Map<Long, List<String>> aliases = aliases(sheetId);
         LocalDate today = sheets.today(sheetId);
         List<Person> people = new ArrayList<>();
         for (Person p : found) {
             List<PersonGrade> mine = List.copyOf(grades.getOrDefault(p.id(), List.of()));
             people.add(new Person(p.id(), p.sheetId(), p.name(), Person.gradeOn(mine, today), p.version(), p.retiredFrom(),
-                    mine, List.copyOf(holds.getOrDefault(p.id(), List.of())), p.terms(), p.contact()));
+                    mine, List.copyOf(holds.getOrDefault(p.id(), List.of())), p.terms(), p.contact(),
+                    List.copyOf(aliases.getOrDefault(p.id(), List.of()))));
         }
         return people;
     }
 
-    /** Whether a person on the sheet other than {@code exceptId} (0: anyone) has this name, case ignored. */
+    /** The sheet's aliases by person, each person's sorted as names are compared. */
+    private Map<Long, List<String>> aliases(String sheetId) {
+        Map<Long, List<String>> aliases = new HashMap<>();
+        jdbc.query("SELECT person_id, alias FROM person_alias WHERE sheet_id = ? ORDER BY person_id, alias_key, alias",
+                (ResultSet rs) -> {
+                    aliases.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(rs.getString("alias"));
+                }, sheetId);
+        return aliases;
+    }
+
+    /** Whether a person on the sheet other than {@code exceptId} (0: anyone) has this name, or anyone has it as an
+     *  alias, case ignored. */
     public boolean nameTaken(String sheetId, String name, long exceptId) {
         Integer n = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(?) AND id <> ?",
                 Integer.class, sheetId, name, exceptId);
+        return (n != null && n > 0) || aliasTaken(sheetId, name);
+    }
+
+    /** Whether anyone on the sheet has this alias, case ignored. */
+    private boolean aliasTaken(String sheetId, String alias) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND alias_key = LOWER(?)",
+                Integer.class, sheetId, alias);
         return n != null && n > 0;
+    }
+
+    /** Gives the person the alias: refused when it equals, case ignored, any name or alias on the sheet (the unique
+     *  (sheet_id, alias_key) index refuses one taken by a concurrent add). */
+    public void addAlias(String sheetId, long personId, String alias) throws DuplicatePersonNameException {
+        if (nameTaken(sheetId, alias, 0)) {
+            throw new DuplicatePersonNameException(alias);
+        }
+        try {
+            jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) VALUES (?, ?, ?)", sheetId, personId, alias);
+        } catch (DuplicateKeyException e) {
+            throw new DuplicatePersonNameException(alias);
+        }
     }
 
     /** Whether a person on the sheet other than {@code exceptId} (0: anyone) has this contact. */
@@ -221,7 +255,7 @@ public class PersonRepository {
                 person.id(), Date.valueOf(date));
         return new Person(person.id(), sheetId, person.name(), Person.gradeOn(grades, date), person.version(),
                 retired.isEmpty() ? null : retired.get(0).toString(), List.copyOf(grades), holds, termsAsOf(person, date),
-                person.contact());
+                person.contact(), person.aliases());
     }
 
     /** The sheet's people as they stood at the end of the date (see #asOf), in the order added: one added while the
