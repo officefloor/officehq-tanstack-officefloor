@@ -19,15 +19,15 @@ public class RespondWithRates {
             SettingRepository settings, ObjectResponse<List<RateResponse>> response) {
         LocalDate date = AsOf.parse(asOf);
         if (date != null) {
-            response.send(SheetAsOf.read(sheetId.trim(), date, rates, settings).rates().stream()
-                    .map(RateResponse::from).toList());
+            SheetAsOf sheet = SheetAsOf.read(sheetId.trim(), date, rates, settings);
+            response.send(sheet.rates().stream().map((r) -> RateResponse.from(r, 0, sheet.older(r))).toList());
             return;
         }
         List<RateResponse> shown = new ArrayList<>();
         List<String> chain = rates.chain(sheetId.trim());
         for (int level = 0; level < chain.size(); level++) {
             for (Rate rate : rates.list(chain.get(level))) {
-                shown.add(RateResponse.from(rate, level));
+                shown.add(RateResponse.from(rate, level, rates.older(rate.sheetId(), rate.grade(), rate.from())));
             }
         }
         response.send(shown);

@@ -21,25 +21,30 @@ public final class SheetAsOf {
 
     private final LocalDate date;
     private final List<Rate> rates;
+    private final List<Rate> versions;
     private final List<Setting> settings;
 
-    private SheetAsOf(LocalDate date, List<Rate> rates, List<Setting> settings) {
+    private SheetAsOf(LocalDate date, List<Rate> rates, List<Rate> versions, List<Setting> settings) {
         this.date = date;
         this.rates = rates;
+        this.versions = versions;
         this.settings = settings;
     }
 
     public static SheetAsOf read(String sheetId, LocalDate date, RateRepository rates, SettingRepository settings) {
         Map<String, Rate> byKey = new LinkedHashMap<>();
+        List<Rate> versions = new ArrayList<>();
         for (Rate r : rates.storedBy(sheetId, date)) {
             Rate older = byKey.get(r.grade() + "@" + r.from());
-            byKey.put(r.grade() + "@" + r.from(), r.withVersion(older == null ? 1 : older.version() + 1));
+            Rate version = r.withVersion(older == null ? 1 : older.version() + 1);
+            byKey.put(r.grade() + "@" + r.from(), version);
+            versions.add(version);
         }
         Map<String, Setting> byFrom = new LinkedHashMap<>();
         for (Setting s : settings.storedBy(sheetId, date)) {
             byFrom.put(s.key() + "@" + s.from(), s);
         }
-        return new SheetAsOf(date, new ArrayList<>(byKey.values()), new ArrayList<>(byFrom.values()));
+        return new SheetAsOf(date, new ArrayList<>(byKey.values()), versions, new ArrayList<>(byFrom.values()));
     }
 
     public LocalDate date() {
@@ -74,6 +79,23 @@ public final class SheetAsOf {
             }
         }
         return found == null || (found.to() != null && found.to().isBefore(on)) ? null : found;
+    }
+
+    /** The older versions of a rate as they stood (see #rates), newest first. */
+    public List<Rate> older(Rate rate) {
+        List<Rate> older = new ArrayList<>();
+        for (Rate r : versions) {
+            if (r.grade().equals(rate.grade()) && Objects.equals(r.from(), rate.from()) && r.version() < rate.version()) {
+                older.add(0, r);
+            }
+        }
+        return older;
+    }
+
+    /** The grade's rate that applies to a claim on a date, added with the added sequence {@code seq} (see
+     *  RateRepository#pick), as the rates stood; null when none applies. */
+    public Rate rate(String grade, LocalDate on, Long seq) {
+        return RateRepository.pick(versions, grade, on, seq);
     }
 
     /** The setting's value in force on a date (an undated one applies to every date); null when it has none. */

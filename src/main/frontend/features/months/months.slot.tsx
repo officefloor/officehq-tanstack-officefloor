@@ -1,7 +1,7 @@
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
 import { gradeOn, usePeople } from '../people/people';
-import { claimDue, rateFor, sum, useRates } from '../rates/rates';
+import { claimDue, claimRate, sum, useRates } from '../rates/rates';
 import { useFloor, useLate } from '../settings/settings';
 
 /** The sheet's due-total per calendar month: for every month (yyyy-mm) any claim on the sheet is dated in, the
@@ -22,7 +22,7 @@ function Months({ sheetId }: { sheetId: string }) {
     sum(
       counted
         .filter((c) => c.date.slice(0, 7) === month && byId.has(c.personId))
-        .map((c) => claimDue(c, rateFor(rates.data, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late)),
+        .map((c) => claimDue(c, claimRate(rates.data, gradeOn(byId.get(c.personId)!, c.date), c), floor, late)),
     );
 
   return (

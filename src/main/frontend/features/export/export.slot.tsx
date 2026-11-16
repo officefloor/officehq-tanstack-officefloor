@@ -5,7 +5,7 @@ import { live, useClaims } from '../claims/claims';
 import { gradeOn, usePeople } from '../people/people';
 import { periodOf, usePeriods } from '../periods/periods';
 import { usePools } from '../pools/pools';
-import { claimDue, personDue, rateFor, useRates } from '../rates/rates';
+import { claimDue, personDue, claimRate, useRates } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../settings/settings';
 
 /** A CSV value: wrapped in double quotes, any quote inside doubled, when it holds a comma, a quote or a line break. */
@@ -78,7 +78,7 @@ function ExportClaims({ sheetId }: { sheetId: string }) {
     for (const p of people.data) {
       const mine = claims.data.filter((c) => c.personId === p.id).reverse();
       for (const c of mine) {
-        const due = claimDue(c, rateFor(rates.data, gradeOn(p, c.date), c.date), floor, late);
+        const due = claimDue(c, claimRate(rates.data, gradeOn(p, c.date), c), floor, late);
         const period = periodOf(periods.data, c.dueBy)?.name ?? '';
         lines.push([p.name, c.number ?? '', c.date, c.amount, due, c.status, period].map(csvValue).join(','));
       }

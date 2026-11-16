@@ -8,7 +8,7 @@ import { gradeOn, usePeople, type Person } from '../people/people';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useRoles } from '../roles/roles';
 import { useDelegations } from '../delegation/delegation';
-import { claimDue, rateFor, useRates } from '../rates/rates';
+import { claimDue, claimRate, useRates } from '../rates/rates';
 import { dueBy, isOverdue } from '../overdue/overdue';
 import { useFloor, useLate, type Dated } from '../settings/settings';
 import { claimsKey, commentLine, lineLine, live, logLine, claimed, useClaims, type Claim } from './claims';
@@ -882,7 +882,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
               sheetId={sheetId}
               user={user}
               claim={c}
-              rate={rateFor(rates, gradeOn(person, c.date), c.date)}
+              rate={claimRate(rates, gradeOn(person, c.date), c)}
               floor={floor}
               editing={editingId === c.id}
               onEdit={() => openEditor(c)}

@@ -27,6 +27,7 @@ public class RespondWithClaims {
         Map<Long, List<ClaimLogLine>> logs = log.bySheet(sheet);
         LocalDate today = date == null ? sheets.today(sheet) : date;
         Map<Long, String> locks = claims.locks(sheet);
+        Map<Long, Long> seqs = claims.addedSeqs(sheet);
         Set<Long> late = claims.lateEntries(sheet);
         Map<Long, LocalDate> reminded = claims.reminders(sheet, date);
         Map<Long, List<ClaimComment>> comments = claims.comments(sheet, date);
@@ -49,7 +50,7 @@ public class RespondWithClaims {
             }
             out.add(ClaimResponse.from(shown, claims, lines, today, date == null ? locks.get(c.id()) : null,
                     late.contains(c.id()), reminded.get(c.id()), comments.getOrDefault(c.id(), List.of()),
-                    batches.get(c.id()), lineItems.getOrDefault(c.id(), List.of())));
+                    batches.get(c.id()), lineItems.getOrDefault(c.id(), List.of()), seqs.getOrDefault(c.id(), 0L)));
         }
         response.send(out);
     }

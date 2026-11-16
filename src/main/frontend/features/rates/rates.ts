@@ -10,7 +10,20 @@ import type { Dated } from '../settings/settings';
  *  `from` (yyyy-MM-dd; null: from the beginning of time) through `to` (yyyy-MM-dd; null: no end). `level` is how far
  *  up the parent chain its sheet is: 0 the sheet's own, 1 its parent's, up to 3 (absent: 0). `version` is how many
  *  versions the grade and from-date has had, this being the newest (the one in force). */
-export type Rate = { sheetId: string; grade: string; rate: string; from: string | null; to: string | null; version: number; level?: number };
+export type Rate = {
+  sheetId: string;
+  grade: string;
+  rate: string;
+  from: string | null;
+  to: string | null;
+  version: number;
+  level?: number;
+  /** Set on a forward-only rate (saved with a from-date on or after the sheet's today): it applies only to claims whose
+   *  seq is above it (see claimRate); null or absent when it applies to every claim. */
+  after?: number | null;
+  /** The versions it replaced, newest first: each still applies to a claim the newer ones do not (see claimRate). */
+  older?: { rate: string; to: string | null; version: number; after?: number | null }[];
+};
 
 export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'];
 
@@ -49,6 +62,30 @@ function levelRate(rates: Rate[], grade: string, on: string): string | undefined
     if (found === undefined || (found.from ?? '') < (r.from ?? '')) found = r;
   }
   return found === undefined || (found.to !== null && found.to < on) ? undefined : found.rate;
+}
+
+/** Whether a rate (or an older version of one) applies to a claim: always, unless it is forward-only and the claim was
+ *  added before it was saved. */
+function appliesTo(r: { after?: number | null }, claim: Claim): boolean {
+  return r.after === null || r.after === undefined || claim.seq === undefined || claim.seq > r.after;
+}
+
+/** The grade's rate that applies to a claim (on its date), as the server works it out: as rateFor, but a forward-only
+ *  rate saved after the claim was added is passed over for the newest older version of it that applies, else for
+ *  the rate with the next latest from-date. The rates panel, preview and calendar show rateFor, the rate in force. */
+export function claimRate(rates: Rate[] | undefined, grade: string, claim: Claim): string | undefined {
+  const levels = [...new Set((rates ?? []).map((r) => r.level ?? 0))].sort((a, b) => a - b);
+  for (const level of levels) {
+    const own: Rate[] = [];
+    for (const r of rates ?? []) {
+      if ((r.level ?? 0) !== level || r.grade !== grade) continue;
+      const version = [r, ...(r.older ?? []).map((o) => ({ ...r, ...o }))].find((v) => appliesTo(v, claim));
+      if (version !== undefined) own.push(version);
+    }
+    const found = levelRate(own, grade, claim.date);
+    if (found !== undefined) return found;
+  }
+  return undefined;
 }
 
 /** A two-decimal number ("12.34") in hundredths, exactly. */
@@ -107,7 +144,7 @@ export function claimDue(claim: Claim, rate: string | undefined, floor: Dated, l
  *  a figure. */
 function personFigures(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated): string {
   const counted = claims.filter(counts);
-  const figures = counted.map((c) => claimDue(c, rateFor(rates, gradeOn(person, c.date), c.date), floor, late));
+  const figures = counted.map((c) => claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late));
   if (rateFor(rates, gradeOn(person, late.today), late.today) === undefined && figures.every((f) => f === 'n/a')) return 'n/a';
   return sum(figures);
 }
@@ -116,7 +153,7 @@ function personFigures(claims: Claim[], rates: Rate[] | undefined, person: Perso
  *  (frozen when settled, corrections included), and of their OPEN and PENDING ones, each added up, skipping n/a.
  *  Together they make the sum of their figures, before the cap. */
 export function personSplit(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated): { settled: string; open: string } {
-  const figure = (c: Claim) => claimDue(c, rateFor(rates, gradeOn(person, c.date), c.date), floor, late);
+  const figure = (c: Claim) => claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late);
   const counted = claims.filter(counts);
   return {
     settled: sum(counted.filter((c) => c.status === 'SETTLED').map(figure)),
@@ -163,7 +200,7 @@ export function ratePreview(
   for (const c of claims) {
     const person = byId.get(c.personId);
     if (!isOpen(c) || person === undefined || gradeOn(person, c.date) !== grade) continue;
-    const now = claimDue(c, rateFor(rates, grade, c.date), floor, late);
+    const now = claimDue(c, claimRate(rates, grade, c), floor, late);
     const then = claimDue(c, pct, floor, late);
     if (now === then) continue;
     count++;

@@ -168,6 +168,20 @@ public class ClaimRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** The order the claim was added in, across every sheet (see Rate#appliesTo); 0 when there is no such claim. */
+    public long addedSeq(String sheetId, long id) {
+        List<Long> found = jdbc.queryForList("SELECT added_seq FROM claim WHERE sheet_id = ? AND id = ?", Long.class, sheetId, id);
+        return found.isEmpty() ? 0 : found.get(0);
+    }
+
+    /** The order each claim of the sheet was added in (see #addedSeq), by claim id. */
+    public Map<Long, Long> addedSeqs(String sheetId) {
+        Map<Long, Long> out = new HashMap<>();
+        jdbc.query("SELECT id, added_seq FROM claim WHERE sheet_id = ?",
+                (rs) -> { out.put(rs.getLong("id"), rs.getLong("added_seq")); }, sheetId);
+        return out;
+    }
+
     /** Who holds each locked claim's lock on the sheet, by claim id. */
     public Map<Long, String> locks(String sheetId) {
         Map<Long, String> out = new HashMap<>();

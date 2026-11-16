@@ -60,6 +60,9 @@ export type Claim = {
   batch: number | null;
   /** Its lines, in the order added; with any, its amount is their quantities times unit amounts added up. */
   lines: ClaimLine[];
+  /** The order it was added in, across every sheet: a forward-only rate applies only to claims whose seq is above its
+   *  `after` (see claimRate); absent for a claim not yet added. */
+  seq?: number;
 };
 
 /** A line of a claim: its label, quantity (a whole number, at least 1) and unit amount (two decimals). */

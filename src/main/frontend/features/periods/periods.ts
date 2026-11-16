@@ -3,7 +3,7 @@ import { getJson } from '../../api/http';
 import { bound, counts, isOpen, type Claim, type ClaimStatus } from '../claims/claims';
 import type { Late } from '../overdue/late';
 import { gradeOn, heldOn, retiredOn, type Person } from '../people/people';
-import { claimDue, rateFor, sum, type Rate } from '../rates/rates';
+import { claimDue, claimRate, sum, type Rate } from '../rates/rates';
 import type { Dated } from '../settings/settings';
 
 /** A period of the sheet: `name` is unique on the sheet (case ignored); `from` and `to` (yyyy-MM-dd) are both
@@ -77,7 +77,7 @@ export function personPeriodDue(
     const status = statusNow ? c.status : statusAsOf(c, period.to);
     return status !== undefined && counts({ ...c, status }) && !(isOpen(c) && !bound(c) && (heldOn(person, c.date) || retiredOn(person, late.today)));
   });
-  return sum(mine.map((c) => claimDue(c, rateFor(rates, gradeOn(person, c.date), c.date), floor, late)));
+  return sum(mine.map((c) => claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late)));
 }
 
 /** A period's due-total: the people's due-totals for it (see personPeriodDue) added up. */

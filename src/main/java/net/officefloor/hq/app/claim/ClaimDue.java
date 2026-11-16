@@ -49,11 +49,12 @@ public final class ClaimDue {
         return isOpen(claim) && !bound(claim) && person != null && person.retiredOn(today);
     }
 
-    /** The claim's rate figure: its amount at the grade's rate in force on its date, rounded to two decimals by the
+    /** The claim's rate figure: its amount at the grade's rate that applies to it on its date (a forward-only rate
+     *  saved after it was added does not; see RateRepository#forClaim), rounded to two decimals by the
      *  claim's rounding (see Rounding); null when no rate applies. The floor is applied last, after the late charge
      *  (see LateCharge#add). */
     public static BigDecimal live(Claim claim, String grade, RateRepository rates, Rounding rounding) {
-        Rate rate = rates.find(claim.sheetId(), grade, claim.date());
+        Rate rate = rates.forClaim(claim.sheetId(), grade, claim.date(), rates.seqOf(claim.id()));
         if (rate == null) {
             return null;
         }

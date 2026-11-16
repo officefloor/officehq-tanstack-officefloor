@@ -1,7 +1,7 @@
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
 import { gradeOn, usePeople } from '../people/people';
-import { claimDue, rateFor, sum, useRates } from '../rates/rates';
+import { claimDue, claimRate, sum, useRates } from '../rates/rates';
 import { useFloor, useLate } from '../settings/settings';
 import { useTags } from './tags';
 
@@ -19,7 +19,7 @@ function TagTotals({ sheetId }: { sheetId: string }) {
   const figures = live(claims.data ?? [], people.data, late.today).flatMap((c) => {
     const person = byId.get(c.personId);
     if (person === undefined) return [];
-    return [{ tags: new Set([...c.tags, ...(person.tags ?? [])]), due: claimDue(c, rateFor(rates.data, gradeOn(person, c.date), c.date), floor, late) }];
+    return [{ tags: new Set([...c.tags, ...(person.tags ?? [])]), due: claimDue(c, claimRate(rates.data, gradeOn(person, c.date), c), floor, late) }];
   });
   return (
     <section data-testid="tag-totals">

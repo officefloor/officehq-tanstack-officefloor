@@ -103,7 +103,7 @@ public class TakeStatement {
                 claims.bind(c, false, null);
                 continue;
             }
-            BigDecimal figure = figure(then, person.gradeOn(c.date()), sheet, rounding);
+            BigDecimal figure = figure(then, person.gradeOn(c.date()), sheet, rounding, rates);
             figured |= figure != null;
             if (figure != null) {
                 total = total.add(late.add(then, figure, sheet.floor(c.date())));
@@ -128,14 +128,14 @@ public class TakeStatement {
     }
 
     /** The figure the claim had then (see ClaimDue#figure), at the rate in force then on its date. */
-    private static BigDecimal figure(Claim c, String grade, SheetAsOf sheet, Rounding rounding) {
+    private static BigDecimal figure(Claim c, String grade, SheetAsOf sheet, Rounding rounding, RateRepository rates) {
         if (c.due() != null) {
             return c.due();
         }
         if (ClaimDue.bound(c)) {
             return c.statedDue();
         }
-        Rate rate = sheet.rate(grade, c.date());
+        Rate rate = sheet.rate(grade, c.date(), rates.seqOf(c.id()));
         if (rate == null) {
             return null;
         }
