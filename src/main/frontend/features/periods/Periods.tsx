@@ -6,7 +6,7 @@ import { listPeople, peopleKey } from '../people/api';
 import { listRates, ratesKey } from '../rates/api';
 import { fiscalYearOf, useFiscalStartMonth, useFloor, useLate } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
-import { addPeriod, closePeriod, generateFiscalYear, generatePeriods, generateQuarters, listPeriods, lockPeriod, periodDueTotal, periodsKey, reopenPeriod, softClosePeriod, type PeriodInput } from './api';
+import { addPeriod, closePeriod, generateFiscalYear, generatePeriods, generateQuarters, listPeriods, lockPeriod, periodClaimsCount, periodDueTotal, periodsKey, reopenPeriod, softClosePeriod, type PeriodInput } from './api';
 import { Fig } from '../session/Fig';
 import { ImportOpenings } from './ImportOpenings';
 import { Rollover } from './Rollover';
@@ -17,7 +17,7 @@ const EMPTY: PeriodInput = { name: '', from: '', to: '', cap: '' };
 
 /** The sheet's periods: a form that adds one, and each period by from-date with its due-total (the
  *  due of the claims that count whose date falls in it, n/a ones and OPEN unbound ones dated within their person's hold skipped; once closed, the one fixed
- *  when it was closed or soft-closed), the fiscal year its from-date falls in, its cap on each person's open claims (blank for none), whether it is closed (yes, soft or no), whether it is locked (yes or no), and buttons that close, soft-close and reopen it (each by the roles the permission matrix allows) and lock and unlock it (a steward only). */
+ *  when it was closed or soft-closed), the fiscal year its from-date falls in, its cap on each person's open claims (blank for none), whether it is closed (yes, soft or no), whether it is locked (yes or no), its claims count (VOID and DELETED ones left out), and buttons that close, soft-close and reopen it (each by the roles the permission matrix allows) and lock and unlock it (a steward only). */
 export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
@@ -197,6 +197,9 @@ export function Periods({ sheetId, user }: { sheetId: string; user: string }) {
               </td>
               <td>
                 <span data-testid="period-fy">{fiscalYearOf(p.from, fiscalStart)}</span>
+              </td>
+              <td>
+                Claims <span data-testid="period-claims-count">{periodClaimsCount(p, claims.data ?? [])}</span>
               </td>
               <td>
                 Cap <span data-testid="period-cap"><Fig>{p.cap ?? ''}</Fig></span>
