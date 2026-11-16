@@ -19,7 +19,7 @@ public class PatronRepository {
     }
 
     public List<Patron> list(String sheetId) {
-        return jdbc.query("SELECT person_id, patron_id FROM patron WHERE sheet_id = ? ORDER BY person_id, patron_id",
+        return jdbc.query("SELECT person_id, patron_id FROM patron WHERE sheet_id = ? ORDER BY person_id, named_seq",
                 (rs, n) -> new Patron(rs.getLong("person_id"), rs.getLong("patron_id")), sheetId);
     }
 
@@ -36,7 +36,7 @@ public class PatronRepository {
 
     /** As they stood at the end of the date: only those started while the sheet's today was on or before it. */
     public List<Patron> listAsOf(String sheetId, java.time.LocalDate date) {
-        return jdbc.query("SELECT person_id, patron_id FROM patron WHERE sheet_id = ? AND (added_on IS NULL OR added_on <= ?) ORDER BY person_id, patron_id",
+        return jdbc.query("SELECT person_id, patron_id FROM patron WHERE sheet_id = ? AND (added_on IS NULL OR added_on <= ?) ORDER BY person_id, named_seq",
                 (rs, n) -> new Patron(rs.getLong("person_id"), rs.getLong("patron_id")), sheetId, java.sql.Date.valueOf(date));
     }
 }

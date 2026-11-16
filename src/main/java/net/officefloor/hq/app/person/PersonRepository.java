@@ -116,7 +116,8 @@ public class PersonRepository {
             throw new DuplicatePersonNameException(alias);
         }
         try {
-            jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) VALUES (?, ?, ?)", sheetId, personId, alias);
+            jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, added_on) VALUES (?, ?, ?, ?)", sheetId, personId,
+                    alias, Date.valueOf(sheets.today(sheetId)));
         } catch (DuplicateKeyException e) {
             throw new DuplicatePersonNameException(alias);
         }
@@ -229,8 +230,8 @@ public class PersonRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** The person as they stood at the end of the date: the grades last stored, the holds added, and the retirement
-     *  date last given while the sheet's today was on or before it (a part never stored by then: none; grades never
+    /** The person as they stood at the end of the date: the grades last stored, the holds and aliases added, and the
+     *  retirement date last given while the sheet's today was on or before it (a part never stored by then: none; grades never
      *  logged: those they have now). */
     public Person asOf(Person person, LocalDate date) {
         String sheetId = person.sheetId();
@@ -253,13 +254,16 @@ public class PersonRepository {
         List<LocalDate> retired = jdbc.query("SELECT from_date FROM person_retire_log WHERE sheet_id = ? AND person_id = ?"
                 + " AND made_on <= ? ORDER BY id DESC LIMIT 1", (rs, n) -> rs.getObject(1, LocalDate.class), sheetId,
                 person.id(), Date.valueOf(date));
+        List<String> given = jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ?"
+                + " AND (added_on IS NULL OR added_on <= ?)", String.class, sheetId, person.id(), Date.valueOf(date));
+        List<String> aliases = person.aliases().stream().filter(given::contains).toList();
         return new Person(person.id(), sheetId, person.name(), Person.gradeOn(grades, date), person.version(),
                 retired.isEmpty() ? null : retired.get(0).toString(), List.copyOf(grades), holds, termsAsOf(person, date),
-                person.contact(), person.aliases());
+                person.contact(), aliases);
     }
 
     /** The sheet's people as they stood at the end of the date (see #asOf), in the order added: one added while the
-     *  sheet's today was after it is left out. */
+     *  sheet's today was after it is left out, and one merged into another while it was after it is still listed. */
     public List<Person> listAsOf(String sheetId, LocalDate date) {
         Map<Long, LocalDate> added = new HashMap<>();
         jdbc.query("SELECT id, added_on FROM person WHERE sheet_id = ?",
@@ -273,7 +277,29 @@ public class PersonRepository {
                 people.add(asOf(p, date));
             }
         }
+        people.addAll(mergedAsOf(sheetId, date));
+        people.sort(java.util.Comparator.comparingLong(Person::id));
         return people;
+    }
+
+    /** The people merged into another after the date but added on or before it, as they stood when merged. */
+    private List<Person> mergedAsOf(String sheetId, LocalDate date) {
+        return jdbc.query("SELECT id, name, grades, retired_from, terms, contact FROM person_merged WHERE sheet_id = ?"
+                + " AND merged_on > ? AND (added_on IS NULL OR added_on <= ?) ORDER BY id", (rs, n) -> {
+                    List<PersonGrade> grades = new ArrayList<>();
+                    for (String g : rs.getString("grades").split(";")) {
+                        if (g.isEmpty()) {
+                            continue;
+                        }
+                        int at = g.indexOf('@');
+                        String from = g.substring(at + 1);
+                        grades.add(new PersonGrade(g.substring(0, at), from.isEmpty() ? null : LocalDate.parse(from)));
+                    }
+                    Date retired = rs.getDate("retired_from");
+                    return new Person(rs.getLong("id"), sheetId, rs.getString("name"), Person.gradeOn(grades, date), 0,
+                            retired == null ? null : retired.toLocalDate().toString(), List.copyOf(grades), List.of(),
+                            rs.getObject("terms", Integer.class), rs.getString("contact"));
+                }, sheetId, Date.valueOf(date), Date.valueOf(date));
     }
 
     /** Retires the person from the date (replacing any earlier retirement date). */

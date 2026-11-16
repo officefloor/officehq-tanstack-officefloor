@@ -3,6 +3,7 @@ package net.officefloor.hq.app.person;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -11,9 +12,11 @@ import org.springframework.stereotype.Repository;
 public class PersonMerger {
 
     private final JdbcTemplate jdbc;
+    private final SheetRepository sheets;
 
-    public PersonMerger(JdbcTemplate jdbc) {
+    public PersonMerger(JdbcTemplate jdbc, SheetRepository sheets) {
         this.jdbc = jdbc;
+        this.sheets = sheets;
     }
 
     /**
@@ -22,7 +25,7 @@ public class PersonMerger {
      * into's aliases; from's patrons are added to into's (not into themselves, no repeats) and anyone naming from as
      * patron names into instead (no repeats; into never their own patron); from's pool memberships move to into (shares
      * added where into is already a member). From's statements, holds, watchers, contact and grades are dropped, and from
-     * leaves the sheet.
+     * leaves the sheet (kept, as they stood, only for reading the sheet as of a date before the merge).
      */
     public void merge(String sheetId, Person from, Person into) {
         long f = from.id();
@@ -60,12 +63,21 @@ public class PersonMerger {
             }
         }
 
+        StringBuilder grades = new StringBuilder();
+        for (PersonGrade g : from.grades()) {
+            grades.append(grades.length() == 0 ? "" : ";").append(g.grade()).append('@').append(g.from() == null ? "" : g.from());
+        }
+        jdbc.update("INSERT INTO person_merged (id, sheet_id, name, grades, retired_from, terms, contact, added_on, merged_on)"
+                + " SELECT id, sheet_id, name, ?, retired_from, terms, contact, added_on, ? FROM person WHERE sheet_id = ? AND id = ?",
+                grades.toString(), java.sql.Date.valueOf(sheets.today(sheetId)), sheetId, f);
+
         for (String table : List.of("statement", "person_hold", "watch", "person_grade", "person_grade_log",
                 "person_retire_log", "person_terms_log")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, f);
         }
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, f);
-        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) VALUES (?, ?, ?)", sheetId, t, from.name());
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, added_on) VALUES (?, ?, ?, ?)", sheetId, t, from.name(),
+                java.sql.Date.valueOf(sheets.today(sheetId)));
     }
 
     /** Names the patron for the person, unless it is themselves or they already have them. */

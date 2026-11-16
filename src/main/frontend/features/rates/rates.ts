@@ -152,6 +152,27 @@ export function ratePreview(
   return { count, diff: shown(diff) };
 }
 
+/** 100.00 split equally among `n` in order: each share rounded half to even to two decimals, the remainder (100.00
+ *  minus the shares added up) given to the first. */
+export function equalShares(n: number): string[] {
+  if (n === 0) return [];
+  const N = BigInt(n);
+  const q = 10000n / N;
+  const rem = 10000n % N;
+  const each = rem * 2n > N || (rem * 2n === N && q % 2n === 1n) ? q + 1n : q;
+  return Array.from({ length: n }, (_, i) => shown(i === 0 ? 10000n - each * (N - 1n) : each));
+}
+
+/** The sum of each two-decimal value × its percent / 100, rounded once to two decimals, half to even. */
+export function sharedSum(parts: { value: string; pct: string }[]): string {
+  const p = parts.reduce((s, x) => s + hundredths(x.value) * hundredths(x.pct), 0n); // in 1/10000 of a hundredth
+  const a = p < 0n ? -p : p;
+  const q = a / 10000n;
+  const rem = a % 10000n;
+  const r = rem > 5000n || (rem === 5000n && q % 2n === 1n) ? q + 1n : q;
+  return shown(p < 0n ? -r : r);
+}
+
 /** Two-decimal values added up, skipping 'n/a'. */
 export function sum(values: string[]): string {
   return shown(values.filter((v) => v !== 'n/a').reduce((s, v) => s + hundredths(v), 0n));
