@@ -18,6 +18,13 @@ public class ApplyRedate {
     public void apply(@Val Claim claim, @Val ClaimRedating request, RoleRepository roles, PersonRepository people,
             PeriodRepository periods, SettingRepository settings, SheetRepository sheets, ClaimRepository claims,
             Out<Claim> changed, Out<ClaimRedating> redating) throws InvalidClaimStatusException {
+        changed.set(check(claim, request, roles, people, periods));
+        redating.set(new ClaimRedating(request.date(), request.by(), claim.date()));
+    }
+
+    /** The claim as re-dated by the request, or refused by the rules above (shared with the bulk re-date). */
+    static Claim check(Claim claim, ClaimRedating request, RoleRepository roles, PersonRepository people,
+            PeriodRepository periods) throws InvalidClaimStatusException {
         String sheet = claim.sheetId();
         if (!RoleRepository.STEWARD.equals(roles.roleOf(sheet, request.by()))) {
             throw new InvalidClaimStatusException("Only a steward re-dates a claim");
@@ -33,9 +40,8 @@ public class ApplyRedate {
             throw new InvalidClaimStatusException("The new date is after the person's retirement");
         }
         String number = claim.number();
-        changed.set(new Claim(claim.id(), sheet, claim.personId(), claim.amount(), request.date(), claim.note(),
+        return new Claim(claim.id(), sheet, claim.personId(), claim.amount(), request.date(), claim.note(),
                 claim.status(), number, claim.due(), claim.openedBy(), claim.stated(), claim.statedDue(),
-                claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags()));
-        redating.set(new ClaimRedating(request.date(), request.by(), claim.date()));
+                claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags());
     }
 }
