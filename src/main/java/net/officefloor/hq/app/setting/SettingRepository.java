@@ -25,6 +25,16 @@ public class SettingRepository {
     /** The due above which a claim needs a proof before it is settled or approved; blank for none. */
     public static final String PROOF_THRESHOLD = "proof-threshold";
 
+    /** The proof kinds a claim above its proof threshold needs at least one proof of each of before it is settled or
+     *  approved: kinds (receipt, photo) separated by commas; blank for none (undated). */
+    public static final String PROOF_KINDS = "proof-kinds";
+
+    /** The kinds a proof may have. */
+    public static final List<String> KINDS = List.of("receipt", "photo");
+
+    /** The kind a proof has when none is chosen. */
+    public static final String DEFAULT_KIND = "receipt";
+
     /** The prefix of a grade's own proof threshold: proof-threshold-A, -B or -C (blank: none, so the sheet's applies). */
     public static final String PROOF_THRESHOLD_PREFIX = "proof-threshold-";
 
@@ -284,6 +294,12 @@ public class SettingRepository {
     public int fiscalStartMonth(String sheetId) {
         String value = value(sheetId, FISCAL_START_MONTH);
         return value == null ? DEFAULT_FISCAL_START_MONTH : Integer.parseInt(value);
+    }
+
+    /** The sheet's proof kinds, in the order set; empty when none. */
+    public List<String> proofKinds(String sheetId) {
+        String value = value(sheetId, PROOF_KINDS);
+        return value == null ? List.of() : List.of(value.split(","));
     }
 
     /** The sheet's alert threshold, or null when it is blank (off). */

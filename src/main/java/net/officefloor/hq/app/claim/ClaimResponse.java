@@ -10,7 +10,7 @@ import java.util.List;
  *  correction corrects (null for any other claim); roundsOn is the date that decides how its live figures round
  *  (the corrected claim's date for a correction, else its own; see Rounding); dueBy (yyyy-MM-dd) is its due-by, fixed
  *  when it was added; deferred is whether it is deferred on the sheet's today (see ClaimDue#deferred) and deferredUntil
- *  (yyyy-MM-dd) the date it was last deferred until (shown even once that date has passed), null when never deferred; proofs is its proofs count; splitFrom is the number of the claim it was split from (null for any other claim); log is its status log, oldest first: each status it has had, who made the change, the sheet's
+ *  (yyyy-MM-dd) the date it was last deferred until (shown even once that date has passed), null when never deferred; proofs is its proofs count, proofsReceipt and proofsPhoto how many of them are receipts and photos; splitFrom is the number of the claim it was split from (null for any other claim); log is its status log, oldest first: each status it has had, who made the change, the sheet's
  *  today (yyyy-MM-dd) then, and its due as shown at that moment (two decimals, or n/a); lockedBy is who has its editor
  *  open (null when no one does); lateEntry is whether it was added while its period was soft-closed; reminded (yyyy-MM-dd) is the last day a
  *  reminder was written for it, null when none; ref is its external reference, null when none; tags are its tags, sorted (empty when none); comments are its comments in the order written, each with who wrote it and
@@ -19,7 +19,7 @@ import java.util.List;
  *  (see ApplyWaive). */
 public record ClaimResponse(long id, String sheetId, long personId, String amount, String date, String note,
         String status, String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
-        String roundsOn, String dueBy, boolean deferred, String deferredUntil, int proofs, String splitFrom, List<LogLine> log,
+        String roundsOn, String dueBy, boolean deferred, String deferredUntil, int proofs, int proofsReceipt, int proofsPhoto, String splitFrom, List<LogLine> log,
         String lockedBy, boolean lateEntry, String reminded, String ref, List<String> tags,
         List<Comment> comments, Integer batch, List<Line> lines, long seq, boolean waived) {
 
@@ -51,12 +51,13 @@ public record ClaimResponse(long id, String sheetId, long personId, String amoun
             boolean lateEntry, LocalDate reminded, List<ClaimComment> comments, Integer batch, List<ClaimLine> lines,
             long seq, boolean waived) {
         boolean deferred = ClaimDue.deferred(claim, today);
+        int photos = claims.photoProofs(claim);
         return new ClaimResponse(claim.id(), claim.sheetId(), claim.personId(), claim.amount().toPlainString(),
                 claim.date().toString(), claim.note(), claim.status().name(), claim.number(),
                 claim.due() == null ? null : claim.due().toPlainString(), claim.openedBy(), claim.stated(),
                 claim.statedDue() == null ? null : claim.statedDue().toPlainString(), claim.corrects(),
                 Rounding.roundsOn(claim, claims).toString(), claim.dueBy().toString(),
-                deferred, claim.deferredUntil() == null ? null : claim.deferredUntil().toString(), claim.proofs(), claim.splitFrom(),
+                deferred, claim.deferredUntil() == null ? null : claim.deferredUntil().toString(), claim.proofs(), claim.proofs() - photos, photos, claim.splitFrom(),
                 log.stream().map((l) -> new LogLine(l.status().name(), l.by(), l.date().toString(), l.due())).toList(),
                 lockedBy, lateEntry, reminded == null ? null : reminded.toString(), claim.ref(),
                 claim.tags() == null ? List.of() : List.of(claim.tags().split(",")),

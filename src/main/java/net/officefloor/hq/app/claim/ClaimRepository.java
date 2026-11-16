@@ -288,15 +288,23 @@ public class ClaimRepository {
                 claim.id());
     }
 
-    /** Raises the claim's proofs count by one, logged as added on {@code today}, but only while it is still DRAFT, OPEN
-     *  or PENDING; false when it no longer is (nothing is written). */
-    public boolean addProof(Claim claim, LocalDate today) {
+    /** Raises the claim's proofs count by one, logged as added on {@code today} with its kind, but only while it is
+     *  still DRAFT, OPEN or PENDING; false when it no longer is (nothing is written). */
+    public boolean addProof(Claim claim, LocalDate today, String kind) {
         if (jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE sheet_id = ? AND id = ? AND status IN ('DRAFT', 'OPEN', 'PENDING')",
                 claim.sheetId(), claim.id()) != 1) {
             return false;
         }
-        jdbc.update("INSERT INTO claim_proof_log (claim_id, made_on) VALUES (?, ?)", claim.id(), Date.valueOf(today));
+        jdbc.update("INSERT INTO claim_proof_log (claim_id, made_on, kind) VALUES (?, ?, ?)", claim.id(), Date.valueOf(today), kind);
         return true;
+    }
+
+    /** The claim's proofs counted as photos: those logged as photo (at most its proofs count); the rest are receipts
+     *  (so a proofs count kept without a log, as a split's, counts as receipts). */
+    public int photoProofs(Claim claim) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim_proof_log WHERE claim_id = ? AND kind = 'photo'",
+                Integer.class, claim.id());
+        return Math.max(0, Math.min(n == null ? 0 : n, claim.proofs()));
     }
 
     /** The number of proofs added to each claim of the sheet after {@code asOf}, by claim id. */

@@ -22,7 +22,7 @@ import net.officefloor.plugin.variable.Val;
  * Opening records who opened the claim; that user cannot settle nor approve it (four eyes), nor can the user who last
  * edited it (see ClaimRepository#editedBy). A claim whose due is
  * above the proof threshold in force on its date (its person's grade's on that date when one is set, else the sheet's; if any) cannot be settled nor approved while its proofs
- * count is 0 (checked before the clerk limit, so it never goes PENDING); a due of n/a is within any threshold. A claim whose due-by falls inside a closed
+ * count is 0, nor while the sheet's proof kinds are set and it has no proof of one of them (checked before the clerk limit, so it never goes PENDING); a due of n/a is within any threshold. A claim whose due-by falls inside a closed
  * period cannot change status, nor can a deferred claim be settled (see ClaimDue#deferred). A clerk (any user not made a steward) settling a claim whose due is above the sheet's
  * clerk limit, if it has one, makes it PENDING instead (its due left unfixed, still bound by its statement if one binds it); a due of n/a is
  * within any limit. A steward settles anything. Only a steward approves a PENDING claim (fixing its figure, live or bound by a statement, late
@@ -44,6 +44,22 @@ import net.officefloor.plugin.variable.Val;
  * then). A REVIEW claim may otherwise only be voided.
  */
 public class ApplyClaimStatus {
+
+    /** What proof the claim lacks to pass its proof threshold: "" when it has none at all, the first of the sheet's
+     *  proof kinds it has no proof of, or null when it lacks none. */
+    static String missingProof(Claim claim, SettingRepository settings, ClaimRepository claims) {
+        if (claim.proofs() == 0) {
+            return "";
+        }
+        int photos = claims.photoProofs(claim);
+        for (String kind : settings.proofKinds(claim.sheetId())) {
+            int count = SettingRepository.DEFAULT_KIND.equals(kind) ? claim.proofs() - photos : photos;
+            if (count == 0) {
+                return kind;
+            }
+        }
+        return null;
+    }
 
     /** How many days after its settlement a steward may still void a SETTLED claim. */
     static final int VOID_SETTLED_DAYS = 7;
@@ -136,12 +152,15 @@ public class ApplyClaimStatus {
             settledDue = to == ClaimStatus.SETTLED ? late.add(claim, due(claim, people, rates, late.rounding()), settings.floor(claim.sheetId(), claim.date())) : claim.due();
         }
         if ((change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE) && settledDue != null
-                && claim.proofs() == 0) {
+                && missingProof(claim, settings, claims) != null) {
             Person person = people.find(claim.sheetId(), claim.personId());
             BigDecimal threshold = settings.proofThreshold(claim.sheetId(),
                     person == null ? null : person.gradeOn(claim.date()), claim.date());
             if (threshold != null && settledDue.compareTo(threshold) > 0) {
-                throw new InvalidClaimStatusException("A claim whose due is above the proof threshold needs a proof");
+                String missing = missingProof(claim, settings, claims);
+                throw new InvalidClaimStatusException(missing.isEmpty()
+                        ? "A claim whose due is above the proof threshold needs a proof"
+                        : "A claim whose due is above the proof threshold needs a " + missing + " proof");
             }
         }
         if (change.action() == ClaimAction.SETTLE && settledDue != null && !steward) {

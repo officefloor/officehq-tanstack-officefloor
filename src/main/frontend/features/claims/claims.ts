@@ -45,6 +45,9 @@ export type Claim = {
   /** Whether a steward waived its late charge: from then on it bears none, whatever its overdue state. */
   waived: boolean;
   proofs: number;
+  /** How many of its proofs are receipts (the kind when none is chosen) and photos. */
+  proofsReceipt: number;
+  proofsPhoto: number;
   splitFrom: string | null;
   log: ClaimLogLine[];
   lockedBy: string | null;
