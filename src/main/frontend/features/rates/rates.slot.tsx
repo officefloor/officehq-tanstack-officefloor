@@ -13,7 +13,7 @@ import { ownRates, personDue, personExcess, personSplit, RATE_PATTERN, ratePrevi
 import { useShownColumns } from '../columns/columns';
 
 /** The sheet's rates: the form that sets one (from an optional from-date, through an optional to-date), each grade's rate in force on the
- *  sheet's today, and every rate set. */
+ *  sheet's today, a calendar of each grade's rate in force on the first of each month of today's year, and every rate set. */
 function Rates({ sheetId, user }: { sheetId: string; user: string }) {
   const rates = useRates(sheetId);
   const today = useSheetToday(sheetId);
@@ -126,6 +126,28 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
           ))}
         </tbody>
       </table>
+      <table data-testid="rates-calendar">
+        <thead>
+          <tr>
+            <th>Grade</th>
+            {calendarMonths(today).map((m) => (
+              <th key={m}>{m}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {GRADES.map((g) => (
+            <tr key={g}>
+              <td>{g}</td>
+              {calendarMonths(today).map((m) => (
+                <td key={m} data-testid={`rate-month-${g}-${m}`}>
+                  {rateFor(rates.data, g, `${m}-01`) ?? 'n/a'}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
       <table data-testid="rates-table">
         <tbody>
           {ownRates(rates.data).map((r) => (
@@ -141,6 +163,13 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
       </table>
     </section>
   );
+}
+
+/** The months (YYYY-MM) of the calendar year of the sheet's today. */
+function calendarMonths(today: string): string[] {
+  if (!/^\d{4}-/.test(today)) return [];
+  const year = today.slice(0, 4);
+  return Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
 }
 
 /** The rate import box: lines of grade,rate,from,to (from and to may be absent or blank). The server checks every line

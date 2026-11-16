@@ -54,8 +54,9 @@ public class PersonTransferrer {
         statements.moveAll(from, id, to, id);
         jdbc.update("DELETE FROM patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", from, id, id);
         jdbc.update("DELETE FROM pool_member WHERE person_id = ?", id);
-        jdbc.update("DELETE FROM crew_member WHERE person_id = ? OR crew_id IN (SELECT id FROM crew WHERE lead_id = ?)", id, id);
-        jdbc.update("DELETE FROM crew WHERE lead_id = ?", id);
+        jdbc.update("DELETE FROM crew_member WHERE person_id = ?", id);
+        // the crews they lead stay, without a lead
+        jdbc.update("UPDATE crew SET lead_id = NULL WHERE lead_id = ?", id);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", from, id);
         for (String table : List.of("person_hold", "watch", "person_retire_log")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", from, id);
@@ -102,8 +103,9 @@ public class PersonTransferrer {
         statements.moveAll(from, id, to, t);
         jdbc.update("DELETE FROM patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", from, id, id);
         jdbc.update("DELETE FROM pool_member WHERE person_id = ?", id);
-        jdbc.update("DELETE FROM crew_member WHERE person_id = ? OR crew_id IN (SELECT id FROM crew WHERE lead_id = ?)", id, id);
-        jdbc.update("DELETE FROM crew WHERE lead_id = ?", id);
+        jdbc.update("DELETE FROM crew_member WHERE person_id = ?", id);
+        // the crews they lead stay, without a lead
+        jdbc.update("UPDATE crew SET lead_id = NULL WHERE lead_id = ?", id);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", from, id);
         for (String table : List.of("person_hold", "watch", "person_retire_log", "person_grade", "person_grade_log",
                 "person_terms_log", "person_terms_from", "person_retirement")) {

@@ -19,7 +19,7 @@ public class AddCrewMember {
         if (name == null) {
             throw new InvalidCrewException("No such person on the sheet");
         }
-        if (crews.leadOf(crewId) == request.personId()) {
+        if (java.util.Objects.equals(crews.leadOf(crewId), request.personId())) {
             throw new InvalidCrewException(name + " leads " + crew);
         }
         if (!crews.addMember(crewId, request.personId())) {

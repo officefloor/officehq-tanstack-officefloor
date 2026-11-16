@@ -6,9 +6,9 @@ import { sum } from '../rates/rates';
 /** A member of a crew: the person's `personId` and `name`. */
 export type CrewMember = { personId: number; name: string };
 
-/** A crew of the sheet: its `name` (trimmed, unique on the sheet), its lead (`leadId`, `lead` their name) and its
+/** A crew of the sheet: its `name` (trimmed, unique on the sheet), its lead (`leadId`, `lead` their name; null and blank once the lead has left the sheet) and its
  *  members in the order added (never the lead, a person at most once). A person can be in several crews. */
-export type Crew = { name: string; leadId: number; lead: string; members: CrewMember[] };
+export type Crew = { name: string; leadId: number | null; lead: string; members: CrewMember[] };
 
 /** Under the people's key, so every change to a person (a rename or merge above all) reloads the crews. */
 export const crewsKey = (sheetId: string) => [...peopleKey(sheetId), 'crews'];
@@ -23,5 +23,5 @@ export function useCrews(sheetId: string) {
 
 /** A crew's due-total: its lead's and its members' due-totals (as their rows show them) added up, skipping n/a. */
 export function crewDueTotal(crew: Crew, due: Map<number, string>): string {
-  return sum([crew.leadId, ...crew.members.map((m) => m.personId)].map((id) => due.get(id) ?? 'n/a'));
+  return sum([...(crew.leadId === null ? [] : [crew.leadId]), ...crew.members.map((m) => m.personId)].map((id) => due.get(id) ?? 'n/a'));
 }

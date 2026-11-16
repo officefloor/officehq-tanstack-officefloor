@@ -21,11 +21,13 @@ public class CrewRepository {
     /** The sheet's crews in the order added, each with its lead and its members in the order added. */
     public List<Crew> list(String sheetId) {
         Map<Long, Crew> crews = new LinkedHashMap<>();
-        jdbc.query("SELECT c.id, c.name, c.lead_id, p.name AS lead FROM crew c JOIN person p ON p.id = c.lead_id"
+        jdbc.query("SELECT c.id, c.name, c.lead_id, p.name AS lead FROM crew c LEFT JOIN person p ON p.id = c.lead_id"
                 + " WHERE c.sheet_id = ? ORDER BY c.id",
                 rs -> {
-                    crews.put(rs.getLong("id"), new Crew(rs.getString("name"), rs.getLong("lead_id"),
-                            rs.getString("lead"), new ArrayList<>()));
+                    long leadId = rs.getLong("lead_id");
+                    Long lead = rs.wasNull() ? null : leadId;
+                    crews.put(rs.getLong("id"), new Crew(rs.getString("name"), lead,
+                            lead == null ? "" : rs.getString("lead"), new ArrayList<>()));
                 }, sheetId);
         jdbc.query("SELECT m.crew_id, m.person_id, p.name FROM crew_member m JOIN crew c ON c.id = m.crew_id"
                 + " JOIN person p ON p.id = m.person_id WHERE c.sheet_id = ? ORDER BY m.id",
@@ -61,8 +63,8 @@ public class CrewRepository {
         return ids.isEmpty() ? null : ids.get(0);
     }
 
-    /** The id of the crew's lead. */
-    public long leadOf(long crewId) {
+    /** The id of the crew's lead, or null when it has none (its lead has left the sheet). */
+    public Long leadOf(long crewId) {
         return jdbc.queryForObject("SELECT lead_id FROM crew WHERE id = ?", Long.class, crewId);
     }
 

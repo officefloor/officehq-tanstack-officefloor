@@ -99,12 +99,15 @@ public class PoolRepository {
         Map<Long, String> names = new LinkedHashMap<>();
         Map<Long, List<Object[]>> people = new LinkedHashMap<>();
         jdbc.query("SELECT c.id, c.name, c.lead_id, p.name AS lead, p.retired_from FROM crew c"
-                + " JOIN person p ON p.id = c.lead_id WHERE c.sheet_id = ? ORDER BY c.id",
+                + " LEFT JOIN person p ON p.id = c.lead_id WHERE c.sheet_id = ? ORDER BY c.id",
                 rs -> {
                     long id = rs.getLong("id");
                     names.put(id, rs.getString("name"));
-                    people.computeIfAbsent(id, k -> new ArrayList<>()).add(new Object[] { rs.getLong("lead_id"),
-                            rs.getString("lead"), rs.getDate("retired_from") != null });
+                    List<Object[]> in = people.computeIfAbsent(id, k -> new ArrayList<>());
+                    long leadId = rs.getLong("lead_id");
+                    if (!rs.wasNull()) {
+                        in.add(new Object[] { leadId, rs.getString("lead"), rs.getDate("retired_from") != null });
+                    }
                 }, sheetId);
         jdbc.query("SELECT m.crew_id, m.person_id, p.name, p.retired_from FROM crew_member m JOIN crew c ON c.id = m.crew_id"
                 + " JOIN person p ON p.id = m.person_id WHERE c.sheet_id = ? ORDER BY m.id",
@@ -118,7 +121,7 @@ public class PoolRepository {
         List<Pool> out = new ArrayList<>();
         for (Map.Entry<Long, String> crew : names.entrySet()) {
             List<Object[]> in = people.get(crew.getKey());
-            long each = 10000 / in.size();
+            long each = in.isEmpty() ? 0 : 10000 / in.size();
             long remainder = 10000 - each * in.size();
             List<PoolMember> members = new ArrayList<>();
             for (int i = 0; i < in.size(); i++) {
