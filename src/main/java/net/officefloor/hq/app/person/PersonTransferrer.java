@@ -62,4 +62,57 @@ public class PersonTransferrer {
         people.toEnd(to, id);
         return numbered;
     }
+
+    /**
+     * Moves the person to the other sheet merged into {@code into} there, as a merge does (see PersonMerger#merge): their
+     * claims go to into as transfer moves them (see #transfer), listed there after every claim of the sheet; their name
+     * and aliases become into's aliases (one into already has as written is not repeated); their grades, terms, contact
+     * and retirement are dropped, as is everything a transfer drops, and they leave this sheet entirely. Returns the ids
+     * of the moved claims that have a number, in the order they were opened, for the caller to number on the other sheet.
+     */
+    public List<Long> transferInto(Person person, String to, Person into) {
+        String from = person.sheetId();
+        long id = person.id();
+        long t = into.id();
+        List<Long> claims = jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed, id",
+                Long.class, from, id);
+        List<Long> numbered = jdbc.queryForList("SELECT c.id FROM claim c WHERE c.sheet_id = ? AND c.person_id = ?"
+                + " AND c.claim_number IS NOT NULL ORDER BY (SELECT MIN(l.log_date) FROM claim_log l WHERE l.sheet_id = c.sheet_id"
+                + " AND l.claim_id = c.id AND l.status = 'OPEN') NULLS LAST, c.id", Long.class, from, id);
+        for (Long c : claims) {
+            for (String table : List.of("claim_log", "claim_reminder", "claim_comment", "claim_void_reason")) {
+                jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND claim_id = ?", to, from, c);
+            }
+            jdbc.update("UPDATE claim_edit SET sheet_id = ?, ref = NULL WHERE sheet_id = ? AND claim_id = ?", to, from, c);
+            jdbc.update("DELETE FROM claim_batch WHERE sheet_id = ? AND claim_id = ?", from, c);
+            jdbc.update("UPDATE claim SET sheet_id = ?, person_id = ?, stated = FALSE, stated_due = NULL, ref = NULL, ref_key = NULL, "
+                    + "locked_by = NULL, listed = (SELECT COALESCE(MAX(x.listed), 0) + 1 FROM claim x WHERE x.sheet_id = ?) WHERE id = ?",
+                    to, t, to, c);
+        }
+
+        jdbc.update("DELETE FROM patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", from, id, id);
+        jdbc.update("DELETE FROM pool_member WHERE person_id = ?", id);
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", from, id);
+        for (String table : List.of("statement", "person_hold", "watch", "person_retire_log", "person_grade", "person_grade_log",
+                "person_terms_log", "person_retirement")) {
+            jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", from, id);
+        }
+
+        java.util.Set<String> held = new java.util.HashSet<>(into.aliases());
+        held.add(into.name());
+        for (java.util.Map<String, Object> a : jdbc.queryForList("SELECT id, alias FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                from, id)) {
+            if (held.add((String) a.get("alias"))) {
+                jdbc.update("UPDATE person_alias SET sheet_id = ?, person_id = ? WHERE id = ?", to, t, a.get("id"));
+            } else {
+                jdbc.update("DELETE FROM person_alias WHERE id = ?", a.get("id"));
+            }
+        }
+        jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", from, id);
+        if (held.add(person.name())) {
+            jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, added_on) VALUES (?, ?, ?, ?)", to, t, person.name(),
+                    Date.valueOf(sheets.today(to)));
+        }
+        return numbered;
+    }
 }

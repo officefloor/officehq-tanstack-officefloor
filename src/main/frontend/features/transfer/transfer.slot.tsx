@@ -21,8 +21,9 @@ function TransferHead() {
 
 /** The entry of the sheet id to transfer this person to, and the button that transfers them (a steward only). The
  *  person leaves this sheet with their claims, and their patron links and pool memberships are dropped, so every part of
- *  the sheet is re-read. A transfer by anyone else, of a retired person, to this sheet, or to a sheet that already has
- *  one of their names or their contact, shows the row's error. */
+ *  the sheet is re-read. On a sheet that already has one of their names they merge into that person. A transfer by
+ *  anyone else, of a retired person, to this sheet, or to a sheet that already has their contact (when not merging),
+ *  shows the row's error. */
 function PersonTransfer({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
   const [to, setTo] = useState('');

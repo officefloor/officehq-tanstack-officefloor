@@ -148,7 +148,7 @@ public class PersonRepository {
     }
 
     /** Gives the person the alias: refused when it equals, case ignored, any name or alias on the sheet or on another
-     *  sheet of its tree (the unique (sheet_id, alias_key) index refuses one taken by a concurrent add). */
+     *  sheet of its tree (the unique (sheet_id, alias) index refuses one taken as written by a concurrent add). */
     public void addAlias(String sheetId, long personId, String alias) throws DuplicatePersonNameException {
         if (nameTaken(sheetId, alias, 0) || treeTaken(sheetId, alias)) {
             throw new DuplicatePersonNameException(alias);
