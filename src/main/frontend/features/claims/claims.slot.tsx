@@ -4,6 +4,7 @@ import { postJson, putJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import type { Person } from '../people/people';
+import { due, rateFor, useRates } from '../rates/rates';
 import { claimsKey, total, useClaims, type Claim } from './claims';
 
 type Values = { amount: string; date: string; note: string };
@@ -22,6 +23,7 @@ function ClaimsHead() {
  *  being edited. A blank date takes the sheet's today (the server applies it). */
 function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const claims = useClaims(sheetId);
+  const rate = rateFor(useRates(sheetId).data, person.grade);
   const queryClient = useQueryClient();
   const mine = claims.data?.filter((c) => c.personId === person.id) ?? [];
   const [editingId, setEditingId] = useState<number | undefined>(undefined);
@@ -90,6 +92,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
             <li key={c.id} data-testid={`claim-row-${c.id}`}>
               <span data-testid="claim-amount">{c.amount}</span> <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
+              <span data-testid="claim-due">{due(c.amount, rate)}</span>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => openEditor(c)}>
                 Edit
               </button>
