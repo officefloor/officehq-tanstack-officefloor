@@ -1,5 +1,8 @@
 package net.officefloor.hq.app.person;
 
-/** A hold once validated: whether the person is to be held (true) or released (false), and who does it. */
-public record Hold(boolean held, String by) {
+import java.time.LocalDate;
+
+/** A hold once validated: its from-date (null when none was given, so the sheet's today), its to-date (null: open-ended),
+ *  and who adds it. */
+public record Hold(LocalDate from, LocalDate to, String by) {
 }

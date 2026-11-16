@@ -33,8 +33,8 @@ export function periodOf(periods: Period[] | undefined, date: string): Period | 
   return periods?.find((p) => p.from <= date && date <= p.to);
 }
 
-/** A period's due-total: the figures of the claims that count, each with its late charge (a held person's OPEN
- *  claims do not), whose date falls in it, added up (skipping n/a); for a closed period, the due-total fixed when it
+/** A period's due-total: the figures of the claims that count, each with its late charge (a person's OPEN
+ *  claims dated within a hold of theirs, not bound by a statement, do not), whose date falls in it, added up (skipping n/a); for a closed period, the due-total fixed when it
  *  was closed. */
 export function periodDue(
   period: Period,

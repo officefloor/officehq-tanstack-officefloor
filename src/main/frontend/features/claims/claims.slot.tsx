@@ -311,7 +311,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
   );
 }
 
-/** The sheet's claimed-total: everyone's claimed (OPEN, PENDING and SETTLED claims, but no held person's OPEN or PENDING ones) added up. */
+/** The sheet's claimed-total: everyone's claimed (OPEN, PENDING and SETTLED claims, but no OPEN or PENDING ones dated within a hold of their person and not bound by a statement) added up. */
 function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);

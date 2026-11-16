@@ -21,9 +21,9 @@ public final class ClaimDue {
     }
 
     /** Whether a claim counts toward the live totals (claimed, due-totals, a period's due-total): one that counts,
-     *  unless it is open (OPEN or PENDING) and its person is on hold. */
-    public static boolean countsLive(Claim claim, boolean held) {
-        return counts(claim) && !(held && isOpen(claim));
+     *  unless it is open (OPEN or PENDING), not bound by a statement, and dated within a hold of its person (null: none). */
+    public static boolean countsLive(Claim claim, net.officefloor.hq.app.person.Person person) {
+        return counts(claim) && !(isOpen(claim) && !bound(claim) && person != null && person.heldOn(claim.date()));
     }
 
     /** The claim's amount at the grade's rate in force on its date, rounded to two decimals by the claim's rounding

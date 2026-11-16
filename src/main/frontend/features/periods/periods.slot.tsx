@@ -13,7 +13,7 @@ type Values = { name: string; from: string; to: string };
 const EMPTY: Values = { name: '', from: '', to: '' };
 
 /** The sheet's periods: the form that adds one, and each period with its due-total — the figures of the claims
- *  that count, each with its late charge (a held person's OPEN or PENDING claims do not) whose date falls in it, added up (skipping n/a); a closed period
+ *  that count, each with its late charge (a person's OPEN or PENDING claims dated within a hold of theirs, not bound by a statement, do not) whose date falls in it, added up (skipping n/a); a closed period
  *  shows the due-total fixed when it was closed. */
 function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const periods = usePeriods(sheetId);

@@ -16,11 +16,12 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
 /** The stored people, kept per sheet. Ids are assigned in the order people are added. A person's grades are kept
- *  dated in person_grade; a person read carries them all, and the grade in force on the sheet's today. */
+ *  dated in person_grade, and their holds in person_hold; a person read carries them all, and the grade in force on the
+ *  sheet's today. */
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, version, retired_from, held";
+    private static final String COLUMNS = "id, sheet_id, name, version, retired_from";
 
     private final JdbcTemplate jdbc;
     private final SheetRepository sheets;
@@ -50,7 +51,7 @@ public class PersonRepository {
         return found.isEmpty() ? null : withGrades(sheetId, found).get(0);
     }
 
-    /** The people with their grades, and the grade in force on the sheet's today. */
+    /** The people with their grades and holds, and the grade in force on the sheet's today. */
     private List<Person> withGrades(String sheetId, List<Person> found) {
         if (found.isEmpty()) {
             return found;
@@ -62,12 +63,19 @@ public class PersonRepository {
                     grades.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())
                             .add(new PersonGrade(rs.getString("grade"), from == null ? null : from.toLocalDate()));
                 }, sheetId);
+        Map<Long, List<PersonHold>> holds = new HashMap<>();
+        jdbc.query("SELECT person_id, from_date, to_date FROM person_hold WHERE sheet_id = ? ORDER BY person_id, from_date, id",
+                (ResultSet rs) -> {
+                    Date to = rs.getDate("to_date");
+                    holds.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())
+                            .add(new PersonHold(rs.getDate("from_date").toLocalDate(), to == null ? null : to.toLocalDate()));
+                }, sheetId);
         LocalDate today = sheets.today(sheetId);
         List<Person> people = new ArrayList<>();
         for (Person p : found) {
             List<PersonGrade> mine = List.copyOf(grades.getOrDefault(p.id(), List.of()));
             people.add(new Person(p.id(), p.sheetId(), p.name(), Person.gradeOn(mine, today), p.version(), p.retiredFrom(),
-                    p.held(), mine));
+                    mine, List.copyOf(holds.getOrDefault(p.id(), List.of()))));
         }
         return people;
     }
@@ -97,7 +105,7 @@ public class PersonRepository {
         }
         long id = keys.getKey().longValue();
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, from_date, grade) VALUES (?, ?, NULL, ?)", sheetId, id, grade);
-        return new Person(id, sheetId, name, grade, 0, null, false, List.of(new PersonGrade(grade, null)));
+        return new Person(id, sheetId, name, grade, 0, null, List.of(new PersonGrade(grade, null)), List.of());
     }
 
     /** Stores the person as its new version, with its grades, only while the stored one is still {@code fromVersion}:
@@ -125,15 +133,15 @@ public class PersonRepository {
         jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?", Date.valueOf(from), sheetId, id);
     }
 
-    /** Puts the person on hold (true) or takes them off it (false), only while they are not already so; false when
-     *  they already were. */
-    public boolean hold(String sheetId, long id, boolean held) {
-        return jdbc.update("UPDATE person SET held = ? WHERE sheet_id = ? AND id = ? AND held = ?", held, sheetId, id, !held) == 1;
+    /** Adds a hold on the person, from the date until the date (null: open-ended). */
+    public void hold(String sheetId, long id, PersonHold hold) {
+        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)", sheetId, id,
+                Date.valueOf(hold.from()), hold.to() == null ? null : Date.valueOf(hold.to()));
     }
 
     private static Person map(ResultSet rs, int n) throws SQLException {
         Date retired = rs.getDate("retired_from");
         return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
-                retired == null ? null : retired.toLocalDate().toString(), rs.getBoolean("held"), List.of());
+                retired == null ? null : retired.toLocalDate().toString(), List.of(), List.of());
     }
 }
