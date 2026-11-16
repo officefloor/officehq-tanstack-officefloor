@@ -6,10 +6,14 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Applies the edited values; a claim dated inside a closed period, or moved into one, is refused. */
+/** Applies the edited values; only a DRAFT claim can be edited (an open claim is voided and a new one added instead),
+ * and a claim dated inside a closed period, or moved into one, is refused. */
 public class ApplyClaim {
     public void apply(@Val Claim claim, @Val ClaimValues values, SheetRepository sheets, PeriodRepository periods,
             Out<Claim> changed) throws InvalidClaimException {
+        if (claim.status() != ClaimStatus.DRAFT) {
+            throw new InvalidClaimException("Only a DRAFT claim can be edited");
+        }
         LocalDate date = values.date() != null ? values.date() : sheets.today(claim.sheetId());
         if (periods.closedOn(claim.sheetId(), claim.date()) || periods.closedOn(claim.sheetId(), date)) {
             throw new InvalidClaimException("The claim's date is inside a closed period");

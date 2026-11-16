@@ -55,9 +55,11 @@ public class ClaimRepository {
         return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null);
     }
 
-    public void update(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE sheet_id = ? AND id = ?",
-                claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.sheetId(), claim.id());
+    /** Stores the claim's values, but only while it is still a DRAFT; false when it no longer is (nothing is written). */
+    public boolean update(Claim claim) {
+        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE sheet_id = ? AND id = ? AND status = ?",
+                claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.sheetId(), claim.id(),
+                ClaimStatus.DRAFT.name()) == 1;
     }
 
     /**

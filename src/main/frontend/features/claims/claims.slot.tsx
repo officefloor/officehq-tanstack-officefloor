@@ -25,7 +25,7 @@ type Action = 'open' | 'settle' | 'void';
 
 /** One claim: its values, status, due and the period its date falls in, with the buttons that edit it or change its status. An action
  *  the status does not allow, or settling a claim the user opened, is refused by the server and shows the claim's
- *  error. */
+ *  error. Only a DRAFT can be edited: Edit on any other claim shows the claim's error instead of opening the editor. */
 function ClaimRow({
   sheetId,
   user,
@@ -50,7 +50,9 @@ function ClaimRow({
       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/status`, { action, by: user }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
+  const [editRefused, setEditRefused] = useState(false);
   const act = (action: Action) => {
+    setEditRefused(false);
     status.reset();
     status.mutate(action);
   };
@@ -70,6 +72,11 @@ function ClaimRow({
         data-testid="claim-edit"
         onClick={() => {
           status.reset();
+          if (c.status !== 'DRAFT') {
+            setEditRefused(true);
+            return;
+          }
+          setEditRefused(false);
           onEdit();
         }}
       >
@@ -89,6 +96,9 @@ function ClaimRow({
       <button type="button" data-testid="claim-void" disabled={status.isPending} onClick={() => act('void')}>
         Void
       </button>
+      {editRefused && (
+        <span data-testid="claim-error"> Only a draft claim can be edited; void it and add a new one instead.</span>
+      )}
       {status.isError && (
         <span data-testid="claim-error">
           {' '}
@@ -170,7 +180,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
           </button>
           {save.isError && (
             <span data-testid="claim-form-error">
-              The amount must be 0.00 or more, with up to two decimals, and the date not inside a closed period.
+              The amount must be 0.00 or more, with up to two decimals, the date not inside a closed period, and only a draft claim can be edited.
             </span>
           )}
         </form>

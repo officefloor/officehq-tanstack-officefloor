@@ -9,8 +9,8 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Moves the claim to its new status: DRAFT to OPEN, OPEN to SETTLED, DRAFT or OPEN to VOID. Voiding clears the
- * claim's number; the number it had is kept for the audit line. Settling fixes the claim's due: its amount at its
+ * Moves the claim to its new status: DRAFT to OPEN, OPEN to SETTLED, DRAFT or OPEN to VOID. A voided claim keeps
+ * its number (never given again). Settling fixes the claim's due: its amount at its
  * person's grade's rate in force on the claim's date, rounded half to even to two decimals (left live when no rate applies),
  * or the figure a statement bound it to.
  * Opening records who opened the claim; that user cannot settle it (four eyes). A claim dated inside a closed
@@ -36,7 +36,7 @@ public class ApplyClaimStatus {
         }
         number.set(new ClaimNumber(claim.number()));
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
-                claim.note(), change.to(), change.to() == ClaimStatus.VOID ? null : claim.number(),
+                claim.note(), change.to(), claim.number(),
                 change.to() == ClaimStatus.SETTLED ? due(claim, people, rates) : claim.due(),
                 change.to() == ClaimStatus.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue()));
     }

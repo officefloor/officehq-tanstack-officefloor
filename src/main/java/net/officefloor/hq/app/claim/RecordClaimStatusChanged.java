@@ -8,7 +8,7 @@ import net.officefloor.hq.app.rollup.RollupBefore;
 import net.officefloor.plugin.variable.Val;
 
 /** Writes CLAIM_OPENED, CLAIM_SETTLED or CLAIM_VOIDED to the audit file once the status is stored, ending
- * with number=<number> when the claim has (or, voided, had) one; CLAIM_SETTLED then ends with the due it fixed
+ * with number=<number> when the claim has one; CLAIM_SETTLED then ends with the due it fixed
  * (due=n/a when its grade had no rate). Then writes the
  * figures the change moved (see Rollup). */
 public class RecordClaimStatusChanged {
