@@ -84,7 +84,8 @@ public class TakeStatement {
         Person person = people.asOf(current, date);
         SheetAsOf sheet = SheetAsOf.read(sheetId, date, rates, settings);
         LocalDate policy = sheet.policyDate();
-        Rounding rounding = new Rounding(policy == null ? date : policy, claims);
+        Rounding rounding = new Rounding(policy == null ? date : policy, claims,
+                (on) -> sheet.value(SettingRepository.ROUNDING, on));
         LateCharge late = new LateCharge(date, sheet::latePct, rounding,
                 (c) -> sheet.grace(person.gradeOn(c.date()), c.date()));
         Statement last = statements.last(sheetId, person.id());

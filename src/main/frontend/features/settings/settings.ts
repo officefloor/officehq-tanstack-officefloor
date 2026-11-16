@@ -5,7 +5,7 @@ import type { Late } from '../overdue/late';
 import { gradeOn, usePeople } from '../people/people';
 import { useSheetToday } from '../session/session';
 
-/** A sheet setting: `value` is text (clerk-limit, cap, floor: an amount with two decimals; terms, terms-A, terms-B, terms-C: a whole number of days; late-pct: a percent with two decimals; grace-A, grace-B, grace-C: a whole number of days; policy-date, period-numbering-from, entry-date: yyyy-MM-dd; alert-threshold: an amount with two decimals, undated; fiscal-start-month: a month 1 to 12), null when blank.
+/** A sheet setting: `value` is text (clerk-limit, cap, floor: an amount with two decimals; terms, terms-A, terms-B, terms-C: a whole number of days; late-pct: a percent with two decimals; grace-A, grace-B, grace-C: a whole number of days; policy-date, period-numbering-from, entry-date: yyyy-MM-dd; alert-threshold: an amount with two decimals, undated; fiscal-start-month: a month 1 to 12; rounding: half-up or half-even), null when blank.
  *  `from` is the date the value is in force from (yyyy-MM-dd); null when undated (policy-date, period-numbering-from, entry-date, or a
  *  value from before settings were dated: in force on every date). */
 export type Setting = { sheetId: string; key: string; value: string | null; from: string | null };
@@ -69,7 +69,8 @@ export const DEFAULT_LATE_PCT = '0.00';
 
 /** What the sheet's late charge depends on: its today, its late percent (the one in force on each 30-day boundary of an overdue claim), its
  *  policy date (its today while blank), which decides how claims round, and each claim's grace: grace-A, grace-B or grace-C (whole days,
- *  blank for none) of its person's grade in force on its date, the one in force on that date. */
+ *  blank for none) of its person's grade in force on its date, the one in force on that date; and the rounding mode
+ *  (half-up or half-even, dated; blank for none) in force on a date. */
 export function useLate(sheetId: string): Late {
   const settings = useSettings(sheetId);
   const people = usePeople(sheetId);
@@ -80,5 +81,6 @@ export function useLate(sheetId: string): Late {
     const value = person === undefined ? null : inForce(settings.data, `grace-${gradeOn(person, claim.date)}`, claim.date)?.value;
     return value === null || value === undefined ? 0 : Number(value);
   };
-  return { today, pct: (date) => inForce(settings.data, 'late-pct', date)?.value ?? DEFAULT_LATE_PCT, policy, grace };
+  const rounding = (date: string) => inForce(settings.data, 'rounding', date)?.value ?? null;
+  return { today, pct: (date) => inForce(settings.data, 'late-pct', date)?.value ?? DEFAULT_LATE_PCT, policy, grace, rounding };
 }

@@ -17,7 +17,7 @@ public class RecordSnapshot {
         }
         for (java.util.Map.Entry<Long, Figures> e : before.figures().entrySet()) {
             Figures f = e.getValue();
-            snapshots.add(sheet.id(), e.getKey(), sheet.today(), f.dueTotal());
+            snapshots.add(sheet.id(), e.getKey(), sheet.today(), today, f.dueTotal());
             audit.record("SNAPSHOT sheet=" + sheet.id() + " by=" + by.by() + " name=" + f.name() + " due-total="
                     + f.dueTotal());
         }

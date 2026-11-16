@@ -59,6 +59,13 @@ public class SettingRepository {
     /** The date from which a claim's live figures round half to even (before it, half up); blank: the sheet's today. */
     public static final String POLICY_DATE = "policy-date";
 
+    /** The rounding mode a claim of a date takes (dated): half-up or half-even; blank: none (the policy date decides). */
+    public static final String ROUNDING = "rounding";
+
+    public static final String HALF_UP = "half-up";
+
+    public static final String HALF_EVEN = "half-even";
+
     /** The date from which an opened claim is numbered within its period (see ClaimNumbering); blank: off. */
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
 

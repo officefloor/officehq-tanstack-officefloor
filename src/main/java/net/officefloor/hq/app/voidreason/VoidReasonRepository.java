@@ -23,6 +23,14 @@ public class VoidReasonRepository {
                 (rs, n) -> new VoidReason(rs.getString("reason"), rs.getLong("voided")), sheetId);
     }
 
+    /** The reason each claim of the sheet was voided with, by claim id (a claim voided more than once: its last). */
+    public java.util.Map<Long, String> reasons(String sheetId) {
+        java.util.Map<Long, String> out = new java.util.HashMap<>();
+        jdbc.query("SELECT claim_id, reason FROM claim_void_reason WHERE sheet_id = ?",
+                (rs) -> { out.put(rs.getLong("claim_id"), rs.getString("reason")); }, sheetId);
+        return out;
+    }
+
     /** Whether the sheet has any void reason (then voiding a claim needs one). */
     public boolean any(String sheetId) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM void_reason WHERE sheet_id = ?", Integer.class, sheetId);

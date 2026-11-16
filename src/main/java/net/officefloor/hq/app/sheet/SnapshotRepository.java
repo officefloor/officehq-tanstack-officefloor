@@ -15,9 +15,10 @@ public class SnapshotRepository {
         this.jdbc = jdbc;
     }
 
-    public void add(String sheetId, long personId, LocalDate day, String dueTotal) {
-        jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, left_on, due_total) VALUES (?, ?, ?, ?)", sheetId, personId,
-                java.sql.Date.valueOf(day), dueTotal);
+    /** Stores the person's snapshot of the day being left, written while the sheet's today is madeOn. */
+    public void add(String sheetId, long personId, LocalDate day, LocalDate madeOn, String dueTotal) {
+        jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, left_on, made_on, due_total) VALUES (?, ?, ?, ?, ?)",
+                sheetId, personId, java.sql.Date.valueOf(day), java.sql.Date.valueOf(madeOn), dueTotal);
     }
 
     /** Every snapshot on the sheet, oldest first. */
@@ -29,7 +30,7 @@ public class SnapshotRepository {
 
     /** As they stood at the end of the date: only those written while the sheet's today was on or before it. */
     public List<Snapshot> listAsOf(String sheetId, LocalDate date) {
-        return jdbc.query("SELECT person_id, left_on, due_total FROM person_snapshot WHERE sheet_id = ? AND left_on <= ? ORDER BY id",
+        return jdbc.query("SELECT person_id, left_on, due_total FROM person_snapshot WHERE sheet_id = ? AND made_on <= ? ORDER BY id",
                 (rs, n) -> new Snapshot(rs.getLong("person_id"), rs.getDate("left_on").toLocalDate().toString(),
                         rs.getString("due_total")), sheetId, java.sql.Date.valueOf(date));
     }
