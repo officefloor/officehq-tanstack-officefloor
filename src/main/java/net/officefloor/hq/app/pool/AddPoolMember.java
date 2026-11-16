@@ -2,6 +2,7 @@ package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,6 +24,8 @@ public class AddPoolMember {
         }
         BigDecimal share = new BigDecimal(request.share().trim()).setScale(2, RoundingMode.UNNECESSARY);
         String by = request.by() == null ? "" : request.by().trim();
+        LocalDate from = ValidatePoolMember.date(request.from(), "from");
+        LocalDate to = ValidatePoolMember.date(request.to(), "to");
         if (request.personId() == null) {
             String member = request.memberPool().trim();
             Long memberId = pools.idOf(sheet, member);
@@ -42,17 +45,17 @@ public class AddPoolMember {
             if (above + pools.height(memberId) > MAX_DEPTH) {
                 throw new InvalidPoolException("A chain of pools is at most " + MAX_DEPTH + " deep");
             }
-            pools.addPoolMember(poolId, memberId, share);
-            values.set(new PoolMemberValues(pool, null, member, true, share, by));
+            pools.addPoolMember(poolId, memberId, share, from, to);
+            values.set(new PoolMemberValues(pool, null, member, true, share, from, to, by));
             return;
         }
         String name = pools.personName(sheet, request.personId());
         if (name == null) {
             throw new InvalidPoolException("No such person on the sheet");
         }
-        if (!pools.addMember(poolId, request.personId(), share)) {
+        if (!pools.addMember(poolId, request.personId(), share, from, to)) {
             throw new InvalidPoolException(name + " is already in " + pool);
         }
-        values.set(new PoolMemberValues(pool, request.personId(), name, false, share, by));
+        values.set(new PoolMemberValues(pool, request.personId(), name, false, share, from, to, by));
     }
 }

@@ -10,20 +10,24 @@ import { personCutTotal, poolsKey, sheetCutTotal, usePools, type Pool, type Pool
 /** One pool: its total share and whether it is balanced, each member's line with their share, and the picker that adds
  *  a person, or another pool (pool:<name>), with a share. A pool already a member of a pool, one that would contain
  *  itself through any chain, or a chain of pools more than three deep is refused too. A person already in the pool, or a share not more than 0.00 and at most 100.00 with two
- *  decimals, is refused with the pool's error. */
+ *  decimals, or a to-date before the from-date (both optional), is refused with the pool's error. */
 function PoolRow({ sheetId, user, pool, pools }: { sheetId: string; user: string; pool: Pool; pools: Pool[] }) {
   const people = usePeople(sheetId);
   const queryClient = useQueryClient();
   const [chosen, setChosen] = useState('');
   const [share, setShare] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
 
   const submit = useSubmitOnce();
   const add = useMutation({
-    mutationFn: (m: { personId: number | null; memberPool: string | null; share: string }) =>
+    mutationFn: (m: { personId: number | null; memberPool: string | null; share: string; from: string; to: string }) =>
       postJson<PoolMember>(`/api/sheets/${encodeURIComponent(sheetId)}/pools/members`, { pool: pool.name, ...m, by: user }),
     onSuccess: async () => {
       setChosen('');
       setShare('');
+      setFrom('');
+      setTo('');
       await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
     },
     onSettled: submit.end,
@@ -41,7 +45,9 @@ function PoolRow({ sheetId, user, pool, pools }: { sheetId: string; user: string
           >
             {m.pool === null ? m.name : `pool:${m.pool}`}: <span data-testid="pool-share">{m.share.toFixed(2)}</span>, cut{' '}
             <span data-testid="pool-cut">{m.cut ?? ''}</span>
+            {(m.from !== null || m.to !== null) && ` (${m.from ?? ''} – ${m.to ?? ''})`}
             {m.retired && ' (retired)'}
+            {!m.active && ' (not in force)'}
           </li>
         ))}
       </ul>
@@ -74,6 +80,24 @@ function PoolRow({ sheetId, user, pool, pools }: { sheetId: string; user: string
           add.reset();
         }}
       />{' '}
+      <input
+        data-testid="pool-member-from"
+        placeholder="from yyyy-MM-dd"
+        value={from}
+        onChange={(e) => {
+          setFrom(e.target.value);
+          add.reset();
+        }}
+      />{' '}
+      <input
+        data-testid="pool-member-to"
+        placeholder="to yyyy-MM-dd"
+        value={to}
+        onChange={(e) => {
+          setTo(e.target.value);
+          add.reset();
+        }}
+      />{' '}
       <button
         type="button"
         data-testid="pool-member-add"
@@ -82,8 +106,9 @@ function PoolRow({ sheetId, user, pool, pools }: { sheetId: string; user: string
           if (!submit.begin()) return;
           add.reset();
           // nothing chosen: no person 0, so the server refuses it
-          if (chosen.startsWith('pool:')) add.mutate({ personId: null, memberPool: chosen.slice('pool:'.length), share });
-          else add.mutate({ personId: Number(chosen), memberPool: null, share });
+          const dates = { from: from.trim(), to: to.trim() };
+          if (chosen.startsWith('pool:')) add.mutate({ personId: null, memberPool: chosen.slice('pool:'.length), share, ...dates });
+          else add.mutate({ personId: Number(chosen), memberPool: null, share, ...dates });
         }}
       >
         Add member

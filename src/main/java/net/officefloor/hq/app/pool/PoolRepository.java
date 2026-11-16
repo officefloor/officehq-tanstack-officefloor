@@ -2,6 +2,7 @@ package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -36,9 +37,11 @@ public class PoolRepository {
      *  with a retirement date, whatever the date) counts as 0.00 toward the total; balanced is a total of exactly 100.00.
      *  Each member of a balanced pool has their cut of the pool's pot (see cuts): a pool that is a member of none has the
      *  sheet's pot, a member pool its cut in the pool above (none when that pool has no cuts); with no pot, no one has.
-     *  A person with a hold in force on the sheet's today gets no cut (their share still counts toward the total). */
+     *  A person with a hold in force on the sheet's today gets no cut (their share still counts toward the total). A
+     *  member whose membership dates do not include the sheet's today is left out entirely: not in the total, no cut. */
     public List<Pool> list(String sheetId) {
         BigDecimal pot = settings.pot(sheetId);
+        LocalDate today = sheets.today(sheetId);
         Set<Long> held = held(sheetId);
         Map<Long, String> names = new LinkedHashMap<>();
         jdbc.query("SELECT id, name FROM pool WHERE sheet_id = ? ORDER BY id",
@@ -47,20 +50,28 @@ public class PoolRepository {
                 }, sheetId);
         Map<Long, List<PoolMember>> members = new LinkedHashMap<>();
         Map<Long, Long> parents = new HashMap<>();
-        jdbc.query("SELECT m.pool_id, m.person_id, m.member_pool_id, m.share, p.name, p.retired_from, q.name AS pool_name"
+        jdbc.query("SELECT m.pool_id, m.person_id, m.member_pool_id, m.share, m.from_date, m.to_date, p.name, p.retired_from,"
+                + " q.name AS pool_name"
                 + " FROM pool_member m JOIN pool o ON o.id = m.pool_id LEFT JOIN person p ON p.id = m.person_id"
                 + " LEFT JOIN pool q ON q.id = m.member_pool_id WHERE o.sheet_id = ? ORDER BY m.id",
                 rs -> {
                     long poolId = rs.getLong("pool_id");
                     List<PoolMember> in = members.computeIfAbsent(poolId, k -> new ArrayList<>());
                     BigDecimal share = rs.getBigDecimal("share").setScale(2);
+                    java.sql.Date fromDate = rs.getDate("from_date");
+                    java.sql.Date toDate = rs.getDate("to_date");
+                    LocalDate from = fromDate == null ? null : fromDate.toLocalDate();
+                    LocalDate to = toDate == null ? null : toDate.toLocalDate();
+                    String fromText = from == null ? null : from.toString();
+                    String toText = to == null ? null : to.toString();
+                    boolean active = (from == null || !today.isBefore(from)) && (to == null || !today.isAfter(to));
                     long memberPool = rs.getLong("member_pool_id");
                     if (rs.wasNull()) {
                         in.add(new PoolMember(rs.getLong("person_id"), rs.getString("name"), null, share,
-                                rs.getDate("retired_from") != null, null));
+                                rs.getDate("retired_from") != null, null, fromText, toText, active));
                     } else {
                         String name = rs.getString("pool_name");
-                        in.add(new PoolMember(null, name, name, share, false, null));
+                        in.add(new PoolMember(null, name, name, share, false, null, fromText, toText, active));
                         parents.put(memberPool, poolId);
                     }
                 }, sheetId);
@@ -99,7 +110,7 @@ public class PoolRepository {
         List<PoolMember> in = members.getOrDefault(id, List.of());
         BigDecimal total = new BigDecimal("0.00");
         for (PoolMember m : in) {
-            if (!m.retired()) {
+            if (!m.retired() && m.active()) {
                 total = total.add(m.share());
             }
         }
@@ -144,9 +155,9 @@ public class PoolRepository {
         return out;
     }
 
-    /** Whether the member takes a cut: not retired, and not a person held on the sheet's today. */
+    /** Whether the member takes a cut: active on the sheet's today, not retired, and not a person held on it. */
     private static boolean hasCut(PoolMember m, Set<Long> held) {
-        return !m.retired() && (m.personId() == null || !held.contains(m.personId()));
+        return m.active() && !m.retired() && (m.personId() == null || !held.contains(m.personId()));
     }
 
     /** Adds the pool; false when the name is already taken on the sheet (the unique key refuses a second). */
@@ -185,9 +196,9 @@ public class PoolRepository {
     }
 
     /** Adds the member pool to the pool (it is checked to be a member of none). */
-    public void addPoolMember(long poolId, long memberPoolId, BigDecimal share) {
-        jdbc.update("INSERT INTO pool_member (pool_id, member_pool_id, share) VALUES (?, ?, ?)", poolId, memberPoolId,
-                share);
+    public void addPoolMember(long poolId, long memberPoolId, BigDecimal share, LocalDate from, LocalDate to) {
+        jdbc.update("INSERT INTO pool_member (pool_id, member_pool_id, share, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
+                poolId, memberPoolId, share, sqlDate(from), sqlDate(to));
     }
 
     /** The name of the person on the sheet, or null when there is no such person there. */
@@ -198,12 +209,17 @@ public class PoolRepository {
     }
 
     /** Adds the person to the pool; false when they are already in it. */
-    public boolean addMember(long poolId, long personId, BigDecimal share) {
+    public boolean addMember(long poolId, long personId, BigDecimal share, LocalDate from, LocalDate to) {
         try {
-            jdbc.update("INSERT INTO pool_member (pool_id, person_id, share) VALUES (?, ?, ?)", poolId, personId, share);
+            jdbc.update("INSERT INTO pool_member (pool_id, person_id, share, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
+                    poolId, personId, share, sqlDate(from), sqlDate(to));
             return true;
         } catch (DuplicateKeyException e) {
             return false;
         }
+    }
+
+    private static java.sql.Date sqlDate(LocalDate date) {
+        return date == null ? null : java.sql.Date.valueOf(date);
     }
 }
