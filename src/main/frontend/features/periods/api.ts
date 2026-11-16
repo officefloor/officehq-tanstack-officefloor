@@ -76,6 +76,13 @@ export function rollover(sheetId: string, by: string, year: string): Promise<{ m
     { year });
 }
 
+/** Undo the sheet's last rollover: remove the periods it generated and take back the opening balances it set;
+ *  refused (rejects) when there is none, for anyone but the steward who made it, on a sheet-today other than the
+ *  one it was made on, or when a claim belongs to a period it generated. Resolves to how many periods were removed. */
+export function undoRollover(sheetId: string, by: string): Promise<{ made: number }> {
+  return postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/rollover-undo?by=${encodeURIComponent(by)}`, {});
+}
+
 /** Make the four calendar quarters of the year as periods named <year>-Q1 to <year>-Q4, each as adding a
  *  period would, leaving out a quarter whose name is taken or whose days overlap a period; refused
  *  (rejects) when the year is not yyyy. Resolves to how many were made. */

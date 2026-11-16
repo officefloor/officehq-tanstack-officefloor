@@ -77,14 +77,37 @@ public class PeriodRepository {
                 .stream().findFirst().map(this::withPersonTotals).map(this::withOpenings).orElse(null);
     }
 
-    /** Add the amount to the person's opening balance for the sheet's period. */
-    public void addOpening(String sheetId, String period, long personId, BigDecimal amount) {
+    /** Add the amount to the person's opening balance for the sheet's period; answers whether that opening
+     *  balance is new. */
+    public boolean addOpening(String sheetId, String period, long personId, BigDecimal amount) {
         int n = jdbc.update("UPDATE period_opening SET amount = amount + ? WHERE person_id = ? AND period_id = "
                 + "(SELECT id FROM period WHERE sheet_id = ? AND name = ?)", amount, personId, sheetId, period);
         if (n == 0) {
             jdbc.update("INSERT INTO period_opening (period_id, person_id, amount) SELECT id, ?, ? FROM period "
                     + "WHERE sheet_id = ? AND name = ?", personId, amount, sheetId, period);
+            return true;
         }
+        return false;
+    }
+
+    /** Take the amount back off the person's opening balance for the sheet's period; created: the opening
+     *  balance was made by adding it, so it is removed. */
+    public void takeOpening(String sheetId, String period, long personId, BigDecimal amount, boolean created) {
+        String ofPeriod = "person_id = ? AND period_id = (SELECT id FROM period WHERE sheet_id = ? AND name = ?)";
+        if (created) {
+            jdbc.update("DELETE FROM period_opening WHERE " + ofPeriod, personId, sheetId, period);
+        } else {
+            jdbc.update("UPDATE period_opening SET amount = amount - ? WHERE " + ofPeriod, amount, personId, sheetId, period);
+        }
+    }
+
+    /** Remove the sheet's period, with its fixed figures, pool cuts and opening balances. */
+    public void remove(String sheetId, String name) {
+        String ofPeriod = " WHERE period_id IN (SELECT id FROM period WHERE sheet_id = ? AND name = ?)";
+        for (String table : List.of("period_person_total", "period_opening", "period_pool_cut")) {
+            jdbc.update("DELETE FROM " + table + ofPeriod, sheetId, name);
+        }
+        jdbc.update("DELETE FROM period WHERE sheet_id = ? AND name = ?", sheetId, name);
     }
 
     /** The sheet's period with the name; null when there is none. */

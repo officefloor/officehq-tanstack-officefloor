@@ -3,6 +3,7 @@ package net.officefloor.hq.app.period;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,14 +31,14 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  year generator does, then adds each person's open figure (a person with none: nothing) at the end of the old year's last period (the
  *  due, as shown now, of their claims that count, due by a day in a period of the old year, whose status at
  *  that period's end was OPEN or PENDING) to their opening balance for the new year's first period, each
- *  recorded as OPENING_SET, then ROLLOVER. Refused, with nothing written, for anyone but a steward, a year
+ *  recorded as OPENING_SET (only when it made that period), then ROLLOVER; kept as the sheet's last rollover (see UndoRollover). Refused, with nothing written, for anyone but a steward, a year
  *  that is not four digits, or a year with no periods. */
 public class RollOver {
     public void rollOver(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by,
             @RequestBody RolloverRequest request, SheetRepository sheets, SettingRepository settings,
             PeriodRepository periods, ClaimRepository claims, ClaimLogRepository log, PersonRepository people,
-            RateRepository rates, RoleRepository roles, Audit audit, Out<GeneratePeriodsResult> result)
+            RateRepository rates, RoleRepository roles, RolloverRepository rollovers, Audit audit, Out<GeneratePeriodsResult> result)
             throws InvalidPeriodException, PeriodPermissionException {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
@@ -61,20 +62,25 @@ public class RollOver {
         Map<Long, BigDecimal> open = openFigures(id, old, claims, log, people, rates, settings, sheets);
 
         sheets.open(id, user);
-        int made = GeneratePeriods.months(id, user, start.plusMonths(12), start.plusMonths(23), periods, audit);
+        List<String> made = GeneratePeriods.monthsMade(id, user, start.plusMonths(12), start.plusMonths(23), periods, audit);
+        List<RolloverRepository.Opening> set = new ArrayList<>();
         Period firstNew = periods.containing(id, next.toString());
-        if (firstNew != null) {
+        // Carried only into a first period this rollover made: a year rolled over again carries nothing twice.
+        if (firstNew != null && made.contains(firstNew.name())) {
             for (Person p : people.list(id)) {
                 BigDecimal amount = open.get(p.getId());
                 // A person with no open figure has nothing to carry.
                 if (amount == null) continue;
-                periods.addOpening(id, firstNew.name(), p.getId(), amount);
+                boolean created = periods.addOpening(id, firstNew.name(), p.getId(), amount);
+                set.add(new RolloverRepository.Opening(firstNew.name(), p.getId(), amount, created));
                 audit.record("OPENING_SET sheet=" + id + " by=" + user + " name=" + p.getName() + " period="
                         + firstNew.name() + " amount=" + amount.toPlainString());
             }
         }
-        audit.record("ROLLOVER sheet=" + id + " by=" + user + " fy=FY" + year + " periods=" + made);
-        result.set(new GeneratePeriodsResult(made));
+        // Kept as the sheet's last rollover, so its steward can undo it on the same sheet-today.
+        rollovers.record(id, "FY" + year, user, sheets.today(id), made, set);
+        audit.record("ROLLOVER sheet=" + id + " by=" + user + " fy=FY" + year + " periods=" + made.size());
+        result.set(new GeneratePeriodsResult(made.size()));
     }
 
     /** Each person's open figure at the end of the last of the periods, by person id. */

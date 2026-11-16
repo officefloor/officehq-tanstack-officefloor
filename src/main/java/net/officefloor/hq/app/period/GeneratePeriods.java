@@ -3,6 +3,8 @@ package net.officefloor.hq.app.period;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
@@ -34,7 +36,13 @@ public class GeneratePeriods {
     /** Makes the monthly periods from one month to another, both inclusive, leaving out a month whose name
      *  is taken or whose days overlap a period; answers how many were made. */
     static int months(String id, String user, YearMonth start, YearMonth end, PeriodRepository periods, Audit audit) {
-        int made = 0;
+        return monthsMade(id, user, start, end, periods, audit).size();
+    }
+
+    /** As {@link #months}, answering the names of the periods made. */
+    static List<String> monthsMade(String id, String user, YearMonth start, YearMonth end, PeriodRepository periods,
+            Audit audit) {
+        List<String> made = new ArrayList<>();
         for (YearMonth m = start; !m.isAfter(end); m = m.plusMonths(1)) {
             String name = m.toString();
             LocalDate first = m.atDay(1);
@@ -43,7 +51,7 @@ public class GeneratePeriods {
             Period period = periods.add(id, name, first, last, user);
             audit.record("PERIOD_ADDED sheet=" + id + " by=" + user + " period=" + period.name()
                     + " from=" + period.from() + " to=" + period.to());
-            made++;
+            made.add(period.name());
         }
         return made;
     }
