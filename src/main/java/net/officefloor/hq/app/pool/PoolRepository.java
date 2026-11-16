@@ -44,9 +44,10 @@ public class PoolRepository {
         return list(sheetId, null);
     }
 
-    /** The sheet's pools (see #list) read as of a date (null: now): the date stands in for the sheet's today. */
+    /** The sheet's pools (see #list) read as of a date (null: now): the date stands in for the sheet's today, and the pot is
+     *  the one stored by then. */
     public List<Pool> list(String sheetId, LocalDate asOf) {
-        BigDecimal pot = settings.pot(sheetId);
+        BigDecimal pot = asOf != null ? settings.pot(sheetId, asOf) : settings.pot(sheetId);
         LocalDate today = asOf != null ? asOf : sheets.today(sheetId);
         Set<Long> held = held(sheetId, today);
         Map<Long, String> names = new LinkedHashMap<>();

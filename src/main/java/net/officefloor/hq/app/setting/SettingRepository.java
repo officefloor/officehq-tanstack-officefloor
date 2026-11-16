@@ -246,6 +246,18 @@ public class SettingRepository {
         return value == null ? null : new BigDecimal(value);
     }
 
+    /** The sheet's pot as it was stored while the sheet's today was on or before the date, or null when it was blank
+     *  (none) or not yet stored. */
+    public BigDecimal pot(String sheetId, LocalDate madeOn) {
+        String value = null;
+        for (Setting s : storedBy(sheetId, madeOn)) {
+            if (POT.equals(s.key()) && s.from() == null) {
+                value = s.value();
+            }
+        }
+        return value == null || value.isBlank() ? null : new BigDecimal(value);
+    }
+
     /** The sheet's parent sheet id, or null when it has none. */
     public String parent(String sheetId) {
         return value(sheetId, PARENT);

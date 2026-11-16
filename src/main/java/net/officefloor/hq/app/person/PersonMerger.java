@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import net.officefloor.hq.app.sheet.SheetRepository;
+import net.officefloor.hq.app.statement.StatementRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -13,18 +14,22 @@ public class PersonMerger {
 
     private final JdbcTemplate jdbc;
     private final SheetRepository sheets;
+    private final StatementRepository statements;
 
-    public PersonMerger(JdbcTemplate jdbc, SheetRepository sheets) {
+    public PersonMerger(JdbcTemplate jdbc, SheetRepository sheets, StatementRepository statements) {
         this.jdbc = jdbc;
         this.sheets = sheets;
+        this.statements = statements;
     }
 
     /**
      * Merges {@code from} into {@code into}: from's claims move to into (numbers and dates kept, listed after every claim
-     * on the sheet in the order they were added, each unbound from any statement figure); from's name and aliases become
+     * on the sheet in the order they were added, each keeping the figure a statement bound it to); from's statements move to
+     * into, before into's own (into's count becomes their own plus from's; into's last statement stays theirs, or having
+     * none becomes from's last); from's name and aliases become
      * into's aliases; from's patrons are added to into's (not into themselves, no repeats) and anyone naming from as
      * patron names into instead (no repeats; into never their own patron); from's pool memberships move to into (shares
-     * added where into is already a member). From's statements, holds, watchers, contact and grades are dropped, and from
+     * added where into is already a member). From's holds, watchers, contact and grades are dropped, and from
      * leaves the sheet (kept, as they stood, only for reading the sheet as of a date before the merge).
      */
     public void merge(String sheetId, Person from, Person into) {
@@ -33,10 +38,12 @@ public class PersonMerger {
         List<Long> claims = jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed, id",
                 Long.class, sheetId, f);
         for (Long id : claims) {
-            jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, "
+            jdbc.update("UPDATE claim SET person_id = ?, "
                     + "listed = (SELECT COALESCE(MAX(c.listed), 0) + 1 FROM claim c WHERE c.sheet_id = ?) WHERE id = ?",
                     t, sheetId, id);
         }
+
+        statements.moveAll(sheetId, f, sheetId, t);
 
         jdbc.update("UPDATE person_alias SET person_id = ? WHERE sheet_id = ? AND person_id = ?", t, sheetId, f);
 
@@ -71,7 +78,7 @@ public class PersonMerger {
                 + " SELECT id, sheet_id, name, ?, retired_from, terms, contact, added_on, ? FROM person WHERE sheet_id = ? AND id = ?",
                 grades.toString(), java.sql.Date.valueOf(sheets.today(sheetId)), sheetId, f);
 
-        for (String table : List.of("statement", "person_hold", "watch", "person_grade", "person_grade_log",
+        for (String table : List.of("person_hold", "watch", "person_grade", "person_grade_log",
                 "person_retire_log", "person_retirement", "person_terms_log")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, f);
         }

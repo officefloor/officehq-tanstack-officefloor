@@ -29,7 +29,7 @@ public class StatementRepository {
     /** The person's last statement, or null when they have none. */
     public Statement last(String sheetId, long personId) {
         List<Statement> found = jdbc.query("SELECT sheet_id, person_id, taken_on, due_total, claims, taken_by, as_of, made_on FROM statement"
-                + " WHERE sheet_id = ? AND person_id = ? AND cancelled_on IS NULL ORDER BY id DESC LIMIT 1",
+                + " WHERE sheet_id = ? AND person_id = ? AND cancelled_on IS NULL ORDER BY COALESCE(ord, id) DESC LIMIT 1",
                 (rs, n) -> new Statement(rs.getString("sheet_id"), rs.getLong("person_id"),
                         rs.getDate("taken_on").toLocalDate(), rs.getString("due_total"), rs.getInt("claims"),
                         rs.getString("taken_by"), rs.getObject("as_of", java.time.LocalDate.class),
@@ -40,31 +40,51 @@ public class StatementRepository {
 
     /** Cancels the person's last statement on the sheet's today; false when they have none. */
     public boolean removeLast(String sheetId, long personId) {
-        return jdbc.update("UPDATE statement SET cancelled_on = ? WHERE id = (SELECT MAX(id) FROM statement"
-                + " WHERE sheet_id = ? AND person_id = ? AND cancelled_on IS NULL)",
+        return jdbc.update("UPDATE statement SET cancelled_on = ? WHERE id = (SELECT id FROM statement"
+                + " WHERE sheet_id = ? AND person_id = ? AND cancelled_on IS NULL ORDER BY COALESCE(ord, id) DESC LIMIT 1)",
                 Date.valueOf(sheets.today(sheetId)), sheetId, personId) > 0;
     }
 
     /** For each person on the sheet with a statement: their count, and their last statement's due-total and date. */
     public List<StatementSummary> summaries(String sheetId) {
         return jdbc.query("SELECT s.person_id, c.n, s.due_total, s.taken_on FROM statement s"
-                + " JOIN (SELECT person_id, COUNT(*) n, MAX(id) last_id FROM statement WHERE sheet_id = ?"
+                + " JOIN (SELECT person_id, COUNT(*) n, MAX(COALESCE(ord, id)) last_key FROM statement WHERE sheet_id = ?"
                 + " AND cancelled_on IS NULL GROUP BY person_id) c"
-                + " ON s.id = c.last_id ORDER BY s.person_id",
+                + " ON s.person_id = c.person_id AND COALESCE(s.ord, s.id) = c.last_key AND s.sheet_id = ? ORDER BY s.person_id",
                 (rs, n) -> new StatementSummary(rs.getLong("person_id"), rs.getInt("n"), rs.getString("due_total"),
                         rs.getDate("taken_on").toLocalDate().toString()),
-                sheetId);
+                sheetId, sheetId);
     }
 
     /** The summaries as they stood at the end of the date: only the statements taken while the sheet's today was on or
      *  before it, and not cancelled by then, count. */
     public List<StatementSummary> summaries(String sheetId, java.time.LocalDate asOf) {
         return jdbc.query("SELECT s.person_id, c.n, s.due_total, s.taken_on FROM statement s"
-                + " JOIN (SELECT person_id, COUNT(*) n, MAX(id) last_id FROM statement WHERE sheet_id = ?"
+                + " JOIN (SELECT person_id, COUNT(*) n, MAX(COALESCE(ord, id)) last_key FROM statement WHERE sheet_id = ?"
                 + " AND COALESCE(made_on, taken_on) <= ? AND (cancelled_on IS NULL OR cancelled_on > ?) GROUP BY person_id) c"
-                + " ON s.id = c.last_id ORDER BY s.person_id",
+                + " ON s.person_id = c.person_id AND COALESCE(s.ord, s.id) = c.last_key AND s.sheet_id = ? ORDER BY s.person_id",
                 (rs, n) -> new StatementSummary(rs.getLong("person_id"), rs.getInt("n"), rs.getString("due_total"),
                         rs.getDate("taken_on").toLocalDate().toString()),
-                sheetId, Date.valueOf(asOf), Date.valueOf(asOf));
+                sheetId, Date.valueOf(asOf), Date.valueOf(asOf), sheetId);
+    }
+
+    /**
+     * Moves the statements of person {@code from} on sheet {@code fromSheet} to person {@code to} on sheet
+     * {@code toSheet}, kept in their order and ordered before to's own statements, so to's count is their own plus
+     * from's and to's last statement stays theirs (or, having none, becomes from's last).
+     */
+    public void moveAll(String fromSheet, long from, String toSheet, long to) {
+        List<Long> moving = jdbc.queryForList("SELECT id FROM statement WHERE sheet_id = ? AND person_id = ? ORDER BY COALESCE(ord, id), id",
+                Long.class, fromSheet, from);
+        Long first = jdbc.queryForObject("SELECT MIN(COALESCE(ord, id)) FROM statement WHERE sheet_id = ? AND person_id = ?",
+                Long.class, toSheet, to);
+        for (int i = 0; i < moving.size(); i++) {
+            if (first == null) {
+                jdbc.update("UPDATE statement SET sheet_id = ?, person_id = ? WHERE id = ?", toSheet, to, moving.get(i));
+            } else {
+                jdbc.update("UPDATE statement SET sheet_id = ?, person_id = ?, ord = ? WHERE id = ?", toSheet, to,
+                        first - moving.size() + i, moving.get(i));
+            }
+        }
     }
 }
