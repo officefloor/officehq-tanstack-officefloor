@@ -11,7 +11,8 @@ import net.officefloor.plugin.variable.Val;
 public class RecordStatementTaken {
     public void record(@Val Statement statement, @Val Person person, @Val RollupBefore before, Rollup rollup, Audit audit) {
         audit.record("STATEMENT sheet=" + statement.sheetId() + " by=" + statement.by() + " name=" + person.name()
-                + " due-total=" + statement.dueTotal() + " claims=" + statement.claims());
+                + " due-total=" + statement.dueTotal() + " claims=" + statement.claims()
+                + (statement.asOf() == null ? "" : " asof=" + statement.asOf()));
         rollup.record(statement.sheetId(), statement.by(), before);
     }
 }

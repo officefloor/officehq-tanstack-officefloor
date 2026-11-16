@@ -93,12 +93,13 @@ public class PersonRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         try {
             jdbc.update(con -> {
-                PreparedStatement ps = con.prepareStatement("INSERT INTO person (sheet_id, name, grade, terms) VALUES (?, ?, ?, ?)",
+                PreparedStatement ps = con.prepareStatement("INSERT INTO person (sheet_id, name, grade, terms, added_on) VALUES (?, ?, ?, ?, ?)",
                         new String[] { "id" });
                 ps.setString(1, sheetId);
                 ps.setString(2, name);
                 ps.setString(3, grade);
                 ps.setObject(4, terms, java.sql.Types.INTEGER);
+                ps.setDate(5, Date.valueOf(sheets.today(sheetId)));
                 return ps;
             }, keys);
         } catch (DuplicateKeyException e) {
@@ -106,6 +107,7 @@ public class PersonRepository {
         }
         long id = keys.getKey().longValue();
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, from_date, grade) VALUES (?, ?, NULL, ?)", sheetId, id, grade);
+        logGrades(sheetId, id, List.of(new PersonGrade(grade, null)));
         return new Person(id, sheetId, name, grade, 0, null, List.of(new PersonGrade(grade, null)), List.of(), terms);
     }
 
@@ -127,17 +129,65 @@ public class PersonRepository {
             jdbc.update("INSERT INTO person_grade (sheet_id, person_id, from_date, grade) VALUES (?, ?, ?, ?)",
                     person.sheetId(), person.id(), g.from() == null ? null : Date.valueOf(g.from()), g.grade());
         }
+        logGrades(person.sheetId(), person.id(), person.grades());
+    }
+
+    /** Logs the person's grades as stored now, with the sheet's today. */
+    private void logGrades(String sheetId, long id, List<PersonGrade> grades) {
+        StringBuilder text = new StringBuilder();
+        for (PersonGrade g : grades) {
+            text.append(text.length() == 0 ? "" : ";").append(g.grade()).append('@').append(g.from() == null ? "" : g.from());
+        }
+        jdbc.update("INSERT INTO person_grade_log (sheet_id, person_id, grades, made_on) VALUES (?, ?, ?, ?)", sheetId, id,
+                text.toString(), Date.valueOf(sheets.today(sheetId)));
+    }
+
+    /** The sheet's today when the person was added; null when that was not kept (they were there from the beginning). */
+    public LocalDate addedOn(String sheetId, long id) {
+        List<LocalDate> found = jdbc.query("SELECT added_on FROM person WHERE sheet_id = ? AND id = ?",
+                (rs, n) -> rs.getObject(1, LocalDate.class), sheetId, id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The person as they stood at the end of the date: the grades last stored, the holds added, and the retirement
+     *  date last given while the sheet's today was on or before it (a part never stored by then: none; grades never
+     *  logged: those they have now). */
+    public Person asOf(Person person, LocalDate date) {
+        String sheetId = person.sheetId();
+        List<String> logged = jdbc.queryForList("SELECT grades FROM person_grade_log WHERE sheet_id = ? AND person_id = ?"
+                + " AND made_on <= ? ORDER BY id DESC LIMIT 1", String.class, sheetId, person.id(), Date.valueOf(date));
+        List<PersonGrade> grades = person.grades();
+        if (!logged.isEmpty()) {
+            grades = new ArrayList<>();
+            for (String g : logged.get(0).split(";")) {
+                int at = g.indexOf('@');
+                String from = g.substring(at + 1);
+                grades.add(new PersonGrade(g.substring(0, at), from.isEmpty() ? null : LocalDate.parse(from)));
+            }
+        }
+        List<PersonHold> holds = jdbc.query("SELECT from_date, to_date FROM person_hold WHERE sheet_id = ? AND person_id = ?"
+                + " AND made_on <= ? ORDER BY from_date, id", (rs, n) -> {
+                    Date to = rs.getDate("to_date");
+                    return new PersonHold(rs.getDate("from_date").toLocalDate(), to == null ? null : to.toLocalDate());
+                }, sheetId, person.id(), Date.valueOf(date));
+        List<LocalDate> retired = jdbc.query("SELECT from_date FROM person_retire_log WHERE sheet_id = ? AND person_id = ?"
+                + " AND made_on <= ? ORDER BY id DESC LIMIT 1", (rs, n) -> rs.getObject(1, LocalDate.class), sheetId,
+                person.id(), Date.valueOf(date));
+        return new Person(person.id(), sheetId, person.name(), Person.gradeOn(grades, date), person.version(),
+                retired.isEmpty() ? null : retired.get(0).toString(), List.copyOf(grades), holds, person.terms());
     }
 
     /** Retires the person from the date (replacing any earlier retirement date). */
     public void retire(String sheetId, long id, LocalDate from) {
         jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?", Date.valueOf(from), sheetId, id);
+        jdbc.update("INSERT INTO person_retire_log (sheet_id, person_id, from_date, made_on) VALUES (?, ?, ?, ?)", sheetId,
+                id, Date.valueOf(from), Date.valueOf(sheets.today(sheetId)));
     }
 
     /** Adds a hold on the person, from the date until the date (null: open-ended). */
     public void hold(String sheetId, long id, PersonHold hold) {
-        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)", sheetId, id,
-                Date.valueOf(hold.from()), hold.to() == null ? null : Date.valueOf(hold.to()));
+        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, made_on) VALUES (?, ?, ?, ?, ?)", sheetId, id,
+                Date.valueOf(hold.from()), hold.to() == null ? null : Date.valueOf(hold.to()), Date.valueOf(sheets.today(sheetId)));
     }
 
     private static Person map(ResultSet rs, int n) throws SQLException {

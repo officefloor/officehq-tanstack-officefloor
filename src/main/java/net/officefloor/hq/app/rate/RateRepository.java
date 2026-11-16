@@ -5,6 +5,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -15,9 +16,11 @@ public class RateRepository {
     private static final String COLUMNS = "sheet_id, grade, rate, from_date, to_date";
 
     private final JdbcTemplate jdbc;
+    private final SheetRepository sheets;
 
-    public RateRepository(JdbcTemplate jdbc) {
+    public RateRepository(JdbcTemplate jdbc, SheetRepository sheets) {
         this.jdbc = jdbc;
+        this.sheets = sheets;
     }
 
     /** The sheet's rates, by grade, then from-date (one with none first). */
@@ -38,13 +41,22 @@ public class RateRepository {
         return found.get(0);
     }
 
-    /** Stores the rate, replacing the one the grade had for the same from-date. */
+    /** Every rate stored on the sheet while its today was on or before the date, in the order stored. */
+    public List<Rate> storedBy(String sheetId, LocalDate madeOn) {
+        return jdbc.query("SELECT " + COLUMNS + " FROM rate_log WHERE sheet_id = ? AND made_on <= ? ORDER BY id",
+                RateRepository::map, sheetId, Date.valueOf(madeOn));
+    }
+
+    /** Stores the rate, replacing the one the grade had for the same from-date, and logs it with the sheet's today. */
     public Rate save(Rate rate) {
         Date from = rate.from() == null ? null : Date.valueOf(rate.from());
         jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
                 rate.sheetId(), rate.grade(), from);
         jdbc.update("INSERT INTO rate (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?)",
                 rate.sheetId(), rate.grade(), rate.rate(), from, rate.to() == null ? null : Date.valueOf(rate.to()));
+        jdbc.update("INSERT INTO rate_log (" + COLUMNS + ", made_on) VALUES (?, ?, ?, ?, ?, ?)",
+                rate.sheetId(), rate.grade(), rate.rate(), from, rate.to() == null ? null : Date.valueOf(rate.to()),
+                Date.valueOf(sheets.today(rate.sheetId())));
         return rate;
     }
 

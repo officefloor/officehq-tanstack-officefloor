@@ -186,13 +186,22 @@ public class SettingRepository {
         return Arrays.asList(roles.split(",")).contains(role);
     }
 
-    /** Stores the setting from its from-date (null: undated), replacing the value recorded from that date. */
+    /** Every setting value stored on the sheet while its today was on or before the date, in the order stored. */
+    public List<Setting> storedBy(String sheetId, LocalDate madeOn) {
+        return jdbc.query("SELECT sheet_id, setting_key, setting_value, from_date FROM setting_log WHERE sheet_id = ?"
+                + " AND made_on <= ? ORDER BY id", SettingRepository::map, sheetId, madeOn);
+    }
+
+    /** Stores the setting from its from-date (null: undated), replacing the value recorded from that date, and logs it
+     *  with the sheet's today. */
     public Setting save(Setting setting) {
         LocalDate from = setting.from() == null ? UNDATED : setting.from();
         jdbc.update("DELETE FROM setting WHERE sheet_id = ? AND setting_key = ? AND from_date = ?", setting.sheetId(),
                 setting.key(), from);
         jdbc.update("INSERT INTO setting (sheet_id, setting_key, setting_value, from_date) VALUES (?, ?, ?, ?)",
                 setting.sheetId(), setting.key(), setting.value(), from);
+        jdbc.update("INSERT INTO setting_log (sheet_id, setting_key, setting_value, from_date, made_on) VALUES (?, ?, ?, ?, ?)",
+                setting.sheetId(), setting.key(), setting.value(), from, sheets.today(setting.sheetId()));
         return setting;
     }
 

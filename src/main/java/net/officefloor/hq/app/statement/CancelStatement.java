@@ -23,6 +23,6 @@ public class CancelStatement {
             throw new InvalidPersonException(person.name() + " has no statement");
         }
         claims.unbindAll(sheetId, person.id());
-        cancelled.set(new Statement(sheetId, person.id(), last.takenOn(), last.dueTotal(), last.claims(), taker.by()));
+        cancelled.set(new Statement(sheetId, person.id(), last.takenOn(), last.dueTotal(), last.claims(), taker.by(), last.asOf(), last.madeOn()));
     }
 }

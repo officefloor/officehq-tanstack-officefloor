@@ -1,0 +1,99 @@
+package net.officefloor.hq.app.statement;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import net.officefloor.hq.app.rate.Rate;
+import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.Setting;
+import net.officefloor.hq.app.setting.SettingRepository;
+
+/**
+ * A sheet's rates and settings as they stood at the end of a date: every one stored while the sheet's today was on or
+ * before it counts (a later one stored for the same grade or key and from-date replacing an earlier), every one stored
+ * later does not. The date stands in for the sheet's today.
+ */
+public final class SheetAsOf {
+
+    private final LocalDate date;
+    private final List<Rate> rates;
+    private final List<Setting> settings;
+
+    private SheetAsOf(LocalDate date, List<Rate> rates, List<Setting> settings) {
+        this.date = date;
+        this.rates = rates;
+        this.settings = settings;
+    }
+
+    public static SheetAsOf read(String sheetId, LocalDate date, RateRepository rates, SettingRepository settings) {
+        Map<String, Rate> byKey = new LinkedHashMap<>();
+        for (Rate r : rates.storedBy(sheetId, date)) {
+            byKey.put(r.grade() + "@" + r.from(), r);
+        }
+        Map<String, Setting> byFrom = new LinkedHashMap<>();
+        for (Setting s : settings.storedBy(sheetId, date)) {
+            byFrom.put(s.key() + "@" + s.from(), s);
+        }
+        return new SheetAsOf(date, new ArrayList<>(byKey.values()), new ArrayList<>(byFrom.values()));
+    }
+
+    public LocalDate date() {
+        return date;
+    }
+
+    /** The grade's rate in force on a date (see RateRepository#find); null when none applies. */
+    public Rate rate(String grade, LocalDate on) {
+        Rate found = null;
+        for (Rate r : rates) {
+            if (!Objects.equals(r.grade(), grade) || (r.from() != null && r.from().isAfter(on))) {
+                continue;
+            }
+            if (found == null || (r.from() != null && (found.from() == null || r.from().isAfter(found.from())))) {
+                found = r;
+            }
+        }
+        return found == null || (found.to() != null && found.to().isBefore(on)) ? null : found;
+    }
+
+    /** The setting's value in force on a date (an undated one applies to every date); null when it has none. */
+    public String value(String key, LocalDate on) {
+        Setting found = null;
+        for (Setting s : settings) {
+            if (!s.key().equals(key) || (s.from() != null && s.from().isAfter(on))) {
+                continue;
+            }
+            if (found == null || (s.from() != null && (found.from() == null || s.from().isAfter(found.from())))) {
+                found = s;
+            }
+        }
+        return found == null || found.value() == null || found.value().isBlank() ? null : found.value();
+    }
+
+    /** The floor in force on a date (a claim's date). */
+    public BigDecimal floor(LocalDate on) {
+        String value = value(SettingRepository.FLOOR, on);
+        return value == null ? SettingRepository.DEFAULT_FLOOR : new BigDecimal(value);
+    }
+
+    /** The late percent in force on a date (a 30-day boundary). */
+    public BigDecimal latePct(LocalDate on) {
+        String value = value(SettingRepository.LATE_PCT, on);
+        return value == null ? SettingRepository.DEFAULT_LATE_PCT : new BigDecimal(value);
+    }
+
+    /** The cap in force on the date; null when there is none. */
+    public BigDecimal cap() {
+        String value = value(SettingRepository.CAP, date);
+        return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The policy date (undated); null when blank (the date applies). */
+    public LocalDate policyDate() {
+        String value = value(SettingRepository.POLICY_DATE, date);
+        return value == null ? null : LocalDate.parse(value);
+    }
+}

@@ -16,17 +16,19 @@ public class StatementRepository {
     }
 
     public void add(Statement s) {
-        jdbc.update("INSERT INTO statement (sheet_id, person_id, taken_on, due_total, claims, taken_by) VALUES (?, ?, ?, ?, ?, ?)",
-                s.sheetId(), s.personId(), Date.valueOf(s.takenOn()), s.dueTotal(), s.claims(), s.by());
+        jdbc.update("INSERT INTO statement (sheet_id, person_id, taken_on, due_total, claims, taken_by, as_of, made_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                s.sheetId(), s.personId(), Date.valueOf(s.takenOn()), s.dueTotal(), s.claims(), s.by(),
+                s.asOf() == null ? null : Date.valueOf(s.asOf()), Date.valueOf(s.madeOn()));
     }
 
     /** The person's last statement, or null when they have none. */
     public Statement last(String sheetId, long personId) {
-        List<Statement> found = jdbc.query("SELECT sheet_id, person_id, taken_on, due_total, claims, taken_by FROM statement"
+        List<Statement> found = jdbc.query("SELECT sheet_id, person_id, taken_on, due_total, claims, taken_by, as_of, made_on FROM statement"
                 + " WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC LIMIT 1",
                 (rs, n) -> new Statement(rs.getString("sheet_id"), rs.getLong("person_id"),
                         rs.getDate("taken_on").toLocalDate(), rs.getString("due_total"), rs.getInt("claims"),
-                        rs.getString("taken_by")),
+                        rs.getString("taken_by"), rs.getObject("as_of", java.time.LocalDate.class),
+                        rs.getObject("made_on", java.time.LocalDate.class)),
                 sheetId, personId);
         return found.isEmpty() ? null : found.get(0);
     }

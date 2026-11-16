@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
@@ -17,22 +18,26 @@ function StatementsHead() {
   );
 }
 
-/** A person's statement count, their last statement's due-total and date, and the button that takes one: it
- *  records their due-total now and binds each of their claims that counts to its rate figure now (not floored); and
+/** A person's statement count, their last statement's due-total and date, and the date (blank: now) and button that
+ *  take one: it records their due-total as of that date and binds each of their claims that counted then to its rate
+ *  figure then (not floored); and
  *  the button that cancels their last statement (a steward only), making the claims it bound live again. */
 function PersonStatements({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const statements = useStatements(sheetId);
   const queryClient = useQueryClient();
   const mine = statements.data?.find((s) => s.personId === person.id);
+  const [asOf, setAsOf] = useState('');
   const rowAction = usePersonRowAction(sheetId, person.id, 'statement');
   const take = useMutation({
-    mutationFn: () =>
-      postJson(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/statements`, { by: user }),
-    onSuccess: () =>
-      Promise.all([
+    mutationFn: (date: string) =>
+      postJson(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/statements`, { by: user, asOf: date }),
+    onSuccess: () => {
+      setAsOf('');
+      return Promise.all([
         queryClient.invalidateQueries({ queryKey: statementsKey(sheetId) }),
         queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
-      ]),
+      ]);
+    },
   });
 
   const cancelAction = usePersonRowAction(sheetId, person.id, 'unstate');
@@ -52,6 +57,15 @@ function PersonStatements({ sheetId, user, person }: { sheetId: string; user: st
       <td data-testid="person-stated-total">{mine?.dueTotal ?? ''}</td>
       <td data-testid="person-statement-date">{mine?.date ?? ''}</td>
       <td>
+        <input
+          data-testid="person-statement-asof"
+          placeholder="as of yyyy-MM-dd"
+          value={asOf}
+          onChange={(e) => {
+            setAsOf(e.target.value);
+            take.reset();
+          }}
+        />{' '}
         <button
           type="button"
           data-testid="person-statement"
@@ -59,7 +73,7 @@ function PersonStatements({ sheetId, user, person }: { sheetId: string; user: st
           onClick={() => {
             rowAction.take();
             take.reset();
-            take.mutate();
+            take.mutate(asOf.trim());
           }}
         >
           Statement
