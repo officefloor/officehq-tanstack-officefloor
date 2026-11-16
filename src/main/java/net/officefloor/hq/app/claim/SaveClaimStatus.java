@@ -19,7 +19,7 @@ public class SaveClaimStatus {
         if (change.action() == ClaimAction.OPEN) {
             String next = ClaimNumbering.next(claim, claims, periods, settings, sheets);
             toSave = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
-                    claim.note(), claim.status(), next, claim.due(), claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy());
+                    claim.note(), claim.status(), next, claim.due(), claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil());
             number.set(new ClaimNumber(next));
         }
         ClaimStatus from = switch (change.action()) {

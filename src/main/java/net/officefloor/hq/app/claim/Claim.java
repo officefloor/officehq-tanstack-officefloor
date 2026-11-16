@@ -10,9 +10,10 @@ import java.time.LocalDate;
  * whether it is bound to the figure it had at its person's last statement ({@code stated}) and that figure
  * ({@code statedDue}; null when it had none), and for a correction (a negative amount) the number of the SETTLED
  * claim of the same person it corrects ({@code corrects}; null for any other claim), and its due-by ({@code dueBy}), fixed
- * when it is added from the terms of its person's grade in force on its date (see SettingRepository#terms).
+ * when it is added from the terms of its person's grade in force on its date (see SettingRepository#terms), and the
+ * date it is deferred until ({@code deferredUntil}; null when never deferred; see ClaimDue#deferred).
  */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
-        String corrects, LocalDate dueBy) {
+        String corrects, LocalDate dueBy, LocalDate deferredUntil) {
 }

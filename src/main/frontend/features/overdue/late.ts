@@ -21,9 +21,9 @@ export function dueBy(claim: Claim): string {
   return claim.dueBy;
 }
 
-/** Whether a claim is overdue: it is open (OPEN or PENDING) and its due-by is before the sheet's today. */
+/** Whether a claim is overdue: it is open (OPEN or PENDING), not deferred, and its due-by is before the sheet's today. */
 export function isOverdue(claim: Claim, today: string): boolean {
-  return isOpen(claim) && today !== '' && dueBy(claim) < today;
+  return isOpen(claim) && !claim.deferred && today !== '' && dueBy(claim) < today;
 }
 
 /** How many full 30 days an overdue claim is overdue (0 when it is not overdue, its due is fixed by settling, or it is a

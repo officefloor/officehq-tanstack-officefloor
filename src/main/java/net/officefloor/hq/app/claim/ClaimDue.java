@@ -26,6 +26,21 @@ public final class ClaimDue {
         return counts(claim) && !(isOpen(claim) && !bound(claim) && person != null && person.heldOn(claim.date()));
     }
 
+    /** Whether a claim is deferred on the given today: an OPEN claim deferred until a date after it. Until then it
+     *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement; from that day on
+     *  it is an OPEN claim like any other. */
+    public static boolean deferred(Claim claim, java.time.LocalDate today) {
+        return claim.status() == ClaimStatus.OPEN && claim.deferredUntil() != null
+                && claim.deferredUntil().isAfter(today);
+    }
+
+    /** Whether a claim counts toward the live totals on the given today: as {@link #countsLive(Claim,
+     *  net.officefloor.hq.app.person.Person)}, unless it is deferred. */
+    public static boolean countsLive(Claim claim, net.officefloor.hq.app.person.Person person,
+            java.time.LocalDate today) {
+        return countsLive(claim, person) && !deferred(claim, today);
+    }
+
     /** The claim's amount at the grade's rate in force on its date, rounded to two decimals by the claim's rounding
      *  (see Rounding), and at least the sheet's floor (a correction has no floor); null when no rate applies. */
     public static BigDecimal live(Claim claim, String grade, RateRepository rates, BigDecimal floor, Rounding rounding) {

@@ -18,7 +18,7 @@ import net.officefloor.plugin.variable.Val;
  * person's grade's rate in force on the claim's date, rounded by its rounding (see Rounding) and at least the sheet's floor (left live when no rate applies),
  * or the figure a statement bound it to, with its late charge as of the sheet's today frozen in (see LateCharge).
  * Opening records who opened the claim; that user cannot settle nor approve it (four eyes). A claim dated inside a closed
- * period cannot change status. A clerk (any user not made a steward) settling a claim whose due is above the sheet's
+ * period cannot change status, nor can a deferred claim be settled (see ClaimDue#deferred). A clerk (any user not made a steward) settling a claim whose due is above the sheet's
  * clerk limit, if it has one, makes it PENDING instead (its due left live, not bound by a statement); a due of n/a is
  * within any limit. A steward settles anything. Only a steward approves a PENDING claim (fixing its live figure, late
  * charge included, at that moment) or rejects it (OPEN again, bound again by its statement if one bound it).
@@ -42,6 +42,9 @@ public class ApplyClaimStatus {
         if (periods.closedOn(claim.sheetId(), claim.date())) {
             throw new InvalidClaimStatusException("The claim's date is inside a closed period");
         }
+        if (change.action() == ClaimAction.SETTLE && ClaimDue.deferred(claim, sheets.today(claim.sheetId()))) {
+            throw new InvalidClaimStatusException("A deferred claim cannot be settled until the date it is deferred until");
+        }
         boolean steward = RoleRepository.STEWARD.equals(roles.roleOf(claim.sheetId(), change.by()));
         if ((change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE)
                 && change.by().equals(claim.openedBy())) {
@@ -59,7 +62,7 @@ public class ApplyClaimStatus {
         if (change.action() == ClaimAction.RESETTLE) {
             Claim asOpen = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                     claim.note(), ClaimStatus.OPEN, claim.number(), null, claim.openedBy(), false, null,
-                    claim.corrects(), claim.dueBy());
+                    claim.corrects(), claim.dueBy(), null);
             settledDue = late.add(asOpen, due(asOpen, people, rates, settings, late.rounding()));
         } else {
             settledDue = to == ClaimStatus.SETTLED ? late.add(claim, due(claim, people, rates, settings, late.rounding())) : claim.due();
@@ -75,7 +78,7 @@ public class ApplyClaimStatus {
         previous.set(new PreviousDue(claim.due()));
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                 claim.note(), to, claim.number(), settledDue,
-                change.action() == ClaimAction.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy()));
+                change.action() == ClaimAction.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil()));
     }
 
     private static BigDecimal due(Claim claim, PersonRepository people, RateRepository rates, SettingRepository settings,

@@ -16,7 +16,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Closes an open period, fixing its due-total as it is now: the figures of the claims that count (a person's OPEN or PENDING claims dated within a hold of theirs, not bound by a statement, do not) whose date falls
+/** Closes an open period, fixing its due-total as it is now: the figures of the claims that count (a person's OPEN or PENDING claims dated within a hold of theirs, not bound by a statement, do not, nor do deferred claims) whose date falls
  *  in it, each with its late charge, added up (skipping n/a). Each person's own due-total for the period is fixed
  *  too, for every person on the sheet; the period's is the sum of theirs. Closing a period already closed is refused. */
 public class ClosePeriod {
@@ -37,7 +37,7 @@ public class ClosePeriod {
         }
         for (Claim c : claims.list(period.sheetId())) {
             Person person = byId.get(c.personId());
-            if (!ClaimDue.countsLive(c, person) || c.date().isBefore(period.from()) || c.date().isAfter(period.to())) {
+            if (!ClaimDue.countsLive(c, person, late.today()) || c.date().isBefore(period.from()) || c.date().isAfter(period.to())) {
                 continue;
             }
             BigDecimal figure = person == null ? c.due() : late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, settings.floor(c.sheetId(), c.date()), late.rounding()));

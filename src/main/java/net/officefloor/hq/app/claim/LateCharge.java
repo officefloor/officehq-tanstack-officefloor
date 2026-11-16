@@ -23,10 +23,11 @@ public record LateCharge(LocalDate today, Function<LocalDate, BigDecimal> pct, R
                 Rounding.of(sheetId, sheets, settings, claims));
     }
 
-    /** The charge on the claim with the given figure: zero when it is not overdue a full 30 days, has no figure, or
-     *  is a correction. */
+    /** The charge on the claim with the given figure: zero when it is not overdue a full 30 days, has no figure, is
+     *  a correction, or is deferred. */
     public BigDecimal on(Claim claim, BigDecimal figure) {
-        if (figure == null || !ClaimDue.isOpen(claim) || claim.due() != null || ClaimDue.isCorrection(claim)) {
+        if (figure == null || !ClaimDue.isOpen(claim) || claim.due() != null || ClaimDue.isCorrection(claim)
+                || ClaimDue.deferred(claim, today)) {
             return BigDecimal.ZERO.setScale(2);
         }
         long overdue = ChronoUnit.DAYS.between(claim.dueBy(), today);

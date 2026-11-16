@@ -14,7 +14,9 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  the number of the SETTLED claim of the same person it corrects (null for any other claim); `roundsOn` (yyyy-MM-dd)
  *  is the date that decides how its live figures round: the corrected claim's date for a correction, else its own;
  *  `dueBy` (yyyy-MM-dd) is its due-by, fixed when it was added from the terms of its person's grade on its date;
- *  `log` is its status log, oldest first. */
+ *  `deferred` is whether it is deferred on the sheet's today (an OPEN claim deferred until a date after it: it counts in no
+ *  total, is not overdue and cannot be settled) and `deferredUntil` (yyyy-MM-dd) the date it is deferred until (null
+ *  when it is not deferred); `log` is its status log, oldest first. */
 export type Claim = {
   id: number;
   sheetId: string;
@@ -31,6 +33,8 @@ export type Claim = {
   corrects: string | null;
   roundsOn: string;
   dueBy: string;
+  deferred: boolean;
+  deferredUntil: string | null;
   log: ClaimLogLine[];
 };
 
@@ -57,8 +61,8 @@ const cents = (amount: string) => Math.round(Number(amount) * 100);
 /** Whether a claim is open: OPEN, or PENDING (handled like an OPEN claim but not bound by a statement). */
 export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
 
-/** Whether a claim counts toward claimed and the totals: only OPEN, PENDING and SETTLED claims do. */
-export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
+/** Whether a claim counts toward claimed and the totals: only OPEN, PENDING and SETTLED claims do, and no deferred one. */
+export const counts = (c: Claim) => (isOpen(c) || c.status === 'SETTLED') && !c.deferred;
 
 /** Whether a statement binds the claim now: it is stated and not PENDING. */
 export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
