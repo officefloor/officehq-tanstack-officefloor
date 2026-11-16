@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import javax.sql.DataSource;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -45,13 +46,14 @@ public class ClaimRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Adds a DRAFT claim; {@code ref} is its external reference (null: none), {@code tags} its tags as stored (null: none). */
+    /** Adds a DRAFT claim; {@code ref} is its external reference (null: none), {@code tags} its tags as stored (null: none),
+     *  {@code terms} the business days its due-by was fixed with. */
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
-            String ref, String tags, LocalDate dueBy) {
+            String ref, String tags, LocalDate dueBy, int terms) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, ref_key, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, ref_key, tags, terms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -63,11 +65,26 @@ public class ClaimRepository {
             ps.setString(8, ref);
             ps.setString(9, ClaimValues.refKey(ref));
             ps.setString(10, tags);
+            ps.setInt(11, terms);
             return ps;
         }, keys);
         jdbc.update("UPDATE claim SET listed = (SELECT COALESCE(MAX(c.listed), 0) + 1 FROM claim c WHERE c.sheet_id = ?) WHERE id = ?",
                 sheetId, keys.getKey().longValue());
         return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects, dueBy, null, 0, null, ref, tags);
+    }
+
+    /** Works the due-by out again of every claim of the sheet that is neither SETTLED nor VOID and whose due-by is on or
+     *  after {@code from} (a holiday just added): the terms-th business day after its date, with the terms it was fixed with,
+     *  over the holidays given (see HolidayRepository#businessDaysAfter). */
+    public void refixDueBys(String sheetId, LocalDate from, Set<LocalDate> holidays) {
+        List<Object[]> refixed = jdbc.query(
+                "SELECT id, claim_date, terms FROM claim WHERE sheet_id = ? AND status NOT IN ('SETTLED', 'VOID') AND due_by >= ? AND terms IS NOT NULL",
+                (rs, n) -> new Object[] { Date.valueOf(HolidayRepository.businessDaysAfter(holidays,
+                        rs.getObject("claim_date", LocalDate.class), rs.getInt("terms"))), rs.getLong("id") },
+                sheetId, Date.valueOf(from));
+        if (!refixed.isEmpty()) {
+            jdbc.batchUpdate("UPDATE claim SET due_by = ? WHERE id = ?", refixed);
+        }
     }
 
     /** Whether a claim of the sheet other than {@code self} (null: none) has the reference, comparing without regard to case. */

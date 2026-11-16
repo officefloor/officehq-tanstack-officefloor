@@ -26,9 +26,9 @@ public class SaveSplit {
         }
         Person person = people.find(claim.sheetId(), claim.personId());
         String grade = person == null ? null : person.gradeOn(claim.date());
+        int terms = settings.terms(claim.sheetId(), person == null ? null : person.terms(), grade, claim.date());
         Claim added = claims.add(claim.sheetId(), claim.personId(), split.amount(), claim.date(), claim.note(), null, null, claim.tags(),
-                holidays.businessDaysAfter(claim.sheetId(), claim.date(),
-                        settings.terms(claim.sheetId(), person == null ? null : person.terms(), grade, claim.date())));
+                holidays.businessDaysAfter(claim.sheetId(), claim.date(), terms), terms);
         if (periods.softClosedOn(added.sheetId(), added.dueBy())) {
             claims.markLateEntry(added);
         }

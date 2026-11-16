@@ -18,7 +18,8 @@ public final class ClaimRules {
     public static Checked check(Person person, ClaimValues values, SettingRepository settings, PeriodRepository periods,
             ClaimRepository claims, HolidayRepository holidays) throws InvalidClaimException {
         LocalDate date = values.date() != null ? values.date() : settings.claimDate(person.sheetId());
-        LocalDate dueBy = dueBy(person, date, settings, holidays);
+        int terms = terms(person, date, settings);
+        LocalDate dueBy = holidays.businessDaysAfter(person.sheetId(), date, terms);
         if (periods.closedOn(person.sheetId(), dueBy)) {
             throw new InvalidClaimException("The claim's due-by is inside a closed period");
         }
@@ -26,7 +27,7 @@ public final class ClaimRules {
             throw new InvalidClaimException("The claim's date is after the person's retirement date");
         }
         checkRef(person.sheetId(), values, null, claims);
-        return new Checked(date, Corrections.check(person.sheetId(), person.id(), values, claims), dueBy);
+        return new Checked(date, Corrections.check(person.sheetId(), person.id(), values, claims), dueBy, terms);
     }
 
     /** Refuses a reference another claim of the sheet already has, comparing without regard to case; {@code self} is the
@@ -39,13 +40,18 @@ public final class ClaimRules {
 
     /** The due-by a claim of the person dated the date is fixed with as it is added: the terms-th business day after its date (see
      *  HolidayRepository.businessDaysAfter), the terms being the person's own, else those of their grade in force on that date (the
-     *  holidays on the sheet now decide: one added later leaves the due-by as it is). */
+     *  holidays on the sheet now decide; one added later works it out again, see ClaimRepository#refixDueBys). */
     public static LocalDate dueBy(Person person, LocalDate date, SettingRepository settings, HolidayRepository holidays) {
-        return holidays.businessDaysAfter(person.sheetId(), date,
-                settings.terms(person.sheetId(), person.terms(), person.gradeOn(date), date));
+        return holidays.businessDaysAfter(person.sheetId(), date, terms(person, date, settings));
     }
 
-    /** A claim's date, the number it corrects (null when none) and its due-by, once its rules are kept. */
-    public record Checked(LocalDate date, String corrects, LocalDate dueBy) {
+    /** The terms a claim of the person dated the date is fixed with: the person's own, else those of their grade in force on
+     *  that date. The claim keeps them, so its due-by can be worked out again when a holiday is added (see ClaimRepository#refixDueBys). */
+    public static int terms(Person person, LocalDate date, SettingRepository settings) {
+        return settings.terms(person.sheetId(), person.terms(), person.gradeOn(date), date);
+    }
+
+    /** A claim's date, the number it corrects (null when none), its due-by and the terms it was fixed with, once its rules are kept. */
+    public record Checked(LocalDate date, String corrects, LocalDate dueBy, int terms) {
     }
 }

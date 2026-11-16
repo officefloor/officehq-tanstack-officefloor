@@ -23,7 +23,7 @@ public class AddPastedClaims {
             LocalDate date = c.checked().date();
             String sheet = c.person().sheetId();
             Claim added = claims.add(sheet, c.person().id(), c.values().amount(), date, c.values().note(),
-                    c.checked().corrects(), c.values().ref(), c.values().tags(), c.checked().dueBy());
+                    c.checked().corrects(), c.values().ref(), c.values().tags(), c.checked().dueBy(), c.checked().terms());
             log.write(added, pasted.by());
             lines.add("CLAIM_ADDED sheet=" + added.sheetId() + " by=" + pasted.by() + " person=" + c.person().name()
                     + " amount=" + added.amount().toPlainString() + " date=" + added.date()
