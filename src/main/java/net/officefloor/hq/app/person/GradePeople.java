@@ -35,7 +35,7 @@ public class GradePeople {
                 continue;
             }
             PersonValues values = new PersonValues(person.name(), request.grade(), request.by(), person.version(),
-                    request.from(), person.terms(), person.contact());
+                    request.from(), person.terms(), person.contact(), person.tags());
             RollupBefore before = rollup.take(sheet);
             Person[] changed = new Person[1];
             TermsBefore[] terms = new TermsBefore[1];

@@ -23,7 +23,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, version, retired_from, terms, contact, origin";
+    private static final String COLUMNS = "id, sheet_id, name, version, retired_from, terms, contact, origin, tags";
 
     private final JdbcTemplate jdbc;
     private final SheetRepository sheets;
@@ -116,7 +116,7 @@ public class PersonRepository {
             people.add(new Person(p.id(), p.sheetId(), p.name(), Person.gradeOn(mine, today), p.version(), p.retiredFrom(),
                     mine, List.copyOf(holds.getOrDefault(p.id(), List.of())), p.terms(), p.contact(),
                     List.copyOf(aliases.getOrDefault(p.id(), List.of()))).withOrigin(p.origin())
-                    .withRetirements(List.copyOf(retirements.getOrDefault(p.id(), List.of()))));
+                    .withRetirements(List.copyOf(retirements.getOrDefault(p.id(), List.of()))).withTags(p.tags()));
         }
         return people;
     }
@@ -177,10 +177,16 @@ public class PersonRepository {
      *  add or edit. */
     public Person add(String sheetId, String name, String grade, Integer terms, String contact)
             throws DuplicatePersonNameException, DuplicatePersonContactException {
+        return add(sheetId, name, grade, terms, contact, List.of());
+    }
+
+    /** Adds the person with their tags (see #add). */
+    public Person add(String sheetId, String name, String grade, Integer terms, String contact, List<String> tags)
+            throws DuplicatePersonNameException, DuplicatePersonContactException {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         try {
             jdbc.update(con -> {
-                PreparedStatement ps = con.prepareStatement("INSERT INTO person (sheet_id, name, grade, terms, added_on, contact) VALUES (?, ?, ?, ?, ?, ?)",
+                PreparedStatement ps = con.prepareStatement("INSERT INTO person (sheet_id, name, grade, terms, added_on, contact, tags) VALUES (?, ?, ?, ?, ?, ?, ?)",
                         new String[] { "id" });
                 ps.setString(1, sheetId);
                 ps.setString(2, name);
@@ -188,6 +194,7 @@ public class PersonRepository {
                 ps.setObject(4, terms, java.sql.Types.INTEGER);
                 ps.setDate(5, Date.valueOf(sheets.today(sheetId)));
                 ps.setString(6, contact);
+                ps.setString(7, stored(tags));
                 return ps;
             }, keys);
         } catch (DuplicateKeyException e) {
@@ -200,7 +207,7 @@ public class PersonRepository {
         toEnd(sheetId, id);
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, from_date, grade) VALUES (?, ?, NULL, ?)", sheetId, id, grade);
         logGrades(sheetId, id, List.of(new PersonGrade(grade, null)));
-        return new Person(id, sheetId, name, grade, 0, null, List.of(new PersonGrade(grade, null)), List.of(), terms, contact);
+        return new Person(id, sheetId, name, grade, 0, null, List.of(new PersonGrade(grade, null)), List.of(), terms, contact).withTags(tags);
     }
 
     /** Puts the person at the end of the sheet's list: their position is their id (ids only go up), or one after the
@@ -248,8 +255,8 @@ public class PersonRepository {
                 (rs, n) -> rs.getObject(1, Integer.class), person.sheetId(), person.id());
         int n;
         try {
-            n = jdbc.update("UPDATE person SET name = ?, version = ?, terms = ?, contact = ? WHERE sheet_id = ? AND id = ? AND version = ?",
-                    person.name(), person.version(), person.terms(), person.contact(), person.sheetId(), person.id(), fromVersion);
+            n = jdbc.update("UPDATE person SET name = ?, version = ?, terms = ?, contact = ?, tags = ? WHERE sheet_id = ? AND id = ? AND version = ?",
+                    person.name(), person.version(), person.terms(), person.contact(), stored(person.tags()), person.sheetId(), person.id(), fromVersion);
         } catch (DuplicateKeyException e) {
             if (contactClash(e)) {
                 throw new DuplicatePersonContactException(person.contact());
@@ -339,7 +346,8 @@ public class PersonRepository {
         List<String> aliases = person.aliases().stream().filter(given::contains).toList();
         return new Person(person.id(), sheetId, person.name(), Person.gradeOn(grades, date), person.version(),
                 retired.isEmpty() || retired.get(0) == null ? null : retired.get(0).toString(), List.copyOf(grades), holds,
-                termsAsOf(person, date), person.contact(), aliases).withOrigin(person.origin()).withRetirements(retirements);
+                termsAsOf(person, date), person.contact(), aliases).withOrigin(person.origin()).withRetirements(retirements)
+                .withTags(person.tags());
     }
 
     /** The sheet's people as they stood at the end of the date (see #asOf), in list order (see #list; one merged away
@@ -413,6 +421,17 @@ public class PersonRepository {
         Date retired = rs.getDate("retired_from");
         return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
                 retired == null ? null : retired.toLocalDate().toString(), List.of(), List.of(),
-                rs.getObject("terms", Integer.class), rs.getString("contact")).withOrigin(rs.getString("origin"));
+                rs.getObject("terms", Integer.class), rs.getString("contact")).withOrigin(rs.getString("origin"))
+                .withTags(tags(rs.getString("tags")));
+    }
+
+    /** Tags as stored: joined by commas, null when none. */
+    private static String stored(List<String> tags) {
+        return tags == null || tags.isEmpty() ? null : String.join(",", tags);
+    }
+
+    /** Tags as read from a stored column (null: none). */
+    private static List<String> tags(String stored) {
+        return stored == null || stored.isEmpty() ? List.of() : List.of(stored.split(","));
     }
 }

@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Val;
 /** Applies the edit: the grade is recorded from the from-date (the sheet's today when blank), replacing one recorded
  *  from the same date and keeping the others; a save leaving the grade as the row showed it (in force on the sheet's
  *  today) with the from-date blank records nothing.
- *  The person's own terms become the ones given (null: none), and their contact the one given (null: none). */
+ *  The person's own terms become the ones given (null: none), and their contact the one given (null: none), and their tags the ones given. */
 public class ApplyPerson {
     public void apply(@Val Person person, @Val PersonValues values, SheetRepository sheets, Out<Person> changed,
             Out<TermsBefore> termsBefore, Out<ContactBefore> contactBefore) {
@@ -33,6 +33,6 @@ public class ApplyPerson {
         List<PersonGrade> kept = List.copyOf(grades);
         return new Person(person.id(), person.sheetId(), values.name(), Person.gradeOn(kept, today), person.version() + 1,
                 person.retiredFrom(), kept, person.holds(), values.terms(), values.contact(), person.aliases())
-                .withRetirements(person.retirements());
+                .withRetirements(person.retirements()).withTags(values.tags());
     }
 }

@@ -21,7 +21,9 @@ export type PersonGrade = { grade: string; from: string | null };
  *  the paste box find a person by one as by the name. `clashing` is whether their name or an alias is used as a name or
  *  alias on another sheet of the sheet's tree (people added before the rule): every edit of them is refused until it
  *  renames them clear. `origin` is the sheet they were last transferred from, null when never transferred here.
- *  `retirements` are their past retirements (each ended by unretiring them), in the order they ended. */
+ *  `retirements` are their past retirements (each ended by unretiring them), in the order they ended.
+ *  `tags` are the person's tags (each trimmed and in lower case, no repeats, sorted; empty when none): a claim of theirs
+ *  counts for each in the tag totals. */
 export type Person = {
   id: number;
   sheetId: string;
@@ -38,6 +40,7 @@ export type Person = {
   clashing: boolean;
   origin: string | null;
   retirements: PersonRetirement[];
+  tags: string[];
 };
 
 /** A past retirement of a person (yyyy-MM-dd): from their retirement date to the sheet's today when they were

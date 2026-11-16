@@ -16,10 +16,18 @@ import java.util.List;
  *  is whether their name or an alias is used as a name or alias on another sheet of the sheet's tree (see
  *  PersonRepository#treeKeys): set only on the people listed, false elsewhere. {@code origin} is the sheet the person was
  *  last transferred from, null when they were never transferred here. {@code retirements} are the person's past
- *  retirements (each ended by unretiring them), in the order they ended. */
+ *  retirements (each ended by unretiring them), in the order they ended. {@code tags} are the person's tags (each trimmed and
+ *  in lower case, no repeats, sorted; empty when none): a claim of theirs counts for each in the tag totals. */
 public record Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
         List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases,
-        boolean clashing, String origin, List<PersonRetirement> retirements) {
+        boolean clashing, String origin, List<PersonRetirement> retirements, List<String> tags) {
+
+    public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
+            List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases,
+            boolean clashing, String origin, List<PersonRetirement> retirements) {
+        this(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin,
+                retirements, List.of());
+    }
 
     public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
             List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases) {
@@ -39,24 +47,29 @@ public record Person(long id, String sheetId, String name, String grade, long ve
 
     /** The person with whether they clash in the sheet's tree. */
     public Person withClashing(boolean clashing) {
-        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements);
+        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements, tags);
     }
 
     /** The person with the sheet they were transferred from (null: none). */
     public Person withOrigin(String origin) {
-        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements);
+        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements, tags);
     }
 
     /** The person with their past retirements. */
     public Person withRetirements(List<PersonRetirement> retirements) {
-        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements);
+        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements, tags);
+    }
+
+    /** The person with their tags. */
+    public Person withTags(List<String> tags) {
+        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements, tags);
     }
 
     /** The person not retired, the retirement ended on the date kept among their past ones. */
     public Person unretired(LocalDate on) {
         List<PersonRetirement> past = new java.util.ArrayList<>(retirements);
         past.add(new PersonRetirement(LocalDate.parse(retiredFrom), on));
-        return new Person(id, sheetId, name, grade, version, null, held, grades, holds, terms, contact, aliases, clashing, origin, List.copyOf(past));
+        return new Person(id, sheetId, name, grade, version, null, held, grades, holds, terms, contact, aliases, clashing, origin, List.copyOf(past), tags);
     }
 
     /** Whether the person's name or any alias is among the name keys (lower-cased names and aliases). */

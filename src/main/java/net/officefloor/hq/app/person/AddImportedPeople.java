@@ -44,6 +44,6 @@ public class AddImportedPeople {
     static PersonValues edit(Person person, PersonValues line) {
         return new PersonValues(person.name(), line.grade(), line.by(), person.version(), null,
                 line.terms() != null ? line.terms() : person.terms(),
-                line.contact() != null ? line.contact() : person.contact());
+                line.contact() != null ? line.contact() : person.contact(), person.tags());
     }
 }

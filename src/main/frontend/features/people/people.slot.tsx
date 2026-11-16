@@ -5,13 +5,25 @@ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { claimsKey, type Claim } from '../claims/claims';
+import { tagsKey } from '../tags/tags';
 import { GRADES, peopleKey, useEditingPerson, usePeople, useShowRetired, type Person } from './people';
 
 /** The form's values. `gradeFrom` (yyyy-MM-dd) is the date the grade is given from; blank, the sheet's today. A
  *  person's first grade applies from the beginning of time. `terms` are the person's own terms in days; blank, none. `contact` is the person's contact, kept by the server
- *  without surrounding spaces and lower-cased; blank, none. */
-type Values = { name: string; grade: string; gradeFrom: string; terms: string; contact: string };
-const EMPTY: Values = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '' };
+ *  without surrounding spaces and lower-cased; blank, none. `tags` are the person's tags, comma separated, kept by the server
+ *  each trimmed and lower-cased, repeats dropped; blank, none. */
+type Values = { name: string; grade: string; gradeFrom: string; terms: string; contact: string; tags: string };
+const EMPTY: Values = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '', tags: '' };
+
+/** The form's values for a person as stored. */
+const valuesOf = (p: Person): Values => ({
+  name: p.name,
+  grade: p.grade,
+  gradeFrom: '',
+  terms: p.terms === null ? '' : String(p.terms),
+  contact: p.contact ?? '',
+  tags: (p.tags ?? []).join(', '),
+});
 
 type Quick = { name: string; amount: string };
 const NO_QUICK: Quick = { name: '', amount: '' };
@@ -97,6 +109,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
       setEditingId(undefined);
       setVersion(undefined);
       void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      void queryClient.invalidateQueries({ queryKey: tagsKey(sheetId) });
     },
     onError: async (error, { id }) => {
       if (id === undefined) return;
@@ -110,7 +123,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
       const now = queryClient.getQueryData<Person[]>(peopleKey(sheetId))?.find((p) => p.id === id);
       if (now) {
-        setValues({ name: now.name, grade: now.grade, gradeFrom: '', terms: now.terms === null ? '' : String(now.terms), contact: now.contact ?? '' });
+        setValues(valuesOf(now));
         setVersion(now.version);
       }
     },
@@ -123,7 +136,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
   };
   const openEditor = (p: Person) => {
     save.reset();
-    setValues({ name: p.name, grade: p.grade, gradeFrom: '', terms: p.terms === null ? '' : String(p.terms), contact: p.contact ?? '' });
+    setValues(valuesOf(p));
     setVersion(p.version);
     setEditingId(String(p.id));
   };
@@ -183,6 +196,15 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
           Contact{' '}
           <input data-testid="person-form-contact" value={values.contact} onChange={(e) => change({ contact: e.target.value })} />
         </label>{' '}
+        <label>
+          Tags{' '}
+          <input
+            data-testid="person-form-tags"
+            placeholder="comma separated"
+            value={values.tags}
+            onChange={(e) => change({ tags: e.target.value })}
+          />
+        </label>{' '}
         <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
           {editing ? 'Save' : 'Add person'}
         </button>
@@ -221,6 +243,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
             <th>Grade</th>
             <th>Terms</th>
             <th>Contact</th>
+            <th>Tags</th>
             <PeopleHead.Slot sheetId={sheetId} user={user} />
             <th />
           </tr>
@@ -232,6 +255,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid="person-grade">{p.grade}</td>
               <td data-testid="person-terms">{p.terms ?? ''}</td>
               <td data-testid="person-contact">{p.contact ?? ''}</td>
+              <td data-testid="person-tags">{(p.tags ?? []).join(', ')}</td>
               <PersonRow.Slot sheetId={sheetId} user={user} person={p} />
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => openEditor(p)}>

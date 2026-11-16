@@ -23,7 +23,7 @@ public class ValidateImportPeople {
             }
             String[] fields = line.split(",", 4);
             PersonValues values = PersonValues.from(new PersonRequest(fields[0], fields.length > 1 ? fields[1] : "", by, null,
-                    "", fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : ""));
+                    "", fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", null));
             if (!names.add(PersonRepository.key(values.name()))) {
                 throw new InvalidPersonException("The name " + values.name() + " is imported more than once");
             }

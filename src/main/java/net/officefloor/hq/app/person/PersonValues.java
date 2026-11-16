@@ -2,13 +2,19 @@ package net.officefloor.hq.app.person;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
+import java.util.TreeSet;
 
 /** A person's values once validated, and who gives them; for an edit, the version it was made from (null for an add).
  *  {@code gradeFrom} is the date the grade is given from, null when left blank; {@code terms} the person's own terms, a
  *  whole number of days 0 or more, null when left blank; {@code contact} the person's
- *  contact without surrounding spaces and lower-cased, null when left blank. */
-public record PersonValues(String name, String grade, String by, Long version, LocalDate gradeFrom, Integer terms, String contact) {
+ *  contact without surrounding spaces and lower-cased, null when left blank; {@code tags} the person's tags (see
+ *  #tags). */
+public record PersonValues(String name, String grade, String by, Long version, LocalDate gradeFrom, Integer terms, String contact,
+        List<String> tags) {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     /** The request's values by the person form's rules (see ValidatePerson). */
@@ -40,6 +46,19 @@ public record PersonValues(String name, String grade, String by, Long version, L
         }
         String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(java.util.Locale.ROOT);
         return new PersonValues(name, grade, request.by() == null ? "" : request.by().trim(), request.version(), gradeFrom,
-                terms, contact.isEmpty() ? null : contact);
+                terms, contact.isEmpty() ? null : contact, tags(request.tags()));
+    }
+
+    /** Comma separated tags as kept: each trimmed and in lower case, blanks and repeats dropped, sorted. */
+    public static List<String> tags(String typed) throws InvalidPersonException {
+        if (typed == null) {
+            return List.of();
+        }
+        List<String> tags = List.copyOf(new TreeSet<>(Arrays.stream(typed.split(",")).map((t) -> t.trim().toLowerCase(Locale.ROOT))
+                .filter((t) -> !t.isEmpty()).toList()));
+        if (String.join(",", tags).length() > 2000) {
+            throw new InvalidPersonException("The tags are too long");
+        }
+        return tags;
     }
 }

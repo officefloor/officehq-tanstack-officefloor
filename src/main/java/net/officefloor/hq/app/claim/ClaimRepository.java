@@ -356,11 +356,13 @@ public class ClaimRepository {
         return out;
     }
 
-    /** Every tag ever used on the sheet, sorted: those its claims carry and those they carried before an edit. */
+    /** Every tag ever used on the sheet, sorted: those its claims carry and those they carried before an edit, and those
+     *  its people carry. */
     public List<String> tagsUsed(String sheetId) {
         Set<String> out = new TreeSet<>();
         for (String tags : jdbc.queryForList("SELECT tags FROM claim WHERE sheet_id = ? AND tags IS NOT NULL "
-                + "UNION SELECT tags FROM claim_edit WHERE sheet_id = ? AND tags IS NOT NULL", String.class, sheetId, sheetId)) {
+                + "UNION SELECT tags FROM claim_edit WHERE sheet_id = ? AND tags IS NOT NULL "
+                + "UNION SELECT tags FROM person WHERE sheet_id = ? AND tags IS NOT NULL", String.class, sheetId, sheetId, sheetId)) {
             out.addAll(List.of(tags.split(",")));
         }
         return List.copyOf(out);
