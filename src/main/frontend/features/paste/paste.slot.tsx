@@ -9,10 +9,12 @@ import { peopleKey } from '../people/people';
 type Result = { added: number };
 
 /** The paste box: lines of name,amount,date,note (the note may hold commas and may be absent; a blank date is the
- *  sheet's entry date, else its today) each add a DRAFT claim, in order, for the person with the name; a note ending in ` #<reference>` gives the claim that
- *  external reference (not part of the note). The server checks every line by the
- *  claim form's rules first (a reference repeated within the paste counts as already used): one failing line refuses the paste and adds nothing. Shows how many were added; the
- *  count is cleared while a new press runs. */
+ *  sheet's entry date, else its today) each add a claim, in order, for the person with the name, and open it as the
+ *  open button would; a line matching a DRAFT of the person by date and note updates that DRAFT's amount and opens it
+ *  instead. A note ending in ` #<reference>` gives the claim that external reference (not part of the note). The server
+ *  checks every line first by the claim form's rules (a reference repeated within the paste counts as already used),
+ *  and one failing line, or one the open button would refuse, refuses the paste and changes nothing. Shows how many
+ *  lines went through; the count is cleared while a new press runs. */
 function PasteClaims({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
@@ -53,7 +55,7 @@ function PasteClaims({ sheetId, user }: { sheetId: string; user: string }) {
       </label>
       <br />
       <button type="submit" data-testid="paste-submit" disabled={paste.isPending}>
-        Add draft claims
+        Add and open claims
       </button>
       {paste.isSuccess && (
         <>
@@ -64,7 +66,7 @@ function PasteClaims({ sheetId, user }: { sheetId: string; user: string }) {
       {paste.isError && (
         <span data-testid="paste-error">
           {' '}
-          Nothing was added: every line must name a person on the sheet and keep the claim form's rules, with no reference already used on the sheet or repeated in the paste.
+          Nothing was pasted: every line must name a person on the sheet, keep the claim form's rules (no reference already used on the sheet or repeated in the paste), match no claim but a DRAFT, and be one you may open.
         </span>
       )}
     </form>

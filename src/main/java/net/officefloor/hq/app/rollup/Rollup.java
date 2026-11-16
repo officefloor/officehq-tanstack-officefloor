@@ -2,6 +2,7 @@ package net.officefloor.hq.app.rollup;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -89,13 +90,20 @@ public class Rollup {
 
     /** Writes the ROLLUP and TOTALS lines for the figures the change moved since {@code before}. */
     public void record(String sheetId, String by, RollupBefore before) {
+        lines(sheetId, by, before).forEach(audit::record);
+    }
+
+    /** The ROLLUP, TOTALS and ALERT lines {@link #record} would write, without writing them (for a change that writes
+     *  its lines only once all of it has gone through). */
+    public List<String> lines(String sheetId, String by, RollupBefore before) {
+        List<String> lines = new ArrayList<>();
         Map<Long, Figures> after = take(sheetId).figures();
         for (Map.Entry<Long, Figures> e : after.entrySet()) {
             Figures was = before.figures().get(e.getKey());
             Figures now = e.getValue();
             if (was == null || !was.claimed().equals(now.claimed()) || !was.dueTotal().equals(now.dueTotal())
                     || !was.overdueTotal().equals(now.overdueTotal())) {
-                audit.record("ROLLUP sheet=" + sheetId + " by=" + by + " person=" + now.name() + " claimed="
+                lines.add("ROLLUP sheet=" + sheetId + " by=" + by + " person=" + now.name() + " claimed="
                         + now.claimed() + " due-total=" + now.dueTotal() + " overdue-total=" + now.overdueTotal());
             }
         }
@@ -107,15 +115,16 @@ public class Rollup {
         String overdueAfter = overdueTotal(after);
         if (!Objects.equals(claimedBefore, claimedAfter) || !Objects.equals(dueBefore, dueAfter)
                 || !Objects.equals(overdueBefore, overdueAfter)) {
-            audit.record("TOTALS sheet=" + sheetId + " by=" + by + " claimed-total=" + claimedAfter + " due-total="
+            lines.add("TOTALS sheet=" + sheetId + " by=" + by + " claimed-total=" + claimedAfter + " due-total="
                     + dueAfter + " overdue-total=" + overdueAfter);
         }
-        alert(sheetId, by, before.figures(), after);
+        alert(sheetId, by, before.figures(), after, lines);
+        return lines;
     }
 
     /** Writes ALERT, in list order, for every person whose due-total went from at or below the sheet's alert threshold
      *  (or no due-total) before to above it now. */
-    private void alert(String sheetId, String by, Map<Long, Figures> before, Map<Long, Figures> after) {
+    private void alert(String sheetId, String by, Map<Long, Figures> before, Map<Long, Figures> after, List<String> lines) {
         BigDecimal threshold = settings.alertThreshold(sheetId);
         if (threshold == null) {
             return;
@@ -124,7 +133,7 @@ public class Rollup {
             Figures was = before.get(e.getKey());
             Figures now = e.getValue();
             if (above(now, threshold) && (was == null || !above(was, threshold))) {
-                audit.record("ALERT sheet=" + sheetId + " by=" + by + " name=" + now.name() + " due-total="
+                lines.add("ALERT sheet=" + sheetId + " by=" + by + " name=" + now.name() + " due-total="
                         + now.dueTotal());
             }
         }
@@ -144,7 +153,9 @@ public class Rollup {
         }
         audit.record("TOTALS sheet=" + sheetId + " by=" + by + " claimed-total=" + claimedTotal(now) + " due-total="
                 + dueTotal(now) + " overdue-total=" + overdueTotal(now));
-        alert(sheetId, by, Map.of(), now);
+        List<String> alerts = new ArrayList<>();
+        alert(sheetId, by, Map.of(), now, alerts);
+        alerts.forEach(audit::record);
     }
 
     private static String claimedTotal(Map<Long, Figures> figures) {
