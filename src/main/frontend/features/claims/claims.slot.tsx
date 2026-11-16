@@ -29,7 +29,8 @@ type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void';
 /** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, due-by (its date plus the sheet's terms), whether it is overdue, and the period its date falls in, with the buttons that edit it or change its status. A clerk's settle above the clerk limit makes it PENDING; a
  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
- *  shows the claim's error. Only a DRAFT can be edited: Edit on any other claim shows the claim's error instead of opening the editor. */
+ *  shows the claim's error. A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
+ *  with the claim's error, for anyone else or any other claim). Only a DRAFT can be edited: Edit on any other claim shows the claim's error instead of opening the editor. */
 function ClaimRow({
   sheetId,
   user,
@@ -64,11 +65,22 @@ function ClaimRow({
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
   });
+  const people = usePeople(sheetId);
+  const [moveTo, setMoveTo] = useState('');
+  const reassign = useMutation({
+    mutationFn: (personId: number) =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/person`, { personId, by: user }),
+    onSuccess: () => {
+      setMoveTo('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
   const [reason, setReason] = useState('');
   const [editRefused, setEditRefused] = useState(false);
   const [selected, setSelected] = useSelectedClaims();
   const act = (action: Action) => {
     setEditRefused(false);
+    reassign.reset();
     status.reset();
     status.mutate(action);
   };
@@ -98,6 +110,7 @@ function ClaimRow({
         data-testid="claim-edit"
         onClick={() => {
           status.reset();
+          reassign.reset();
           if (c.status !== 'DRAFT') {
             setEditRefused(true);
             return;
@@ -137,6 +150,37 @@ function ClaimRow({
       <button type="button" data-testid="claim-void" disabled={status.isPending} onClick={() => act('void')}>
         Void
       </button>
+      <select
+        data-testid="claim-reassign-to"
+        aria-label="Move to"
+        value={moveTo}
+        onChange={(e) => {
+          setMoveTo(e.target.value);
+          reassign.reset();
+        }}
+      >
+        <option value="">Move to…</option>
+        {(people.data ?? [])
+          .filter((p) => p.id !== c.personId)
+          .map((p) => (
+            <option key={p.id} value={String(p.id)}>
+              {p.name}
+            </option>
+          ))}
+      </select>
+      <button
+        type="button"
+        data-testid="claim-reassign"
+        disabled={reassign.isPending || moveTo === ''}
+        onClick={() => {
+          setEditRefused(false);
+          status.reset();
+          reassign.reset();
+          reassign.mutate(Number(moveTo));
+        }}
+      >
+        Move
+      </button>
       {editRefused && (
         <span data-testid="claim-error"> Only a draft claim can be edited; void it and add a new one instead.</span>
       )}
@@ -146,6 +190,13 @@ function ClaimRow({
           {(c.status === 'OPEN' || c.status === 'PENDING') && c.openedBy === user && status.variables !== 'reject' && status.variables !== 'void'
             ? 'You opened this claim, so someone else must settle or approve it.'
             : `A ${c.status} claim cannot be changed that way, nor one dated inside a closed period; only a steward approves or rejects a pending claim, and a rejection needs a reason.`}
+        </span>
+      )}
+      {reassign.isError && (
+        <span data-testid="claim-error">
+          {' '}
+          Only a steward moves a claim, and only a draft, open or pending one (not a correction, nor one dated inside a
+          closed period) to another person not retired before its date.
         </span>
       )}
     </li>

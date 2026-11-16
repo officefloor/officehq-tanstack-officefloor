@@ -27,9 +27,9 @@ public class ClaimRepository {
         this.dataSource = dataSource;
     }
 
-    /** The sheet's claims, newest first. */
+    /** The sheet's claims, newest first: as added, but a claim moved to another person counts as new when moved. */
     public List<Claim> list(String sheetId) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY id DESC",
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY listed DESC, id DESC",
                 ClaimRepository::map, sheetId);
     }
 
@@ -53,6 +53,8 @@ public class ClaimRepository {
             ps.setString(6, corrects);
             return ps;
         }, keys);
+        jdbc.update("UPDATE claim SET listed = (SELECT COALESCE(MAX(c.listed), 0) + 1 FROM claim c WHERE c.sheet_id = ?) WHERE id = ?",
+                sheetId, keys.getKey().longValue());
         return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects);
     }
 
@@ -77,6 +79,18 @@ public class ClaimRepository {
     public boolean updateStatus(Claim claim, ClaimStatus from) {
         return jdbc.update("UPDATE claim SET status = ?, claim_number = ?, due = ?, opened_by = ? WHERE sheet_id = ? AND id = ? AND status = ?",
                 claim.status().name(), claim.number(), claim.due(), claim.openedBy(), claim.sheetId(), claim.id(), from.name()) == 1;
+    }
+
+    /**
+     * Moves the claim to another person, unbound from any statement figure and listed as the sheet's newest claim, but
+     * only while it is still the {@code from} person's and DRAFT, OPEN or PENDING; false when another change got there
+     * first (nothing is written).
+     */
+    public boolean reassign(Claim claim, long from, long to) {
+        return jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, "
+                + "listed = (SELECT COALESCE(MAX(c.listed), 0) + 1 FROM claim c WHERE c.sheet_id = ?) "
+                + "WHERE sheet_id = ? AND id = ? AND person_id = ? AND status IN ('DRAFT', 'OPEN', 'PENDING')",
+                to, claim.sheetId(), claim.sheetId(), claim.id(), from) == 1;
     }
 
     /** Binds the claim to a statement figure (null: it had none), or unbinds it when {@code stated} is false. */
