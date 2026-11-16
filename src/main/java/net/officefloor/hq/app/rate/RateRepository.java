@@ -21,6 +21,13 @@ public class RateRepository {
                 RateRepository::map, sheetId);
     }
 
+    /** The sheet's rate for a grade, or null when the grade has none. */
+    public Rate find(String sheetId, String grade) {
+        List<Rate> found = jdbc.query("SELECT sheet_id, grade, rate FROM rate WHERE sheet_id = ? AND grade = ?",
+                RateRepository::map, sheetId, grade);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     public Rate save(Rate rate) {
         jdbc.update("MERGE INTO rate (sheet_id, grade, rate) KEY (sheet_id, grade) VALUES (?, ?, ?)",
                 rate.sheetId(), rate.grade(), rate.rate());

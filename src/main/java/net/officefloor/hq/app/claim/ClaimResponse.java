@@ -1,11 +1,13 @@
 package net.officefloor.hq.app.claim;
 
 /** A claim as sent to the screen: the amount as text with two decimals, so it is never rounded through a float;
- *  the number is null when the claim has none. */
+ *  the number is null when the claim has none; due is the due fixed when settled (two decimals), null while it is
+ *  live. */
 public record ClaimResponse(long id, String sheetId, long personId, String amount, String date, String note,
-        String status, Long number) {
+        String status, Long number, String due) {
     public static ClaimResponse from(Claim claim) {
         return new ClaimResponse(claim.id(), claim.sheetId(), claim.personId(), claim.amount().toPlainString(),
-                claim.date().toString(), claim.note(), claim.status().name(), claim.number());
+                claim.date().toString(), claim.note(), claim.status().name(), claim.number(),
+                claim.due() == null ? null : claim.due().toPlainString());
     }
 }

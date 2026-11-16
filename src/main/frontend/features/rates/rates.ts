@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import type { Claim } from '../claims/claims';
 
 /** A grade's rate on the sheet: `rate` is a percent as text with two decimals (never a float). */
 export type Rate = { sheetId: string; grade: string; rate: string };
@@ -40,6 +41,11 @@ export function due(amount: string, rate: string | undefined): string {
   const a = p < 0n ? -p : p;
   const r = (a + 5000n) / 10000n;
   return shown(p < 0n ? -r : r);
+}
+
+/** A claim's due: the figure fixed when it was settled, otherwise its amount at the current rate. */
+export function claimDue(claim: Claim, rate: string | undefined): string {
+  return claim.due ?? due(claim.amount, rate);
 }
 
 /** Two-decimal values added up, skipping 'n/a'. */

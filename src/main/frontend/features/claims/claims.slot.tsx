@@ -4,7 +4,7 @@ import { postJson, putJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import type { Person } from '../people/people';
-import { due, rateFor, useRates } from '../rates/rates';
+import { claimDue, rateFor, useRates } from '../rates/rates';
 import { claimsKey, total, useClaims, type Claim } from './claims';
 
 type Values = { amount: string; date: string; note: string };
@@ -56,7 +56,7 @@ function ClaimRow({
       <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
       <span data-testid="claim-amount">{c.amount}</span> <span data-testid="claim-date">{c.date}</span>{' '}
       <span data-testid="claim-note">{c.note}</span>{' '}
-      <span data-testid="claim-due">{due(c.amount, rate)}</span>{' '}
+      <span data-testid="claim-due">{claimDue(c, rate)}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
       <button
         type="button"
