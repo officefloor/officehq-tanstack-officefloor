@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -25,18 +26,24 @@ import net.officefloor.plugin.variable.Val;
  * within any limit. A steward settles anything. Only a steward approves a PENDING claim (fixing its live figure, late
  * charge included, at that moment) or rejects it (OPEN again, bound again by its statement if one bound it).
  * Opening, settling and voiding are each taken only by the roles the sheet's permission allows (see SettingRepository#permits).
+ * Only a steward voids a SETTLED claim, and only within 7 days of its settlement (the sheet's today on its status log's
+ * latest SETTLED line) by the sheet's today; its frozen figure is kept on it but, VOID, it leaves every total.
  * Only a steward re-settles a SETTLED claim (not one dated inside a closed period): its due is fixed again at the figure
  * it would have today as an OPEN claim bound by no statement (today's rates, grades, floor and late charge).
  */
 public class ApplyClaimStatus {
+
+    /** How many days after its settlement a steward may still void a SETTLED claim. */
+    static final int VOID_SETTLED_DAYS = 7;
+
     public void apply(@Val Claim claim, @Val ClaimStatusChange change, PersonRepository people, RateRepository rates,
-            PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, Out<Claim> changed, Out<ClaimNumber> number, Out<PreviousDue> previous) throws InvalidClaimStatusException {
+            PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, ClaimLog log, Out<Claim> changed, Out<ClaimNumber> number, Out<PreviousDue> previous) throws InvalidClaimStatusException {
         boolean allowed = switch (change.action()) {
             case OPEN -> claim.status() == ClaimStatus.DRAFT;
             case SETTLE -> claim.status() == ClaimStatus.OPEN;
             case APPROVE, REJECT -> claim.status() == ClaimStatus.PENDING;
             case VOID -> claim.status() == ClaimStatus.DRAFT || claim.status() == ClaimStatus.OPEN
-                    || claim.status() == ClaimStatus.PENDING;
+                    || claim.status() == ClaimStatus.PENDING || claim.status() == ClaimStatus.SETTLED;
             case RESETTLE -> claim.status() == ClaimStatus.SETTLED;
         };
         if (!allowed) {
@@ -65,6 +72,16 @@ public class ApplyClaimStatus {
         }
         if ((change.action() == ClaimAction.APPROVE || change.action() == ClaimAction.REJECT) && !steward) {
             throw new InvalidClaimStatusException("Only a steward approves or rejects a pending claim");
+        }
+        if (change.action() == ClaimAction.VOID && claim.status() == ClaimStatus.SETTLED) {
+            if (!steward) {
+                throw new InvalidClaimStatusException("Only a steward voids a settled claim");
+            }
+            LocalDate settledOn = log.settledOn(claim);
+            if (settledOn == null || sheets.today(claim.sheetId()).isAfter(settledOn.plusDays(VOID_SETTLED_DAYS))) {
+                throw new InvalidClaimStatusException("A settled claim can only be voided within "
+                        + VOID_SETTLED_DAYS + " days of its settlement");
+            }
         }
         if (change.action() == ClaimAction.RESETTLE && !steward) {
             throw new InvalidClaimStatusException("Only a steward re-settles a claim");
@@ -95,7 +112,7 @@ public class ApplyClaimStatus {
             }
         }
         number.set(new ClaimNumber(claim.number()));
-        previous.set(new PreviousDue(claim.due()));
+        previous.set(new PreviousDue(claim.due(), claim.status()));
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                 claim.note(), to, claim.number(), settledDue,
                 change.action() == ClaimAction.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom()));

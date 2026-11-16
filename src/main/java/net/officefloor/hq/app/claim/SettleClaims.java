@@ -59,7 +59,7 @@ public class SettleClaims {
             ClaimNumber[] number = new ClaimNumber[1];
             PreviousDue[] previous = new PreviousDue[1];
             try {
-                apply.apply(claim, change, people, rates, periods, settings, roles, sheets, claims,
+                apply.apply(claim, change, people, rates, periods, settings, roles, sheets, claims, log,
                         (c) -> changed[0] = c, (n) -> number[0] = n, (p) -> previous[0] = p);
                 save.save(changed[0], change, claims, periods, settings, sheets, log, (c) -> stored[0] = c,
                         (n) -> number[0] = n);

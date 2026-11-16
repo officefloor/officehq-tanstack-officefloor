@@ -3,7 +3,8 @@ import { getJson } from '../../api/http';
 import { heldOn, type Person } from '../people/people';
 
 /** A claim's status: DRAFT when added, then OPEN and SETTLED; a clerk settling above the clerk limit makes it PENDING
- *  until a steward approves (SETTLED) or rejects (OPEN) it; a DRAFT, OPEN or PENDING claim may be VOID. */
+ *  until a steward approves (SETTLED) or rejects (OPEN) it; a DRAFT, OPEN or PENDING claim may be VOID, as may a SETTLED one
+ *  by a steward within 7 days of its settlement. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 
 /** A claim of a person. `amount` is text with two decimals (never a float); `date` is yyyy-MM-dd; `number` (text: 1, 2, ..., or P1-1, X-1 when numbered per period) is given

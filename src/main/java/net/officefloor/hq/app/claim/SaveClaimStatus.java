@@ -31,7 +31,8 @@ public class SaveClaimStatus {
         };
         boolean stored = from != null ? claims.updateStatus(toSave, from)
                 : claims.updateStatus(toSave, ClaimStatus.DRAFT) || claims.updateStatus(toSave, ClaimStatus.OPEN)
-                        || claims.updateStatus(toSave, ClaimStatus.PENDING);
+                        || claims.updateStatus(toSave, ClaimStatus.PENDING)
+                        || claims.updateStatus(toSave, ClaimStatus.SETTLED);
         if (!stored) {
             throw new InvalidClaimStatusException("The claim was changed by someone else");
         }

@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -31,6 +32,17 @@ public class ClaimLog {
         this.rates = rates;
         this.settings = settings;
         this.sheets = sheets;
+    }
+
+    /** The sheet's today on the claim's latest SETTLED line of its status log (null when it has none). */
+    public LocalDate settledOn(Claim claim) {
+        LocalDate on = null;
+        for (ClaimLogLine line : log.of(claim.sheetId(), claim.id())) {
+            if (line.status() == ClaimStatus.SETTLED) {
+                on = line.date();
+            }
+        }
+        return on;
     }
 
     public void write(Claim claim, String by) {
