@@ -8,7 +8,7 @@ import { gradeOn, usePeople, type Person } from '../people/people';
 import { periodOf, usePeriods } from '../periods/periods';
 import { claimDue, rateFor, useRates } from '../rates/rates';
 import { dueBy, isOverdue } from '../overdue/overdue';
-import { useFloor, useLate } from '../settings/settings';
+import { useFloor, useLate, type Dated } from '../settings/settings';
 import { claimsKey, live, logLine, total, useClaims, type Claim } from './claims';
 import { useSelectedClaims } from './selection';
 
@@ -45,7 +45,7 @@ function ClaimRow({
   user: string;
   claim: Claim;
   rate: string | undefined;
-  floor: string;
+  floor: Dated;
   editing: boolean;
   onEdit: () => void;
   onCancel: () => void;

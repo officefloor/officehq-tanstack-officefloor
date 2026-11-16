@@ -38,7 +38,7 @@ public class ClaimLog {
         LateCharge late = LateCharge.of(sheetId, sheets, settings, claims);
         Person person = people.find(sheetId, claim.personId());
         BigDecimal figure = person == null ? claim.due()
-                : late.add(claim, ClaimDue.figure(claim, person.gradeOn(claim.date()), rates, settings.floor(sheetId),
+                : late.add(claim, ClaimDue.figure(claim, person.gradeOn(claim.date()), rates, settings.floor(sheetId, claim.date()),
                         late.rounding()));
         log.add(sheetId, new ClaimLogLine(claim.id(), claim.status(), by, late.today(),
                 figure == null ? "n/a" : figure.toPlainString()));

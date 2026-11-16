@@ -1,9 +1,9 @@
 import { isOpen, type Claim } from '../claims/claims';
 
 /** What the late charge on a sheet depends on: its today (yyyy-MM-dd, '' while it loads), its
- *  late percent (two decimals) and its policy date (yyyy-MM-dd; its today while blank): a claim whose `roundsOn` is
+ *  late percent in force on a claim's date (two decimals) and its policy date (yyyy-MM-dd; its today while blank): a claim whose `roundsOn` is
  *  before it rounds its live figures half up, one on or after it half to even. */
-export type Late = { today: string; pct: string; policy: string };
+export type Late = { today: string; pct: (date: string) => string; policy: string };
 
 /** Whether the claim's live figures round half up (it rounds on a date before the policy date) rather than half to even. */
 export function roundsHalfUp(claim: Claim, late: Late | undefined): boolean {

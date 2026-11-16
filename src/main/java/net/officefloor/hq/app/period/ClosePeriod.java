@@ -30,7 +30,6 @@ public class ClosePeriod {
         }
         Map<Long, Person> byId = people.list(period.sheetId()).stream()
                 .collect(Collectors.toMap(Person::id, (p) -> p));
-        BigDecimal floor = settings.floor(period.sheetId());
         LateCharge late = LateCharge.of(period.sheetId(), sheets, settings, claims);
         Map<Long, BigDecimal> perPerson = new LinkedHashMap<>();
         for (Long id : byId.keySet()) {
@@ -41,7 +40,7 @@ public class ClosePeriod {
             if (!ClaimDue.countsLive(c, person) || c.date().isBefore(period.from()) || c.date().isAfter(period.to())) {
                 continue;
             }
-            BigDecimal figure = person == null ? c.due() : late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, floor, late.rounding()));
+            BigDecimal figure = person == null ? c.due() : late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, settings.floor(c.sheetId(), c.date()), late.rounding()));
             if (figure != null) {
                 perPerson.merge(c.personId(), figure, BigDecimal::add);
             }

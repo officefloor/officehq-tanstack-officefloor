@@ -4,6 +4,7 @@ import { live, type Claim } from '../claims/claims';
 import type { Late } from '../overdue/late';
 import { gradeOn, type Person } from '../people/people';
 import { claimDue, rateFor, sum, type Rate } from '../rates/rates';
+import type { Dated } from '../settings/settings';
 
 /** A period of the sheet: `name` is unique on the sheet (case ignored); `from` and `to` (yyyy-MM-dd) are both
  *  inclusive. No two periods of a sheet overlap. A closed period keeps `closedTotal`, the due-total fixed when it
@@ -44,7 +45,7 @@ export function personPeriodDue(
   person: Person,
   claims: Claim[] | undefined,
   rates: Rate[] | undefined,
-  floor: string,
+  floor: Dated,
   late: Late,
 ): string {
   if (period.closed) return period.personTotals?.[String(person.id)] ?? '0.00';
@@ -60,7 +61,7 @@ export function periodDue(
   claims: Claim[] | undefined,
   people: Person[] | undefined,
   rates: Rate[] | undefined,
-  floor: string,
+  floor: Dated,
   late: Late,
 ): string {
   return sum((people ?? []).map((person) => personPeriodDue(period, person, claims, rates, floor, late)));

@@ -3,6 +3,7 @@ import { getJson } from '../../api/http';
 import { counts, type Claim } from '../claims/claims';
 import { lateSteps, roundsHalfUp, type Late } from '../overdue/late';
 import { gradeOn, type Person } from '../people/people';
+import type { Dated } from '../settings/settings';
 
 /** A grade's rate on the sheet: `rate` is a percent as text with two decimals (never a float), in force from
  *  `from` (yyyy-MM-dd; null: from the beginning of time) through `to` (yyyy-MM-dd; null: no end). */
@@ -68,22 +69,22 @@ function percentOf(value: string, pct: string, times: number, halfUp: boolean): 
 }
 
 /** A claim's due: the figure fixed when it was settled, otherwise the one its person's last statement bound it to (never while PENDING),
- *  otherwise its amount at the rate in force on its date, at least the sheet's floor. Given the sheet's late
+ *  otherwise its amount at the rate in force on its date, at least the sheet's floor in force on its date. Given the sheet's late
  *  charge, an overdue claim's figure gains the late percent of it for every full 30 days overdue (never bound by a
  *  statement; frozen in when settled). Both round by the sheet's policy date (see Late). */
-export function claimDue(claim: Claim, rate: string | undefined, floor: string, late?: Late): string {
+export function claimDue(claim: Claim, rate: string | undefined, floor: Dated, late?: Late): string {
   if (claim.due !== null) return claim.due;
   const halfUp = roundsHalfUp(claim, late);
-  const figure = claim.stated && claim.status !== 'PENDING' ? (claim.statedDue ?? 'n/a') : due(claim.amount, rate, floor, halfUp);
+  const figure = claim.stated && claim.status !== 'PENDING' ? (claim.statedDue ?? 'n/a') : due(claim.amount, rate, floor(claim.date), halfUp);
   if (late === undefined || figure === 'n/a') return figure;
   const steps = lateSteps(claim, late);
-  return steps === 0 ? figure : shown(hundredths(figure) + percentOf(figure, late.pct, steps, halfUp));
+  return steps === 0 ? figure : shown(hundredths(figure) + percentOf(figure, late.pct(claim.date), steps, halfUp));
 }
 
 /** The sum of a person's figures: the figures of their claims that count (each at the rate, of the grade in force,
  *  on its date, with its late charge) added up; 'n/a' when their grade has no rate today and none of those claims has
  *  a figure. */
-function personFigures(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: string): string {
+function personFigures(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated): string {
   const counted = claims.filter(counts);
   const figures = counted.map((c) => claimDue(c, rateFor(rates, gradeOn(person, c.date), c.date), floor, late));
   if (rateFor(rates, gradeOn(person, late.today), late.today) === undefined && figures.every((f) => f === 'n/a')) return 'n/a';
@@ -92,14 +93,14 @@ function personFigures(claims: Claim[], rates: Rate[] | undefined, person: Perso
 
 /** A person's due-total: the sum of their figures (see personFigures), at most the sheet's cap (null: none); 'n/a'
  *  is not capped. */
-export function personDue(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: string, cap: string | null): string {
+export function personDue(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, cap: string | null): string {
   const total = personFigures(claims, rates, person, late, floor);
   return total !== 'n/a' && cap !== null && hundredths(total) > hundredths(cap) ? shown(hundredths(cap)) : total;
 }
 
 /** A person's excess: how far the sum of their figures is above the sheet's cap; 0.00 when it is not (or with no
  *  cap, or an n/a due-total). */
-export function personExcess(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: string, cap: string | null): string {
+export function personExcess(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, cap: string | null): string {
   const total = personFigures(claims, rates, person, late, floor);
   return total !== 'n/a' && cap !== null && hundredths(total) > hundredths(cap)
     ? shown(hundredths(total) - hundredths(cap))

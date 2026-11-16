@@ -24,7 +24,7 @@ public class AddClaim {
         }
         Claim added = claims.add(person.sheetId(), person.id(), values.amount(), date, values.note(),
                 Corrections.check(person.sheetId(), person.id(), values, claims),
-                date.plusDays(settings.terms(person.sheetId(), person.gradeOn(date))));
+                date.plusDays(settings.terms(person.sheetId(), person.gradeOn(date), date)));
         log.write(added, values.by());
         claim.set(added);
     }

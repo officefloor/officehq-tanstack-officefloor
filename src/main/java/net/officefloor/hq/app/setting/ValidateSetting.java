@@ -14,7 +14,8 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  whole number of days 0 or more (not blank), kept without leading zeros, and so is terms-A, terms-B or terms-C (a
  *  grade's own terms); or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today); or
  *  period-numbering-from, its value a date yyyy-MM-dd or blank (off); or cap, its value blank (none) or an amount
- *  like the clerk limit. */
+ *  like the clerk limit. Every key but policy-date and period-numbering-from is dated: its from-date is blank (the
+ *  sheet's today) or a date yyyy-MM-dd. */
 public class ValidateSetting {
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
@@ -35,13 +36,22 @@ public class ValidateSetting {
         }
         String value = request == null || request.value() == null ? "" : request.value().trim();
         String by = request == null || request.by() == null ? "" : request.by().trim();
+        String fromText = request == null || request.from() == null ? "" : request.from().trim();
+        LocalDate from = null;
+        if (!policyDate && !numberingFrom && !fromText.isEmpty()) {
+            try {
+                from = LocalDate.parse(fromText);
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingException("The from-date must be yyyy-MM-dd, or blank");
+            }
+        }
         if (policyDate || numberingFrom) {
             if (value.isEmpty()) {
-                values.set(new SettingValues(k, null, by));
+                values.set(new SettingValues(k, null, null, false, by));
                 return;
             }
             try {
-                values.set(new SettingValues(k, LocalDate.parse(value).toString(), by));
+                values.set(new SettingValues(k, LocalDate.parse(value).toString(), null, false, by));
             } catch (DateTimeParseException e) {
                 throw new InvalidSettingException((policyDate ? "The policy date" : "The period numbering from-date")
                         + " must be yyyy-MM-dd, or blank");
@@ -52,7 +62,7 @@ public class ValidateSetting {
             if (!DAYS.matcher(value).matches()) {
                 throw new InvalidSettingException("The terms must be a whole number of days, 0 or more");
             }
-            values.set(new SettingValues(k, String.valueOf(Integer.parseInt(value)), by));
+            values.set(new SettingValues(k, String.valueOf(Integer.parseInt(value)), from, true, by));
             return;
         }
         if (latePct && !AMOUNT.matcher(value).matches()) {
@@ -67,6 +77,6 @@ public class ValidateSetting {
                     : "The clerk limit must be an amount with up to two decimals, or blank");
         }
         values.set(new SettingValues(k, value.isEmpty() ? null : new BigDecimal(value).setScale(2).toPlainString(),
-                by));
+                from, true, by));
     }
 }

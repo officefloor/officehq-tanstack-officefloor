@@ -51,7 +51,6 @@ public class Rollup {
     /** Every person's figures on the sheet now, in the order they were added. */
     public RollupBefore take(String sheetId) {
         LocalDate today = sheets.today(sheetId);
-        BigDecimal floor = settings.floor(sheetId);
         BigDecimal cap = settings.cap(sheetId);
         LateCharge late = LateCharge.of(sheetId, sheets, settings, claims);
         List<Claim> all = claims.list(sheetId);
@@ -66,7 +65,7 @@ public class Rollup {
                     continue;
                 }
                 claimed = claimed.add(c.amount());
-                BigDecimal figure = late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, floor, late.rounding()));
+                BigDecimal figure = late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, settings.floor(sheetId, c.date()), late.rounding()));
                 figured |= figure != null;
                 if (figure != null) {
                     due = due.add(figure);

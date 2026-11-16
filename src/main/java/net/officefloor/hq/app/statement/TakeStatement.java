@@ -24,7 +24,6 @@ public class TakeStatement {
             SheetRepository sheets, SettingRepository settings, StatementRepository statements, Out<Statement> taken) {
         String sheetId = person.sheetId();
         var today = sheets.today(sheetId);
-        BigDecimal floor = settings.floor(sheetId);
         LateCharge late = LateCharge.of(sheetId, sheets, settings, claims);
         List<Claim> mine = claims.list(sheetId).stream().filter((c) -> c.personId() == person.id()).toList();
         BigDecimal total = BigDecimal.ZERO.setScale(2);
@@ -35,7 +34,7 @@ public class TakeStatement {
                 claims.bind(c, false, null);
                 continue;
             }
-            BigDecimal figure = ClaimDue.figure(c, person.gradeOn(c.date()), rates, floor, late.rounding());
+            BigDecimal figure = ClaimDue.figure(c, person.gradeOn(c.date()), rates, settings.floor(sheetId, c.date()), late.rounding());
             figured |= figure != null;
             if (figure != null) {
                 total = total.add(late.add(c, figure));
