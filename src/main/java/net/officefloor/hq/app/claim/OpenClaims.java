@@ -10,6 +10,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupBefore;
 import net.officefloor.hq.app.role.RoleRepository;
@@ -21,13 +22,14 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 /**
  * Opens each selected claim that can be opened, in list order (people in the order they were added, a person's
- * claims newest first): as the single open does, it must be a DRAFT not dated inside a closed period, takes its
+ * claims newest first): as the single open does, it must be a DRAFT not dated inside a closed period, nor one with an empty note whose due is above the note threshold
+ * (see ApplyClaimStatus#needsNote), takes its
  * number (see ClaimNumbering) and records who opened it, adds its OPEN line to its status log (see ClaimLog), then writes CLAIM_OPENED and the figures it moved (see Rollup).
  * A user whose role the sheet does not permit to open opens none. Each that cannot, or is not on the sheet, is left as it is and counted refused.
  */
 public class OpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenRequest request, ClaimRepository claims,
-            PersonRepository people, PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, Rollup rollup, Audit audit, ClaimLog log,
+            PersonRepository people, RateRepository rates, PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, Rollup rollup, Audit audit, ClaimLog log,
             Out<BulkOpenResult> result) {
         String sheet = sheetId.trim();
         Set<Long> selected = new HashSet<>(request.claimIds());
@@ -41,12 +43,14 @@ public class OpenClaims {
                 .sorted((a, b) -> Integer.compare(personOrder.getOrDefault(a.personId(), Integer.MAX_VALUE),
                         personOrder.getOrDefault(b.personId(), Integer.MAX_VALUE)))
                 .toList();
+        LateCharge late = LateCharge.of(sheet, sheets, settings, claims);
         int opened = 0;
         if (!settings.permits(sheet, "open", roles.roleOf(sheet, request.by()))) {
             chosen = List.of();
         }
         for (Claim claim : chosen) {
-            if (claim.status() != ClaimStatus.DRAFT || periods.closedOn(sheet, claim.date())) {
+            if (claim.status() != ClaimStatus.DRAFT || periods.closedOn(sheet, claim.date())
+                    || ApplyClaimStatus.needsNote(claim, people, rates, settings, late)) {
                 continue;
             }
             RollupBefore before = rollup.take(sheet);

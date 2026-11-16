@@ -25,6 +25,9 @@ public class SettingRepository {
     /** The due above which a claim needs a proof before it is settled or approved; blank for none. */
     public static final String PROOF_THRESHOLD = "proof-threshold";
 
+    /** The due above which a claim cannot be opened while its note is empty; blank for none. */
+    public static final String NOTE_THRESHOLD = "note-threshold";
+
     /** The least a claim's live due may be; 1.00 until set. */
     public static final String FLOOR = "floor";
 
@@ -120,6 +123,12 @@ public class SettingRepository {
     /** The sheet's proof threshold in force on the date (a claim's date), or null when there is none. */
     public BigDecimal proofThreshold(String sheetId, LocalDate date) {
         String value = value(sheetId, PROOF_THRESHOLD, date);
+        return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The sheet's note threshold in force on the date (a claim's date), or null when there is none. */
+    public BigDecimal noteThreshold(String sheetId, LocalDate date) {
+        String value = value(sheetId, NOTE_THRESHOLD, date);
         return value == null ? null : new BigDecimal(value);
     }
 

@@ -25,6 +25,9 @@ import net.officefloor.plugin.variable.Val;
  * clerk limit, if it has one, makes it PENDING instead (its due left live, not bound by a statement); a due of n/a is
  * within any limit. A steward settles anything. Only a steward approves a PENDING claim (fixing its live figure, late
  * charge included, at that moment) or rejects it (OPEN again, bound again by its statement if one bound it).
+ * A claim whose due (as it shows: its live figure at least the floor, or the figure a statement bound it to) is above
+ * the sheet's note threshold in force on its date (if it has one) cannot be opened while its note is empty; a due of
+ * n/a is within any threshold (see #needsNote).
  * Opening, settling and voiding are each taken only by the roles the sheet's permission allows (see SettingRepository#permits).
  * Only a steward voids a SETTLED claim, and only within 7 days of its settlement (the sheet's today on its status log's
  * latest SETTLED line) by the sheet's today; its frozen figure is kept on it but, VOID, it leaves every total.
@@ -65,6 +68,10 @@ public class ApplyClaimStatus {
         };
         if (permission != null && !settings.permits(claim.sheetId(), permission, role)) {
             throw new InvalidClaimStatusException("A " + role + " may not " + permission + " a claim");
+        }
+        if (change.action() == ClaimAction.OPEN && needsNote(claim, people, rates, settings,
+                LateCharge.of(claim.sheetId(), sheets, settings, claims))) {
+            throw new InvalidClaimStatusException("A claim whose due is above the note threshold needs a note to be opened");
         }
         if ((change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE)
                 && change.by().equals(claim.openedBy())) {
@@ -116,6 +123,22 @@ public class ApplyClaimStatus {
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                 claim.note(), to, claim.number(), settledDue,
                 change.action() == ClaimAction.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom()));
+    }
+
+    /** Whether the claim cannot be opened for want of a note: its note is empty and its due is above the sheet's note
+     *  threshold in force on its date (none: never; a due of n/a: never). */
+    static boolean needsNote(Claim claim, PersonRepository people, RateRepository rates, SettingRepository settings,
+            LateCharge late) {
+        if (claim.note() != null && !claim.note().isBlank()) {
+            return false;
+        }
+        BigDecimal threshold = settings.noteThreshold(claim.sheetId(), claim.date());
+        if (threshold == null) {
+            return false;
+        }
+        BigDecimal due = late.add(claim, due(claim, people, rates, late.rounding()),
+                settings.floor(claim.sheetId(), claim.date()));
+        return due != null && due.compareTo(threshold) > 0;
     }
 
     private static BigDecimal due(Claim claim, PersonRepository people, RateRepository rates, Rounding rounding) {

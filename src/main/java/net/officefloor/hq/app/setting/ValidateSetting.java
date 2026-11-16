@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  decimals; or floor or late-pct, its value such an amount (not blank), all kept with two decimals; or terms, its value a
  *  whole number of days 0 or more (not blank), kept without leading zeros, and so is terms-A, terms-B or terms-C (a
  *  grade's own terms); or grace-days, its value blank (off) or a whole number of days 0 or more (undated); or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today); or
- *  period-numbering-from, its value a date yyyy-MM-dd or blank (off); or cap or proof-threshold, its value blank (none) or
+ *  period-numbering-from, its value a date yyyy-MM-dd or blank (off); or cap, proof-threshold or note-threshold, its value blank (none) or
  *  an amount like the clerk limit; or perm-open, perm-settle, perm-void, perm-reassign, perm-close or perm-reopen, its value
  *  blank (the standing rule) or roles (clerk, steward) separated by commas, kept without spaces or repeats. Every key but policy-date, period-numbering-from, grace-days and the permissions is dated: its from-date is blank (the
  *  sheet's today) or a date yyyy-MM-dd. */
@@ -38,9 +38,10 @@ public class ValidateSetting {
         boolean graceDays = SettingRepository.GRACE_DAYS.equals(k);
         boolean cap = SettingRepository.CAP.equals(k);
         boolean proofThreshold = SettingRepository.PROOF_THRESHOLD.equals(k);
+        boolean noteThreshold = SettingRepository.NOTE_THRESHOLD.equals(k);
         boolean perm = k.startsWith(SettingRepository.PERM_PREFIX)
                 && SettingRepository.PERMISSIONS.containsKey(k.substring(SettingRepository.PERM_PREFIX.length()));
-        if (!perm && !SettingRepository.CLERK_LIMIT.equals(k) && !cap && !proofThreshold && !floor && !terms && !latePct && !policyDate && !numberingFrom && !graceDays) {
+        if (!perm && !SettingRepository.CLERK_LIMIT.equals(k) && !cap && !proofThreshold && !noteThreshold && !floor && !terms && !latePct && !policyDate && !numberingFrom && !graceDays) {
             throw new InvalidSettingException("Unknown setting " + k);
         }
         String value = request == null || request.value() == null ? "" : request.value().trim();
@@ -113,6 +114,7 @@ public class ValidateSetting {
             throw new InvalidSettingException(floor ? "The floor must be an amount with up to two decimals"
                     : cap ? "The cap must be an amount with up to two decimals, or blank"
                     : proofThreshold ? "The proof threshold must be an amount with up to two decimals, or blank"
+                    : noteThreshold ? "The note threshold must be an amount with up to two decimals, or blank"
                     : "The clerk limit must be an amount with up to two decimals, or blank");
         }
         values.set(new SettingValues(k, value.isEmpty() ? null : new BigDecimal(value).setScale(2).toPlainString(),
