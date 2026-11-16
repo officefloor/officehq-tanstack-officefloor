@@ -24,9 +24,9 @@ import net.officefloor.plugin.variable.Val;
  * above the proof threshold in force on its date (its person's grade's on that date when one is set, else the sheet's; if any) cannot be settled nor approved while its proofs
  * count is 0 (checked before the clerk limit, so it never goes PENDING); a due of n/a is within any threshold. A claim whose due-by falls inside a closed
  * period cannot change status, nor can a deferred claim be settled (see ClaimDue#deferred). A clerk (any user not made a steward) settling a claim whose due is above the sheet's
- * clerk limit, if it has one, makes it PENDING instead (its due left live, not bound by a statement); a due of n/a is
- * within any limit. A steward settles anything. Only a steward approves a PENDING claim (fixing its live figure, late
- * charge included, at that moment) or rejects it (OPEN again, bound again by its statement if one bound it).
+ * clerk limit, if it has one, makes it PENDING instead (its due left unfixed, still bound by its statement if one binds it); a due of n/a is
+ * within any limit. A steward settles anything. Only a steward approves a PENDING claim (fixing its figure, live or bound by a statement, late
+ * charge included, at that moment) or rejects it (OPEN again, still bound by its statement if one binds it).
  * A claim whose due (as it shows: its live figure at least the floor, or the figure a statement bound it to) is above
  * the sheet's note threshold in force on its date (if it has one) cannot be opened while its note is empty; a due of
  * n/a is within any threshold (see #needsNote). Nor can a claim be opened when its person already has as many OPEN or PENDING
@@ -191,7 +191,7 @@ public class ApplyClaimStatus {
     }
 
     private static BigDecimal due(Claim claim, PersonRepository people, RateRepository rates, Rounding rounding) {
-        if (claim.stated() && claim.status() != ClaimStatus.PENDING) {
+        if (ClaimDue.bound(claim)) {
             return claim.statedDue();
         }
         Person person = people.find(claim.sheetId(), claim.personId());

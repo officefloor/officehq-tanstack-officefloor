@@ -15,7 +15,7 @@ public final class ClaimDue {
         return isOpen(claim) || claim.status() == ClaimStatus.SETTLED;
     }
 
-    /** Whether a claim is open: OPEN, or PENDING (handled like an OPEN claim but for its statement binding). */
+    /** Whether a claim is open: OPEN, or PENDING (handled like an OPEN claim). */
     public static boolean isOpen(Claim claim) {
         return claim.status() == ClaimStatus.OPEN || claim.status() == ClaimStatus.PENDING;
     }
@@ -66,7 +66,7 @@ public final class ClaimDue {
         return claim.amount().signum() < 0;
     }
 
-    /** The figure the claim shows: fixed when settled, else the one a statement bound it to (never while PENDING),
+    /** The figure the claim shows: fixed when settled, else the one a statement bound it to (PENDING included),
      *  else its live rate figure; null when it has none (n/a). */
     public static BigDecimal figure(Claim claim, String grade, RateRepository rates, Rounding rounding) {
         if (claim.due() != null) {
@@ -80,9 +80,9 @@ public final class ClaimDue {
         return claim.due() != null || (bound(claim) && claim.statedDue() != null);
     }
 
-    /** Whether a statement binds the claim now: it is stated and not PENDING. */
+    /** Whether a statement binds the claim now: it is stated (PENDING included, like any claim that counts). */
     public static boolean bound(Claim claim) {
-        return claim.stated() && claim.status() != ClaimStatus.PENDING;
+        return claim.stated();
     }
 
     /** The status a claim had at the end of a day, as its status log (oldest first) records it: that of the last line

@@ -98,14 +98,14 @@ export function useClaims(sheetId: string) {
 /** An amount ("12.34") in whole cents, so sums are exact. */
 const cents = (amount: string) => Math.round(Number(amount) * 100);
 
-/** Whether a claim is open: OPEN, or PENDING (handled like an OPEN claim but not bound by a statement). */
+/** Whether a claim is open: OPEN, or PENDING (handled like an OPEN claim). */
 export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
 
 /** Whether a claim counts toward claimed and the totals: only OPEN, PENDING and SETTLED claims do, and no deferred one. */
 export const counts = (c: Claim) => (isOpen(c) || c.status === 'SETTLED') && !c.deferred;
 
-/** Whether a statement binds the claim now: it is stated and not PENDING. */
-export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
+/** Whether a statement binds the claim now: it is stated (PENDING included). */
+export const bound = (c: Claim) => c.stated;
 
 /** The claims that count in the live totals (claimed, due-totals, a period's due-total): a person's open (OPEN or
  *  PENDING) claims dated within a hold of theirs, or any once their retirement date is reached on the sheet's today
