@@ -1,0 +1,139 @@
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index b9bceb807..612324dbd 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { live, type Claim } from '../claims/claims';
++import { live, type Claim, type ClaimStatus } from '../claims/claims';
+ import type { Late } from '../overdue/late';
+ import { gradeOn, type Person } from '../people/people';
+ import { claimDue, rateFor, sum, type Rate } from '../rates/rates';
+@@ -36,10 +36,18 @@ export function periodOf(periods: Period[] | undefined, date: string): Period |
+   return periods?.find((p) => p.from <= date && date <= p.to);
+ }
+ 
+-/** A person's due-total for a period: the figures of their claims that count, each with its late charge (a
+- *  person's OPEN claims dated within a hold of theirs, not bound by a statement, do not), whose date falls in it,
+- *  added up (skipping n/a); for a closed period, their figure fixed when it was closed (0.00 for a person added
+- *  after). */
++/** The status a claim had at the end of a day (yyyy-MM-dd), as its status log records it: the last line made on
++ *  or before that day; undefined when the claim was added after it. */
++export function statusAsOf(claim: Claim, day: string): ClaimStatus | undefined {
++  const made = claim.log.filter((l) => l.date <= day);
++  return made.length === 0 ? undefined : made[made.length - 1].status;
++}
++
++/** A person's due-total for a period: the figures (each due as shown now, with its late charge) of their claims
++ *  whose date falls in it and that counted by the status each had at the end of the period's last day (see
++ *  statusAsOf; a claim added after it does not count), the live rules otherwise applying (a deferred claim does
++ *  not count, nor an open claim dated within a hold of its person, not bound by a statement), added up (skipping
++ *  n/a); for a closed period, their figure fixed when it was closed (0.00 for a person added after). */
+ export function personPeriodDue(
+   period: Period,
+   person: Person,
+@@ -49,9 +57,11 @@ export function personPeriodDue(
+   late: Late,
+ ): string {
+   if (period.closed) return period.personTotals?.[String(person.id)] ?? '0.00';
+-  const mine = live((claims ?? []).filter((c) => c.personId === person.id), [person]).filter(
+-    (c) => period.from <= c.date && c.date <= period.to,
+-  );
++  const mine = (claims ?? []).filter((c) => {
++    if (c.personId !== person.id || c.date < period.from || period.to < c.date) return false;
++    const status = statusAsOf(c, period.to);
++    return status !== undefined && live([{ ...c, status }], [person]).length === 1;
++  });
+   return sum(mine.map((c) => claimDue(c, rateFor(rates, gradeOn(person, c.date), c.date), floor, late)));
+ }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java b/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java
+index d67a2fe73..34a78d146 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java
+@@ -76,4 +76,22 @@ public final class ClaimDue {
+     public static boolean bound(Claim claim) {
+         return claim.stated() && claim.status() != ClaimStatus.PENDING;
+     }
++
++    /** The status a claim had at the end of a day, as its status log (oldest first) records it: that of the last line
++     *  made on or before the day; null when the claim was added after it. */
++    public static ClaimStatus statusAsOf(java.util.List<ClaimLogLine> log, java.time.LocalDate day) {
++        ClaimStatus status = null;
++        for (ClaimLogLine line : log) {
++            if (!line.date().isAfter(day)) {
++                status = line.status();
++            }
++        }
++        return status;
++    }
++
++    /** The claim as it would be with another status, all else kept. */
++    public static Claim withStatus(Claim c, ClaimStatus status) {
++        return new Claim(c.id(), c.sheetId(), c.personId(), c.amount(), c.date(), c.note(), status, c.number(), c.due(),
++                c.openedBy(), c.stated(), c.statedDue(), c.corrects(), c.dueBy(), c.deferredUntil(), c.proofs());
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index aebe5ca95..e6d4b9665 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -2,11 +2,15 @@ package net.officefloor.hq.app.period;
+ 
+ import java.math.BigDecimal;
+ import java.util.LinkedHashMap;
++import java.util.List;
+ import java.util.Map;
+ import java.util.stream.Collectors;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimDue;
++import net.officefloor.hq.app.claim.ClaimLogLine;
++import net.officefloor.hq.app.claim.ClaimLogRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.claim.ClaimStatus;
+ import net.officefloor.hq.app.claim.LateCharge;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+@@ -16,13 +20,16 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Closes an open period, fixing its due-total as it is now: the figures of the claims that count (a person's OPEN or PENDING claims dated within a hold of theirs, not bound by a statement, do not, nor do deferred claims) whose date falls
+- *  in it, each with its late charge, added up (skipping n/a). Each person's own due-total for the period is fixed
++/** Closes an open period, fixing its due-total as it is now: the figures (each due as shown now, with its late charge)
++ *  of the claims whose date falls in it and that counted by the status each had at the end of the period's last day,
++ *  as its status log records it (a claim added after it does not count), the live rules otherwise applying (a
++ *  person's OPEN or PENDING claims dated within a hold of theirs, not bound by a statement, do not, nor do deferred
++ *  claims), added up (skipping n/a). Each person's own due-total for the period is fixed
+  *  too, for every person on the sheet; the period's is the sum of theirs. Closing a period already closed is refused. */
+ public class ClosePeriod {
+     public void close(@Val Period period, @Val PeriodCloseRequest request, PeriodRepository periods,
+             ClaimRepository claims, PersonRepository people, RateRepository rates, SettingRepository settings,
+-            SheetRepository sheets,
++            SheetRepository sheets, ClaimLogRepository log,
+             Out<PeriodClose> closed)
+             throws InvalidPeriodException {
+         if (period.closed()) {
+@@ -30,6 +37,7 @@ public class ClosePeriod {
+         }
+         Map<Long, Person> byId = people.list(period.sheetId()).stream()
+                 .collect(Collectors.toMap(Person::id, (p) -> p));
++        Map<Long, List<ClaimLogLine>> logs = log.bySheet(period.sheetId());
+         LateCharge late = LateCharge.of(period.sheetId(), sheets, settings, claims);
+         Map<Long, BigDecimal> perPerson = new LinkedHashMap<>();
+         for (Long id : byId.keySet()) {
+@@ -37,7 +45,12 @@ public class ClosePeriod {
+         }
+         for (Claim c : claims.list(period.sheetId())) {
+             Person person = byId.get(c.personId());
+-            if (!ClaimDue.countsLive(c, person, late.today()) || c.date().isBefore(period.from()) || c.date().isAfter(period.to())) {
++            if (c.date().isBefore(period.from()) || c.date().isAfter(period.to())) {
++                continue;
++            }
++            ClaimStatus status = ClaimDue.statusAsOf(logs.getOrDefault(c.id(), List.of()), period.to());
++            if (status == null || !ClaimDue.countsLive(ClaimDue.withStatus(c, status), person)
++                    || ClaimDue.deferred(c, late.today())) {
+                 continue;
+             }
+             BigDecimal figure = person == null ? c.due() : late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, settings.floor(c.sheetId(), c.date()), late.rounding()));
