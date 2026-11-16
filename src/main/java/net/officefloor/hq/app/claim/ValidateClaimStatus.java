@@ -3,7 +3,8 @@ package net.officefloor.hq.app.claim;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Reads the body: the action is open, settle, approve, reject (which needs a reason), void or resettle. */
+/** Reads the body: the action is open, settle, approve, reject (which needs a reason), void (with the void reason
+ *  chosen, if any) or resettle. */
 public class ValidateClaimStatus {
     public void validate(@RequestBody ClaimStatusRequest request, Out<ClaimStatusChange> change)
             throws InvalidClaimStatusException {
@@ -27,6 +28,6 @@ public class ValidateClaimStatus {
             throw new InvalidClaimStatusException("A rejection needs a reason");
         }
         change.set(new ClaimStatusChange(taken, to, request.by() == null ? "" : request.by().trim(),
-                taken == ClaimAction.REJECT ? reason : ""));
+                taken == ClaimAction.REJECT || taken == ClaimAction.VOID ? reason : ""));
     }
 }

@@ -3,17 +3,18 @@ package net.officefloor.hq.app.claim;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
+import net.officefloor.hq.app.voidreason.VoidReasonRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
  * Stores the new status. Opening gives the claim its number (see ClaimNumbering). A change another user made first (the
  * stored status is no longer the one this change started from) is refused, and the transaction gives back the number.
- * A stored change adds its line to the claim's status log (see ClaimLog).
+ * A void given a reason keeps it (see VoidReasonRepository). A stored change adds its line to the claim's status log (see ClaimLog).
  */
 public class SaveClaimStatus {
     public void save(@Val Claim claim, @Val ClaimStatusChange change, ClaimRepository claims, PeriodRepository periods,
-            SettingRepository settings, SheetRepository sheets, ClaimLog log, Out<Claim> saved,
+            SettingRepository settings, SheetRepository sheets, ClaimLog log, VoidReasonRepository voidReasons, Out<Claim> saved,
             Out<ClaimNumber> number) throws InvalidClaimStatusException {
         Claim toSave = claim;
         if (change.action() == ClaimAction.OPEN) {
@@ -35,6 +36,9 @@ public class SaveClaimStatus {
                         || claims.updateStatus(toSave, ClaimStatus.SETTLED);
         if (!stored) {
             throw new InvalidClaimStatusException("The claim was changed by someone else");
+        }
+        if (change.action() == ClaimAction.VOID && !change.reason().isEmpty()) {
+            voidReasons.voided(toSave.sheetId(), toSave.id(), change.reason());
         }
         log.write(toSave, change.by());
         saved.set(toSave);

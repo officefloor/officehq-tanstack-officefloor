@@ -6,10 +6,12 @@ import { GRADES, gradeOn, usePeople } from '../people/people';
 import { periodDue, usePeriods } from '../periods/periods';
 import { personDue, sum, useRates } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../settings/settings';
+import { useVoidReasons } from '../voidreasons/voidreasons';
 
 /** The sheet's summary, worked out from the same figures the lists show. Per grade: the people on it on the sheet's
  *  today (retired people excluded), their due-totals added up (skipping n/a) and how many of them are active. Per period: its due-total. Per
- *  status: how many of the sheet's claims have it. */
+ *  status: how many of the sheet's claims have it. Per void reason on the sheet's list: how many VOID claims were voided
+ *  with it. */
 function Summary({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
@@ -28,6 +30,7 @@ function Summary({ sheetId }: { sheetId: string }) {
       ),
     );
   const withStatus = useStatusCounts(sheetId);
+  const voidReasons = useVoidReasons(sheetId);
 
   return (
     <section data-testid="summary">
@@ -84,6 +87,22 @@ function Summary({ sheetId }: { sheetId: string }) {
             <tr key={s}>
               <td>{s}</td>
               <td data-testid={`summary-status-${s}-count`}>{withStatus(s)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table data-testid="summary-void-reasons">
+        <thead>
+          <tr>
+            <th>Void reason</th>
+            <th>Claims</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(voidReasons.data ?? []).map((r) => (
+            <tr key={r.reason}>
+              <td>{r.reason}</td>
+              <td data-testid={`summary-void-${r.reason}-count`}>{r.count}</td>
             </tr>
           ))}
         </tbody>

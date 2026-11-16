@@ -9,6 +9,7 @@ import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
+import net.officefloor.hq.app.voidreason.VoidReasonRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
@@ -29,6 +30,7 @@ import net.officefloor.plugin.variable.Val;
  * the sheet's note threshold in force on its date (if it has one) cannot be opened while its note is empty; a due of
  * n/a is within any threshold (see #needsNote).
  * Opening, settling and voiding are each taken only by the roles the sheet's permission allows (see SettingRepository#permits).
+ * While the sheet has void reasons, a void needs one of them (see VoidReasonRepository); a reason not on its list is refused.
  * Only a steward voids a SETTLED claim, and only within 7 days of its settlement (the sheet's today on its status log's
  * latest SETTLED line) by the sheet's today; its frozen figure is kept on it but, VOID, it leaves every total.
  * Only a steward re-settles a SETTLED claim (not one whose due-by falls inside a closed period): its due is fixed again at the figure
@@ -40,7 +42,7 @@ public class ApplyClaimStatus {
     static final int VOID_SETTLED_DAYS = 7;
 
     public void apply(@Val Claim claim, @Val ClaimStatusChange change, PersonRepository people, RateRepository rates,
-            PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, ClaimLog log, Out<Claim> changed, Out<ClaimNumber> number, Out<PreviousDue> previous) throws InvalidClaimStatusException {
+            PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, ClaimLog log, VoidReasonRepository voidReasons, Out<Claim> changed, Out<ClaimNumber> number, Out<PreviousDue> previous) throws InvalidClaimStatusException {
         boolean allowed = switch (change.action()) {
             case OPEN -> claim.status() == ClaimStatus.DRAFT;
             case SETTLE -> claim.status() == ClaimStatus.OPEN;
@@ -68,6 +70,11 @@ public class ApplyClaimStatus {
         };
         if (permission != null && !settings.permits(claim.sheetId(), permission, role)) {
             throw new InvalidClaimStatusException("A " + role + " may not " + permission + " a claim");
+        }
+        if (change.action() == ClaimAction.VOID && !change.reason().isEmpty()
+                ? !voidReasons.has(claim.sheetId(), change.reason())
+                : change.action() == ClaimAction.VOID && voidReasons.any(claim.sheetId())) {
+            throw new InvalidClaimStatusException("A void needs a reason from the sheet's list of void reasons");
         }
         if (change.action() == ClaimAction.OPEN && needsNote(claim, people, rates, settings,
                 LateCharge.of(claim.sheetId(), sheets, settings, claims))) {

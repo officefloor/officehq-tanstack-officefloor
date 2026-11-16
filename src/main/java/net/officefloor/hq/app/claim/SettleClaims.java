@@ -15,6 +15,7 @@ import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupBefore;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
+import net.officefloor.hq.app.voidreason.VoidReasonRepository;
 import net.officefloor.hq.app.watch.WatchRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
@@ -31,7 +32,7 @@ public class SettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId, @Val BulkSettleRequest request, ClaimRepository claims,
             PersonRepository people, RateRepository rates, PeriodRepository periods, SettingRepository settings,
             RoleRepository roles, SheetRepository sheets, WatchRepository watches, Rollup rollup, Audit audit, ClaimLog log,
-            Out<BulkSettleResult> result) {
+            VoidReasonRepository voidReasons, Out<BulkSettleResult> result) {
         String sheet = sheetId.trim();
         Set<Long> selected = new HashSet<>(request.claimIds());
         List<Person> listed = people.list(sheet);
@@ -59,9 +60,9 @@ public class SettleClaims {
             ClaimNumber[] number = new ClaimNumber[1];
             PreviousDue[] previous = new PreviousDue[1];
             try {
-                apply.apply(claim, change, people, rates, periods, settings, roles, sheets, claims, log,
+                apply.apply(claim, change, people, rates, periods, settings, roles, sheets, claims, log, voidReasons,
                         (c) -> changed[0] = c, (n) -> number[0] = n, (p) -> previous[0] = p);
-                save.save(changed[0], change, claims, periods, settings, sheets, log, (c) -> stored[0] = c,
+                save.save(changed[0], change, claims, periods, settings, sheets, log, voidReasons, (c) -> stored[0] = c,
                         (n) -> number[0] = n);
             } catch (InvalidClaimStatusException refused) {
                 continue;

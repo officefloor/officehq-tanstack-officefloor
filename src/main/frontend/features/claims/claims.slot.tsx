@@ -13,6 +13,7 @@ import { useFloor, useLate, type Dated } from '../settings/settings';
 import { claimsKey, live, logLine, total, useClaims, type Claim } from './claims';
 import { useSelectedClaims } from './selection';
 import { useSheetToday } from '../session/session';
+import { useVoidReasons } from '../voidreasons/voidreasons';
 
 type Values = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
 const EMPTY: Values = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
@@ -36,7 +37,7 @@ type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
 /** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, its status log (oldest first), due-by (fixed when it was added), whether it is overdue, whether it is deferred and until when, its proofs count, and the period its due-by falls in, with the buttons that edit it or change its status. A clerk's settle above the clerk limit makes it PENDING; a
  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
- *  shows the claim's error. An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one whose due-by is inside a closed period); a claim with no proofs whose due is above the proof threshold on its date cannot be settled nor approved; a claim with an empty note whose due is above the note threshold on its date cannot be opened (alone or in bulk). A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). A steward re-dates an OPEN or PENDING claim to the date typed beside Re-date (its due-by and any statement figure stay; refused, with the claim's error, for anyone else, any other claim, or a date after the person's retirement). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
+ *  shows the claim's error. An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one whose due-by is inside a closed period); a claim with no proofs whose due is above the proof threshold on its date cannot be settled nor approved; a claim with an empty note whose due is above the note threshold on its date cannot be opened (alone or in bulk). While the sheet has void reasons, Void needs one chosen beside it (refused, with the claim's error, without one). A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). A steward re-dates an OPEN or PENDING claim to the date typed beside Re-date (its due-by and any statement figure stay; refused, with the claim's error, for anyone else, any other claim, or a date after the person's retirement). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
  *  with the claim's error, for anyone else or any other claim). Remind writes a reminder for an OPEN or PENDING claim, once per sheet-today, which becomes its reminded date (refused, with the claim's error, for any other claim or a second reminder that day). Split takes the amount typed beside it off an OPEN claim (not deferred, nor with its due-by inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Only a DRAFT whose due-by is not inside a closed period can be edited: Edit opens the editor and locks the claim for the user until it
  *  is saved or cancelled (Cancel) or the sheet's today changes; Edit on any other claim, on a claim another user holds, or by a
  *  viewer shows the claim's error instead and takes no lock. The row's own amount entry and Save amount change a DRAFT's amount
@@ -70,7 +71,7 @@ function ClaimRow({
       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/status`, {
         action,
         by: user,
-        reason: action === 'reject' ? reason : '',
+        reason: action === 'reject' ? reason : action === 'void' ? voidReason : '',
       }),
     onSuccess: (_, action) => {
       if (action === 'reject') setReason('');
@@ -88,6 +89,8 @@ function ClaimRow({
     },
   });
   const [reason, setReason] = useState('');
+  const voidReasons = useVoidReasons(sheetId);
+  const [voidReason, setVoidReason] = useState('');
   const [deferUntil, setDeferUntil] = useState('');
   const defer = useMutation({
     mutationFn: (until: string) =>
@@ -282,6 +285,22 @@ function ClaimRow({
       <button type="button" data-testid="claim-reject" disabled={status.isPending} onClick={() => act('reject')}>
         Reject
       </button>
+      <select
+        data-testid="claim-void-reason"
+        aria-label="Void reason"
+        value={voidReason}
+        onChange={(e) => {
+          setVoidReason(e.target.value);
+          status.reset();
+        }}
+      >
+        <option value="">(no reason)</option>
+        {(voidReasons.data ?? []).map((r) => (
+          <option key={r.reason} value={r.reason}>
+            {r.reason}
+          </option>
+        ))}
+      </select>
       <button type="button" data-testid="claim-void" disabled={status.isPending} onClick={() => act('void')}>
         Void
       </button>
@@ -469,7 +488,7 @@ function ClaimRow({
           {' '}
           {(c.status === 'OPEN' || c.status === 'PENDING') && c.openedBy === user && status.variables !== 'reject' && status.variables !== 'void' && status.variables !== 'resettle'
             ? 'You opened this claim, so someone else must settle or approve it.'
-            : `A ${c.status} claim cannot be changed that way, nor one whose due-by is inside a closed period, nor a deferred one settled, nor one with no proofs settled or approved when its due is above the proof threshold, nor one with an empty note opened when its due is above the note threshold; only a steward approves or rejects a pending claim or re-settles a settled one, only a steward voids a settled claim and only within 7 days of its settlement, a rejection needs a reason, and only a role the sheet lets open, settle or void a claim may do so.`}
+            : `A ${c.status} claim cannot be changed that way, nor one whose due-by is inside a closed period, nor a deferred one settled, nor one with no proofs settled or approved when its due is above the proof threshold, nor one with an empty note opened when its due is above the note threshold; only a steward approves or rejects a pending claim or re-settles a settled one, only a steward voids a settled claim and only within 7 days of its settlement, a void needs a reason from the sheet's list while it has any, a rejection needs a reason, and only a role the sheet lets open, settle or void a claim may do so.`}
         </span>
       )}
       {reassign.isError && (
