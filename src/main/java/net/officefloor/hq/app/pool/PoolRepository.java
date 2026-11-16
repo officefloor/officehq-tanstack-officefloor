@@ -34,7 +34,8 @@ public class PoolRepository {
     }
 
     /** The sheet's pools in the order added, each with its members in the order added. A retired member's share (one
-     *  with a retirement date, whatever the date) counts as 0.00 toward the total; balanced is a total of exactly 100.00.
+     *  with a retirement date, whatever the date) counts as given toward the total, though they get no cut (see cuts);
+     *  balanced is a total of exactly 100.00.
      *  Each member of a balanced pool has their cut of the pool's pot (see cuts): a pool that is a member of none has the
      *  sheet's pot, a member pool its cut in the pool above (none when that pool has no cuts); with no pot, no one has.
      *  A person with a hold in force on the sheet's today gets no cut (their share still counts toward the total). A
@@ -110,7 +111,7 @@ public class PoolRepository {
         List<PoolMember> in = members.getOrDefault(id, List.of());
         BigDecimal total = new BigDecimal("0.00");
         for (PoolMember m : in) {
-            if (!m.retired() && m.active()) {
+            if (m.active()) {
                 total = total.add(m.share());
             }
         }
@@ -120,11 +121,21 @@ public class PoolRepository {
         return pool;
     }
 
-    /** The members with their cuts of the pot. A retired member, and a person held on the sheet's today, gets 0.00; each
+    /** The members with their cuts of the pot. When every active member is retired, no member has a cut (each null).
+     *  Otherwise a retired member, and a person held on the sheet's today, gets 0.00; each
      *  other member the pot times their share divided by the shares of the members with a cut added up, rounded half to
      *  even to two decimals; the pot less the cuts added up goes to the member with a cut with the largest share, the
      *  earliest added on a tie, so the cuts total exactly the pot (when no member has a cut, each has 0.00). */
     static List<PoolMember> cuts(List<PoolMember> in, BigDecimal pot, Set<Long> held) {
+        boolean allRetired = true;
+        for (PoolMember m : in) {
+            if (m.active() && !m.retired()) {
+                allRetired = false;
+            }
+        }
+        if (allRetired) {
+            return in;
+        }
         BigDecimal shares = new BigDecimal("0.00");
         for (PoolMember m : in) {
             if (hasCut(m, held)) {

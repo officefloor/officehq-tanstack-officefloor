@@ -3,7 +3,8 @@ package net.officefloor.hq.app.pool;
 import java.math.BigDecimal;
 
 /** A member of a pool: a person (personId and name) or another pool (pool, its name; personId null), the share percent,
- *  whether the person is retired (then it counts as 0.00; a pool never is), and the cut of the pool's pot (two
+ *  whether the person is retired (then their share still counts toward the total but they get no cut; a pool never
+ *  is), and the cut of the pool's pot (two
  *  decimals; null when the pool is not balanced or has no pot). A membership may carry a from-date and a to-date
  *  (yyyy-MM-dd, null for none); active is whether they include the sheet's today: an inactive member is left out
  *  entirely (not in the total, no cut). */

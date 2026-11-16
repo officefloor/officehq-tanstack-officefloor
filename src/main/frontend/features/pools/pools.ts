@@ -3,8 +3,8 @@ import { getJson } from '../../api/http';
 import { peopleKey } from '../people/people';
 
 /** A member of a pool: a person (`personId`, `name`) or another pool (`pool`, its name; `personId` null), the `share` percent (two decimals; a JSON number, shown with two), and whether they are `retired` (a retirement
- *  date set, whatever the date): then their share counts as 0.00 toward the pool's total. `cut` is their cut of the sheet's
- *  pool's pot (two decimals, as text; a retired member's 0.00), null when the pool is not balanced or has no pot: a pool that
+ *  date set, whatever the date): then their share still counts toward the pool's total but they get no cut. `cut` is their cut of the sheet's
+ *  pool's pot (two decimals, as text; a retired member's 0.00, or null for everyone when every member is retired), null when the pool is not balanced or has no pot: a pool that
  *  is a member of none has the sheet's pot, a member pool its cut in the pool above. The membership may carry a `from` and a
  *  `to` date (yyyy-MM-dd, null for none); a member not `active` (its dates do not include the sheet's today) is left out
  *  entirely: not in the total, no cut. */
