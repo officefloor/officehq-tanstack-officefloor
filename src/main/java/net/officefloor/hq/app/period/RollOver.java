@@ -31,7 +31,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  year generator does, then adds each person's open figure (a person with none: nothing) at the end of the old year's last period (the
  *  due, as shown now, of their claims that count, due by a day in a period of the old year, whose status at
  *  that period's end was OPEN or PENDING) to their opening balance for the new year's first period, each
- *  recorded as OPENING_SET (only when it made that period), then ROLLOVER; kept as the sheet's last rollover (see UndoRollover). Refused, with nothing written, for anyone but a steward, a year
+ *  recorded as OPENING_SET (only when it made that period), then ROLLOVER, then soft-closes each period of
+ *  the old year still open, in start-date order, as a soft close would (PERIOD_SOFT_CLOSED); kept as the sheet's last rollover (see UndoRollover). Refused, with nothing written, for anyone but a steward, a year
  *  that is not four digits, or a year with no periods. */
 public class RollOver {
     public void rollOver(@PathVariable("sheetId") String sheetId,
@@ -80,6 +81,14 @@ public class RollOver {
         // Kept as the sheet's last rollover, so its steward can undo it on the same sheet-today.
         rollovers.record(id, "FY" + year, user, sheets.today(id), made, set);
         audit.record("ROLLOVER sheet=" + id + " by=" + user + " fy=FY" + year + " periods=" + made.size());
+        // Then every period of the old year still open is soft-closed, in start-date order, as a soft close would.
+        List<Period> stillOpen = old.stream().sorted(java.util.Comparator.comparing(Period::from))
+                .map((p) -> periods.find(id, p.name())).filter((p) -> p != null && !p.fixed()).toList();
+        for (Period p : stillOpen) {
+            Period closed = PeriodClosing.fixNow(p, user, true, periods, claims, log, people, rates, settings, sheets);
+            audit.record("PERIOD_SOFT_CLOSED sheet=" + id + " by=" + user + " period=" + closed.name()
+                    + " total=" + closed.closedTotal());
+        }
         result.set(new GeneratePeriodsResult(made.size()));
     }
 
