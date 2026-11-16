@@ -17,6 +17,13 @@ import net.officefloor.plugin.variable.Val;
 public class ApplyReassign {
     public void apply(@Val Claim claim, @Val ReassignRequest request, PersonRepository people, RoleRepository roles,
             SettingRepository settings,             PeriodRepository periods, Out<ClaimReassignment> reassignment) throws InvalidClaimStatusException {
+        reassignment.set(check(claim, request, people, roles, settings, periods, false));
+    }
+
+    /** The checks of a move; {@code sameAllowed} lets the claim's own person be named (a bulk move keeps it there, listed
+     *  as its newest). */
+    static ClaimReassignment check(Claim claim, ReassignRequest request, PersonRepository people, RoleRepository roles,
+            SettingRepository settings, PeriodRepository periods, boolean sameAllowed) throws InvalidClaimStatusException {
         if (!settings.permits(claim.sheetId(), "reassign", roles.roleOf(claim.sheetId(), request.by()))) {
             throw new InvalidClaimStatusException("The sheet's permission does not let this user move a claim");
         }
@@ -32,12 +39,12 @@ public class ApplyReassign {
         }
         Person from = people.find(claim.sheetId(), claim.personId());
         Person to = people.find(claim.sheetId(), request.personId());
-        if (from == null || to == null || to.id() == from.id()) {
+        if (from == null || to == null || (!sameAllowed && to.id() == from.id())) {
             throw new InvalidClaimStatusException("The claim must move to another person on the sheet");
         }
         if (!to.mayClaimOn(claim.date())) {
             throw new InvalidClaimStatusException("The claim's date is after " + to.name() + "'s retirement");
         }
-        reassignment.set(new ClaimReassignment(from, to, request.by()));
+        return new ClaimReassignment(from, to, request.by());
     }
 }
