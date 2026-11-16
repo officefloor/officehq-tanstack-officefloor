@@ -99,6 +99,6 @@ public final class ClaimDue {
     /** The claim as it would be with another status, all else kept. */
     public static Claim withStatus(Claim c, ClaimStatus status) {
         return new Claim(c.id(), c.sheetId(), c.personId(), c.amount(), c.date(), c.note(), status, c.number(), c.due(),
-                c.openedBy(), c.stated(), c.statedDue(), c.corrects(), c.dueBy(), c.deferredUntil(), c.proofs(), c.splitFrom(), c.ref());
+                c.openedBy(), c.stated(), c.statedDue(), c.corrects(), c.dueBy(), c.deferredUntil(), c.proofs(), c.splitFrom(), c.ref(), c.tags());
     }
 }

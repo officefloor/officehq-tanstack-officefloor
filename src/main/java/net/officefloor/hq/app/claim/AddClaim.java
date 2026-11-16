@@ -19,7 +19,7 @@ public class AddClaim {
         ClaimRules.Checked checked = ClaimRules.check(person, values, settings, periods, claims, holidays);
         LocalDate date = checked.date();
         Claim added = claims.add(person.sheetId(), person.id(), values.amount(), date, values.note(), checked.corrects(),
-                values.ref(), checked.dueBy());
+                values.ref(), values.tags(), checked.dueBy());
         log.write(added, values.by());
         if (periods.softClosedOn(added.sheetId(), checked.dueBy())) {
             claims.markLateEntry(added);

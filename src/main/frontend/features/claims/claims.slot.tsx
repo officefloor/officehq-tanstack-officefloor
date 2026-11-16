@@ -14,8 +14,8 @@ import { claimsKey, live, logLine, total, useClaims, type Claim } from './claims
 import { useSelectedClaims } from './selection';
 import { useSheetToday } from '../session/session';
 
-type Values = { amount: string; date: string; note: string; corrects: string; ref: string };
-const EMPTY: Values = { amount: '', date: '', note: '', corrects: '', ref: '' };
+type Values = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
+const EMPTY: Values = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
 
 function ClaimsHead() {
   return (
@@ -124,7 +124,7 @@ function ClaimRow({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
   const [inlineAmount, setInlineAmount] = useState('');
-  // the row's own amount entry saves through the claim form's edit, keeping the claim's date, note, corrects and reference
+  // the row's own amount entry saves through the claim form's edit, keeping the claim's date, note, corrects, reference and tags
   const inline = useMutation({
     mutationFn: (amount: string) =>
       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}`, {
@@ -133,6 +133,7 @@ function ClaimRow({
         note: c.note,
         corrects: c.corrects ?? '',
         ref: c.ref ?? '',
+        tags: c.tags.join(','),
         by: user,
       }),
     onSuccess: () => {
@@ -184,6 +185,7 @@ function ClaimRow({
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
       <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
+      <span data-testid="claim-tags">{c.tags.join(', ')}</span>{' '}
       <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
       <span data-testid="claim-proofs">{c.proofs}</span>{' '}
@@ -565,7 +567,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
   const openEditor = (c: Claim) => {
     save.reset();
     if (editingId !== undefined && editingId !== c.id) unlock.mutate(editingId);
-    setValues({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '', ref: c.ref ?? '' });
+    setValues({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '', ref: c.ref ?? '', tags: c.tags.join(', ') });
     setEditingId(c.id);
   };
   const cancel = () => {
@@ -615,6 +617,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
             onChange={(e) => change({ corrects: e.target.value })}
           />{' '}
           <input data-testid="claim-form-ref" placeholder="Reference" value={values.ref} onChange={(e) => change({ ref: e.target.value })} />{' '}
+          <input data-testid="claim-form-tags" placeholder="Tags, comma separated" value={values.tags} onChange={(e) => change({ tags: e.target.value })} />{' '}
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
             {editingId === undefined ? 'Add claim' : 'Save claim'}
           </button>

@@ -99,7 +99,7 @@ public class ApplyClaimStatus {
         if (change.action() == ClaimAction.RESETTLE) {
             Claim asOpen = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                     claim.note(), ClaimStatus.OPEN, claim.number(), null, claim.openedBy(), false, null,
-                    claim.corrects(), claim.dueBy(), null, claim.proofs(), claim.splitFrom(), claim.ref());
+                    claim.corrects(), claim.dueBy(), null, claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags());
             settledDue = late.add(asOpen, due(asOpen, people, rates, late.rounding()), settings.floor(claim.sheetId(), claim.date()));
         } else {
             settledDue = to == ClaimStatus.SETTLED ? late.add(claim, due(claim, people, rates, late.rounding()), settings.floor(claim.sheetId(), claim.date())) : claim.due();
@@ -122,7 +122,7 @@ public class ApplyClaimStatus {
         previous.set(new PreviousDue(claim.due(), claim.status()));
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                 claim.note(), to, claim.number(), settledDue,
-                change.action() == ClaimAction.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), claim.ref()));
+                change.action() == ClaimAction.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags()));
     }
 
     /** Whether the claim cannot be opened for want of a note: its note is empty and its due is above the sheet's note

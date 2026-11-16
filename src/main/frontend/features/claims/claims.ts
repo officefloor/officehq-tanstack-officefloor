@@ -49,6 +49,8 @@ export type Claim = {
   reminded: string | null;
   /** Its external reference (surrounding spaces removed; no two claims of a sheet share one, case ignored); null when none. */
   ref: string | null;
+  /** Its tags: each trimmed and in lower case, no repeats, sorted; empty when none. */
+  tags: string[];
 };
 
 /** One line of a claim's status log: the status it took, who made the change, the sheet's today (yyyy-MM-dd) when

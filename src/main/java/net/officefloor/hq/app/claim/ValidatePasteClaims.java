@@ -31,7 +31,7 @@ public class ValidatePasteClaims {
                 note = note.substring(0, hash);
             }
             ClaimRequest claim = new ClaimRequest(fields.length > 1 ? fields[1] : "", fields.length > 2 ? fields[2] : "",
-                    note, "", by, ref);
+                    note, "", by, ref, null);
             lines.add(new PastedLine(name, ClaimValues.from(claim)));
         }
         if (lines.isEmpty()) {

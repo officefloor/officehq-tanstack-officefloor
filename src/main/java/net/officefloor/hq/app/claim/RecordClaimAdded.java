@@ -6,13 +6,14 @@ import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupBefore;
 import net.officefloor.plugin.variable.Val;
 
-/** Writes CLAIM_ADDED to the audit file (with ref=<reference> at its end when the claim has one) once the claim is stored, then LATE_ENTRY for a late entry (see AddClaim). Then writes the
+/** Writes CLAIM_ADDED to the audit file (with ref=<reference> then tags=<tags, sorted, comma separated> at its end when the claim has them) once the claim is stored, then LATE_ENTRY for a late entry (see AddClaim). Then writes the
  * figures the change moved (see Rollup). */
 public class RecordClaimAdded {
     public void record(@Val Claim claim, @Val Person person, @Val ClaimValues values, @Val RollupBefore before, ClaimRepository claims, Rollup rollup, Audit audit) {
         audit.record("CLAIM_ADDED sheet=" + claim.sheetId() + " by=" + values.by() + " person=" + person.name()
                 + " amount=" + claim.amount().toPlainString() + " date=" + claim.date()
-                + (claim.ref() == null ? "" : " ref=" + claim.ref()));
+                + (claim.ref() == null ? "" : " ref=" + claim.ref())
+                + (claim.tags() == null ? "" : " tags=" + claim.tags()));
         if (claims.lateEntry(claim.sheetId(), claim.id())) {
             audit.record("LATE_ENTRY sheet=" + claim.sheetId() + " by=" + values.by() + " person=" + person.name()
                     + " amount=" + claim.amount().toPlainString() + " date=" + claim.date());

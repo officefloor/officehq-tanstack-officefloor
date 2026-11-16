@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import javax.sql.DataSource;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -22,7 +23,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, ref";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, ref, tags";
 
     private final JdbcTemplate jdbc;
     private final DataSource dataSource;
@@ -44,13 +45,13 @@ public class ClaimRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Adds a DRAFT claim; {@code ref} is its external reference (null: none). */
+    /** Adds a DRAFT claim; {@code ref} is its external reference (null: none), {@code tags} its tags as stored (null: none). */
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
-            String ref, LocalDate dueBy) {
+            String ref, String tags, LocalDate dueBy) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, ref_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, ref_key, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -61,11 +62,12 @@ public class ClaimRepository {
             ps.setDate(7, Date.valueOf(dueBy));
             ps.setString(8, ref);
             ps.setString(9, ClaimValues.refKey(ref));
+            ps.setString(10, tags);
             return ps;
         }, keys);
         jdbc.update("UPDATE claim SET listed = (SELECT COALESCE(MAX(c.listed), 0) + 1 FROM claim c WHERE c.sheet_id = ?) WHERE id = ?",
                 sheetId, keys.getKey().longValue());
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects, dueBy, null, 0, null, ref);
+        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects, dueBy, null, 0, null, ref, tags);
     }
 
     /** Whether a claim of the sheet other than {@code self} (null: none) has the reference, comparing without regard to case. */
@@ -85,13 +87,13 @@ public class ClaimRepository {
      *  holds its lock; false otherwise (nothing is written). The values it had are kept with {@code today}, the sheet's
      *  today, so the claim can be shown as it stood before (see editedAfter). */
     public boolean update(Claim claim, String by, LocalDate today) {
-        jdbc.update("INSERT INTO claim_edit (sheet_id, claim_id, amount, claim_date, note, corrects, ref, made_on) "
-                + "SELECT sheet_id, id, amount, claim_date, note, corrects, ref, ? FROM claim WHERE sheet_id = ? AND id = ? AND status = ? "
+        jdbc.update("INSERT INTO claim_edit (sheet_id, claim_id, amount, claim_date, note, corrects, ref, tags, made_on) "
+                + "SELECT sheet_id, id, amount, claim_date, note, corrects, ref, tags, ? FROM claim WHERE sheet_id = ? AND id = ? AND status = ? "
                 + "AND (locked_by IS NULL OR locked_by = ?)",
                 Date.valueOf(today), claim.sheetId(), claim.id(), ClaimStatus.DRAFT.name(), by);
-        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, ref_key = ?, locked_by = NULL WHERE sheet_id = ? AND id = ? AND status = ? "
+        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, ref_key = ?, tags = ?, locked_by = NULL WHERE sheet_id = ? AND id = ? AND status = ? "
                 + "AND (locked_by IS NULL OR locked_by = ?)",
-                claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.corrects(), claim.ref(), ClaimValues.refKey(claim.ref()), claim.sheetId(), claim.id(),
+                claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.corrects(), claim.ref(), ClaimValues.refKey(claim.ref()), claim.tags(), claim.sheetId(), claim.id(),
                 ClaimStatus.DRAFT.name(), by) == 1;
     }
 
@@ -232,14 +234,24 @@ public class ClaimRepository {
      *  before its first such edit, by claim id: the claim as it stood at the end of the date. */
     public Map<Long, Claim> editedAfter(String sheetId, LocalDate date) {
         Map<Long, Claim> out = new HashMap<>();
-        jdbc.query("SELECT claim_id, amount, claim_date, note, corrects, ref FROM claim_edit WHERE sheet_id = ? AND made_on > ? ORDER BY id",
+        jdbc.query("SELECT claim_id, amount, claim_date, note, corrects, ref, tags FROM claim_edit WHERE sheet_id = ? AND made_on > ? ORDER BY id",
                 (rs) -> {
                     out.putIfAbsent(rs.getLong("claim_id"), new Claim(rs.getLong("claim_id"), sheetId, 0,
                             rs.getBigDecimal("amount").setScale(2), rs.getObject("claim_date", LocalDate.class),
                             rs.getString("note"), null, null, null, null, false, null, rs.getString("corrects"), null,
-                            null, 0, null, rs.getString("ref")));
+                            null, 0, null, rs.getString("ref"), rs.getString("tags")));
                 }, sheetId, Date.valueOf(date));
         return out;
+    }
+
+    /** Every tag ever used on the sheet, sorted: those its claims carry and those they carried before an edit. */
+    public List<String> tagsUsed(String sheetId) {
+        Set<String> out = new TreeSet<>();
+        for (String tags : jdbc.queryForList("SELECT tags FROM claim WHERE sheet_id = ? AND tags IS NOT NULL "
+                + "UNION SELECT tags FROM claim_edit WHERE sheet_id = ? AND tags IS NOT NULL", String.class, sheetId, sheetId)) {
+            out.addAll(List.of(tags.split(",")));
+        }
+        return List.copyOf(out);
     }
 
     /** Unbinds every claim of the person bound by their last statement (live again). */
@@ -321,6 +333,6 @@ public class ClaimRepository {
                 rs.getString("claim_number"), due == null ? null : due.setScale(2),
                 rs.getString("opened_by"), rs.getBoolean("stated"), statedDue == null ? null : statedDue.setScale(2),
                 rs.getString("corrects"), rs.getObject("due_by", LocalDate.class),
-                rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"), rs.getString("split_from"), rs.getString("ref"));
+                rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"), rs.getString("split_from"), rs.getString("ref"), rs.getString("tags"));
     }
 }
