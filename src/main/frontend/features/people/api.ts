@@ -247,3 +247,13 @@ export type BulkRetireResult = { retired: number };
 export function bulkRetirePeople(sheetId: string, by: string, personIds: number[], from: string): Promise<BulkRetireResult> {
   return postJson<BulkRetireResult>(`/api/sheets/${encodeURIComponent(sheetId)}/bulk-retire?by=${encodeURIComponent(by)}`, { personIds, from });
 }
+
+/** How many of the selected people a bulk hold held. */
+export type BulkHoldResult = { held: number };
+
+/** Add a hold on the selected people together from `from` (blank: the sheet's today) to `to` (blank:
+ *  open-ended), in list order, each as the row's hold; refused (rejects) with no one selected, a date
+ *  not a date, or a to-date before the from-date. */
+export function bulkHoldPeople(sheetId: string, by: string, personIds: number[], from: string, to: string): Promise<BulkHoldResult> {
+  return postJson<BulkHoldResult>(`/api/sheets/${encodeURIComponent(sheetId)}/bulk-hold?by=${encodeURIComponent(by)}`, { personIds, from, to });
+}

@@ -22,6 +22,7 @@ import { crewsKey, listCrews, type Crew } from '../crews/api';
 import { useSheetToday } from '../sheet/api';
 import { BulkGrade } from './BulkGrade';
 import { BulkRetire } from './BulkRetire';
+import { BulkHold } from './BulkHold';
 import { ExportClaims, ExportPeople, ExportPeriods, ExportStatement } from './ExportPeople';
 import { ImportPeople } from './ImportPeople';
 import { QuickAdd } from './QuickAdd';
@@ -572,6 +573,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
       <BulkOpen sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
       <BulkGrade sheetId={sheetId} user={user} selected={[...selectedPeople]} onDone={() => setSelectedPeople(new Set())} />
       <BulkRetire sheetId={sheetId} user={user} selected={[...selectedPeople]} onDone={() => setSelectedPeople(new Set())} />
+      <BulkHold sheetId={sheetId} user={user} selected={[...selectedPeople]} onDone={() => setSelectedPeople(new Set())} />
       <BulkSettle sheetId={sheetId} user={user} selected={[...selected]} onDone={() => setSelected(new Set())} />
       <BulkReassign sheetId={sheetId} user={user} selected={[...selected]} people={everyone}
         onDone={() => setSelected(new Set())} />
