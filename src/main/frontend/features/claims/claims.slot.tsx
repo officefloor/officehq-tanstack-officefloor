@@ -19,6 +19,75 @@ function ClaimsHead() {
   );
 }
 
+type Action = 'open' | 'settle' | 'void';
+
+/** One claim: its values, status and due, with the buttons that edit it or change its status. An action
+ *  the status does not allow is refused by the server and shows the claim's error. */
+function ClaimRow({
+  sheetId,
+  user,
+  claim: c,
+  rate,
+  editing,
+  onEdit,
+  onCancel,
+}: {
+  sheetId: string;
+  user: string;
+  claim: Claim;
+  rate: string | undefined;
+  editing: boolean;
+  onEdit: () => void;
+  onCancel: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const status = useMutation({
+    mutationFn: (action: Action) =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/status`, { action, by: user }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
+  const act = (action: Action) => {
+    status.reset();
+    status.mutate(action);
+  };
+
+  return (
+    <li data-testid={`claim-row-${c.id}`}>
+      <span data-testid="claim-amount">{c.amount}</span> <span data-testid="claim-date">{c.date}</span>{' '}
+      <span data-testid="claim-note">{c.note}</span>{' '}
+      <span data-testid="claim-due">{due(c.amount, rate)}</span>{' '}
+      <span data-testid="claim-status">{c.status}</span>{' '}
+      <button
+        type="button"
+        data-testid="claim-edit"
+        onClick={() => {
+          status.reset();
+          onEdit();
+        }}
+      >
+        Edit
+      </button>
+      {editing && (
+        <button type="button" data-testid="claim-cancel" onClick={onCancel}>
+          Cancel
+        </button>
+      )}{' '}
+      <button type="button" data-testid="claim-open" disabled={status.isPending} onClick={() => act('open')}>
+        Open
+      </button>
+      <button type="button" data-testid="claim-settle" disabled={status.isPending} onClick={() => act('settle')}>
+        Settle
+      </button>
+      <button type="button" data-testid="claim-void" disabled={status.isPending} onClick={() => act('void')}>
+        Void
+      </button>
+      {status.isError && (
+        <span data-testid="claim-error"> A {c.status} claim cannot be changed that way.</span>
+      )}
+    </li>
+  );
+}
+
 /** A person's claimed, and their claims (newest first) with the form that adds one or saves the one
  *  being edited. A blank date takes the sheet's today (the server applies it). */
 function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
@@ -89,19 +158,16 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
         </form>
         <ul data-testid="claim-list">
           {mine.map((c) => (
-            <li key={c.id} data-testid={`claim-row-${c.id}`}>
-              <span data-testid="claim-amount">{c.amount}</span> <span data-testid="claim-date">{c.date}</span>{' '}
-              <span data-testid="claim-note">{c.note}</span>{' '}
-              <span data-testid="claim-due">{due(c.amount, rate)}</span>{' '}
-              <button type="button" data-testid="claim-edit" onClick={() => openEditor(c)}>
-                Edit
-              </button>
-              {editingId === c.id && (
-                <button type="button" data-testid="claim-cancel" onClick={cancel}>
-                  Cancel
-                </button>
-              )}
-            </li>
+            <ClaimRow
+              key={c.id}
+              sheetId={sheetId}
+              user={user}
+              claim={c}
+              rate={rate}
+              editing={editingId === c.id}
+              onEdit={() => openEditor(c)}
+              onCancel={cancel}
+            />
           ))}
         </ul>
       </td>
@@ -109,7 +175,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
   );
 }
 
-/** The sheet's claimed-total: everyone's claimed added up. */
+/** The sheet's claimed-total: everyone's claimed (OPEN and SETTLED claims) added up. */
 function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId);
   return (
