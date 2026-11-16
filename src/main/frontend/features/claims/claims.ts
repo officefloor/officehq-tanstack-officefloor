@@ -114,6 +114,12 @@ export function live(claims: Claim[], people: Person[] | undefined, today: strin
   });
 }
 
+/** A person's or the sheet's claimed: the amounts of the claims that count added up, leaving out corrections
+ *  (claims that correct another), shown with two decimals. */
+export function claimed(claims: Claim[]): string {
+  return total(claims.filter((c) => !c.corrects));
+}
+
 /** The amounts of the claims that count added up, shown with two decimals. */
 export function total(claims: Claim[]): string {
   return (claims.filter(counts).reduce((sum, c) => sum + cents(c.amount), 0) / 100).toFixed(2);

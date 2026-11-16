@@ -11,7 +11,7 @@ import { useDelegations } from '../delegation/delegation';
 import { claimDue, rateFor, useRates } from '../rates/rates';
 import { dueBy, isOverdue } from '../overdue/overdue';
 import { useFloor, useLate, type Dated } from '../settings/settings';
-import { claimsKey, commentLine, lineLine, live, logLine, total, useClaims, type Claim } from './claims';
+import { claimsKey, commentLine, lineLine, live, logLine, claimed, useClaims, type Claim } from './claims';
 import { useSelectedClaims } from './selection';
 import { useSheetToday } from '../session/session';
 import { useVoidReasons } from '../voidreasons/voidreasons';
@@ -804,7 +804,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
 
   return (
     <>
-      <td data-testid="person-claimed">{total(live(mine, [person], today))}</td>
+      <td data-testid="person-claimed">{claimed(live(mine, [person], today))}</td>
       <td>
         <form
           data-testid="claim-form"
@@ -892,14 +892,14 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
   );
 }
 
-/** The sheet's claimed-total: everyone's claimed (OPEN, PENDING and SETTLED claims, but no OPEN or PENDING ones dated within a hold of their person, or of one whose retirement date is reached, and not bound by a statement) added up. */
+/** The sheet's claimed-total: everyone's claimed (OPEN, PENDING and SETTLED claims that correct no other, but no OPEN or PENDING ones dated within a hold of their person, or of one whose retirement date is reached, and not bound by a statement) added up. */
 function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
   const today = useSheetToday(sheetId);
   return (
     <p>
-      Claimed total <span data-testid="rollup-claimed-total">{total(live(claims.data ?? [], people.data, today))}</span>
+      Claimed total <span data-testid="rollup-claimed-total">{claimed(live(claims.data ?? [], people.data, today))}</span>
       {claims.isError && <span data-testid="claims-load-error"> Could not load claims.</span>}
     </p>
   );
