@@ -1,0 +1,237 @@
+diff --git a/src/main/frontend/features/rates/api.ts b/src/main/frontend/features/rates/api.ts
+index 00de75721..90d0bde4d 100644
+--- a/src/main/frontend/features/rates/api.ts
++++ b/src/main/frontend/features/rates/api.ts
+@@ -1,5 +1,5 @@
+ import { getJson, postJson } from '../../api/http';
+-import { counts, isBound, isCorrection, isOpen, isOverdue, type Claim } from '../claims/api';
++import { counts, isBound, isCorrection, isOpen, isOverdue, type Claim, type ClaimShare } from '../claims/api';
+ import { sheetKey } from '../sheet/api';
+ import type { DatedOn } from '../settings/api';
+ 
+@@ -151,41 +151,70 @@ export function claimDue(c: Claim, rates: Rate[] | undefined, gradeOn: GradeOn,
+ /** A product of hundredths and a percent's hundredths (in 1/1_000_000) to cents, half up (away
+  *  from zero) when `halfUp`, else half to even (symmetric about zero). */
+ function roundPct(product: bigint, halfUp: boolean): bigint {
+-  if (product < 0n) return -roundPct(-product, halfUp);
+-  const whole = product / 10_000n;
+-  const rest = product % 10_000n;
+-  return rest > 5_000n || (rest === 5_000n && (halfUp || whole % 2n === 1n)) ? whole + 1n : whole;
++  return roundBy(product, 10_000n, halfUp);
+ }
+ 
+-/** A holder's part of a claim's due: the due times their share divided by 100, rounded half to even. */
++/** `value` divided by `by`, rounded half up (away from zero) when `halfUp`, else half to even (symmetric about zero). */
++function roundBy(value: bigint, by: bigint, halfUp: boolean): bigint {
++  if (value < 0n) return -roundBy(-value, by, halfUp);
++  const whole = value / by;
++  const rest = (value % by) * 2n;
++  return rest > by || (rest === by && (halfUp || whole % 2n === 1n)) ? whole + 1n : whole;
++}
++
++/** A holder's frozen part of a SETTLED claim's due: the due times their share divided by 100, rounded half to even. */
+ export function sharePart(due: string, share: string): string {
+   return formatCents(roundPct(hundredths(due) * hundredths(share), false));
+ }
+ 
+-/** What a claim's due counts for its own person: the due less its holders' parts (n/a stays n/a). */
+-export function ownPart(c: Claim, due: string | null): string | null {
+-  if (due === null || (c.shares ?? []).length === 0) return due;
+-  return formatCents((c.shares ?? []).reduce((t, s) => t - hundredths(sharePart(due, s.share)), hundredths(due)));
++/** A holder's part of a live claim: its amount times their share divided by 100, times the rate of the holder's own
++ *  grade in force on the claim's date (`pct`) divided by 100, rounded like the claim (half up when `halfUp`, else half
++ *  to even); 0.00 when their grade has no rate. Exact: worked in whole hundredths. */
++export function holderPart(amount: string, share: string, pct: string | undefined, halfUp: boolean): string {
++  if (pct === undefined) return '0.00';
++  // amount (1/100) x share (1/100) x pct (1/100) / 10_000 is in 1/100_000_000 of a cent's worth; to cents is / 100_000_000.
++  return formatCents(roundBy(hundredths(amount) * hundredths(share) * hundredths(pct), 100_000_000n, halfUp));
+ }
+ 
+-/** A part of another person's claim a person holds (see `Claim.shares`). */
+-export type HeldPart = { claim: Claim; part: string };
+-
+-/** The parts a person (`personId`) holds of the claims among `claims` (the live ones) that count, each by the
+- *  claim's due as its own person's row shows it (`dueOfClaim`); n/a ones skipped. */
+-export function heldParts(personId: number, claims: Claim[], dueOfClaim: (c: Claim) => string | null): HeldPart[] {
++/** The rate of a holder's own grade in force on a live claim's date (undefined: none; see `holderPart`). */
++export type HolderPct = (c: Claim, s: ClaimShare) => string | undefined;
++
++/** A part of a claim a person holds of another's claim (see `Claim.shares`), or, `given`, the part (negative) a
++ *  holder takes of the person's own claim. */
++export type HeldPart = { claim: Claim; part: string; given?: boolean };
++
++/** The parts a person (`personId`) holds of the claims among `claims` (the live ones) that count, and (`given`,
++ *  negative) the parts others hold of theirs: a SETTLED claim's frozen with its due (`dueOfClaim`, n/a ones skipped),
++ *  a live one's by the holder's own grade's rate (`holderPct`; one whose grade has none holds nothing). A claim
++ *  whose due is n/a gives nothing away from its own person. */
++export function heldParts(personId: number, claims: Claim[], dueOfClaim: (c: Claim) => string | null,
++  holderPct: HolderPct, late: Late): HeldPart[] {
++  const partOf = (c: Claim, s: ClaimShare): string | null => {
++    if (c.settledDue !== null) return sharePart(c.settledDue, s.share);
++    const pct = holderPct(c, s);
++    return pct === undefined ? null : holderPart(c.amount, s.share, pct, roundsHalfUp(c, late));
++  };
+   const held: HeldPart[] = [];
+   for (const c of claims) {
+-    const share = counts(c) ? (c.shares ?? []).find((s) => s.personId === personId) : undefined;
+-    const due = share === undefined ? null : dueOfClaim(c);
+-    if (share !== undefined && due !== null) held.push({ claim: c, part: sharePart(due, share.share) });
++    if (!counts(c)) continue;
++    if (c.personId === personId) {
++      if ((c.shares ?? []).length === 0 || dueOfClaim(c) === null) continue;
++      for (const s of c.shares ?? []) {
++        const part = partOf(c, s);
++        if (part !== null) held.push({ claim: c, part: formatCents(-hundredths(part)), given: true });
++      }
++      continue;
++    }
++    const share = (c.shares ?? []).find((s) => s.personId === personId);
++    const part = share === undefined ? null : partOf(c, share);
++    if (part !== null) held.push({ claim: c, part });
+   }
+   return held;
+ }
+ 
+ /** A person's due-total: the sum of their counting claims' due figures (n/a ones skipped; a shared one less its
+- *  holders' parts) and the parts they hold of others' (`held`), at most `cap` (the sheet's cap less the person's cut total, see `capLessCuts`; null: no cap); n/a
+- *  when their grade today has no rate today (`pct`), they hold no part, and none of those claims keeps a settled or bound
++ *  holders' parts, given in `held`) and the parts they hold of others' (`held`, see `heldParts`), at most `cap` (the sheet's cap less the person's cut total, see `capLessCuts`; null: no cap); n/a
++ *  when their grade today has no rate today (`pct`), they hold no part of another's claim, and none of those claims keeps a settled or bound
+  *  figure, or a live one at a grade no longer in force on the sheet's today or dated on or before it
+  *  (its rate since ended). */
+ export function personDue(claims: Claim[], rates: Rate[] | undefined, gradeOn: GradeOn, pct: string | undefined,
+@@ -194,8 +223,8 @@ export function personDue(claims: Claim[], rates: Rate[] | undefined, gradeOn: G
+   const now = gradeOn(late.today);
+   const kept = (c: Claim) => c.settledDue !== null || isBound(c)
+     || ((gradeOn(c.date) !== now || c.date <= late.today) && rateOn(rates, gradeOn(c.date), c.date, c.id) !== undefined);
+-  if (pct === undefined && !own.some(kept) && held.length === 0) return null;
+-  const sum = sumDues([...own.map((c) => ownPart(c, claimDue(c, rates, gradeOn, floor, late))), ...held.map((h) => h.part)]);
++  if (pct === undefined && !own.some(kept) && !held.some((h) => !h.given)) return null;
++  const sum = sumDues([...own.map((c) => claimDue(c, rates, gradeOn, floor, late)), ...held.map((h) => h.part)]);
+   return cap !== null && hundredths(sum) > hundredths(cap) ? formatCents(hundredths(cap)) : sum;
+ }
+ 
+@@ -210,10 +239,10 @@ export function excessOf(claims: Claim[], rates: Rate[] | undefined, gradeOn: Gr
+ 
+ /** A person's due split by status among their claims that count (`claims`, the live ones): settled (their SETTLED
+  *  claims, at their frozen figures, corrections included) and open (their OPEN and PENDING ones); n/a ones skipped;
+- *  a shared claim less its holders' parts, and the parts they hold of others' (`held`) by those claims' status.
++ *  a shared claim less its holders' parts, and the parts they hold of others' (both in `held`, see `heldParts`) by those claims' status.
+  *  The two add up to their due-total before the cap. */
+ export function splitDues(claims: Claim[], dueOfClaim: (c: Claim) => string | null, held: HeldPart[] = []) {
+-  const own = (c: Claim) => ownPart(c, dueOfClaim(c));
++  const own = dueOfClaim;
+   return {
+     settled: sumDues([...claims.filter((c) => c.status === 'SETTLED').map(own),
+       ...held.filter((h) => h.claim.status === 'SETTLED').map((h) => h.part)]),
+diff --git a/src/main/frontend/features/rates/shares.ts b/src/main/frontend/features/rates/shares.ts
+index ba63eb2f3..2e2ca4598 100644
+--- a/src/main/frontend/features/rates/shares.ts
++++ b/src/main/frontend/features/rates/shares.ts
+@@ -1,15 +1,19 @@
+ import { liveClaims, type Claim } from '../claims/api';
+ import { gradeOn, type Person } from '../people/api';
+ import type { DatedOn } from '../settings/api';
+-import { claimDue, heldParts, type HeldPart, type Late, type Rate } from './api';
++import { claimDue, heldParts, rateOn, type HeldPart, type Late, type Rate } from './api';
+ 
+-/** The parts a person holds of the sheet's live claims (`claims`: all of them; `people`: everyone), each by the
+- *  claim's due as its own person's row shows it. */
++/** The parts a person holds of the sheet's live claims (`claims`: all of them; `people`: everyone), and those others
++ *  hold of theirs (see `heldParts`): a live claim's by the rate of the holder's own grade in force on its date, a
++ *  settled one's frozen with the due its own person's row shows. */
+ export function heldOf(personId: number, claims: Claim[], people: Person[] | undefined, rates: Rate[] | undefined,
+   floor: DatedOn, late: Late): HeldPart[] {
+   const byId = new Map((people ?? []).map((p) => [p.id, p]));
+   return heldParts(personId, liveClaims(claims, people), (c) => {
+     const owner = byId.get(c.personId);
+     return owner ? claimDue(c, rates, (d) => gradeOn(owner, d), floor, late) : null;
+-  });
++  }, (c, s) => {
++    const holder = byId.get(s.personId);
++    return holder ? rateOn(rates, gradeOn(holder, c.date), c.date, c.id) : undefined;
++  }, late);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimShare.java b/src/main/java/net/officefloor/hq/app/claim/ClaimShare.java
+index 4f40974c5..6695a365f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimShare.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimShare.java
+@@ -7,9 +7,18 @@ import java.math.RoundingMode;
+  *  (two decimals, as text). */
+ public record ClaimShare(long personId, String name, String share) {
+ 
+-    /** The holder's part of the claim's due: the due times their share divided by 100, rounded half to even
++    /** The holder's frozen part of a settled claim's due: the due times their share divided by 100, rounded half to even
+      *  to two decimals. */
+     public BigDecimal partOf(BigDecimal due) {
+         return due.multiply(new BigDecimal(share)).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN);
+     }
++
++    /** A holder's part of a live claim: the claim's amount times their share divided by 100, times the rate
++     *  of their own grade ({@code pct}; null: none, the part is 0.00) divided by 100, rounded ({@code rounding})
++     *  to two decimals like the claim. */
++    public static BigDecimal partOf(String amount, String share, String pct, RoundingMode rounding) {
++        if (pct == null) return BigDecimal.ZERO.setScale(2);
++        return new BigDecimal(amount).multiply(new BigDecimal(share)).multiply(new BigDecimal(pct))
++                .divide(BigDecimal.valueOf(10000), 2, rounding);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 4b275f40d..1939222f7 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -26,7 +26,9 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+  *  sheet's claimed-total, due-total and overdue-total (these two leave out the single highest and
+  *  lowest person's figure when three or more people have one), with the sheet's alert threshold
+  *  (null: off). A shared claim's due counts toward each holder's due-total (and settled figures) by their part
+- *  (see {@link ClaimShare#partOf}), its own person's by the rest. */
++ *  (see {@link ClaimShare#partOf(String, String, String, java.math.RoundingMode)}: by the rate of the holder's own
++ *  grade in force on the claim's date; a settled claim's parts stay frozen as its fixed due times their share),
++ *  its own person's by the rest. */
+ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueTotal, String overdueTotal,
+         BigDecimal alertThreshold) {
+ 
+@@ -58,6 +60,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+         List<BigDecimal> dues = new ArrayList<>();
+         List<BigDecimal> overdues = new ArrayList<>();
+         List<Person> listed = people.list(sheetId);
++        Map<Long, Person> byId = new java.util.HashMap<>();
++        for (Person p : listed) byId.put(p.getId(), p);
+         // The parts of shared claims' dues each holder holds (and of those, of SETTLED claims, corrections left out).
+         Map<Long, BigDecimal> heldDue = new java.util.HashMap<>();
+         Map<Long, BigDecimal> heldSettled = new java.util.HashMap<>();
+@@ -82,15 +86,26 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+                 kept |= c.getSettledDue() != null || c.isBound()
+                         || (pct != null && (!grade.equals(p.getGrade()) || c.getDate().compareTo(today) <= 0));
+                 boolean settles = !corrects(c) && ClaimStatus.SETTLED.name().equals(c.getStatus());
+-                if (d != null) {
+-                    BigDecimal full = new BigDecimal(d);
+-                    BigDecimal net = full;
+-                    for (ClaimShare share : c.getShares()) {
+-                        BigDecimal part = share.partOf(full);
+-                        net = net.subtract(part);
+-                        heldDue.merge(share.personId(), part, BigDecimal::add);
+-                        if (settles) heldSettled.merge(share.personId(), part, BigDecimal::add);
++                BigDecimal net = d == null ? null : new BigDecimal(d);
++                for (ClaimShare share : c.getShares()) {
++                    BigDecimal part;
++                    if (c.getSettledDue() != null) {
++                        // A settled claim keeps its parts as frozen with its due.
++                        part = share.partOf(new BigDecimal(c.getSettledDue()));
++                    } else {
++                        Person holder = byId.get(share.personId());
++                        Rate held = holder == null ? null : RateRepository.inForce(sheetRates,
++                                holder.gradeOn(c.getDate()), c.getDate(), c.getId());
++                        part = ClaimShare.partOf(c.getAmount(), share.share(), held == null ? null : held.pct(),
++                                late.rounding(c.getRoundDate()));
++                        // A holder whose grade has no rate holds 0.00, which leaves them n/a.
++                        if (held == null) continue;
+                     }
++                    if (net != null) net = net.subtract(part);
++                    heldDue.merge(share.personId(), part, BigDecimal::add);
++                    if (settles) heldSettled.merge(share.personId(), part, BigDecimal::add);
++                }
++                if (net != null) {
+                     due = due.add(net);
+                     if (settles) settled = settled.add(net);
+                 }
