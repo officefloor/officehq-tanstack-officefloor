@@ -11,7 +11,7 @@ export function roundsHalfUp(claim: Claim, late: Late | undefined): boolean {
 }
 
 /** Days since 1970-01-01 of a yyyy-MM-dd date. */
-function day(date: string): number {
+export function day(date: string): number {
   const [y, m, d] = date.split('-').map(Number);
   return Date.UTC(y, m - 1, d) / 86_400_000;
 }
