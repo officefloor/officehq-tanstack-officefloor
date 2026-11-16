@@ -1,0 +1,117 @@
+diff --git a/src/main/frontend/features/classic/classic.slot.tsx b/src/main/frontend/features/classic/classic.slot.tsx
+new file mode 100644
+index 000000000..1551a6e7e
+--- /dev/null
++++ b/src/main/frontend/features/classic/classic.slot.tsx
+@@ -0,0 +1,49 @@
++import { SheetPage } from '../../slots/defs/sheetPage';
++import { useClaims } from '../claims/claims';
++import { useSheetDueSum } from '../header/totals';
++import { usePeople } from '../people/people';
++import { classicPeriodDue, usePeriods } from '../periods/periods';
++import { useRates } from '../rates/rates';
++import { useFloor, useLate } from '../settings/settings';
++
++/** The classic summary, shown beside the summary. Per period: its due-total counting each claim by its status now
++ *  (OPEN, SETTLED and PENDING count; a closed period shows the figure fixed when it closed). And the sheet's
++ *  due-total with no trimming: everyone's due-total added up. */
++function ClassicSummary({ sheetId }: { sheetId: string }) {
++  const people = usePeople(sheetId);
++  const claims = useClaims(sheetId);
++  const periods = usePeriods(sheetId);
++  const rates = useRates(sheetId);
++  const late = useLate(sheetId);
++  const floor = useFloor(sheetId);
++  const dueTotal = useSheetDueSum(sheetId);
++
++  return (
++    <section data-testid="classic-summary">
++      <h3>Classic summary</h3>
++      <table data-testid="classic-periods">
++        <thead>
++          <tr>
++            <th>Period</th>
++            <th>Due total</th>
++          </tr>
++        </thead>
++        <tbody>
++          {(periods.data ?? []).map((p) => (
++            <tr key={p.id}>
++              <td>{p.name}</td>
++              <td data-testid={`classic-period-${p.name}-due-total`}>
++                {classicPeriodDue(p, claims.data, people.data, rates.data, floor, late)}
++              </td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++      <p>
++        Due total: <span data-testid="classic-due-total">{dueTotal}</span>
++      </p>
++    </section>
++  );
++}
++
++export const contribution = SheetPage.fill({ order: 40.5, Component: ClassicSummary });
+diff --git a/src/main/frontend/features/header/totals.ts b/src/main/frontend/features/header/totals.ts
+index d41227862..16ba6b559 100644
+--- a/src/main/frontend/features/header/totals.ts
++++ b/src/main/frontend/features/header/totals.ts
+@@ -26,6 +26,12 @@ export function useSheetDueTotal(sheetId: string): string {
+   );
+ }
+ 
++/** The sheet's classic due-total: everyone's due-total added up, skipping n/a, with no trimming. */
++export function useSheetDueSum(sheetId: string): string {
++  const due = usePeopleDue(sheetId);
++  return sum([...due.values()]);
++}
++
+ /** Each person's due-total as their row shows it (two decimals, or n/a), by person id. */
+ export function usePeopleDue(sheetId: string): Map<number, string> {
+   const people = usePeople(sheetId);
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index c07bc9c1d..cb8738d16 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -60,7 +60,8 @@ export function statusAsOf(claim: Claim, day: string): ClaimStatus | undefined {
+  *  statusAsOf; a claim added after it does not count), the live rules otherwise applying (a deferred claim does
+  *  not count, nor a claim open now dated within a hold of its person, or of a person whose retirement date is reached,
+  *  not bound by a statement), added up (skipping
+- *  n/a); for a closed or soft-closed period, their figure fixed when it was (soft-)closed (0.00 for a person added after). */
++ *  n/a); for a closed or soft-closed period, their figure fixed when it was (soft-)closed (0.00 for a person added after).
++ *  With `statusNow`, each claim counts by its status now instead (the classic summary). */
+ export function personPeriodDue(
+   period: Period,
+   person: Person,
+@@ -68,11 +69,12 @@ export function personPeriodDue(
+   rates: Rate[] | undefined,
+   floor: Dated,
+   late: Late,
++  statusNow = false,
+ ): string {
+   if (period.closed || period.soft) return period.personTotals?.[String(person.id)] ?? '0.00';
+   const mine = (claims ?? []).filter((c) => {
+     if (c.personId !== person.id || c.dueBy < period.from || period.to < c.dueBy) return false;
+-    const status = statusAsOf(c, period.to);
++    const status = statusNow ? c.status : statusAsOf(c, period.to);
+     return status !== undefined && counts({ ...c, status }) && !(isOpen(c) && !bound(c) && (heldOn(person, c.date) || retiredOn(person, late.today)));
+   });
+   return sum(mine.map((c) => claimDue(c, rateFor(rates, gradeOn(person, c.date), c.date), floor, late)));
+@@ -89,3 +91,16 @@ export function periodDue(
+ ): string {
+   return sum((people ?? []).map((person) => personPeriodDue(period, person, claims, rates, floor, late)));
+ }
++
++/** A period's classic due-total: as periodDue, but counting each claim by its status now (a closed or soft-closed
++ *  period still shows the figures fixed when it was closed). */
++export function classicPeriodDue(
++  period: Period,
++  claims: Claim[] | undefined,
++  people: Person[] | undefined,
++  rates: Rate[] | undefined,
++  floor: Dated,
++  late: Late,
++): string {
++  return sum((people ?? []).map((person) => personPeriodDue(period, person, claims, rates, floor, late, true)));
++}
