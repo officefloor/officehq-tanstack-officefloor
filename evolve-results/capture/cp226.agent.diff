@@ -1,0 +1,272 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index fa667ef12..8902cbedf 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -7,9 +7,9 @@ export class HttpError extends Error {
+   }
+ }
+ 
+-/** The date the screen shows the sheet as of ('': as it is now), from the URL (`asof`). */
+-function asOf(): string {
+-  const raw = new URLSearchParams(window.location.search).get('asof') ?? '';
++/** A value the screen keeps in the URL under `key` ('': none). */
++function dateParam(key: string): string {
++  const raw = new URLSearchParams(window.location.search).get(key) ?? '';
+   try {
+     const parsed: unknown = JSON.parse(raw);
+     return typeof parsed === 'string' ? parsed : raw;
+@@ -18,16 +18,28 @@ function asOf(): string {
+   }
+ }
+ 
+-/** While the screen shows the sheet as of a date, every request about it says so: the server answers
+- *  a read as the sheet stood then and refuses every change. */
+-function withAsOf(path: string, live: boolean): string {
+-  const date = live ? '' : asOf();
+-  if (date === '' || !path.startsWith('/api/sheets/')) return path;
+-  return `${path}${path.includes('?') ? '&' : '?'}shown-asof=${encodeURIComponent(date)}`;
++/** While the screen shows the sheet as of a date (`asof`), every request about it says so: the server
++ *  answers a read as the sheet stood then and refuses every change. Otherwise, while the screen previews
++ *  a date (`preview`), every read says so: the server answers it from the sheet's current records with
++ *  that date as its today; a change is sent as it is, so it goes by the sheet's real today. */
++function withAsOf(path: string, live: boolean, read: boolean): string {
++  if (live || !path.startsWith('/api/sheets/')) return path;
++  const sep = path.includes('?') ? '&' : '?';
++  const date = dateParam('asof');
++  if (date !== '') return `${path}${sep}shown-asof=${encodeURIComponent(date)}`;
++  // The preview is the signed-in user's: one left in the URL by someone signed in before is not theirs.
++  const preview = dateParam('preview-by') === dateParam('user') ? dateParam('preview') : '';
++  if (preview !== '' && read) return `${path}${sep}shown-preview=${encodeURIComponent(preview)}`;
++  return path;
++}
++
++/** A read: any GET, and loading the sheet. */
++function isRead(path: string, init?: RequestInit): boolean {
++  return (init?.method ?? 'GET') === 'GET' || /^\/api\/sheets\/[^/?]+\/open(\?|$)/.test(path);
+ }
+ 
+ async function send<T>(path: string, init?: RequestInit, live = false): Promise<T> {
+-  const res = await fetch(withAsOf(path, live), init);
++  const res = await fetch(withAsOf(path, live, isRead(path, init)), init);
+   if (!res.ok) {
+     throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);
+   }
+diff --git a/src/main/frontend/features/sheet/ActiveSheet.tsx b/src/main/frontend/features/sheet/ActiveSheet.tsx
+index 4f128c1d6..fbb63bcae 100644
+--- a/src/main/frontend/features/sheet/ActiveSheet.tsx
++++ b/src/main/frontend/features/sheet/ActiveSheet.tsx
+@@ -9,6 +9,7 @@ import { useSheetId, useUser } from '../session/session';
+ import { openSheet, sheetKey } from './api';
+ import { SheetToday } from './SheetToday';
+ import { AsOf } from './AsOf';
++import { Preview } from './Preview';
+ 
+ /** The loaded sheet: its id, then everything kept on it (the sheet.body region). It shows once its
+  *  people, claims and notes are read too, and the user's role and the crews (which decide who has a row),
+@@ -61,6 +62,7 @@ export function ActiveSheet() {
+       </h2>
+       <SheetToday key={sheet.data.id} sheet={sheet.data} user={user} />
+       <AsOf />
++      <Preview />
+       <SheetBody.Slot sheetId={sheet.data.id} user={user} />
+     </section>
+   );
+diff --git a/src/main/frontend/features/sheet/Preview.tsx b/src/main/frontend/features/sheet/Preview.tsx
+new file mode 100644
+index 000000000..8adae3db7
+--- /dev/null
++++ b/src/main/frontend/features/sheet/Preview.tsx
+@@ -0,0 +1,56 @@
++import { useState } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { useUser } from '../session/session';
++
++/** The date this user's screen previews as the sheet's today ('': none). It lives in the URL (`preview`,
++ *  with `preview-by` naming whose it is), so it belongs to this screen and its signed-in user alone, and
++ *  every read about the sheet carries it (api/http). */
++export function usePreview(): [string, (value: string) => Promise<void>] {
++  const [user] = useUser();
++  const [preview, setPreview] = useSearchParam('preview', asString);
++  const [by, setBy] = useSearchParam('preview-by', asString);
++  const set = async (value: string) => {
++    await setBy(value === '' ? undefined : user);
++    await setPreview(value);
++  };
++  return [by === user ? preview : '', set];
++}
++
++/** Set or clear the preview date. While it is set every figure on the screen is shown as if the sheet's
++ *  today were that date, over the sheet's current records; every change still goes by its real today. */
++export function Preview() {
++  const queryClient = useQueryClient();
++  const [preview, setPreview] = usePreview();
++  const [date, setDate] = useState('');
++
++  // Everything on screen is re-read once the URL carries the new date.
++  const show = async (value: string) => {
++    await setPreview(value);
++    await queryClient.resetQueries();
++  };
++
++  return (
++    <form
++      onSubmit={(e) => {
++        e.preventDefault();
++        const value = date.trim();
++        if (value !== '') void show(value);
++      }}
++    >
++      Preview <span data-testid="sheet-preview">{preview}</span>{' '}
++      <input
++        type="date"
++        data-testid="preview-date"
++        value={date}
++        onChange={(e) => setDate(e.target.value)}
++      />{' '}
++      <button type="submit" data-testid="preview-set">
++        Preview date
++      </button>{' '}
++      <button type="button" data-testid="preview-clear" onClick={() => void show('')}>
++        Clear preview
++      </button>
++    </form>
++  );
++}
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfFilter.java b/src/main/java/net/officefloor/hq/app/asof/AsOfFilter.java
+index 5a9b325e0..681dd33b3 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfFilter.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfFilter.java
+@@ -40,12 +40,16 @@ public class AsOfFilter extends OncePerRequestFilter {
+             throws ServletException, IOException {
+         String asOf = request.getParameter("shown-asof");
+         Matcher sheet = SHEET.matcher(request.getRequestURI().substring(request.getContextPath().length()));
+-        if (asOf == null || asOf.isBlank() || !sheet.matches()) {
++        if (!sheet.matches()) {
+             chain.doFilter(request, response);
+             return;
+         }
+         boolean read = "GET".equals(request.getMethod())
+                 || ("POST".equals(request.getMethod()) && "/open".equals(sheet.group(2)));
++        if (asOf == null || asOf.isBlank()) {
++            preview(request, response, chain, sheet, read);
++            return;
++        }
+         if (!read) {
+             refuse(response, HttpStatus.FORBIDDEN, "The sheet is shown as of a date: nothing can be changed");
+             return;
+@@ -67,6 +71,39 @@ public class AsOfFilter extends OncePerRequestFilter {
+         }
+     }
+ 
++    /**
++     * A read carrying {@code shown-preview=<yyyy-MM-dd>} comes from a screen previewing that date: it is
++     * answered from what the sheet holds now with the date as its today. A change is never previewed: it
++     * goes by the sheet's real today. The view is thrown away after, so nothing a read does stays.
++     */
++    private void preview(HttpServletRequest request, HttpServletResponse response, FilterChain chain, Matcher sheet,
++            boolean read) throws ServletException, IOException {
++        String preview = request.getParameter("shown-preview");
++        if (!read || preview == null || preview.isBlank()) {
++            chain.doFilter(request, response);
++            return;
++        }
++        LocalDate date;
++        try {
++            date = LocalDate.parse(preview.trim());
++        } catch (DateTimeParseException e) {
++            refuse(response, HttpStatus.BAD_REQUEST, "Not a date: " + preview);
++            return;
++        }
++        String schema = store.preview(UriUtils.decode(sheet.group(1), StandardCharsets.UTF_8).trim(), date);
++        if (schema == null) {
++            chain.doFilter(request, response);
++            return;
++        }
++        AsOfView.enter(schema);
++        try {
++            chain.doFilter(request, response);
++        } finally {
++            AsOfView.leave();
++            store.drop(schema);
++        }
++    }
++
+     private static void refuse(HttpServletResponse response, HttpStatus status, String message) throws IOException {
+         response.setStatus(status.value());
+         response.setContentType("text/plain;charset=UTF-8");
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java b/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java
+index 961cdc05b..b5c9e8d82 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfStore.java
+@@ -74,15 +74,26 @@ public class AsOfStore {
+     }
+ 
+     /** A new schema holding the sheet as of the date, with the date as its today. */
+-    public synchronized String view(String sheetId, LocalDate asOf) {
+-        String schema = "ASOF_" + views.incrementAndGet();
++    public String view(String sheetId, LocalDate asOf) {
++        return view(sheetId, asOf, false);
++    }
++
++    /** A new schema holding what the sheet holds now, with the date as its today (a preview of that
++     *  date over its current records); null when the sheet was never loaded. */
++    public String preview(String sheetId, LocalDate date) {
++        return view(sheetId, date, true);
++    }
++
++    private synchronized String view(String sheetId, LocalDate asOf, boolean preview) {
++        String schema = (preview ? "PREVIEW_" : "ASOF_") + views.incrementAndGet();
+         try (Connection c = dataSource.getConnection()) {
+             c.setAutoCommit(true);
+             String[] sheet = liveSheet(c, sheetId);
++            if (preview && sheet == null) return null;
+             String source;
+             // The day the source was taken on: its SNAPSHOT lines for that day were written as it was left.
+             LocalDate leftFrom = asOf;
+-            if (sheet != null && !LocalDate.parse(sheet[1]).isAfter(asOf)) {
++            if (preview || (sheet != null && !LocalDate.parse(sheet[1]).isAfter(asOf))) {
+                 source = LIVE;
+             } else {
+                 source = null;
+@@ -160,11 +171,14 @@ public class AsOfStore {
+                 }
+             }
+             // A SNAPSHOT is written when its day is left: as of that day (or before) it was not there yet.
+-            try (PreparedStatement ps = c.prepareStatement(
+-                    "DELETE FROM " + q(schema) + ".PERSON_SNAPSHOT WHERE SHEET_ID = ? AND DAY_LEFT >= ?")) {
+-                ps.setString(1, sheetId);
+-                ps.setObject(2, leftFrom);
+-                ps.executeUpdate();
++            // A preview keeps every record the sheet holds now.
++            if (!preview) {
++                try (PreparedStatement ps = c.prepareStatement(
++                        "DELETE FROM " + q(schema) + ".PERSON_SNAPSHOT WHERE SHEET_ID = ? AND DAY_LEFT >= ?")) {
++                    ps.setString(1, sheetId);
++                    ps.setObject(2, leftFrom);
++                    ps.executeUpdate();
++                }
+             }
+             try (PreparedStatement ps = c.prepareStatement(
+                     "UPDATE " + q(schema) + ".SHEET SET TODAY = ? WHERE ID = ?")) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/TakeStatement.java b/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
+index 623223dbf..67eaae546 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
+@@ -94,7 +94,15 @@ public class TakeStatement {
+         }
+         boolean na = RateRepository.inForce(sheetRates, then.getGrade(), on.toString()) == null && !kept;
+         if (cap != null && total.compareTo(cap) > 0) total = cap.setScale(2);
+-        person.stated(na ? null : total.toPlainString(), on.toString(), figures.size());
++        String stated = na ? null : total.toPlainString();
++        if (asof == null || asof.isBlank()) {
++            // Taken now, it records the due-total their row shows: their parts of others' shared claims
++            // count, and the parts others hold of theirs do not.
++            Rollup.Figures now = Rollup.of(sheetId, people, claims, rates, sheets, settings, pools).people()
++                    .get(person.getId());
++            if (now != null) stated = now.dueTotal();
++        }
++        person.stated(stated, on.toString(), figures.size());
+         people.updateStatements(person);
+     }
+ }
