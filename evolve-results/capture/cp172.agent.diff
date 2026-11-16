@@ -1,0 +1,104 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index faf765ff6..4f29defde 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -98,14 +98,14 @@ export function useClaims(sheetId: string) {
+ /** An amount ("12.34") in whole cents, so sums are exact. */
+ const cents = (amount: string) => Math.round(Number(amount) * 100);
+ 
+-/** Whether a claim is open: OPEN, or PENDING (handled like an OPEN claim but not bound by a statement). */
++/** Whether a claim is open: OPEN, or PENDING (handled like an OPEN claim). */
+ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
+ 
+ /** Whether a claim counts toward claimed and the totals: only OPEN, PENDING and SETTLED claims do, and no deferred one. */
+ export const counts = (c: Claim) => (isOpen(c) || c.status === 'SETTLED') && !c.deferred;
+ 
+-/** Whether a statement binds the claim now: it is stated and not PENDING. */
+-export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
++/** Whether a statement binds the claim now: it is stated (PENDING included). */
++export const bound = (c: Claim) => c.stated;
+ 
+ /** The claims that count in the live totals (claimed, due-totals, a period's due-total): a person's open (OPEN or
+  *  PENDING) claims dated within a hold of theirs, or any once their retirement date is reached on the sheet's today
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 834036888..df8f973f5 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -122,7 +122,7 @@ function percentOf(value: string, pct: string, times: number, halfUp: boolean):
+   return p < 0n ? -r : r;
+ }
+ 
+-/** A claim's due: the figure fixed when it was settled, otherwise the one its person's last statement bound it to (never while PENDING),
++/** A claim's due: the figure fixed when it was settled, otherwise the one its person's last statement bound it to (PENDING included),
+  *  otherwise its amount at the rate in force on its date. Given the sheet's late charge, an overdue claim's figure gains,
+  *  for every full 30 days overdue, the late percent in force on that boundary (its due-by plus 30, 60, 90 ... days) of
+  *  it plus the charges of the boundaries before it (compounding), each rounded like the claim and added up (never bound by a statement; frozen in when settled). Last, the live
+@@ -131,7 +131,7 @@ function percentOf(value: string, pct: string, times: number, halfUp: boolean):
+ export function claimDue(claim: Claim, rate: string | undefined, floor: Dated, late?: Late): string {
+   if (claim.due !== null) return claim.due;
+   const halfUp = roundsHalfUp(claim, late);
+-  const figure = claim.stated && claim.status !== 'PENDING' ? (claim.statedDue ?? 'n/a') : due(claim.amount, rate, halfUp);
++  const figure = claim.stated ? (claim.statedDue ?? 'n/a') : due(claim.amount, rate, halfUp);
+   if (figure === 'n/a') return figure;
+   const boundaries = late === undefined ? [] : lateBoundaries(claim, late);
+   const charged = boundaries.reduce((t, b) => t + percentOf(shown(t), late!.pct(b), 1, halfUp), hundredths(figure));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 4e1855f7f..b333567dc 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -24,9 +24,9 @@ import net.officefloor.plugin.variable.Val;
+  * above the proof threshold in force on its date (its person's grade's on that date when one is set, else the sheet's; if any) cannot be settled nor approved while its proofs
+  * count is 0 (checked before the clerk limit, so it never goes PENDING); a due of n/a is within any threshold. A claim whose due-by falls inside a closed
+  * period cannot change status, nor can a deferred claim be settled (see ClaimDue#deferred). A clerk (any user not made a steward) settling a claim whose due is above the sheet's
+- * clerk limit, if it has one, makes it PENDING instead (its due left live, not bound by a statement); a due of n/a is
+- * within any limit. A steward settles anything. Only a steward approves a PENDING claim (fixing its live figure, late
+- * charge included, at that moment) or rejects it (OPEN again, bound again by its statement if one bound it).
++ * clerk limit, if it has one, makes it PENDING instead (its due left unfixed, still bound by its statement if one binds it); a due of n/a is
++ * within any limit. A steward settles anything. Only a steward approves a PENDING claim (fixing its figure, live or bound by a statement, late
++ * charge included, at that moment) or rejects it (OPEN again, still bound by its statement if one binds it).
+  * A claim whose due (as it shows: its live figure at least the floor, or the figure a statement bound it to) is above
+  * the sheet's note threshold in force on its date (if it has one) cannot be opened while its note is empty; a due of
+  * n/a is within any threshold (see #needsNote). Nor can a claim be opened when its person already has as many OPEN or PENDING
+@@ -191,7 +191,7 @@ public class ApplyClaimStatus {
+     }
+ 
+     private static BigDecimal due(Claim claim, PersonRepository people, RateRepository rates, Rounding rounding) {
+-        if (claim.stated() && claim.status() != ClaimStatus.PENDING) {
++        if (ClaimDue.bound(claim)) {
+             return claim.statedDue();
+         }
+         Person person = people.find(claim.sheetId(), claim.personId());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java b/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java
+index be33218b2..1fc61894c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java
+@@ -15,7 +15,7 @@ public final class ClaimDue {
+         return isOpen(claim) || claim.status() == ClaimStatus.SETTLED;
+     }
+ 
+-    /** Whether a claim is open: OPEN, or PENDING (handled like an OPEN claim but for its statement binding). */
++    /** Whether a claim is open: OPEN, or PENDING (handled like an OPEN claim). */
+     public static boolean isOpen(Claim claim) {
+         return claim.status() == ClaimStatus.OPEN || claim.status() == ClaimStatus.PENDING;
+     }
+@@ -66,7 +66,7 @@ public final class ClaimDue {
+         return claim.amount().signum() < 0;
+     }
+ 
+-    /** The figure the claim shows: fixed when settled, else the one a statement bound it to (never while PENDING),
++    /** The figure the claim shows: fixed when settled, else the one a statement bound it to (PENDING included),
+      *  else its live rate figure; null when it has none (n/a). */
+     public static BigDecimal figure(Claim claim, String grade, RateRepository rates, Rounding rounding) {
+         if (claim.due() != null) {
+@@ -80,9 +80,9 @@ public final class ClaimDue {
+         return claim.due() != null || (bound(claim) && claim.statedDue() != null);
+     }
+ 
+-    /** Whether a statement binds the claim now: it is stated and not PENDING. */
++    /** Whether a statement binds the claim now: it is stated (PENDING included, like any claim that counts). */
+     public static boolean bound(Claim claim) {
+-        return claim.stated() && claim.status() != ClaimStatus.PENDING;
++        return claim.stated();
+     }
+ 
+     /** The status a claim had at the end of a day, as its status log (oldest first) records it: that of the last line
