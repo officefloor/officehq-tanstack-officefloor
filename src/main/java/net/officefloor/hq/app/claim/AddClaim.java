@@ -15,15 +15,9 @@ import net.officefloor.plugin.variable.Val;
 public class AddClaim {
     public void add(@Val Person person, @Val ClaimValues values, SheetRepository sheets, ClaimRepository claims,
             PeriodRepository periods, SettingRepository settings, ClaimLog log, Out<Claim> claim) throws InvalidClaimException {
-        LocalDate date = values.date() != null ? values.date() : sheets.today(person.sheetId());
-        if (periods.closedOn(person.sheetId(), date)) {
-            throw new InvalidClaimException("The claim's date is inside a closed period");
-        }
-        if (!person.mayClaimOn(date)) {
-            throw new InvalidClaimException("The claim's date is after the person's retirement date");
-        }
-        Claim added = claims.add(person.sheetId(), person.id(), values.amount(), date, values.note(),
-                Corrections.check(person.sheetId(), person.id(), values, claims),
+        ClaimRules.Checked checked = ClaimRules.check(person, values, sheets, periods, claims);
+        LocalDate date = checked.date();
+        Claim added = claims.add(person.sheetId(), person.id(), values.amount(), date, values.note(), checked.corrects(),
                 date.plusDays(settings.terms(person.sheetId(), person.gradeOn(date), date)));
         log.write(added, values.by());
         claim.set(added);
