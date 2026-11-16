@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due";
 
     private final JdbcTemplate jdbc;
     private final DataSource dataSource;
@@ -52,7 +52,7 @@ public class ClaimRepository {
             ps.setString(5, note);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
+        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null);
     }
 
     public void update(Claim claim) {
@@ -67,6 +67,12 @@ public class ClaimRepository {
     public boolean updateStatus(Claim claim, ClaimStatus from) {
         return jdbc.update("UPDATE claim SET status = ?, claim_number = ?, due = ?, opened_by = ? WHERE sheet_id = ? AND id = ? AND status = ?",
                 claim.status().name(), claim.number(), claim.due(), claim.openedBy(), claim.sheetId(), claim.id(), from.name()) == 1;
+    }
+
+    /** Binds the claim to a statement figure (null: it had none), or unbinds it when {@code stated} is false. */
+    public void bind(Claim claim, boolean stated, BigDecimal statedDue) {
+        jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet_id = ? AND id = ?",
+                stated, stated ? statedDue : null, claim.sheetId(), claim.id());
     }
 
     /**
@@ -100,10 +106,11 @@ public class ClaimRepository {
 
     private static Claim map(ResultSet rs, int n) throws SQLException {
         BigDecimal due = rs.getBigDecimal("due");
+        BigDecimal statedDue = rs.getBigDecimal("stated_due");
         return new Claim(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
                 rs.getBigDecimal("amount").setScale(2), rs.getObject("claim_date", LocalDate.class),
                 rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
                 rs.getObject("claim_number", Long.class), due == null ? null : due.setScale(2),
-                rs.getString("opened_by"));
+                rs.getString("opened_by"), rs.getBoolean("stated"), statedDue == null ? null : statedDue.setScale(2));
     }
 }

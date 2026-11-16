@@ -14,7 +14,7 @@ public class SaveClaimStatus {
         if (claim.status() == ClaimStatus.OPEN) {
             long next = claims.nextNumber(claim.sheetId());
             toSave = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
-                    claim.note(), claim.status(), next, claim.due(), claim.openedBy());
+                    claim.note(), claim.status(), next, claim.due(), claim.openedBy(), claim.stated(), claim.statedDue());
             number.set(new ClaimNumber(next));
         }
         ClaimStatus from = switch (claim.status()) {
