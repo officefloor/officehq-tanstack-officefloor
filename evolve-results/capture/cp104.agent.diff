@@ -1,0 +1,95 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 5eb2a9910..4e40146b4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -190,6 +190,12 @@ public class ClaimRepository {
+                 to, claim.sheetId(), claim.sheetId(), claim.id(), from) == 1;
+     }
+ 
++    /** Stores the number a moved claim receives in place of its old one (see SaveReassign). */
++    public void renumber(Claim claim, String number) {
++        jdbc.update("UPDATE claim SET claim_number = ? WHERE sheet_id = ? AND id = ?", number, claim.sheetId(),
++                claim.id());
++    }
++
+     /** Stores the claim's new date and number, but only while it is still OPEN or PENDING and dated {@code was}; false
+      *  when another change got there first (nothing is written). */
+     public boolean redate(Claim claim, LocalDate was) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java b/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java
+index aefec9600..cacab87f3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java
+@@ -13,6 +13,7 @@ import net.officefloor.hq.app.role.RoleRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.rollup.RollupBefore;
+ import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+@@ -27,7 +28,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ public class ReassignClaims {
+     public void reassign(@PathVariable("sheetId") String sheetId, @Val BulkReassignRequest request,
+             ClaimRepository claims, PersonRepository people, RoleRepository roles, SettingRepository settings,
+-            PeriodRepository periods, Rollup rollup, Audit audit, Out<BulkReassignResult> result) {
++            PeriodRepository periods, SheetRepository sheets, Rollup rollup, Audit audit, Out<BulkReassignResult> result) {
+         String sheet = sheetId.trim();
+         Set<Long> selected = new HashSet<>(request.claimIds());
+         List<Person> listed = people.list(sheet);
+@@ -53,7 +54,7 @@ public class ReassignClaims {
+             ClaimReassignment reassignment;
+             try {
+                 reassignment = ApplyReassign.check(claim, move, people, roles, settings, periods, true);
+-                save.save(claim, reassignment, claims, (c) -> stored[0] = c);
++                save.save(claim, reassignment, claims, periods, settings, sheets, (c) -> stored[0] = c);
+             } catch (InvalidClaimStatusException refused) {
+                 continue;
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveReassign.java b/src/main/java/net/officefloor/hq/app/claim/SaveReassign.java
+index 546e4da56..5e0f63dc0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveReassign.java
+@@ -1,19 +1,29 @@
+ package net.officefloor.hq.app.claim;
+ 
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+- * Stores the move: the claim keeps its number and date, loses any figure a statement bound it to (its due is live
++ * Stores the move: the claim keeps its date and, when it has a number, receives the next one in the sequence it would
++ * be numbered in now (see ClaimNumbering; its old number is never used again — a draft gets none), loses any figure a statement bound it to (its due is live
+  * again until its new person's next statement) and is listed as its new person's newest claim. A change another user
+  * made first (the claim moved or its status changed) is refused.
+  */
+ public class SaveReassign {
+-    public void save(@Val Claim claim, @Val ClaimReassignment reassignment, ClaimRepository claims, Out<Claim> saved)
++    public void save(@Val Claim claim, @Val ClaimReassignment reassignment, ClaimRepository claims,
++            PeriodRepository periods, SettingRepository settings, SheetRepository sheets, Out<Claim> saved)
+             throws InvalidClaimStatusException {
+         if (!claims.reassign(claim, reassignment.from().id(), reassignment.to().id())) {
+             throw new InvalidClaimStatusException("The claim was changed by someone else");
+         }
+-        saved.set(claims.find(claim.sheetId(), claim.id()));
++        Claim moved = claims.find(claim.sheetId(), claim.id());
++        if (moved.number() != null) {
++            claims.renumber(moved, ClaimNumbering.next(moved, claims, periods, settings, sheets));
++            moved = claims.find(claim.sheetId(), claim.id());
++        }
++        saved.set(moved);
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
+index 50aeaae2c..99448ff16 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
+@@ -1,5 +1,5 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/person — move a DRAFT, OPEN or PENDING claim to another person on the
+-# sheet, by a steward. The claim keeps its number and date, loses any figure a statement bound it to, and is listed as
++# sheet, by a steward. The claim keeps its date, takes the next number in its sequence (a draft none), loses any figure a statement bound it to, and is listed as
+ # its new person's newest claim. A clerk, a SETTLED or VOID claim, a correction, a claim whose due-by falls inside a closed period,
+ # a move to its own person, to no person on the sheet or to one retired before its date, is a 409 and a claim not on
+ # the sheet a 404, neither writing anything. Responds with the claim as stored.
