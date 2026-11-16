@@ -4,10 +4,70 @@ import { HttpError, postJson, putJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
+import { claimsKey, type Claim } from '../claims/claims';
 import { GRADES, peopleKey, useEditingPerson, usePeople, type Person } from './people';
 
 type Values = { name: string; grade: string };
 const EMPTY: Values = { name: '', grade: 'A' };
+
+type Quick = { name: string; amount: string };
+const NO_QUICK: Quick = { name: '', amount: '' };
+
+/** The quick-add bar: a DRAFT claim of the amount, dated the sheet's today with an empty note, for the person with the
+ *  name (case and outer spaces ignored); a name not on the sheet adds the person, grade A, first. The server does it as
+ *  one change, so a refused claim adds no person. */
+function QuickAdd({ sheetId, user }: { sheetId: string; user: string }) {
+  const queryClient = useQueryClient();
+  const [values, setValues] = useState<Quick>(NO_QUICK);
+  const submit = useSubmitOnce();
+  const add = useMutation({
+    mutationFn: (v: Quick) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/quick-add`, { ...v, by: user }),
+    onSuccess: () => {
+      setValues(NO_QUICK);
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onSettled: submit.end,
+  });
+  const change = (v: Partial<Quick>) => {
+    setValues((was) => ({ ...was, ...v }));
+    add.reset();
+  };
+
+  return (
+    <form
+      data-testid="quick-add"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!submit.begin()) return;
+        add.reset();
+        add.mutate(values);
+      }}
+    >
+      Quick add{' '}
+      <input data-testid="quick-name" placeholder="Name" value={values.name} onChange={(e) => change({ name: e.target.value })} />{' '}
+      <input
+        data-testid="quick-amount"
+        placeholder="Amount"
+        inputMode="decimal"
+        value={values.amount}
+        onChange={(e) => change({ amount: e.target.value })}
+      />{' '}
+      <button type="submit" data-testid="quick-submit" disabled={add.isPending}>
+        Add draft claim
+      </button>
+      {add.isError && (
+        <span data-testid="quick-error">
+          {' '}
+          {values.name.trim() === ''
+            ? 'A name is required.'
+            : 'The amount must be 0.00 or more, with up to two decimals, and today not inside a closed period.'}
+        </span>
+      )}
+    </form>
+  );
+}
 
 /** The sheet's people: a form that adds a person or saves the one being edited, and the list. The editor
  *  remembers the version of the person it loaded; a save refused because someone else saved the person since
@@ -108,6 +168,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
           </span>
         )}
       </form>
+      <QuickAdd sheetId={sheetId} user={user} />
       {people.isError && <p data-testid="people-load-error">Could not load people.</p>}
       <table data-testid="people-table">
         <thead>
