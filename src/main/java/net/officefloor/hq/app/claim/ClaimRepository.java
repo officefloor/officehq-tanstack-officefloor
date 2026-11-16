@@ -379,14 +379,23 @@ public class ClaimRepository {
     }
 
     /**
-     * The sheet's next claim number: 1 for the first, then one more each time. The sheet's counter row stays locked
-     * until the transaction ends, so two claims opened at once get different numbers, and a rolled back opening gives
-     * its number back.
+     * The next claim number of the sheet's tree (the sheet and the other sheets of its tree): one more than the last
+     * number given on any of them, 1 for the first. The counter rows of the whole tree stay locked until the
+     * transaction ends (taken in sheet order, so two openings never wait on each other), so two claims opened at once
+     * anywhere in the tree get different numbers, and a rolled back opening gives its number back.
      */
-    public long nextNumber(String sheetId) {
-        ensureNumberRow(sheetId);
-        jdbc.update("UPDATE claim_number_seq SET last_number = last_number + 1 WHERE sheet_id = ?", sheetId);
-        return jdbc.queryForObject("SELECT last_number FROM claim_number_seq WHERE sheet_id = ?", Long.class, sheetId);
+    public long nextNumber(String sheetId, List<String> tree) {
+        Set<String> all = new TreeSet<>(tree);
+        all.add(sheetId);
+        long last = 0;
+        for (String s : all) {
+            ensureNumberRow(s);
+            jdbc.update("UPDATE claim_number_seq SET last_number = last_number WHERE sheet_id = ?", s);
+            last = Math.max(last, jdbc.queryForObject("SELECT last_number FROM claim_number_seq WHERE sheet_id = ?",
+                    Long.class, s));
+        }
+        jdbc.update("UPDATE claim_number_seq SET last_number = ? WHERE sheet_id = ?", last + 1, sheetId);
+        return last + 1;
     }
 
     /**

@@ -10,7 +10,8 @@ import net.officefloor.hq.app.sheet.SheetRepository;
  * The number a claim receives as it is opened. While the sheet's period-numbering-from setting is a date and the
  * sheet's today is on or after it, the claim is numbered within the period containing its due-by, {@code <period>-<n>}
  * counting from 1 in each period, or {@code X-<n>} in its own sequence when no period contains it. Otherwise it takes
- * the sheet-wide next number (1, 2, ...), which continues where it left off.
+ * the next number of the sheet's tree (1, 2, ...): one more than the last number given on any sheet of the tree, so
+ * the sheets of a tree share one sequence.
  */
 public final class ClaimNumbering {
 
@@ -21,7 +22,7 @@ public final class ClaimNumbering {
             SheetRepository sheets) {
         String sheet = claim.sheetId();
         if (!perPeriod(sheet, settings, sheets)) {
-            return String.valueOf(claims.nextNumber(sheet));
+            return String.valueOf(claims.nextNumber(sheet, settings.tree(sheet)));
         }
         Period period = periods.containing(sheet, claim.dueBy());
         String key = period == null ? "X" : period.name();
