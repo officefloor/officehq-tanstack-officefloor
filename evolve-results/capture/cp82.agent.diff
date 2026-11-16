@@ -1,0 +1,110 @@
+diff --git a/src/main/frontend/features/header/totals.ts b/src/main/frontend/features/header/totals.ts
+index f3c9e1045..75ae395c9 100644
+--- a/src/main/frontend/features/header/totals.ts
++++ b/src/main/frontend/features/header/totals.ts
+@@ -1,7 +1,7 @@
+ import { live, useClaims, type ClaimStatus } from '../claims/claims';
+ import { overdue } from '../overdue/overdue';
+ import { usePeople } from '../people/people';
+-import { personDue, trimmedSum, useRates } from '../rates/rates';
++import { personDue, personSplit, sum, trimmedSum, useRates } from '../rates/rates';
+ import { useCap, useFloor, useLate } from '../settings/settings';
+ 
+ // The sheet-wide figures shown in more than one place (the rollups, the summary and the header), worked out once
+@@ -26,6 +26,19 @@ export function useSheetDueTotal(sheetId: string): string {
+   );
+ }
+ 
++/** The sheet's settled-total and open-total: everyone's added up (not trimmed). */
++export function useSheetSplit(sheetId: string): { settled: string; open: string } {
++  const people = usePeople(sheetId);
++  const claims = useClaims(sheetId);
++  const rates = useRates(sheetId);
++  const late = useLate(sheetId);
++  const floor = useFloor(sheetId);
++  const all = (people.data ?? []).map((p) =>
++    personSplit(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor),
++  );
++  return { settled: sum(all.map((s) => s.settled)), open: sum(all.map((s) => s.open)) };
++}
++
+ /** The sheet's overdue count and overdue-total: everyone's added up (the total leaving out the single highest and
+  *  lowest when there are three or more people). */
+ export function useSheetOverdue(sheetId: string): { count: number; total: string } {
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index f0b3fc34a..6709b38d8 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -5,11 +5,11 @@ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { SheetPage } from '../../slots/defs/sheetPage';
+ import { live, useClaims } from '../claims/claims';
+-import { useSheetDueTotal } from '../header/totals';
++import { useSheetDueTotal, useSheetSplit } from '../header/totals';
+ import { GRADES, type Person } from '../people/people';
+ import { useSheetToday } from '../session/session';
+ import { useCap, useFloor, useLate } from '../settings/settings';
+-import { personDue, personExcess, rateFor, ratesKey, useRates, type Rate } from './rates';
++import { personDue, personExcess, personSplit, rateFor, ratesKey, useRates, type Rate } from './rates';
+ 
+ /** The sheet's rates: the form that sets one (from an optional from-date, through an optional to-date), each grade's rate in force on the
+  *  sheet's today, and every rate set. */
+@@ -144,6 +144,8 @@ function DueHead() {
+     <>
+       <th>Due total</th>
+       <th>Excess</th>
++      <th>Settled total</th>
++      <th>Open total</th>
+     </>
+   );
+ }
+@@ -157,19 +159,25 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }
+   const floor = useFloor(sheetId);
+   const cap = useCap(sheetId);
+   const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person], late.today);
++  const split = personSplit(mine, rates.data, person, late, floor);
+   return (
+     <>
+       <td data-testid="person-due-total">{personDue(mine, rates.data, person, late, floor, cap)}</td>
+       <td data-testid="person-excess">{personExcess(mine, rates.data, person, late, floor, cap)}</td>
++      <td data-testid="person-settled-total">{split.settled}</td>
++      <td data-testid="person-open-total">{split.open}</td>
+     </>
+   );
+ }
+ 
+-/** The sheet's due-total: everyone's due-total added up, skipping n/a. */
++/** The sheet's due-total: everyone's due-total added up, skipping n/a; and its settled-total and open-total. */
+ function DueTotal({ sheetId }: { sheetId: string }) {
++  const split = useSheetSplit(sheetId);
+   return (
+     <p>
+       Due total <span data-testid="rollup-due-total">{useSheetDueTotal(sheetId)}</span>
++      {' '}Settled total <span data-testid="rollup-settled-total">{split.settled}</span>
++      {' '}Open total <span data-testid="rollup-open-total">{split.open}</span>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 51d3c19cd..68873d5ee 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -92,6 +92,18 @@ function personFigures(claims: Claim[], rates: Rate[] | undefined, person: Perso
+   return sum(figures);
+ }
+ 
++/** A person's settled-total and open-total: the figures (see personFigures) of their SETTLED claims that count
++ *  (frozen when settled, corrections included), and of their OPEN and PENDING ones, each added up, skipping n/a.
++ *  Together they make the sum of their figures, before the cap. */
++export function personSplit(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated): { settled: string; open: string } {
++  const figure = (c: Claim) => claimDue(c, rateFor(rates, gradeOn(person, c.date), c.date), floor, late);
++  const counted = claims.filter(counts);
++  return {
++    settled: sum(counted.filter((c) => c.status === 'SETTLED').map(figure)),
++    open: sum(counted.filter((c) => c.status !== 'SETTLED').map(figure)),
++  };
++}
++
+ /** A person's due-total: the sum of their figures (see personFigures), at most the sheet's cap (null: none); 'n/a'
+  *  is not capped. */
+ export function personDue(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, cap: string | null): string {
