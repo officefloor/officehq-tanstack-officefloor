@@ -30,7 +30,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * by a user whose role on that sheet is viewer is refused (403) before it reaches its endpoint, so nothing is
  * stored and nothing audited. So is every change, by anyone, to a sheet a steward archived, and every change made from
  * a screen showing the sheet as of a date (it carries the {@code X-As-Of} header, see AsOf). A bulk action instead goes
- * through with nothing done: 0 done, every selected claim refused (a bulk grade: 0 people changed; a bulk retire: 0 people retired).
+ * through with nothing done: 0 done, every selected claim refused (a bulk grade: 0 people changed; a bulk retire: 0 people retired; a generate of the plans' claims: 0 made).
  */
 @Configuration
 public class ViewerGuard {
@@ -88,11 +88,12 @@ public class ViewerGuard {
                 response.getWriter().write("{\"" + done + "\":0,\"refused\":" + selected + "}");
                 return;
             }
-            if (rest.equals("/bulk-grade") || rest.equals("/bulk-retire")) {
+            if (rest.equals("/bulk-grade") || rest.equals("/bulk-retire") || rest.equals("/generate-plans")) {
                 response.setStatus(HttpServletResponse.SC_OK);
                 response.setContentType("application/json");
                 response.setCharacterEncoding("UTF-8");
-                response.getWriter().write(rest.equals("/bulk-grade") ? "{\"graded\":0}" : "{\"retired\":0}");
+                response.getWriter().write(rest.equals("/bulk-grade") ? "{\"graded\":0}"
+                        : rest.equals("/bulk-retire") ? "{\"retired\":0}" : "{\"made\":0}");
                 return;
             }
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
