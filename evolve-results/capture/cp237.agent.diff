@@ -1,0 +1,94 @@
+diff --git a/src/main/frontend/features/settings/api.ts b/src/main/frontend/features/settings/api.ts
+index b9751cf73..a71d2a979 100644
+--- a/src/main/frontend/features/settings/api.ts
++++ b/src/main/frontend/features/settings/api.ts
+@@ -66,12 +66,12 @@ export type Role = { sheetId: string; user: string; role: string };
+  *  A grade's clerk limit (clerk-limit-<grade>, two decimals; blank means none; dated): a claim whose person's
+  *  grade on the sheet's today has one in force then goes by it instead of the sheet's clerk limit. */
+ export const SETTING_KEYS = ['clerk-limit', 'clerk-limit-A', 'clerk-limit-B', 'clerk-limit-C', 'cap', 'pot', 'alert-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'late-pct', 'policy-date', 'rounding',
+-  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'pending-sla', 'max-open', 'score-mid', 'score-high', 'score-log', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'] as const;
++  'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'pending-sla', 'max-open', 'score-mid', 'score-high', 'score-log', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'proof-kinds', 'note-threshold', 'review-threshold', 'perm-open', 'perm-settle', 'perm-void', 'perm-reassign', 'perm-close', 'perm-reopen', 'perm-today', 'parent', 'fiscal-start-month', 'default-grade'] as const;
+ 
+ /** The roles that may take each action of the permission matrix while its entry is blank. */
+ export const PERMISSION_STANDING: Record<string, string> = {
+   open: 'clerk,steward', settle: 'clerk,steward', void: 'clerk,steward', close: 'clerk,steward',
+-  reassign: 'steward', reopen: 'steward',
++  reassign: 'steward', reopen: 'steward', today: 'clerk,steward,restricted',
+ };
+ 
+ /** A setting's value until it is first set. */
+@@ -79,7 +79,7 @@ export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms:
+ 
+ /** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
+ export const UNDATED_KEYS: readonly string[] = ['pot', 'proof-kinds', 'alert-threshold', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'pending-sla', 'max-open', 'score-mid', 'score-high', 'score-log', 'perm-open', 'perm-settle', 'perm-void',
+-  'perm-reassign', 'perm-close', 'perm-reopen', 'parent', 'fiscal-start-month', 'default-grade'];
++  'perm-reassign', 'perm-close', 'perm-reopen', 'perm-today', 'parent', 'fiscal-start-month', 'default-grade'];
+ 
+ /** The fiscal year a date (yyyy-MM-dd) falls in, FY<yyyy>, for a fiscal year start month (1 to 12). */
+ export function fiscalYearOf(date: string, startMonth: number): string {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Permissions.java b/src/main/java/net/officefloor/hq/app/setting/Permissions.java
+index 6f2ceab63..504d94841 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Permissions.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Permissions.java
+@@ -14,6 +14,7 @@ public final class Permissions {
+     public static final String REASSIGN = "reassign";
+     public static final String CLOSE = "close";
+     public static final String REOPEN = "reopen";
++    public static final String TODAY = "today";
+ 
+     /** The key prefix of an action's entry. */
+     public static final String PREFIX = "perm-";
+@@ -25,7 +26,8 @@ public final class Permissions {
+             VOID, List.of(Role.CLERK, Role.STEWARD),
+             CLOSE, List.of(Role.CLERK, Role.STEWARD),
+             REASSIGN, List.of(Role.STEWARD),
+-            REOPEN, List.of(Role.STEWARD));
++            REOPEN, List.of(Role.STEWARD),
++            TODAY, List.of(Role.CLERK, Role.STEWARD, Role.RESTRICTED));
+ 
+     private Permissions() {
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/PermitSheetToday.java b/src/main/java/net/officefloor/hq/app/sheet/PermitSheetToday.java
+new file mode 100644
+index 000000000..014110724
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/PermitSheetToday.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.setting.Permissions;
++import net.officefloor.hq.app.setting.RoleRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Refuses changing the sheet's today for a role the permission matrix does not let change it (by
++ *  default anyone but a viewer), before anything is read or written. */
++public class PermitSheetToday {
++    public void permit(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "by", required = false) String by, RoleRepository roles,
++            SettingRepository settings) throws InvalidSheetTodayException {
++        if (!Permissions.allows(sheetId.trim(), by, Permissions.TODAY, roles, settings)) {
++            throw new InvalidSheetTodayException("Your role may not change the sheet's today");
++        }
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+index a489ac88f..67b50b712 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+@@ -2,9 +2,13 @@
+ # Before the change takes effect, while the score log is on, a SCORE line per person with their score
+ # on the day being left; then a SNAPSHOT line per person with the due-total on the day being left.
+ # With grace days set, the open periods past them are closed (auto=yes) before the rollup lines.
+-# A viewer may change nothing: refused before anything is read or written.
++# A viewer may change nothing: refused before anything is read or written. Nor may a role the permission
++# matrix does not let change the today (perm-today; by default anyone but a viewer).
+ guard:
+   class: net.officefloor.hq.app.setting.RefuseViewer
++  next: permit
++permit:
++  class: net.officefloor.hq.app.sheet.PermitSheetToday
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateSheetToday
