@@ -1,0 +1,1067 @@
+diff --git a/src/main/frontend/features/crews/Crews.tsx b/src/main/frontend/features/crews/Crews.tsx
+index 1d589e926..6cb160c79 100644
+--- a/src/main/frontend/features/crews/Crews.tsx
++++ b/src/main/frontend/features/crews/Crews.tsx
+@@ -1,12 +1,13 @@
+ import { useState } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { useCapOf } from '../pools/cap';
+ import { useSubmitOnce } from '../../forms/useSubmitOnce';
+ import { claimsKey, listClaims, liveClaims } from '../claims/api';
+ import { gradeOn, listPeople, peopleKey, shownName } from '../people/api';
+ import type { Person } from '../people/api';
+ import { listRates, personDue, rateByGrade, ratesKey } from '../rates/api';
+ import { heldOf } from '../rates/shares';
+-import { useCap, useFloor, useLate } from '../settings/api';
++import { useFloor, useLate } from '../settings/api';
+ import { poolsKey } from '../pools/api';
+ import { useSheetToday } from '../sheet/api';
+ import { addCrew, addCrewMember, crewDueTotal, crewsKey, listCrews } from './api';
+@@ -20,12 +21,12 @@ export function useDueOf(sheetId: string, user: string): Map<number, string | nu
+   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
+   const floor = useFloor(sheetId);
+   const today = useSheetToday(sheetId, user);
+-  const cap = useCap(sheetId, today);
++  const capOf = useCapOf(sheetId, today);
+   const charges = useLate(sheetId, today);
+   const byGrade = rateByGrade(rates.data, today);
+   return new Map((people.data ?? []).map((q) => [q.id, personDue(
+     liveClaims((claims.data ?? []).filter((c) => c.personId === q.id), [q]),
+-    rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges, cap,
++    rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges, capOf(q.id),
+     heldOf(q.id, claims.data ?? [], people.data, rates.data, floor, charges))]));
+ }
+ 
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index a968a4228..db7ad61ac 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -13,9 +13,10 @@ import { PersonPlans } from '../plans/PersonPlans';
+ import { backing, claimedClaims, claimsKey, patronShares, isActive, correctsAnother, listClaims, liveClaims, showTags, sumAmounts, tagsKey } from '../claims/api';
+ import { listPeriods, periodOf, periodsKey, personPeriodCarried, personPeriodDue } from '../periods/api';
+ import { listPools, personCutTotal, poolsKey } from '../pools/api';
++import { useCapOf } from '../pools/cap';
+ import { agedDues, claimDue, excessOf, listRates, overdue, personDue, personScore, rateByGrade, ratesKey, showDue, splitDues } from '../rates/api';
+ import { heldOf } from '../rates/shares';
+-import { roleOf, roleOfKey, scoreBand, useCap, useFloor, useLate, useScoreThresholds } from '../settings/api';
++import { roleOf, roleOfKey, scoreBand, useFloor, useLate, useScoreThresholds } from '../settings/api';
+ import { crewsKey, listCrews, type Crew } from '../crews/api';
+ import { useSheetToday } from '../sheet/api';
+ import { BulkGrade } from './BulkGrade';
+@@ -40,7 +41,7 @@ function snapshotOn(p: Person, day: string): string {
+ 
+ /** The people on the sheet: a form that adds a person or edits one, and the list in list order (each with buttons that move
+  *  them up or down a place; new people go to the end),
+- *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap, with the excess above it, and split into settled and open (see `splitDues`); n/a
++ *  each with their grade in force on the sheet's today, their claimed total, their due-total (the sum of their claims' due figures, at most the sheet's cap less their cut total (not below 0.00), with the excess above that, and split into settled and open (see `splitDues`); n/a
+  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
+  *  their statements (a button that takes one, now or as of the date typed beside it, a button that cancels the last, the count, the last one's due-total and date), whether
+  *  they are retired and from when (with a date and a button that retires them, a button that unretires them, and their past retirements, each `<from> to <to>`), their snapshot lines (one per SNAPSHOT written for them, oldest first, each `<the day being left> <due-total>`), their statement lines (one per statement still standing, oldest first, each `<statement date> <due-total>`), whether they have
+@@ -78,7 +79,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const crews = useQuery({ queryKey: crewsKey(sheetId), queryFn: () => listCrews(sheetId) });
+   const floor = useFloor(sheetId);
+   const today = useSheetToday(sheetId, user);
+-  const cap = useCap(sheetId, today);
++  const capOf = useCapOf(sheetId, today);
+   const scoreThresholds = useScoreThresholds(sheetId);
+   const charges = useLate(sheetId, today);
+   const byGrade = rateByGrade(rates.data, today);
+@@ -477,7 +478,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const everyone = people.data ?? [];
+   const dueOf = new Map(everyone.map((q) => [q.id, personDue(
+     liveClaims((claims.data ?? []).filter((c) => c.personId === q.id), [q]),
+-    rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges, cap,
++    rates.data, (d) => gradeOn(q, d), byGrade.get(q.grade), floor, charges, capOf(q.id),
+     heldOf(q.id, claims.data ?? [], everyone, rates.data, floor, charges))]));
+   const nameOf = new Map(everyone.map((q) => [q.id, q.name]));
+   const shownOf = new Map(everyone.map((q) => [q.id, shownName(q)]));
+@@ -662,10 +663,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
+                 {(shows('due-total') || shows('excess')) && (
+                   <td>
+                     {shows('due-total') && (
+-                      <>Due <span data-testid="person-due-total"><Fig>{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap, held))}</Fig></span>{' '}</>
++                      <>Due <span data-testid="person-due-total"><Fig>{showDue(personDue(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, capOf(p.id), held))}</Fig></span>{' '}</>
+                     )}
+                     {shows('excess') && (
+-                      <>excess <span data-testid="person-excess"><Fig>{excessOf(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, cap, held)}</Fig></span></>
++                      <>excess <span data-testid="person-excess"><Fig>{excessOf(live, rates.data, (d) => gradeOn(p, d), pct, floor, charges, capOf(p.id), held)}</Fig></span></>
+                     )}
+                   </td>
+                 )}
+diff --git a/src/main/frontend/features/pools/api.ts b/src/main/frontend/features/pools/api.ts
+index 05f00bb89..5d4e8576a 100644
+--- a/src/main/frontend/features/pools/api.ts
++++ b/src/main/frontend/features/pools/api.ts
+@@ -26,8 +26,8 @@ const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/po
+ export const poolsKey = (sheetId: string) => [...sheetKey(sheetId), 'pools'] as const;
+ 
+ /** The sheet's pools, in the order they were added. */
+-export function listPools(sheetId: string): Promise<Pool[]> {
+-  return getJson<Pool[]>(base(sheetId));
++export function listPools(sheetId: string, live = false): Promise<Pool[]> {
++  return getJson<Pool[]>(base(sheetId), live);
+ }
+ 
+ /** Add a pool (name trimmed); refused (rejects) for a blank name or one already used on the sheet by a pool
+diff --git a/src/main/frontend/features/pools/cap.ts b/src/main/frontend/features/pools/cap.ts
+new file mode 100644
+index 000000000..06cd0ddac
+--- /dev/null
++++ b/src/main/frontend/features/pools/cap.ts
+@@ -0,0 +1,19 @@
++import { useQuery } from '@tanstack/react-query';
++import { formatCents, hundredths } from '../rates/api';
++import { useCap } from '../settings/api';
++import { liveKey } from '../sheet/api';
++import { listPools, personCutTotal, poolsKey } from './api';
++
++/** What a person's due-total is held to: the sheet's `cap` (null: no cap) less their cut total, not below 0.00. */
++export function capLessCuts(cap: string | null, cutTotal: string): string | null {
++  if (cap === null) return null;
++  const room = hundredths(cap) - hundredths(cutTotal);
++  return formatCents(room < 0n ? 0n : room);
++}
++
++/** Each person's cap (by id; null: no cap): the sheet's cap in force on its today less their cut total. */
++export function useCapOf(sheetId: string, today: string, live = false): (personId: number) => string | null {
++  const cap = useCap(sheetId, today, live);
++  const pools = useQuery({ queryKey: liveKey(poolsKey(sheetId), live), queryFn: () => listPools(sheetId, live) });
++  return (personId) => capLessCuts(cap, personCutTotal(pools.data ?? [], personId));
++}
+diff --git a/src/main/frontend/features/rates/DueTotal.tsx b/src/main/frontend/features/rates/DueTotal.tsx
+index 2787d8ea6..6dde9d98a 100644
+--- a/src/main/frontend/features/rates/DueTotal.tsx
++++ b/src/main/frontend/features/rates/DueTotal.tsx
+@@ -1,7 +1,8 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { claimsKey, listClaims, liveClaims } from '../claims/api';
++import { useCapOf } from '../pools/cap';
+ import { gradeOn, listPeople, peopleKey } from '../people/api';
+-import { useCap, useFloor, useLate } from '../settings/api';
++import { useFloor, useLate } from '../settings/api';
+ import { liveKey, useSheetToday } from '../sheet/api';
+ import { agedDues, claimDue, listRates, personDue, rateByGrade, ratesKey, splitDues, sumDues, trimmedSum } from './api';
+ import { heldOf } from '../rates/shares';
+@@ -20,12 +21,12 @@ export function usePersonDues(sheetId: string, user: string, current = false): A
+   const rates = useQuery({ queryKey: liveKey(ratesKey(sheetId), current), queryFn: () => listRates(sheetId, current) });
+   const floor = useFloor(sheetId, current);
+   const today = useSheetToday(sheetId, user, current);
+-  const cap = useCap(sheetId, today, current);
++  const capOf = useCapOf(sheetId, today, current);
+   const charges = useLate(sheetId, today, current);
+   const byGrade = rateByGrade(rates.data, today);
+   const live = liveClaims(claims.data ?? [], people.data);
+   return (people.data ?? []).map((p) =>
+-    personDue(live.filter((c) => c.personId === p.id), rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap,
++    personDue(live.filter((c) => c.personId === p.id), rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, capOf(p.id),
+       heldOf(p.id, claims.data ?? [], people.data, rates.data, floor, charges)),
+   );
+ }
+diff --git a/src/main/frontend/features/rates/api.ts b/src/main/frontend/features/rates/api.ts
+index f34d9aa3a..00de75721 100644
+--- a/src/main/frontend/features/rates/api.ts
++++ b/src/main/frontend/features/rates/api.ts
+@@ -184,7 +184,7 @@ export function heldParts(personId: number, claims: Claim[], dueOfClaim: (c: Cla
+ }
+ 
+ /** A person's due-total: the sum of their counting claims' due figures (n/a ones skipped; a shared one less its
+- *  holders' parts) and the parts they hold of others' (`held`), at most the sheet's `cap` (null: no cap); n/a
++ *  holders' parts) and the parts they hold of others' (`held`), at most `cap` (the sheet's cap less the person's cut total, see `capLessCuts`; null: no cap); n/a
+  *  when their grade today has no rate today (`pct`), they hold no part, and none of those claims keeps a settled or bound
+  *  figure, or a live one at a grade no longer in force on the sheet's today or dated on or before it
+  *  (its rate since ended). */
+@@ -199,7 +199,7 @@ export function personDue(claims: Claim[], rates: Rate[] | undefined, gradeOn: G
+   return cap !== null && hundredths(sum) > hundredths(cap) ? formatCents(hundredths(cap)) : sum;
+ }
+ 
+-/** What a person's due figures add up to above the sheet's `cap` (null: no cap); 0.00 when they do
++/** What a person's due figures add up to above their `cap` (the sheet's cap less their cut total; null: no cap); 0.00 when they do
+  *  not exceed it, or their due-total is n/a. */
+ export function excessOf(claims: Claim[], rates: Rate[] | undefined, gradeOn: GradeOn, pct: string | undefined,
+   floor: DatedOn, late: Late, cap: string | null, held: HeldPart[] = []): string {
+diff --git a/src/main/frontend/features/summary/Classic.tsx b/src/main/frontend/features/summary/Classic.tsx
+index 13117abc1..232d51adf 100644
+--- a/src/main/frontend/features/summary/Classic.tsx
++++ b/src/main/frontend/features/summary/Classic.tsx
+@@ -1,10 +1,11 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { claimsKey, listClaims, liveClaims } from '../claims/api';
++import { useCapOf } from '../pools/cap';
+ import { gradeOn, listPeople, peopleKey } from '../people/api';
+ import { classicPeriodDueTotal, listPeriods, periodsKey } from '../periods/api';
+ import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
+ import { heldOf } from '../rates/shares';
+-import { useCap, useFloor, useLate } from '../settings/api';
++import { useFloor, useLate } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+ import { Fig } from '../session/Fig';
+ 
+@@ -18,13 +19,13 @@ export function Classic({ sheetId, user }: { sheetId: string; user: string }) {
+   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
+   const floor = useFloor(sheetId);
+   const today = useSheetToday(sheetId, user);
+-  const cap = useCap(sheetId, today);
++  const capOf = useCapOf(sheetId, today);
+   const charges = useLate(sheetId, today);
+   const byGrade = rateByGrade(rates.data, today);
+   const all = claims.data ?? [];
+   const live = liveClaims(all, people.data);
+   const dueTotal = sumDues((people.data ?? []).map((p) =>
+-    personDue(live.filter((c) => c.personId === p.id), rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap,
++    personDue(live.filter((c) => c.personId === p.id), rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, capOf(p.id),
+       heldOf(p.id, all, people.data, rates.data, floor, charges))));
+   const byStart = [...(periods.data ?? [])].sort((a, b) => a.from.localeCompare(b.from));
+ 
+diff --git a/src/main/frontend/features/summary/Header.tsx b/src/main/frontend/features/summary/Header.tsx
+index 3a83a6c53..f9333358f 100644
+--- a/src/main/frontend/features/summary/Header.tsx
++++ b/src/main/frontend/features/summary/Header.tsx
+@@ -1,9 +1,10 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { claimsKey, listClaims, liveClaims } from '../claims/api';
++import { useCapOf } from '../pools/cap';
+ import { gradeOn, listPeople, listWatches, peopleKey, watchesKey, type Person } from '../people/api';
+ import { useDueTotal } from '../rates/DueTotal';
+ import { claimDue, listRates, overdue, personDue, rateByGrade, ratesKey, showDue, sumDues } from '../rates/api';
+-import { useCap, useFloor, useLate } from '../settings/api';
++import { useFloor, useLate } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+ import { useOverdue } from '../rates/Overdue';
+ import { STATUSES, statusCount } from './Summary';
+@@ -24,14 +25,14 @@ function useMyFigures(sheetId: string, user: string): { due: string; overdue: st
+   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
+   const floor = useFloor(sheetId);
+   const today = useSheetToday(sheetId, user);
+-  const cap = useCap(sheetId, today);
++  const capOf = useCapOf(sheetId, today);
+   const charges = useLate(sheetId, today);
+   const me = nameKey(user);
+   const p = (people.data ?? []).find((q: Person) => [q.name, ...q.aliases].some((n) => nameKey(n) === me));
+   if (!p || !claims.data) return null;
+   const live = liveClaims(claims.data.filter((c) => c.personId === p.id), [p]);
+   const dueOfClaim = (c: (typeof live)[number]) => claimDue(c, rates.data, (d) => gradeOn(p, d), floor, charges);
+-  const due = personDue(live, rates.data, (d) => gradeOn(p, d), rateByGrade(rates.data, today).get(p.grade), floor, charges, cap,
++  const due = personDue(live, rates.data, (d) => gradeOn(p, d), rateByGrade(rates.data, today).get(p.grade), floor, charges, capOf(p.id),
+     heldOf(p.id, claims.data, people.data, rates.data, floor, charges));
+   return { due: showDue(due), overdue: overdue(live, charges, dueOfClaim).total };
+ }
+diff --git a/src/main/frontend/features/summary/Summary.tsx b/src/main/frontend/features/summary/Summary.tsx
+index 5ed064fc2..878eab38b 100644
+--- a/src/main/frontend/features/summary/Summary.tsx
++++ b/src/main/frontend/features/summary/Summary.tsx
+@@ -1,10 +1,11 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { claimsKey, isActive, listClaims, listVoidReasons, liveClaims, voidReasonsKey, type Claim } from '../claims/api';
++import { useCapOf } from '../pools/cap';
+ import { GRADES, gradeOn, listPeople, peopleKey } from '../people/api';
+ import { listPeriods, periodDueTotal, periodsKey } from '../periods/api';
+ import { listRates, personDue, rateByGrade, ratesKey, sumDues } from '../rates/api';
+ import { heldOf } from '../rates/shares';
+-import { isReviewLate, useCap, useFloor, useLate, useReviewSla } from '../settings/api';
++import { isReviewLate, useFloor, useLate, useReviewSla } from '../settings/api';
+ import { useSheetToday } from '../sheet/api';
+ import { Fig } from '../session/Fig';
+ 
+@@ -24,13 +25,13 @@ export function useGradeDues(sheetId: string, user: string): Record<string, stri
+   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
+   const floor = useFloor(sheetId);
+   const today = useSheetToday(sheetId, user);
+-  const cap = useCap(sheetId, today);
++  const capOf = useCapOf(sheetId, today);
+   const charges = useLate(sheetId, today);
+   const byGrade = rateByGrade(rates.data, today);
+   const all = claims.data ?? [];
+   const active = (people.data ?? []).filter((p) => !p.retired);
+   const dueOf = (p: (typeof active)[number]) => personDue(liveClaims(all.filter((c) => c.personId === p.id), [p]),
+-    rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap,
++    rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, capOf(p.id),
+     heldOf(p.id, all, people.data, rates.data, floor, charges));
+   return Object.fromEntries(GRADES.map((g) => [g, sumDues(active.filter((p) => p.grade === g).map(dueOf))]));
+ }
+diff --git a/src/main/frontend/features/summary/TreeSearch.tsx b/src/main/frontend/features/summary/TreeSearch.tsx
+index 2cdb65106..56e8ebaf5 100644
+--- a/src/main/frontend/features/summary/TreeSearch.tsx
++++ b/src/main/frontend/features/summary/TreeSearch.tsx
+@@ -1,10 +1,11 @@
+ import { useEffect, useRef, useState } from 'react';
+ import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query';
++import { useCapOf } from '../pools/cap';
+ import { claimsKey, listClaims, liveClaims } from '../claims/api';
+ import { gradeOn, listPeople, peopleKey, shownName } from '../people/api';
+ import { listRates, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
+ import { heldOf } from '../rates/shares';
+-import { useCap, useFloor, useLate } from '../settings/api';
++import { useFloor, useLate } from '../settings/api';
+ import { listTree, sheetKey, treeKey, useSheetToday } from '../sheet/api';
+ 
+ /** A person as the search finds them: their name, aliases and due-total as their row shows it. */
+@@ -17,7 +18,7 @@ function useSheetPeople(sheetId: string, user: string): Found[] | undefined {
+   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
+   const floor = useFloor(sheetId);
+   const today = useSheetToday(sheetId, user);
+-  const cap = useCap(sheetId, today);
++  const capOf = useCapOf(sheetId, today);
+   const charges = useLate(sheetId, today);
+   if (!people.isSuccess || !claims.isSuccess || !rates.isSuccess || today === '') return undefined;
+   const byGrade = rateByGrade(rates.data, today);
+@@ -26,7 +27,7 @@ function useSheetPeople(sheetId: string, user: string): Found[] | undefined {
+     shown: shownName(p),
+     aliases: p.aliases,
+     due: showDue(personDue(liveClaims(claims.data.filter((c) => c.personId === p.id), [p]),
+-      rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, cap,
++      rates.data, (d) => gradeOn(p, d), byGrade.get(p.grade), floor, charges, capOf(p.id),
+       heldOf(p.id, claims.data, people.data, rates.data, floor, charges))),
+   }));
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+index af4fd01fe..9593097ac 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import java.util.ArrayList;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import java.util.HashSet;
+ import java.util.List;
+ import java.util.Set;
+@@ -34,7 +35,7 @@ public class BulkOpenClaims {
+             @RequestParam(name = "by", required = false) String by,
+             @RequestBody BulkOpenRequest request, ClaimRepository claims, PeriodRepository periods,
+             PersonRepository people, RateRepository rates, SheetRepository sheets,
+-            SettingRepository settings, RoleRepository roles, ClaimLogRepository log, Audit audit, Out<BulkOpenResult> result) {
++            SettingRepository settings, PoolRepository pools, RoleRepository roles, ClaimLogRepository log, Audit audit, Out<BulkOpenResult> result) {
+         String id = sheetId.trim();
+         String user = by == null ? "" : by;
+         Set<Long> selected = new HashSet<>(request == null || request.claimIds() == null
+@@ -54,7 +55,7 @@ public class BulkOpenClaims {
+         boolean allowed = !sheets.isArchived(id)
+                 && Permissions.allows(id, user, Permissions.OPEN, roles, settings);
+         int opened = 0;
+-        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
++        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+         for (Claim claim : ordered) {
+             if (!allowed) continue;
+             try {
+@@ -78,7 +79,7 @@ public class BulkOpenClaims {
+                     + " person=" + (person == null ? "" : person.getName())
+                     + " amount=" + claim.getAmount() + " date=" + claim.getDate()
+                     + claim.getAuditNumber());
+-            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
++            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+             for (String line : after.changesSince(before, id, user)) {
+                 audit.record(line);
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkReassignClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkReassignClaims.java
+index 12a7f91f1..1e327f360 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkReassignClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkReassignClaims.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import java.util.ArrayList;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import java.util.HashSet;
+ import java.util.List;
+ import java.util.Set;
+@@ -29,7 +30,7 @@ public class BulkReassignClaims {
+             @RequestParam(name = "by", required = false) String by,
+             @RequestBody BulkReassignRequest request, ClaimRepository claims, PeriodRepository periods,
+             PersonRepository people, RateRepository rates, SheetRepository sheets,
+-            SettingRepository settings, RoleRepository roles, Audit audit,
++            SettingRepository settings, PoolRepository pools, RoleRepository roles, Audit audit,
+             Out<BulkReassignResult> result) {
+         String id = sheetId.trim();
+         String user = by == null ? "" : by;
+@@ -49,7 +50,7 @@ public class BulkReassignClaims {
+ 
+         boolean archived = sheets.isArchived(id);
+         int moved = 0;
+-        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
++        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+         for (Claim claim : ordered) {
+             if (archived) continue;
+             Reassignment reassignment;
+@@ -63,7 +64,7 @@ public class BulkReassignClaims {
+             moved++;
+             audit.record(RecordClaimStatus.line("CLAIM_REASSIGNED", user, claim, people)
+                     + " from=" + reassignment.from() + " to=" + reassignment.to());
+-            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
++            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+             for (String line : after.changesSince(before, id, user)) {
+                 audit.record(line);
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkRedateClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkRedateClaims.java
+index 1ae24352f..ccf663d13 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkRedateClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkRedateClaims.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import java.util.ArrayList;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import java.util.HashSet;
+ import java.util.List;
+ import java.util.Set;
+@@ -29,7 +30,7 @@ public class BulkRedateClaims {
+             @RequestParam(name = "by", required = false) String by,
+             @RequestBody BulkRedateRequest request, ClaimRepository claims, PeriodRepository periods,
+             PersonRepository people, RateRepository rates, SheetRepository sheets,
+-            SettingRepository settings, RoleRepository roles, Audit audit,
++            SettingRepository settings, PoolRepository pools, RoleRepository roles, Audit audit,
+             Out<BulkRedateResult> result) {
+         String id = sheetId.trim();
+         String user = by == null ? "" : by;
+@@ -49,7 +50,7 @@ public class BulkRedateClaims {
+ 
+         boolean archived = sheets.isArchived(id);
+         int redated = 0;
+-        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
++        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+         for (Claim claim : ordered) {
+             if (archived) continue;
+             Redating redating;
+@@ -62,7 +63,7 @@ public class BulkRedateClaims {
+             redated++;
+             audit.record(RecordClaimStatus.line("CLAIM_REDATED", user, claim, people)
+                     + " old=" + redating.oldDate() + " new=" + redating.newDate());
+-            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
++            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+             for (String line : after.changesSince(before, id, user)) {
+                 audit.record(line);
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
+index 3c8be0981..55d326fbf 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import java.math.BigDecimal;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import java.util.ArrayList;
+ import java.util.HashSet;
+ import java.util.List;
+@@ -35,7 +36,7 @@ public class BulkSettleClaims {
+             @RequestParam(name = "by", required = false) String by,
+             @RequestBody BulkSettleRequest request, ClaimRepository claims, PeriodRepository periods,
+             PersonRepository people, RateRepository rates, SheetRepository sheets,
+-            SettingRepository settings, RoleRepository roles, ClaimLogRepository log, WatchRepository watches, Audit audit,
++            SettingRepository settings, PoolRepository pools, RoleRepository roles, ClaimLogRepository log, WatchRepository watches, Audit audit,
+             Out<BulkSettleResult> result) {
+         String id = sheetId.trim();
+         String user = by == null ? "" : by;
+@@ -71,7 +72,7 @@ public class BulkSettleClaims {
+ 
+         int batch = sheets.nextSettleBatch(id);
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+-        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
++        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+         for (Claim claim : ordered) {
+             claim.setSettleBatch(batch);
+             ClaimNumbers.settled(claim, claims, periods, settings, sheets);
+@@ -83,7 +84,7 @@ public class BulkSettleClaims {
+                 if (claim.getSettledDue() != null) total = total.add(new BigDecimal(claim.getSettledDue()));
+                 Notify.watchers(user, claim, people, watches, audit);
+             }
+-            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
++            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+             for (String line : after.changesSince(before, id, user)) {
+                 audit.record(line);
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkVoidClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkVoidClaims.java
+index 9d565747b..53dfdbb99 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkVoidClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkVoidClaims.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import java.util.ArrayList;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import java.util.HashSet;
+ import java.util.List;
+ import java.util.Set;
+@@ -31,7 +32,7 @@ public class BulkVoidClaims {
+             @RequestParam(name = "by", required = false) String by,
+             @RequestBody BulkVoidRequest request, ClaimRepository claims, PeriodRepository periods,
+             PersonRepository people, RateRepository rates, SheetRepository sheets,
+-            SettingRepository settings, RoleRepository roles, ClaimLogRepository log,
++            SettingRepository settings, PoolRepository pools, RoleRepository roles, ClaimLogRepository log,
+             VoidReasonRepository reasons, Audit audit, Out<BulkVoidResult> result) {
+         String id = sheetId.trim();
+         String user = by == null ? "" : by;
+@@ -52,7 +53,7 @@ public class BulkVoidClaims {
+         boolean refusedAll = sheets.isArchived(id) || Role.VIEWER.equals(roles.roleOf(id, user));
+         VoidClaim rules = new VoidClaim();
+         int voided = 0;
+-        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
++        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+         for (Claim claim : ordered) {
+             if (refusedAll) continue;
+             try {
+@@ -66,7 +67,7 @@ public class BulkVoidClaims {
+             audit.record(RecordClaimStatus.line(ClaimStatus.VOID.event(), user, claim, people)
+                     + (claim.isReversal() ? RecordClaimStatus.reversed(claim) : "")
+                     + (claim.getVoidReason() != null ? " reason=" + claim.getVoidReason() : ""));
+-            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
++            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+             for (String line : after.changesSince(before, id, user)) {
+                 audit.record(line);
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveSettledPart.java b/src/main/java/net/officefloor/hq/app/claim/SaveSettledPart.java
+index f0264c4ee..5aa833d47 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveSettledPart.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveSettledPart.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.person.WatchRepository;
+@@ -16,11 +17,11 @@ import org.springframework.web.bind.annotation.RequestParam;
+ public class SaveSettledPart {
+     public void save(@RequestParam(name = "by", required = false) String by, @Val Split split,
+             @Val PartSettle part, ClaimRepository claims, ClaimLogRepository log, PersonRepository people,
+-            WatchRepository watches, RateRepository rates, SheetRepository sheets, SettingRepository settings,
++            WatchRepository watches, RateRepository rates, SheetRepository sheets, SettingRepository settings, PoolRepository pools,
+             PeriodRepository periods, Audit audit) {
+         Claim created = split.created();
+         String sheetId = created.getSheetId();
+-        Rollup before = Rollup.of(sheetId, people, claims, rates, sheets, settings);
++        Rollup before = Rollup.of(sheetId, people, claims, rates, sheets, settings, pools);
+         created.setStatus(part.status());
+         created.setSettledDue(part.settledDue());
+         created.setSettleBatch(null);
+@@ -29,7 +30,7 @@ public class SaveSettledPart {
+         log.record(created, by);
+         new RecordClaimStatus().record(by, created, people, audit);
+         new RecordClaimNotify().record(by, created, people, watches, audit);
+-        Rollup after = Rollup.of(sheetId, people, claims, rates, sheets, settings);
++        Rollup after = Rollup.of(sheetId, people, claims, rates, sheets, settings, pools);
+         for (String line : after.changesSince(before, sheetId, by == null ? "" : by)) {
+             audit.record(line);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java b/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
+index 75c2f6fbd..ccca3ba0f 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
++++ b/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.paste;
+ 
+ import java.math.BigDecimal;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import java.time.LocalDate;
+ import java.util.ArrayList;
+ import java.util.HashMap;
+@@ -59,14 +60,14 @@ public class PasteClaims {
+     public void paste(@PathVariable("sheetId") String sheetId,
+             @RequestParam(name = "by", required = false) String by, @Val PasteLines lines,
+             PersonRepository people, SheetRepository sheets, ClaimRepository claims,
+-            PeriodRepository periods, SettingRepository settings, ClaimLogRepository log, Audit audit,
++            PeriodRepository periods, SettingRepository settings, PoolRepository pools, ClaimLogRepository log, Audit audit,
+             HolidayRepository holidays, RoleRepository roles, RateRepository rates, ClaimLineRepository claimLines,
+             Out<PasteResult> result, PlatformTransactionManager transactions)
+             throws PeriodClosedException, InvalidClaimException, ClaimStatusException, ClaimLockedException {
+         // Run in a transaction of its own: a line refused after earlier lines were written undoes them all.
+         TransactionStatus tx = transactions.getTransaction(new DefaultTransactionDefinition());
+         try {
+-            pasteAll(sheetId, by, lines, people, sheets, claims, periods, settings, log, audit, holidays, roles, rates,
++            pasteAll(sheetId, by, lines, people, sheets, claims, periods, settings, pools, log, audit, holidays, roles, rates,
+                     claimLines, result);
+         } catch (Throwable e) {
+             transactions.rollback(tx);
+@@ -78,7 +79,7 @@ public class PasteClaims {
+     private void pasteAll(String sheetId,
+             String by, PasteLines lines,
+             PersonRepository people, SheetRepository sheets, ClaimRepository claims,
+-            PeriodRepository periods, SettingRepository settings, ClaimLogRepository log, Audit audit,
++            PeriodRepository periods, SettingRepository settings, PoolRepository pools, ClaimLogRepository log, Audit audit,
+             HolidayRepository holidays, RoleRepository roles, RateRepository rates, ClaimLineRepository claimLines,
+             Out<PasteResult> result)
+             throws PeriodClosedException, InvalidClaimException, ClaimStatusException, ClaimLockedException {
+@@ -129,7 +130,7 @@ public class PasteClaims {
+         }
+ 
+         List<String> records = new ArrayList<>();
+-        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
++        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+         for (Pending p : pending) {
+             String head = " sheet=" + id + " by=" + user + " person=" + p.person().getName();
+             Claim claim;
+@@ -181,7 +182,7 @@ public class PasteClaims {
+             log.record(claim, user);
+             records.add(opened.event() + head + " amount=" + claim.getAmount() + " date=" + claim.getDate()
+                     + claim.getAuditNumber());
+-            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
++            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+             records.addAll(after.changesSince(before, id, user));
+             before = after;
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/BulkGradePeople.java b/src/main/java/net/officefloor/hq/app/person/BulkGradePeople.java
+index a584d6e15..98f726fae 100644
+--- a/src/main/java/net/officefloor/hq/app/person/BulkGradePeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/BulkGradePeople.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.person;
+ 
+ import java.time.LocalDate;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import java.util.HashSet;
+ import java.util.Set;
+ import net.officefloor.hq.app.Audit;
+@@ -27,7 +28,7 @@ public class BulkGradePeople {
+     public void grade(@PathVariable("sheetId") String sheetId,
+             @RequestParam(name = "by", required = false) String by, @Val BulkGradeRequest request,
+             PersonRepository people, ClaimRepository claims, RateRepository rates,
+-            SheetRepository sheets, SettingRepository settings, RoleRepository roles, GradeRepository grades, Audit audit, Out<BulkGradeResult> result)
++            SheetRepository sheets, SettingRepository settings, PoolRepository pools, RoleRepository roles, GradeRepository grades, Audit audit, Out<BulkGradeResult> result)
+             throws PersonConflictException, SheetArchivedException, InvalidPersonException {
+         String id = sheetId.trim();
+         String user = by == null ? "" : by;
+@@ -50,7 +51,7 @@ public class BulkGradePeople {
+         }
+         LocalDate today = sheets.today(id);
+         int graded = 0;
+-        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
++        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+         for (Person listed : people.list(id)) {
+             if (!selected.contains(listed.getId())) continue;
+             Person person = people.find(id, listed.getId());
+@@ -67,7 +68,7 @@ public class BulkGradePeople {
+             graded++;
+             audit.record("PERSON_EDITED sheet=" + id + " by=" + user + " name=" + person.getName()
+                     + " grade=" + person.getGrade());
+-            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
++            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+             for (String line : after.changesSince(before, id, user)) {
+                 audit.record(line);
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/person/BulkRetirePeople.java b/src/main/java/net/officefloor/hq/app/person/BulkRetirePeople.java
+index acbedf079..3cc22f446 100644
+--- a/src/main/java/net/officefloor/hq/app/person/BulkRetirePeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/BulkRetirePeople.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.person;
+ 
+ import java.util.HashSet;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import java.util.Set;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+@@ -25,7 +26,7 @@ public class BulkRetirePeople {
+     public void retire(@PathVariable("sheetId") String sheetId,
+             @RequestParam(name = "by", required = false) String by, @Val BulkRetireRequest request,
+             PersonRepository people, ClaimRepository claims, RateRepository rates,
+-            SheetRepository sheets, SettingRepository settings, RoleRepository roles, Audit audit,
++            SheetRepository sheets, SettingRepository settings, PoolRepository pools, RoleRepository roles, Audit audit,
+             Out<BulkRetireResult> result) throws SheetArchivedException {
+         String id = sheetId.trim();
+         String user = by == null ? "" : by;
+@@ -39,7 +40,7 @@ public class BulkRetirePeople {
+         Set<Long> selected = new HashSet<>(request.personIds());
+         String from = request.from() != null ? request.from() : sheets.today(id).toString();
+         int retired = 0;
+-        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
++        Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+         for (Person listed : people.list(id)) {
+             if (!selected.contains(listed.getId())) continue;
+             Person person = people.find(id, listed.getId());
+@@ -48,7 +49,7 @@ public class BulkRetirePeople {
+             retired++;
+             audit.record("PERSON_RETIRED sheet=" + id + " by=" + user + " name=" + person.getName()
+                     + " from=" + person.getRetiredFrom());
+-            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
++            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+             for (String line : after.changesSince(before, id, user)) {
+                 audit.record(line);
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ImportPeople.java b/src/main/java/net/officefloor/hq/app/person/ImportPeople.java
+index 32c844ec5..7ee0ce686 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ImportPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/ImportPeople.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.person;
+ 
+ import java.time.LocalDate;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import java.util.ArrayList;
+ import java.util.HashSet;
+ import java.util.List;
+@@ -28,7 +29,7 @@ public class ImportPeople {
+     public void importPeople(@PathVariable("sheetId") String sheetId,
+             @RequestParam(name = "by", required = false) String by, @Val ImportLines lines,
+             PersonRepository people, SheetRepository sheets, ClaimRepository claims, RateRepository rates,
+-            SettingRepository settings, GradeRepository grades, Audit audit, Out<ImportResult> result) throws InvalidPersonException {
++            SettingRepository settings, PoolRepository pools, GradeRepository grades, Audit audit, Out<ImportResult> result) throws InvalidPersonException {
+         String id = sheetId.trim();
+         String user = by == null ? "" : by;
+         List<Person> matched = new ArrayList<>();
+@@ -68,7 +69,7 @@ public class ImportPeople {
+         for (int i = 0; i < lines.people().size(); i++) {
+             PersonRequest request = lines.people().get(i);
+             Person person = matched.get(i);
+-            Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
++            Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+             sheets.open(id, user);
+             if (person == null) {
+                 person = people.add(id, request.name(), request.grade(),
+@@ -95,7 +96,7 @@ public class ImportPeople {
+                 edited.record(by, person, audit);
+                 updatedCount++;
+             }
+-            for (String line : Rollup.of(id, people, claims, rates, sheets, settings).changesSince(before, id, user)) {
++            for (String line : Rollup.of(id, people, claims, rates, sheets, settings, pools).changesSince(before, id, user)) {
+                 audit.record(line);
+             }
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordPersonArrived.java b/src/main/java/net/officefloor/hq/app/person/RecordPersonArrived.java
+index 0dc4e192b..bb17ece0f 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RecordPersonArrived.java
++++ b/src/main/java/net/officefloor/hq/app/person/RecordPersonArrived.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.person;
+ 
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
+@@ -14,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ public class RecordPersonArrived {
+     public void record(@RequestParam(name = "by", required = false) String by,
+             @Val Transfer transfer, PersonRepository people, ClaimRepository claims, RateRepository rates,
+-            SheetRepository sheets, SettingRepository settings, Audit audit) {
++            SheetRepository sheets, SettingRepository settings, PoolRepository pools, Audit audit) {
+         String user = by == null ? "" : by;
+         String to = transfer.to();
+         audit.record("PERSON_TRANSFERRED sheet=" + to + " by=" + user
+@@ -23,7 +24,7 @@ public class RecordPersonArrived {
+             audit.record("PERSON_MERGED sheet=" + to + " by=" + user
+                     + " from=" + transfer.person().getName() + " into=" + transfer.into().getName());
+         }
+-        Rollup after = Rollup.of(to, people, claims, rates, sheets, settings);
++        Rollup after = Rollup.of(to, people, claims, rates, sheets, settings, pools);
+         for (String line : after.changesSince(transfer.toBefore(), to, user)) {
+             audit.record(line);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/TakeStatement.java b/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
+index 96876c28b..623223dbf 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
+@@ -9,8 +9,10 @@ import java.util.Map;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.claim.Dues;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import net.officefloor.hq.app.rate.Rate;
+ import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.setting.DatedSetting;
+ import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+@@ -18,7 +20,7 @@ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** Takes a statement of the person: records their due-total now (the sum of the due of their claims that
+- *  count live (open ones dated within a hold of theirs, and not bound, do not), n/a ones skipped, at most the sheet's cap; n/a when their grade has no rate on the sheet's today and none of
++ *  count live (open ones dated within a hold of theirs, and not bound, do not), n/a ones skipped, at most the sheet's cap less their cut total (not below 0.00); n/a when their grade has no rate on the sheet's today and none of
+  *  those claims keeps a settled or bound figure, or a live one at a grade no longer in force or dated on or before the sheet's today) on the sheet's today, and binds each counting claim
+  *  to the due it shows now, late charge and floor included (a claim already bound keeps its figure); a claim that does not
+  *  count live is unbound.
+@@ -30,7 +32,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ public class TakeStatement {
+     public void take(@RequestParam(name = "asof", required = false) String asof, @Val Person person,
+             PersonRepository people, ClaimRepository claims, RateRepository rates, SheetRepository sheets,
+-            SettingRepository settings) throws InvalidPersonException {
++            SettingRepository settings, PoolRepository pools) throws InvalidPersonException {
+         String sheetId = person.getSheetId();
+         LocalDate today = sheets.today(sheetId);
+         LocalDate on = today;
+@@ -46,6 +48,7 @@ public class TakeStatement {
+             floor = settings.floor(sheetId);
+             late = settings.late(sheetId, today);
+             cap = settings.cap(sheetId);
++            if (cap != null) cap = Rollup.capLessCuts(cap, pools.cutTotals(sheetId).get(person.getId()));
+         } else {
+             try {
+                 on = LocalDate.parse(asof.trim());
+@@ -64,6 +67,7 @@ public class TakeStatement {
+             floor = settings.datedAsOf(sheetId, SettingRepository.FLOOR, SettingRepository.DEFAULT_FLOOR, on);
+             late = settings.lateAsOf(sheetId, on);
+             cap = settings.capAsOf(sheetId, on);
++            if (cap != null) cap = Rollup.capLessCuts(cap, pools.cutTotalsAsOf(sheetId, on).get(person.getId()));
+             person.setStatedAsOf(on.toString());
+         }
+         // The figure each counting claim is bound to, by claim id.
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+index 918b1332c..ed99cb8b0 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.person;
+ 
+ import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import net.officefloor.hq.app.claim.ClaimNumbers;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.period.PeriodRepository;
+@@ -35,7 +36,7 @@ public class TransferPerson {
+     public void transfer(@RequestParam(name = "by", required = false) String by,
+             @Val TransferRequest request, @Val Person person, PersonRepository people,
+             ClaimRepository claims, PeriodRepository periods, RateRepository rates,
+-            SettingRepository settings, SheetRepository sheets, RoleRepository roles,
++            SettingRepository settings, PoolRepository pools, SheetRepository sheets, RoleRepository roles,
+             Out<Transfer> transferred) throws InvalidPersonException {
+         String user = by == null ? "" : by;
+         String sheetId = person.getSheetId();
+@@ -70,7 +71,7 @@ public class TransferPerson {
+             throw new InvalidPersonException("The contact is already on " + to);
+         }
+         sheets.open(to, user);
+-        Rollup before = Rollup.of(to, people, claims, rates, sheets, settings);
++        Rollup before = Rollup.of(to, people, claims, rates, sheets, settings, pools);
+         for (long id : claims.transferAll(sheetId, person.getId(), to)) {
+             Claim claim = claims.find(to, id);
+             claims.renumber(claim, ClaimNumbers.next(claim, claims, periods, settings, sheets));
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index e4543a1e3..91ca9ed97 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -77,6 +77,27 @@ public class PoolRepository {
+         return result;
+     }
+ 
++    /** Each person's cut total by person id: their cuts across every pool they are a member of (crews'
++     *  included) as they now stand, added up (a pool that shows no cut adds nothing). */
++    public Map<Long, BigDecimal> cutTotals(String sheetId) {
++        return cutTotals(asOf(sheetId, null));
++    }
++
++    /** Each person's cut total by person id as it stood on the date, with it as the sheet's today. */
++    public Map<Long, BigDecimal> cutTotalsAsOf(String sheetId, LocalDate on) {
++        return cutTotals(asOf(sheetId, on));
++    }
++
++    private static Map<Long, BigDecimal> cutTotals(List<Pool> pools) {
++        Map<Long, BigDecimal> totals = new HashMap<>();
++        for (Pool pool : pools) {
++            for (PoolMember m : pool.members()) {
++                if (m.personId() != null && !m.cut().isEmpty()) totals.merge(m.personId(), new BigDecimal(m.cut()), BigDecimal::add);
++            }
++        }
++        return totals;
++    }
++
+     /** Fix every pool member's cut for the period as it now stands, replacing any fixed before. */
+     public void freeze(String sheetId, String period) {
+         thaw(sheetId, period);
+diff --git a/src/main/java/net/officefloor/hq/app/quick/FindOrAddPerson.java b/src/main/java/net/officefloor/hq/app/quick/FindOrAddPerson.java
+index 042e59f39..c4eeb9142 100644
+--- a/src/main/java/net/officefloor/hq/app/quick/FindOrAddPerson.java
++++ b/src/main/java/net/officefloor/hq/app/quick/FindOrAddPerson.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.quick;
+ 
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.grade.GradeRepository;
+ import net.officefloor.hq.app.holiday.HolidayRepository;
+@@ -26,7 +27,7 @@ public class FindOrAddPerson {
+             @RequestParam(name = "by", required = false) String by, @Val QuickAddName name,
+             @Val Rollup before, SheetRepository sheets, PersonRepository people,
+             ClaimRepository claims, RateRepository rates, PeriodRepository periods,
+-            SettingRepository settings, HolidayRepository holidays, GradeRepository grades, Audit audit,
++            SettingRepository settings, PoolRepository pools, HolidayRepository holidays, GradeRepository grades, Audit audit,
+             Out<Person> person) throws PeriodClosedException, InvalidPersonException {
+         String id = sheetId.trim();
+         String user = by == null ? "" : by;
+@@ -50,7 +51,7 @@ public class FindOrAddPerson {
+         Person added = people.add(id, name.name(), grade, user);
+         audit.record("PERSON_ADDED sheet=" + id + " by=" + user + " name=" + added.getName()
+                 + " grade=" + added.getGrade());
+-        for (String line : Rollup.of(id, people, claims, rates, sheets, settings).changesSince(before, id, user)) {
++        for (String line : Rollup.of(id, people, claims, rates, sheets, settings, pools).changesSince(before, id, user)) {
+             audit.record(line);
+         }
+         person.set(added);
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ImportRates.java b/src/main/java/net/officefloor/hq/app/rate/ImportRates.java
+index 1ce220553..ab2d6162e 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/ImportRates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/ImportRates.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.rate;
+ 
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
+@@ -17,17 +18,17 @@ public class ImportRates {
+     public void importRates(@PathVariable("sheetId") String sheetId,
+             @RequestParam(name = "by", required = false) String by, @Val ImportRateLines lines,
+             SheetRepository sheets, RateRepository rates, PersonRepository people, ClaimRepository claims,
+-            SettingRepository settings, Audit audit, Out<ImportRatesResult> result) {
++            SettingRepository settings, PoolRepository pools, Audit audit, Out<ImportRatesResult> result) {
+         String id = sheetId.trim();
+         String user = by == null ? "" : by;
+         sheets.open(id, user);
+         for (ValidRate line : lines.lines()) {
+-            Rollup before = Rollup.of(id, people, claims, rates, sheets, settings);
++            Rollup before = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+             Rate rate = rates.set(id, line.grade(), line.pct(), line.from(), line.to(), user);
+             audit.record("RATE_SET sheet=" + id + " by=" + user + " grade=" + rate.grade() + " rate=" + rate.pct()
+                     + (rate.from() == null ? "" : " from=" + rate.from())
+                     + (rate.to() == null ? "" : " to=" + rate.to()));
+-            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
++            Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+             for (String change : after.changesSince(before, id, user)) {
+                 audit.record(change);
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RecordRollup.java b/src/main/java/net/officefloor/hq/app/rollup/RecordRollup.java
+index e76263c8d..a9ed62374 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/RecordRollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/RecordRollup.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.rollup;
+ 
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+@@ -16,9 +17,9 @@ public class RecordRollup {
+     public void record(@PathVariable("sheetId") String sheetId,
+             @RequestParam(name = "by", required = false) String by, @Val Rollup before,
+             PersonRepository people, ClaimRepository claims, RateRepository rates,
+-            SheetRepository sheets, SettingRepository settings, Audit audit) {
++            SheetRepository sheets, SettingRepository settings, PoolRepository pools, Audit audit) {
+         String id = sheetId.trim();
+-        Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
++        Rollup after = Rollup.of(id, people, claims, rates, sheets, settings, pools);
+         for (String line : after.changesSince(before, id, by == null ? "" : by)) {
+             audit.record(line);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 66a568d0a..4b275f40d 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -13,6 +13,7 @@ import net.officefloor.hq.app.claim.ClaimStatus;
+ import net.officefloor.hq.app.claim.Dues;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import net.officefloor.hq.app.rate.Rate;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.setting.DatedSetting;
+@@ -21,7 +22,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ 
+ /** The sheet's figures at one moment, as the screen shows them: each person's claimed (corrections
+  *  left out; held ones count, see {@link Person#countsClaimed}) and
+- *  due-total (null: n/a; else at most the sheet's cap) and overdue-total, in the order they were added, and the
++ *  due-total (null: n/a; else at most the sheet's cap less their cut total, not below 0.00) and overdue-total, in the order they were added, and the
+  *  sheet's claimed-total, due-total and overdue-total (these two leave out the single highest and
+  *  lowest person's figure when three or more people have one), with the sheet's alert threshold
+  *  (null: off). A shared claim's due counts toward each holder's due-total (and settled figures) by their part
+@@ -43,10 +44,11 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+ 
+     /** The sheet's figures now. */
+     public static Rollup of(String sheetId, PersonRepository people, ClaimRepository claims,
+-            RateRepository rates, SheetRepository sheets, SettingRepository settings) {
++            RateRepository rates, SheetRepository sheets, SettingRepository settings, PoolRepository pools) {
+         List<Rate> sheetRates = rates.list(sheetId);
+         DatedSetting floor = settings.floor(sheetId);
+         BigDecimal cap = settings.cap(sheetId);
++        Map<Long, BigDecimal> cuts = cap == null ? Map.of() : pools.cutTotals(sheetId);
+         LocalDate todayDate = sheets.today(sheetId);
+         String today = todayDate.toString();
+         Dues.Late late = settings.late(sheetId, todayDate);
+@@ -110,7 +112,10 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+             BigDecimal settled = f[3].add(heldSettled.getOrDefault(p.getId(), zero()));
+             boolean kept = keeps.get(p.getId()) || held != null;
+             boolean na = rateOn(sheetRates, p.getGrade(), today) == null && !kept;
+-            if (cap != null && due.compareTo(cap) > 0) due = cap.setScale(2);
++            if (cap != null) {
++                BigDecimal room = capLessCuts(cap, cuts.get(p.getId()));
++                if (due.compareTo(room) > 0) due = room;
++            }
+             figures.put(p.getId(), new Figures(p.getName(), claimed.toPlainString(),
+                     na ? null : due.toPlainString(), overdue.toPlainString(),
+                     score(settled, overdueCounts.get(p.getId())[0])));
+@@ -157,6 +162,12 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+         return figures.dueTotal() != null && new BigDecimal(figures.dueTotal()).compareTo(alertThreshold) > 0;
+     }
+ 
++    /** What a person's due-total is held to: the cap less their cut total (none: 0.00), not below 0.00. */
++    public static BigDecimal capLessCuts(BigDecimal cap, BigDecimal cutTotal) {
++        BigDecimal room = cutTotal == null ? cap : cap.subtract(cutTotal);
++        return room.signum() < 0 ? zero() : room.setScale(2);
++    }
++
+     /** Whether the claim corrects another: such a claim is left out of claimed. */
+     private static boolean corrects(Claim c) {
+         return c.getCorrects() != null && !c.getCorrects().isBlank();
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/TakeRollup.java b/src/main/java/net/officefloor/hq/app/rollup/TakeRollup.java
+index 42801da1b..d352c7474 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/TakeRollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/TakeRollup.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.rollup;
+ 
+ import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.setting.SettingRepository;
+@@ -12,7 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ public class TakeRollup {
+     public void take(@PathVariable("sheetId") String sheetId, PersonRepository people,
+             ClaimRepository claims, RateRepository rates, SheetRepository sheets,
+-            SettingRepository settings, Out<Rollup> before) {
+-        before.set(Rollup.of(sheetId.trim(), people, claims, rates, sheets, settings));
++            SettingRepository settings, PoolRepository pools, Out<Rollup> before) {
++        before.set(Rollup.of(sheetId.trim(), people, claims, rates, sheets, settings, pools));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index d449f5b33..9fcc8c9cc 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -50,7 +50,7 @@ public class SettingRepository {
+      *  when opened instead of OPEN (two decimals; blank: none). */
+     public static final String REVIEW_THRESHOLD = "review-threshold";
+ 
+-    /** The cap: the most a person's due-total can be (two decimals; blank: no cap). */
++    /** The cap: the most a person's due-total plus their cut total can be (two decimals; blank: no cap). */
+     public static final String CAP = "cap";
+ 
+     /** The pot: the sum a balanced pool's members cut between them (two decimals; blank: none; not dated). */
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RecordSheetCloned.java b/src/main/java/net/officefloor/hq/app/sheet/RecordSheetCloned.java
+index da31ef6d7..b87498aaa 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/RecordSheetCloned.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/RecordSheetCloned.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.sheet;
+ 
+ import java.util.Map;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
+@@ -15,12 +16,12 @@ import org.springframework.web.bind.annotation.RequestParam;
+ public class RecordSheetCloned {
+     public void record(@RequestParam(name = "by", required = false) String by, @Val Clone clone,
+             PersonRepository people, ClaimRepository claims, RateRepository rates, SheetRepository sheets,
+-            SettingRepository settings, Audit audit) {
++            SettingRepository settings, PoolRepository pools, Audit audit) {
+         String user = by == null ? "" : by;
+         audit.record("SHEET_CLONE_MADE sheet=" + clone.from() + " by=" + user + " to=" + clone.to());
+         audit.record("SHEET_CLONED sheet=" + clone.to() + " by=" + user + " from=" + clone.from());
+         Rollup nothing = new Rollup(Map.of(), null, null, null, null);
+-        for (String line : Rollup.of(clone.to(), people, claims, rates, sheets, settings)
++        for (String line : Rollup.of(clone.to(), people, claims, rates, sheets, settings, pools)
+                 .changesSince(nothing, clone.to(), user)) {
+             audit.record(line);
+         }
