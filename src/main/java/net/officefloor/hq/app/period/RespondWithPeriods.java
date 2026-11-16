@@ -8,6 +8,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class RespondWithPeriods {
     public void respond(@PathVariable("sheetId") String sheetId, PeriodRepository periods,
             ObjectResponse<List<PeriodResponse>> response) {
-        response.send(periods.list(sheetId.trim()).stream().map(PeriodResponse::from).toList());
+        response.send(periods.list(sheetId.trim()).stream().map((p) -> PeriodResponse.from(p, periods)).toList());
     }
 }

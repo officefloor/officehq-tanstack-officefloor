@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.period;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 import net.officefloor.hq.app.claim.Claim;
@@ -16,7 +17,8 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Closes an open period, fixing its due-total as it is now: the figures of the claims that count (a person's OPEN or PENDING claims dated within a hold of theirs, not bound by a statement, do not) whose date falls
- *  in it, each with its late charge, added up (skipping n/a). Closing a period already closed is refused. */
+ *  in it, each with its late charge, added up (skipping n/a). Each person's own due-total for the period is fixed
+ *  too, for every person on the sheet; the period's is the sum of theirs. Closing a period already closed is refused. */
 public class ClosePeriod {
     public void close(@Val Period period, @Val PeriodCloseRequest request, PeriodRepository periods,
             ClaimRepository claims, PersonRepository people, RateRepository rates, SettingRepository settings,
@@ -30,7 +32,10 @@ public class ClosePeriod {
                 .collect(Collectors.toMap(Person::id, (p) -> p));
         BigDecimal floor = settings.floor(period.sheetId());
         LateCharge late = LateCharge.of(period.sheetId(), sheets, settings, claims);
-        BigDecimal total = BigDecimal.ZERO.setScale(2);
+        Map<Long, BigDecimal> perPerson = new LinkedHashMap<>();
+        for (Long id : byId.keySet()) {
+            perPerson.put(id, BigDecimal.ZERO.setScale(2));
+        }
         for (Claim c : claims.list(period.sheetId())) {
             Person person = byId.get(c.personId());
             if (!ClaimDue.countsLive(c, person) || c.date().isBefore(period.from()) || c.date().isAfter(period.to())) {
@@ -38,12 +43,14 @@ public class ClosePeriod {
             }
             BigDecimal figure = person == null ? c.due() : late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, floor, late.rounding()));
             if (figure != null) {
-                total = total.add(figure);
+                perPerson.merge(c.personId(), figure, BigDecimal::add);
             }
         }
+        BigDecimal total = perPerson.values().stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
         if (!periods.close(period, total)) {
             throw new InvalidPeriodException("The period " + period.name() + " is already closed");
         }
+        periods.fixPersonTotals(period, perPerson);
         closed.set(new PeriodClose(request.by(), total));
     }
 }

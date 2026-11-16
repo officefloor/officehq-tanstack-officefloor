@@ -5,7 +5,9 @@ import java.sql.Date;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
@@ -69,8 +71,27 @@ public class PeriodRepository {
                 total, period.sheetId(), period.id()) == 1;
     }
 
-    /** Reopens the period, dropping its fixed due-total, but only while it is closed; false when it was not. */
+    /** Fixes each person's due-total for the period, as it is closed. */
+    public void fixPersonTotals(Period period, Map<Long, BigDecimal> totals) {
+        for (Map.Entry<Long, BigDecimal> e : totals.entrySet()) {
+            jdbc.update("INSERT INTO period_person_total (sheet_id, period_id, person_id, total) VALUES (?, ?, ?, ?)",
+                    period.sheetId(), period.id(), e.getKey(), e.getValue());
+        }
+    }
+
+    /** The fixed due-total of each person for the closed period, by person id. */
+    public Map<Long, BigDecimal> personTotals(Period period) {
+        Map<Long, BigDecimal> totals = new LinkedHashMap<>();
+        jdbc.query("SELECT person_id, total FROM period_person_total WHERE sheet_id = ? AND period_id = ? ORDER BY person_id",
+                (ResultSet rs) -> {
+                    totals.put(rs.getLong("person_id"), rs.getBigDecimal("total").setScale(2));
+                }, period.sheetId(), period.id());
+        return totals;
+    }
+
+    /** Reopens the period, dropping its fixed due-totals, but only while it is closed; false when it was not. */
     public boolean reopen(Period period) {
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_id = ?", period.sheetId(), period.id());
         return jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND id = ? AND closed = TRUE",
                 period.sheetId(), period.id()) == 1;
     }

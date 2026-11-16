@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
+import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { useClaims } from '../claims/claims';
-import { usePeople } from '../people/people';
+import { usePeople, type Person } from '../people/people';
 import { useRates } from '../rates/rates';
 import { useFloor, useLate } from '../settings/settings';
-import { periodDue, periodsKey, usePeriods, type Period } from './periods';
+import { periodDue, periodsKey, personPeriodDue, usePeriods, type Period } from './periods';
 
 type Values = { name: string; from: string; to: string };
 const EMPTY: Values = { name: '', from: '', to: '' };
@@ -89,7 +90,41 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   );
 }
 
-export const contribution = SheetPage.fill({ order: 7, Component: Periods });
+/** One header cell per period of the sheet. */
+function PeriodsHead({ sheetId }: { sheetId: string }) {
+  const periods = usePeriods(sheetId);
+  return (
+    <>
+      {(periods.data ?? []).map((p) => (
+        <th key={p.id}>{p.name} due</th>
+      ))}
+    </>
+  );
+}
+
+/** A person's due-total for each period of the sheet (see personPeriodDue). */
+function PersonPeriods({ sheetId, person }: { sheetId: string; person: Person }) {
+  const periods = usePeriods(sheetId);
+  const claims = useClaims(sheetId);
+  const rates = useRates(sheetId);
+  const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
+  return (
+    <>
+      {(periods.data ?? []).map((p) => (
+        <td key={p.id} data-testid={`person-period-${p.name}-due-total`}>
+          {personPeriodDue(p, person, claims.data, rates.data, floor, late)}
+        </td>
+      ))}
+    </>
+  );
+}
+
+export const contributions = [
+  SheetPage.fill({ order: 7, Component: Periods }),
+  PeopleHead.fill({ order: 22, Component: PeriodsHead }),
+  PersonRow.fill({ order: 22, Component: PersonPeriods }),
+];
 
 /** Closes a period: its due-total is fixed as it is now. Reopens a closed one (a steward only): its due-total is
  *  live again. A refused action shows the period's error; the next action on the period clears it. */
