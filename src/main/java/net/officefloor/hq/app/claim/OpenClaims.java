@@ -1,0 +1,63 @@
+package net.officefloor.hq.app.claim;
+
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.period.PeriodRepository;
+import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.rollup.RollupBefore;
+import net.officefloor.plugin.variable.Out;
+import net.officefloor.plugin.variable.Val;
+import org.springframework.web.bind.annotation.PathVariable;
+
+/**
+ * Opens each selected claim that can be opened, in list order (people in the order they were added, a person's
+ * claims newest first): as the single open does, it must be a DRAFT not dated inside a closed period, takes the
+ * sheet's next number and records who opened it, then writes CLAIM_OPENED and the figures it moved (see Rollup).
+ * Each that cannot, or is not on the sheet, is left as it is and counted refused.
+ */
+public class OpenClaims {
+    public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenRequest request, ClaimRepository claims,
+            PersonRepository people, PeriodRepository periods, Rollup rollup, Audit audit,
+            Out<BulkOpenResult> result) {
+        String sheet = sheetId.trim();
+        Set<Long> selected = new HashSet<>(request.claimIds());
+        List<Person> listed = people.list(sheet);
+        Map<Long, Integer> personOrder = new HashMap<>();
+        for (int i = 0; i < listed.size(); i++) {
+            personOrder.put(listed.get(i).id(), i);
+        }
+        Map<Long, Person> byId = listed.stream().collect(Collectors.toMap(Person::id, (p) -> p));
+        List<Claim> chosen = claims.list(sheet).stream().filter((c) -> selected.contains(c.id()))
+                .sorted((a, b) -> Integer.compare(personOrder.getOrDefault(a.personId(), Integer.MAX_VALUE),
+                        personOrder.getOrDefault(b.personId(), Integer.MAX_VALUE)))
+                .toList();
+        int opened = 0;
+        for (Claim claim : chosen) {
+            if (claim.status() != ClaimStatus.DRAFT || periods.closedOn(sheet, claim.date())) {
+                continue;
+            }
+            RollupBefore before = rollup.take(sheet);
+            long number = claims.nextNumber(sheet);
+            Claim toSave = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
+                    claim.note(), ClaimStatus.OPEN, number, claim.due(), request.by(), claim.stated(),
+                    claim.statedDue(), claim.corrects());
+            if (!claims.updateStatus(toSave, ClaimStatus.DRAFT)) {
+                continue;
+            }
+            opened++;
+            Person person = byId.get(claim.personId());
+            audit.record("CLAIM_OPENED sheet=" + sheet + " by=" + request.by() + " person="
+                    + (person == null ? "" : person.name()) + " amount=" + claim.amount().toPlainString()
+                    + " date=" + claim.date() + " number=" + number);
+            rollup.record(sheet, request.by(), before);
+        }
+        result.set(new BulkOpenResult(opened, selected.size() - opened));
+    }
+}

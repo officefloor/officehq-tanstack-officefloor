@@ -10,6 +10,7 @@ import { claimDue, rateFor, useRates } from '../rates/rates';
 import { dueBy, isOverdue } from '../overdue/overdue';
 import { useFloor, useLate } from '../settings/settings';
 import { claimsKey, live, total, useClaims, type Claim } from './claims';
+import { useSelectedClaims } from './selection';
 
 type Values = { amount: string; date: string; note: string; corrects: string };
 const EMPTY: Values = { amount: '', date: '', note: '', corrects: '' };
@@ -25,7 +26,7 @@ function ClaimsHead() {
 
 type Action = 'open' | 'settle' | 'void';
 
-/** One claim: its values, status, due, due-by (its date plus the sheet's terms), whether it is overdue, and the period its date falls in, with the buttons that edit it or change its status. An action
+/** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, due-by (its date plus the sheet's terms), whether it is overdue, and the period its date falls in, with the buttons that edit it or change its status. An action
  *  the status does not allow, or settling a claim the user opened, is refused by the server and shows the claim's
  *  error. Only a DRAFT can be edited: Edit on any other claim shows the claim's error instead of opening the editor. */
 function ClaimRow({
@@ -56,6 +57,7 @@ function ClaimRow({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
   const [editRefused, setEditRefused] = useState(false);
+  const [selected, setSelected] = useSelectedClaims();
   const act = (action: Action) => {
     setEditRefused(false);
     status.reset();
@@ -64,6 +66,13 @@ function ClaimRow({
 
   return (
     <li data-testid={`claim-row-${c.id}`}>
+      <input
+        type="checkbox"
+        data-testid="claim-select"
+        aria-label="Select claim"
+        checked={selected.includes(c.id)}
+        onChange={(e) => setSelected(e.target.checked ? [...selected, c.id] : selected.filter((id) => id !== c.id))}
+      />{' '}
       <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
       <span data-testid="claim-amount">{c.amount}</span> <span data-testid="claim-date">{c.date}</span>{' '}
       <span data-testid="claim-note">{c.note}</span>{' '}
