@@ -115,6 +115,13 @@ public class Rollup {
         return new RollupBefore(figures);
     }
 
+    /** What the shares of the sheet's claims that count live move in each person's due-total now (see #shareParts), by
+     *  person id. */
+    public Map<Long, BigDecimal> shareParts(String sheetId) {
+        return shareParts(sheetId, sheets.today(sheetId), LateCharge.of(sheetId, sheets, settings, claims),
+                claims.list(sheetId), people.list(sheetId));
+    }
+
     /** What the shares of the claims that count live move in each person's due-total, by person id: each holder gains
      *  their part of the claim's figure (see ClaimShare#part), and the claim's own person loses it. A person with no
      *  share of a claim that has a figure is left out. */

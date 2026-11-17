@@ -56,8 +56,15 @@ public class PoolRepository {
      *  whose to-date is on or before the sheet's today, their cut as it stood at the end of that period (see #stood).
      *  Null when they had none then. */
     public List<Pool> list(String sheetId, LocalDate asOf) {
-        List<Pool> now = stood(sheetId, asOf);
-        LocalDate today = asOf != null ? asOf : sheets.today(sheetId);
+        return list(sheetId, asOf, null);
+    }
+
+    /** The sheet's pools (see #list(String, LocalDate)), with the preview date (null: none; see Preview) standing in for
+     *  the sheet's today when read as it is now. */
+    public List<Pool> list(String sheetId, LocalDate asOf, LocalDate preview) {
+        LocalDate shown = asOf == null ? preview : null;
+        List<Pool> now = stood(sheetId, asOf, shown);
+        LocalDate today = asOf != null ? asOf : shown != null ? shown : sheets.today(sheetId);
         Map<Long, String> fixed = periods.poolCuts(sheetId, asOf);
         List<String> ended = new ArrayList<>();
         List<Map<String, String>> cutsThen = new ArrayList<>();
@@ -144,8 +151,14 @@ public class PoolRepository {
      *  the sheet's today, and only the pools, memberships, crews, holds, retirements and pot stored while the sheet's
      *  today was on or before it count. */
     private List<Pool> stood(String sheetId, LocalDate asOf) {
+        return stood(sheetId, asOf, null);
+    }
+
+    /** The pools as they stood (see #stood(String, LocalDate)), the preview date (null: none) standing in for the
+     *  sheet's today when read as it is now. */
+    private List<Pool> stood(String sheetId, LocalDate asOf, LocalDate preview) {
         BigDecimal pot = asOf != null ? settings.pot(sheetId, asOf) : settings.pot(sheetId);
-        LocalDate today = asOf != null ? asOf : sheets.today(sheetId);
+        LocalDate today = asOf != null ? asOf : preview != null ? preview : sheets.today(sheetId);
         java.sql.Date then = asOf != null ? java.sql.Date.valueOf(asOf) : java.sql.Date.valueOf(LocalDate.of(9999, 12, 31));
         Set<Long> held = held(sheetId, today, then);
         Map<Long, Boolean> retiredThen = asOf != null ? retired(sheetId, then) : null;

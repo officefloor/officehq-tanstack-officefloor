@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import net.officefloor.hq.app.sheet.AsOf;
+import net.officefloor.hq.app.sheet.Preview;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.hq.app.statement.Statement;
 import net.officefloor.hq.app.statement.StatementRepository;
@@ -19,13 +20,14 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  statement was taken while the sheet's today was on or before the date; the date stands in for today. */
 public class RespondWithClaims {
     public void respond(@PathVariable("sheetId") String sheetId,
-            @RequestParam(value = "asOf", required = false) String asOf, ClaimRepository claims,
+            @RequestParam(value = "asOf", required = false) String asOf,
+            @RequestParam(value = "preview", required = false) String preview, ClaimRepository claims,
             ClaimLogRepository log, SheetRepository sheets, StatementRepository statements,
             ObjectResponse<List<ClaimResponse>> response) {
         String sheet = sheetId.trim();
         LocalDate date = AsOf.parse(asOf);
         Map<Long, List<ClaimLogLine>> logs = log.bySheet(sheet);
-        LocalDate today = date == null ? sheets.today(sheet) : date;
+        LocalDate today = Preview.today(sheet, date, preview, sheets);
         Map<Long, String> locks = claims.locks(sheet);
         Map<Long, Long> seqs = claims.addedSeqs(sheet);
         Set<Long> late = claims.lateEntries(sheet);

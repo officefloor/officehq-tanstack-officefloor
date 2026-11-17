@@ -64,8 +64,14 @@ public class PersonRepository {
     }
 
     public List<Person> list(String sheetId) {
+        return list(sheetId, null);
+    }
+
+    /** The sheet's people (see #list), their grade and terms in force on the day given instead of the sheet's today
+     *  (null: on its today) — a preview of the sheet (see Preview). */
+    public List<Person> list(String sheetId, LocalDate on) {
         return withGrades(sheetId, jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY position, id",
-                PersonRepository::map, sheetId));
+                PersonRepository::map, sheetId), on);
     }
 
     public Person find(String sheetId, long id) {
@@ -86,6 +92,11 @@ public class PersonRepository {
 
     /** The people with their grades and holds, and the grade in force on the sheet's today. */
     private List<Person> withGrades(String sheetId, List<Person> found) {
+        return withGrades(sheetId, found, null);
+    }
+
+    /** The people with their grades and holds, and the grade in force on the day (null: the sheet's today). */
+    private List<Person> withGrades(String sheetId, List<Person> found, LocalDate on) {
         if (found.isEmpty()) {
             return found;
         }
@@ -111,7 +122,7 @@ public class PersonRepository {
                     retirements.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(new PersonRetirement(
                             rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate()));
                 }, sheetId);
-        LocalDate today = sheets.today(sheetId);
+        LocalDate today = on != null ? on : sheets.today(sheetId);
         List<Person> people = new ArrayList<>();
         for (Person p : found) {
             List<PersonGrade> mine = List.copyOf(grades.getOrDefault(p.id(), List.of()));

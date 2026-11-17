@@ -14,8 +14,20 @@ export function viewAsOf(): string {
   return /^"?(\d{4}-\d{2}-\d{2})"?$/.exec(raw)?.[1] ?? '';
 }
 
+/** The date this screen previews the sheet's today as (yyyy-MM-dd; the `preview` search param, see features/preview),
+ *  or ''. While set, and no as-of date is, every read of a sheet asks for its figures as if its today were that date
+ *  (`preview`); a change never carries it, so every change uses the sheet's real today. */
+export function viewPreview(): string {
+  const raw = new URLSearchParams(window.location.search).get('preview') ?? '';
+  return /^"?(\d{4}-\d{2}-\d{2})"?$/.exec(raw)?.[1] ?? '';
+}
+
 async function send<T>(path: string, init?: RequestInit, now = false): Promise<T> {
   const asOf = now ? '' : viewAsOf();
+  const preview = now || asOf !== '' ? '' : viewPreview();
+  if (preview !== '' && path.startsWith('/api/sheets/') && (init?.method ?? 'GET') === 'GET') {
+    path = `${path}${path.includes('?') ? '&' : '?'}preview=${preview}`;
+  }
   if (asOf !== '' && path.startsWith('/api/sheets/')) {
     if ((init?.method ?? 'GET') === 'GET') {
       path = `${path}${path.includes('?') ? '&' : '?'}asOf=${asOf}`;

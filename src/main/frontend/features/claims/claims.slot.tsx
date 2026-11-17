@@ -14,7 +14,7 @@ import { isReviewLate } from '../overdue/late';
 import { useFloor, useLate, useReviewSla, type Dated } from '../settings/settings';
 import { claimsKey, commentLine, lineLine, live, liveClaimed, logLine, claimed, useClaims, type Claim } from './claims';
 import { useSelectedClaims } from './selection';
-import { useSheetToday } from '../session/session';
+import { useSheet, useSheetToday } from '../session/session';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 import { useTemplates } from '../templates/templates';
 import { useShownColumns } from '../columns/columns';
@@ -74,10 +74,12 @@ function ClaimRow({
   const roles = useRoles(sheetId);
   const delegations = useDelegations(sheetId);
   const today = useSheetToday(sheetId);
+  // who may act is judged on the sheet's real today, whatever date the screen previews
+  const realToday = useSheet(sheetId).data?.today ?? '';
   // a viewer acting for a steward who delegated to them (the sheet's today inside its range) is not a viewer then
   const viewer =
     roles.data?.find((r) => r.user === user)?.role === 'viewer' &&
-    !delegations.data?.some((d) => d.user === user && d.from <= today && today <= d.to);
+    !delegations.data?.some((d) => d.user === user && d.from <= realToday && realToday <= d.to);
   const queryClient = useQueryClient();
   const periods = usePeriods(sheetId);
   const late = useLate(sheetId);

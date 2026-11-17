@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { nowKey, useReadNow } from '../../query/readNow';
 import { asString, useSearchParam } from '../../url/useSearchParam';
+import { useAsOf } from '../asof/asof.slot';
+import { usePreview } from '../preview/preview';
 
 // Who is signed in and which sheet is active live in the URL (`user`, `sheet`), so any feature
 // reads them directly. There is no password: signing in is typing a name.
@@ -23,7 +25,13 @@ export function useSheet(sheetId: string) {
   });
 }
 
-/** The sheet's today (yyyy-MM-dd), or '' while the sheet loads. Use it for every default date. */
+/** The sheet's today (yyyy-MM-dd), or '' while the sheet loads, as every figure on this screen takes it: the preview
+ *  date while this screen previews one (see features/preview; not while it shows the sheet as of a date, nor in a read
+ *  of the sheet as it is now). Use it for every figure; a change and its defaults use the sheet's real today. */
 export function useSheetToday(sheetId: string): string {
-  return useSheet(sheetId).data?.today ?? '';
+  const today = useSheet(sheetId).data?.today ?? '';
+  const [preview] = usePreview();
+  const [asOf] = useAsOf();
+  const now = useReadNow();
+  return today !== '' && preview !== '' && asOf === '' && !now ? preview : today;
 }
