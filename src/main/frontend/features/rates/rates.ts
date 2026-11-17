@@ -8,7 +8,8 @@ import type { Dated } from '../settings/settings';
 
 /** A grade's rate on the sheet: `rate` is a percent as text with two decimals (never a float), in force from
  *  `from` (yyyy-MM-dd; null: from the beginning of time) through `to` (yyyy-MM-dd; null: no end). `level` is how far
- *  up the parent chain its sheet is: 0 the sheet's own, 1 its parent's, up to 3 (absent: 0). `version` is how many
+ *  up the chain its sheet is: 0 the sheet's own, 1 its parent's, up to 3, then on to the sheet it was cloned from, its
+ *  parents and its source (absent: 0). `version` is how many
  *  versions the grade and from-date has had, this being the newest (the one in force). */
 export type Rate = {
   sheetId: string;

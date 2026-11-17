@@ -5,7 +5,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -30,16 +32,18 @@ public class RateRepository {
     }
 
     /** The sheets whose rates the sheet uses, in the order looked at: itself, then its parent, the parent's parent,
-     *  up to SettingRepository#PARENT_LEVELS levels up. */
+     *  up to SettingRepository#PARENT_LEVELS levels up; then, when it was cloned, the chain of the sheet it was cloned
+     *  from (see sources), each sheet once. */
     public List<String> chain(String sheetId) {
         List<String> chain = new ArrayList<>();
         chain.add(sheetId);
         chain.addAll(settings.ancestors(sheetId, SettingRepository.PARENT_LEVELS));
+        sources(sheetId, chain);
         return chain;
     }
 
     /** As chain, as of a date: the parent the sheet had then (see SettingRepository#parentAsOf), none when it had
-     *  none, then that parent's ancestors as they are now. */
+     *  none, then that parent's ancestors as they are now, then the chain of the sheet it was cloned from. */
     public List<String> chainAsOf(String sheetId, LocalDate asOf) {
         List<String> chain = new ArrayList<>();
         chain.add(sheetId);
@@ -53,7 +57,24 @@ public class RateRepository {
                 chain.add(up);
             }
         }
+        sources(sheetId, chain);
         return chain;
+    }
+
+    /** Adds to the chain the sheet the sheet was cloned from, then its parents (up to PARENT_LEVELS levels), then its
+     *  own source, and so on, passing over a sheet the chain already has and stopping at one never cloned. */
+    private void sources(String sheetId, List<String> chain) {
+        Set<String> seen = new HashSet<>(List.of(sheetId));
+        for (String at = sheets.source(sheetId); at != null && seen.add(at); at = sheets.source(at)) {
+            if (!chain.contains(at)) {
+                chain.add(at);
+            }
+            for (String up : settings.ancestors(at, SettingRepository.PARENT_LEVELS)) {
+                if (!chain.contains(up)) {
+                    chain.add(up);
+                }
+            }
+        }
     }
 
     /** The sheet's rates, by grade, then from-date (one with none first). */
@@ -63,7 +84,8 @@ public class RateRepository {
     }
 
     /** The grade's rate in force on a date on the sheet (see own), or, when it has none, the one in force on its
-     *  parent, then the parent's parent, up to three levels up; null when none of them has one. */
+     *  parent, then the parent's parent, up to three levels up, then the sheet it was cloned from (see chain); null when
+     *  none of them has one. */
     public Rate find(String sheetId, String grade, LocalDate on) {
         for (String sheet : chain(sheetId)) {
             Rate rate = own(sheet, grade, on);
@@ -88,7 +110,7 @@ public class RateRepository {
 
     /** The grade's rate that applies to a claim — dated {@code on}, added with the added sequence {@code seq} (null: one
      *  not yet added) — on the sheet (see ownFor), or, when it has none, on its parent, then the parent's parent, up to
-     *  three levels up; null when none of them has one. Unlike find, a forward-only rate saved after the claim was added
+     *  three levels up, then the sheet it was cloned from (see chain); null when none of them has one. Unlike find, a forward-only rate saved after the claim was added
      *  is passed over (see Rate#appliesTo). */
     public Rate forClaim(String sheetId, String grade, LocalDate on, Long seq) {
         for (String sheet : chain(sheetId)) {

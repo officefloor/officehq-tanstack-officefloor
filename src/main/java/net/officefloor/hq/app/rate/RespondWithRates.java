@@ -10,9 +10,9 @@ import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** The sheet's rates, by grade, then those of its parent, the parent's parent, up to three levels up (each with its
- *  level), which apply to a grade on a date the sheet has no rate for; read as of a date (see AsOf), the sheet's own
- *  as they stood then (see SheetAsOf) and those inherited from the parent it had then (see RateRepository#chainAsOf)
+/** The sheet's rates, by grade, then those of its parent, the parent's parent, up to three levels up, then those of
+ *  the sheet it was cloned from and its parents and source (see RateRepository#chain; each with its level), which
+ *  apply to a grade on a date the sheet has no rate for; read as of a date (see AsOf), the sheet's own as they stood then (see SheetAsOf) and those inherited from the parent it had then (see RateRepository#chainAsOf)
  *  as they are now (a parent keeps its own today, so the date
  *  says nothing of when its rates were stored). */
 public class RespondWithRates {

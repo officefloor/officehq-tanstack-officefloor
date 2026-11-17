@@ -62,6 +62,17 @@ public class SheetRepository {
         return found.isEmpty() || found.get(0) == null || found.get(0).isBlank() ? null : found.get(0);
     }
 
+    /** The sheet the sheet was cloned from, or null when it was not cloned. */
+    public String source(String id) {
+        List<String> found = jdbc.queryForList("SELECT source_id FROM sheet_source WHERE sheet_id = ?", String.class, id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** Notes that the sheet was cloned from the source. */
+    public void saveSource(String id, String source) {
+        jdbc.update("MERGE INTO sheet_source (sheet_id, source_id) KEY (sheet_id) VALUES (?, ?)", id, source);
+    }
+
     /** Notes that the sheet has been loaded: from then on it exists. */
     public void markLoaded(String id) {
         jdbc.update("MERGE INTO sheet_loaded (id) KEY (id) VALUES (?)", id);
