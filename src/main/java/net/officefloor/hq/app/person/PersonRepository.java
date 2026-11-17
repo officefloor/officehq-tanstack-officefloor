@@ -344,6 +344,16 @@ public class PersonRepository {
         return terms[0];
     }
 
+    /** Makes every grade record of the person's on the grade {@code from} the grade {@code into}, whatever its date
+     *  (a retroactive grade merge), and logs their grades as stored now. */
+    public void regrade(String sheetId, long id, String from, String into) {
+        jdbc.update("UPDATE person_grade SET grade = ? WHERE sheet_id = ? AND person_id = ? AND grade = ?", into, sheetId, id, from);
+        Person person = find(sheetId, id);
+        if (person != null) {
+            logGrades(sheetId, id, person.grades());
+        }
+    }
+
     /** Logs the person's grades as stored now, with the sheet's today. */
     private void logGrades(String sheetId, long id, List<PersonGrade> grades) {
         StringBuilder text = new StringBuilder();
