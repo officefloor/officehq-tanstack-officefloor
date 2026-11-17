@@ -109,6 +109,12 @@ public class SettingRepository {
     /** The month (1 to 12) the sheet's fiscal year starts in; 1 unless set (undated). */
     public static final String FISCAL_START_MONTH = "fiscal-start-month";
 
+    /** The sheet's score thresholds: a person's band is HIGH at or above score-high, MID at or above score-mid, else LOW;
+     *  whole numbers, blank for none (no band while either is blank; undated). */
+    public static final String SCORE_MID = "score-mid";
+
+    public static final String SCORE_HIGH = "score-high";
+
     /** The fiscal year start month a sheet has until one is set. */
     public static final int DEFAULT_FISCAL_START_MONTH = 1;
 

@@ -32,6 +32,13 @@ export function inForce(settings: Setting[] | undefined, key: string, date: stri
   return found;
 }
 
+/** The sheet's score thresholds (whole numbers; undated): mid and high, each null when blank. */
+export function useScoreThresholds(sheetId: string): { mid: string | null; high: string | null } {
+  const settings = useSettings(sheetId);
+  const value = (key: string) => settings.data?.find((s) => s.key === key)?.value ?? null;
+  return { mid: value('score-mid'), high: value('score-high') };
+}
+
 /** The fiscal year start month a sheet has until one is set. */
 export const DEFAULT_FISCAL_START_MONTH = '1';
 

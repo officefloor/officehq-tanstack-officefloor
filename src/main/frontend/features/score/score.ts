@@ -10,3 +10,11 @@ export function score(settled: string, overdueCount: number): string {
   const r = rem > 5000n || (rem === 5000n && q % 2n === 1n) ? q + 1n : q;
   return String(p < 0n ? -r : r);
 }
+
+/** A person's band from their score (see score) and the sheet's score thresholds: HIGH at or above the high one, MID at
+ *  or above the mid one, else LOW; empty while either threshold is blank. */
+export function band(score: string, mid: string | null, high: string | null): string {
+  if (mid === null || high === null) return '';
+  const s = BigInt(score);
+  return s >= BigInt(high) ? 'HIGH' : s >= BigInt(mid) ? 'MID' : 'LOW';
+}
