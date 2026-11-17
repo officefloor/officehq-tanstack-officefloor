@@ -3,7 +3,7 @@ import { useIsFetching } from '@tanstack/react-query';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
 import { gradeOn, usePeople } from '../people/people';
-import { periodOf, usePeriods } from '../periods/periods';
+import { periodOf, personPeriodCarried, personPeriodDue, usePeriods } from '../periods/periods';
 import { personCutTotal, usePools } from '../pools/pools';
 import { claimDue, personDue, claimRate, useRates } from '../rates/rates';
 import { useShareParts } from '../header/totals';
@@ -114,8 +114,45 @@ function ExportPools({ sheetId }: { sheetId: string }) {
   );
 }
 
+/** The button that downloads the period figures as a CSV file: person, period, figure and carried as the person rows
+ *  show them (see personPeriodDue, personPeriodCarried), one line per person and period, people in list order (retired
+ *  people included) and periods in the order added. Made once the sheet's figures are no longer being re-read; while an
+ *  as-of date is set they are the as-of figures, and while a preview date is set the preview figures. */
+function ExportPeriods({ sheetId }: { sheetId: string }) {
+  const people = usePeople(sheetId);
+  const periods = usePeriods(sheetId);
+  const claims = useClaims(sheetId);
+  const rates = useRates(sheetId);
+  const late = useLate(sheetId);
+  const floor = useFloor(sheetId);
+  const fetching = useIsFetching({ queryKey: ['sheet', sheetId] });
+  const [wanted, setWanted] = useState(false);
+
+  useEffect(() => {
+    if (!wanted || fetching > 0 || !people.data || !periods.data) return;
+    setWanted(false);
+    const lines = ['person,period,figure,carried'];
+    for (const p of people.data)
+      for (const period of periods.data) {
+        const figure = personPeriodDue(period, p, claims.data, rates.data, floor, late);
+        const carried = personPeriodCarried(period, periods.data, p, claims.data, rates.data, floor, late);
+        lines.push([p.name, period.name, figure, carried].map(csvValue).join(','));
+      }
+    download(`periods-${sheetId}.csv`, lines);
+  }, [wanted, fetching, people.data, periods.data, claims.data, rates.data, late, floor, sheetId]);
+
+  return (
+    <p>
+      <button type="button" data-testid="export-periods" onClick={() => setWanted(true)}>
+        Export period figures (CSV)
+      </button>
+    </p>
+  );
+}
+
 export const contributions = [
   SheetPage.fill({ order: 15, Component: ExportPeople }),
   SheetPage.fill({ order: 15.5, Component: ExportClaims }),
   SheetPage.fill({ order: 15.6, Component: ExportPools }),
+  SheetPage.fill({ order: 15.7, Component: ExportPeriods }),
 ];
