@@ -45,11 +45,7 @@ function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string;
     <td>
       <ul>
         {mine.map((p) => (
-          <li key={p.id} data-testid={`plan-row-${p.id}`}>
-            {p.amount} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} from {p.start} to {p.end}; made{' '}
-            <span data-testid="plan-generated">{p.generated}</span>; next{' '}
-            <span data-testid="plan-next-dates">{p.nextDates}</span>
-          </li>
+          <PlanRow key={p.id} sheetId={sheetId} user={user} plan={p} />
         ))}
       </ul>
       <form
@@ -71,6 +67,42 @@ function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string;
         {add.isError && <span data-testid="plan-error"> Could not add this plan.</span>}
       </form>
     </td>
+  );
+}
+
+/** A plan (amount, interval, start, end, how many claims it has made, its next dates and whether it is paused) and
+ *  the buttons that pause and resume it: a date on or after the day it is paused and before the day it is resumed is
+ *  skipped. The server refuses pausing a paused plan or resuming a running one: the plan's error shows, until the next
+ *  press. */
+function PlanRow({ sheetId, user, plan: p }: { sheetId: string; user: string; plan: Plan }) {
+  const queryClient = useQueryClient();
+  const submit = useSubmitOnce();
+  const act = useMutation({
+    mutationFn: (action: 'pause' | 'resume') =>
+      postJson<void>(`/api/sheets/${encodeURIComponent(sheetId)}/plans/${p.id}/${action}`, { by: user }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: plansKey(sheetId) }),
+    onSettled: submit.end,
+  });
+  const press = (action: 'pause' | 'resume') => () => {
+    if (!submit.begin()) return;
+    act.reset();
+    act.mutate(action);
+  };
+
+  return (
+    <li data-testid={`plan-row-${p.id}`}>
+      {p.amount} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} from {p.start} to {p.end}; made{' '}
+      <span data-testid="plan-generated">{p.generated}</span>; next{' '}
+      <span data-testid="plan-next-dates">{p.nextDates}</span>; paused{' '}
+      <span data-testid="plan-paused">{p.paused ? 'yes' : 'no'}</span>{' '}
+      <button type="button" data-testid="plan-pause" disabled={act.isPending} onClick={press('pause')}>
+        Pause
+      </button>{' '}
+      <button type="button" data-testid="plan-resume" disabled={act.isPending} onClick={press('resume')}>
+        Resume
+      </button>
+      {act.isError && <span data-testid="plan-error"> Could not change this plan.</span>}
+    </li>
   );
 }
 

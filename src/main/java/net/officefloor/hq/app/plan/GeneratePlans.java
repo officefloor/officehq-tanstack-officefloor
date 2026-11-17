@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** For every plan on the sheet in the order added, adds a DRAFT claim of the plan's amount, dated the day with an empty
- *  note, for each plan date (see PlanDates) up to its end and the sheet's today that the plan has made
+ *  note, for each plan date (see PlanDates; a date its pauses skip makes none) up to its end and the sheet's today that the plan has made
  *  none for yet, as AddClaim adds one: a date the claim form's rules refuse (see ClaimRules) is skipped, to be tried
  *  again next time. Writes CLAIM_ADDED for each (then LATE_ENTRY for a late entry), then the figures the generate moved
  *  (see Rollup). Publishes how many were made. */
