@@ -115,6 +115,13 @@ public class SettingRepository {
 
     public static final String SCORE_HIGH = "score-high";
 
+    /** The sheet's score log: on, or blank for off; while on, changing the sheet's today writes SCORE for every person
+     *  (see RecordSnapshot) (undated). */
+    public static final String SCORE_LOG = "score-log";
+
+    /** The value that turns the score log on. */
+    public static final String ON = "on";
+
     /** The fiscal year start month a sheet has until one is set. */
     public static final int DEFAULT_FISCAL_START_MONTH = 1;
 
@@ -340,6 +347,11 @@ public class SettingRepository {
     public BigDecimal alertThreshold(String sheetId) {
         String value = value(sheetId, ALERT_THRESHOLD);
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** Whether the sheet's score log is on. */
+    public boolean scoreLog(String sheetId) {
+        return ON.equals(value(sheetId, SCORE_LOG));
     }
 
     /** The sheet's pot, or null when it is blank (none). */

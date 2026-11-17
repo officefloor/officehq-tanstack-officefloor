@@ -11,6 +11,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimDue;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.LateCharge;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -63,6 +64,8 @@ public class Rollup {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             BigDecimal overdue = BigDecimal.ZERO.setScale(2);
+            BigDecimal settled = BigDecimal.ZERO.setScale(2);
+            int overdueCount = 0;
             boolean figured = false;
             for (Claim c : all) {
                 if (c.personId() != person.id()) {
@@ -76,9 +79,16 @@ public class Rollup {
                 }
                 BigDecimal figure = late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, late.rounding()), settings.floor(sheetId, c.date()));
                 figured |= figure != null;
+                boolean overdueNow = ClaimDue.isOpen(c) && late.lateFrom(c).isBefore(today);
+                if (overdueNow) {
+                    overdueCount++;
+                }
+                if (figure != null && c.status() == ClaimStatus.SETTLED) {
+                    settled = settled.add(figure);
+                }
                 if (figure != null) {
                     due = due.add(figure);
-                    if (ClaimDue.isOpen(c) && late.lateFrom(c).isBefore(today)) {
+                    if (overdueNow) {
                         overdue = overdue.add(figure);
                     }
                 }
@@ -86,9 +96,16 @@ public class Rollup {
             String dueTotal = rates.find(sheetId, person.gradeOn(today), today) == null && !figured ? "n/a"
                     : SettingRepository.capped(due, cap).toPlainString();
             figures.put(person.id(), new Figures(person.name(), claimed.toPlainString(), dueTotal,
-                    overdue.toPlainString()));
+                    overdue.toPlainString(), score(settled, overdueCount)));
         }
         return new RollupBefore(figures);
+    }
+
+    /** A score from settled figures and an overdue count: settled / 100, minus 5 for every overdue claim, rounded once,
+     *  half to even, to a whole number. */
+    private static String score(BigDecimal settled, int overdueCount) {
+        return settled.movePointLeft(2).subtract(BigDecimal.valueOf(5L * overdueCount))
+                .setScale(0, java.math.RoundingMode.HALF_EVEN).toPlainString();
     }
 
     /** Writes the ROLLUP and TOTALS lines for the figures the change moved since {@code before}. */
