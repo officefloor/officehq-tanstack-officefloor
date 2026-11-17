@@ -163,6 +163,16 @@ function ClaimRow({
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
   });
+  const [newDueBy, setNewDueBy] = useState('');
+  // a steward sets the due-by directly: it then stays as set, whatever holiday is added later
+  const setDueBy = useMutation({
+    mutationFn: (dueBy: string) =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/due-by`, { dueBy, by: user }),
+    onSuccess: () => {
+      setNewDueBy('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
   const [proofKind, setProofKind] = useState('');
   const proof = useMutation({
     mutationFn: (kind: string) => postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/proofs`, { by: user, kind }),
@@ -258,6 +268,7 @@ function ClaimRow({
     hold.reset();
     share.reset();
     redate.reset();
+    setDueBy.reset();
     proof.reset();
     split.reset();
     settlePart.reset();
@@ -351,6 +362,7 @@ function ClaimRow({
           assignReview.reset();
           hold.reset();
           redate.reset();
+          setDueBy.reset();
           proof.reset();
           split.reset();
           settlePart.reset();
@@ -376,6 +388,7 @@ function ClaimRow({
           hold.reset();
           share.reset();
           redate.reset();
+          setDueBy.reset();
           proof.reset();
           split.reset();
           settlePart.reset();
@@ -434,6 +447,7 @@ function ClaimRow({
           hold.reset();
           share.reset();
           redate.reset();
+          setDueBy.reset();
           proof.reset();
           split.reset();
           settlePart.reset();
@@ -522,6 +536,7 @@ function ClaimRow({
           hold.reset();
           share.reset();
           redate.reset();
+          setDueBy.reset();
           proof.reset();
           split.reset();
           settlePart.reset();
@@ -559,6 +574,7 @@ function ClaimRow({
           hold.reset();
           share.reset();
           redate.reset();
+          setDueBy.reset();
           proof.reset();
           split.reset();
           settlePart.reset();
@@ -583,6 +599,7 @@ function ClaimRow({
           hold.reset();
           share.reset();
           redate.reset();
+          setDueBy.reset();
           proof.reset();
           split.reset();
           settlePart.reset();
@@ -610,6 +627,7 @@ function ClaimRow({
           hold.reset();
           share.reset();
           redate.reset();
+          setDueBy.reset();
           proof.reset();
           split.reset();
           settlePart.reset();
@@ -645,6 +663,7 @@ function ClaimRow({
           hold.reset();
           share.reset();
           redate.reset();
+          setDueBy.reset();
           proof.reset();
           split.reset();
           settlePart.reset();
@@ -671,6 +690,7 @@ function ClaimRow({
           waive.reset();
           assignReview.reset();
           redate.reset();
+          setDueBy.reset();
           proof.reset();
           split.reset();
           settlePart.reset();
@@ -710,6 +730,7 @@ function ClaimRow({
           hold.reset();
           share.reset();
           redate.reset();
+          setDueBy.reset();
           proof.reset();
           split.reset();
           settlePart.reset();
@@ -721,6 +742,44 @@ function ClaimRow({
         }}
       >
         Re-date
+      </button>{' '}
+      <input
+        type="date"
+        data-testid="claim-due-by-new"
+        aria-label="New due-by"
+        value={newDueBy}
+        onChange={(e) => {
+          setNewDueBy(e.target.value);
+          setDueBy.reset();
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-set-due-by"
+        disabled={setDueBy.isPending}
+        onClick={() => {
+          setEditRefused(null);
+          lock.reset();
+          status.reset();
+          reassign.reset();
+          defer.reset();
+          waive.reset();
+          assignReview.reset();
+          hold.reset();
+          share.reset();
+          redate.reset();
+          proof.reset();
+          split.reset();
+          settlePart.reset();
+          remind.reset();
+          comment.reset();
+          line.reset();
+          inline.reset();
+          setDueBy.reset();
+          setDueBy.mutate(newDueBy.trim());
+        }}
+      >
+        Set due-by
       </button>{' '}
       <input
         data-testid="claim-split-amount"
@@ -752,6 +811,7 @@ function ClaimRow({
           hold.reset();
           share.reset();
           redate.reset();
+          setDueBy.reset();
           proof.reset();
           split.reset();
           settlePart.reset();
@@ -794,6 +854,7 @@ function ClaimRow({
           hold.reset();
           share.reset();
           redate.reset();
+          setDueBy.reset();
           proof.reset();
           split.reset();
           settlePart.reset();
@@ -839,6 +900,7 @@ function ClaimRow({
           hold.reset();
           share.reset();
           redate.reset();
+          setDueBy.reset();
           proof.reset();
           split.reset();
           settlePart.reset();
@@ -866,6 +928,7 @@ function ClaimRow({
           hold.reset();
           share.reset();
           redate.reset();
+          setDueBy.reset();
           proof.reset();
           split.reset();
           settlePart.reset();
@@ -903,6 +966,7 @@ function ClaimRow({
           hold.reset();
           share.reset();
           redate.reset();
+          setDueBy.reset();
           proof.reset();
           split.reset();
           settlePart.reset();
@@ -964,6 +1028,7 @@ function ClaimRow({
           hold.reset();
           share.reset();
           redate.reset();
+          setDueBy.reset();
           proof.reset();
           split.reset();
           settlePart.reset();
@@ -1028,6 +1093,13 @@ function ClaimRow({
           {' '}
           Only a steward re-dates a claim, and only an open or pending one whose due-by is not inside a closed period, to a date
           not after the person's retirement.
+        </span>
+      )}
+      {setDueBy.isError && (
+        <span data-testid="claim-error">
+          {' '}
+          Only a steward sets a claim's due-by, and only a draft, open or pending one whose due-by, old or new, is not inside a
+          closed period.
         </span>
       )}
       {proof.isError && (

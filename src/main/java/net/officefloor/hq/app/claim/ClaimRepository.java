@@ -78,7 +78,7 @@ public class ClaimRepository {
      *  over the holidays given (see HolidayRepository#businessDaysAfter). */
     public void refixDueBys(String sheetId, LocalDate from, Set<LocalDate> holidays) {
         List<Object[]> refixed = jdbc.query(
-                "SELECT id, claim_date, terms FROM claim WHERE sheet_id = ? AND status NOT IN ('SETTLED', 'VOID') AND due_by >= ? AND terms IS NOT NULL",
+                "SELECT id, claim_date, terms FROM claim WHERE sheet_id = ? AND status NOT IN ('SETTLED', 'VOID') AND due_by >= ? AND terms IS NOT NULL AND NOT due_by_set",
                 (rs, n) -> new Object[] { Date.valueOf(HolidayRepository.businessDaysAfter(holidays,
                         rs.getObject("claim_date", LocalDate.class), rs.getInt("terms"))), rs.getLong("id") },
                 sheetId, Date.valueOf(from));
@@ -226,6 +226,15 @@ public class ClaimRepository {
 
     /** Stores the claim's new date and number, but only while it is still OPEN or PENDING and dated {@code was}; false
      *  when another change got there first (nothing is written). */
+    /** Stores the due-by a steward set directly, kept as set from then on (a holiday added later does not move it, see
+     *  refixDueBys), but only while the claim is still DRAFT, OPEN or PENDING with the due-by it had; false otherwise
+     *  (nothing is written). */
+    public boolean setDueBy(Claim claim, LocalDate was) {
+        return jdbc.update("UPDATE claim SET due_by = ?, due_by_set = TRUE WHERE sheet_id = ? AND id = ? AND due_by = ? "
+                + "AND status IN ('DRAFT', 'OPEN', 'PENDING')",
+                Date.valueOf(claim.dueBy()), claim.sheetId(), claim.id(), Date.valueOf(was)) == 1;
+    }
+
     public boolean redate(Claim claim, LocalDate was) {
         return jdbc.update("UPDATE claim SET claim_date = ?, claim_number = ? WHERE sheet_id = ? AND id = ? AND claim_date = ? "
                 + "AND status IN ('OPEN', 'PENDING')",
