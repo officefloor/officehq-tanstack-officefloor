@@ -13,3 +13,14 @@ export function useRoles(sheetId: string) {
     queryFn: () => getJson<Role[]>(`/api/sheets/${encodeURIComponent(sheetId)}/roles`),
   });
 }
+
+/** The role the user acts in on the sheet (a steward while a delegation to them holds its today); as of a date, the
+ *  role they acted in then. */
+export function useActingRole(sheetId: string, user: string) {
+  return useQuery({
+    queryKey: [...rolesKey(sheetId), 'acting', user],
+    queryFn: () =>
+      getJson<Role>(`/api/sheets/${encodeURIComponent(sheetId)}/roles/${encodeURIComponent(user.trim())}`),
+    enabled: user.trim() !== '',
+  });
+}

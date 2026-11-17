@@ -21,8 +21,8 @@ function StatementsHead({ user }: { user: string }) {
   );
 }
 
-/** A person's statement count, their last statement's due-total and date, a line per statement in force (oldest
- *  first), and the date (blank: now) and button that
+/** A person's statement count, their last statement's due-total and date, a line per statement in force (in the order
+ *  taken), and the date (blank: now) and button that
  *  take one: it records their due-total as of that date and binds each of their claims that counted then to its rate
  *  figure then (not floored); and
  *  the button that cancels their last statement (a steward only), making the claims it bound live again. */

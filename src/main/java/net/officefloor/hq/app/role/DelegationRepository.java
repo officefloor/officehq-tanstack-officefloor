@@ -41,7 +41,14 @@ public class DelegationRepository {
         if (user == null || user.isEmpty()) {
             return Optional.empty();
         }
-        LocalDate today = sheets.today(sheetId);
+        return actingFor(sheetId, user, sheets.today(sheetId));
+    }
+
+    /** The steward the user acts for on the date: as {@link #actingFor(String, String)}, the date for the sheet's today. */
+    public Optional<String> actingFor(String sheetId, String user, LocalDate today) {
+        if (user == null || user.isEmpty()) {
+            return Optional.empty();
+        }
         List<String> found = jdbc.queryForList("SELECT steward FROM delegation WHERE sheet_id = ? AND user_name = ?"
                 + " AND from_date <= ? AND to_date >= ? ORDER BY id", String.class, sheetId, user, today, today);
         return found.isEmpty() ? Optional.empty() : Optional.of(found.get(0));

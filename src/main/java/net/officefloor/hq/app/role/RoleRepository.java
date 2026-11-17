@@ -2,7 +2,9 @@ package net.officefloor.hq.app.role;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -16,10 +18,12 @@ public class RoleRepository {
 
     private final JdbcTemplate jdbc;
     private final DelegationRepository delegations;
+    private final SheetRepository sheets;
 
-    public RoleRepository(JdbcTemplate jdbc, DelegationRepository delegations) {
+    public RoleRepository(JdbcTemplate jdbc, DelegationRepository delegations, SheetRepository sheets) {
         this.jdbc = jdbc;
         this.delegations = delegations;
+        this.sheets = sheets;
     }
 
     /** The roles given on the sheet, by user name. */
@@ -45,8 +49,33 @@ public class RoleRepository {
         return found.isEmpty() ? CLERK : found.get(0);
     }
 
-    /** Stores the role, replacing the one the user had. */
+    /** The role the user acted in on the sheet at the end of the date: a steward while a delegation to the user held
+     *  the date, otherwise the role given as of the date. */
+    public String roleOfAsOf(String sheetId, String user, LocalDate asOf) {
+        String given = givenRoleOfAsOf(sheetId, user, asOf);
+        if (!STEWARD.equals(given) && delegations.actingFor(sheetId, user, asOf).isPresent()) {
+            return STEWARD;
+        }
+        return given;
+    }
+
+    /** The user's role given on the sheet as of the date: the last one given while the sheet's today was on or before
+     *  it (one given before that was kept counting from the beginning); clerk when none was. */
+    public String givenRoleOfAsOf(String sheetId, String user, LocalDate asOf) {
+        Integer logged = jdbc.queryForObject("SELECT COUNT(*) FROM user_role_log WHERE sheet_id = ? AND user_name = ?",
+                Integer.class, sheetId, user);
+        if (logged == null || logged == 0) {
+            return givenRoleOf(sheetId, user);
+        }
+        List<String> found = jdbc.queryForList("SELECT role FROM user_role_log WHERE sheet_id = ? AND user_name = ?"
+                + " AND set_on <= ? ORDER BY id DESC", String.class, sheetId, user, asOf);
+        return found.isEmpty() ? CLERK : found.get(0);
+    }
+
+    /** Stores the role, replacing the one the user had, and logs it with the sheet's today. */
     public Role save(Role role) {
+        jdbc.update("INSERT INTO user_role_log (sheet_id, user_name, role, set_on) VALUES (?, ?, ?, ?)",
+                role.sheetId(), role.user(), role.role(), sheets.today(role.sheetId()));
         jdbc.update("DELETE FROM user_role WHERE sheet_id = ? AND user_name = ?", role.sheetId(), role.user());
         jdbc.update("INSERT INTO user_role (sheet_id, user_name, role) VALUES (?, ?, ?)",
                 role.sheetId(), role.user(), role.role());

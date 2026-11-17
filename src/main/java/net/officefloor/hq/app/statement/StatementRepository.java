@@ -76,15 +76,15 @@ public class StatementRepository {
                 sheetId, Date.valueOf(asOf), Date.valueOf(asOf), sheetId);
     }
 
-    /** Each person's statement lines, "<statement date> <due-total>", oldest first; statements of the same date in
-     *  their order (those a merge or a transfer brought over before the person's own). */
+    /** Each person's statement lines, "<statement date> <due-total>", in the order taken, so the last line is
+     *  their last statement (those a merge or a transfer brought over before the person's own). */
     private Map<Long, List<String>> lines(String sheetId, String where, Object... args) {
         Map<Long, List<String>> lines = new HashMap<>();
         Object[] params = new Object[args.length + 1];
         params[0] = sheetId;
         System.arraycopy(args, 0, params, 1, args.length);
         jdbc.query("SELECT person_id, taken_on, due_total FROM statement WHERE sheet_id = ? AND " + where
-                + " ORDER BY person_id, taken_on, COALESCE(ord, id), id",
+                + " ORDER BY person_id, COALESCE(ord, id), id",
                 (RowCallbackHandler) rs -> lines.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>())
                         .add(rs.getDate("taken_on").toLocalDate() + " " + rs.getString("due_total")),
                 params);
