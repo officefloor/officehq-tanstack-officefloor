@@ -14,10 +14,10 @@ type GradeProof = `proof-threshold-${(typeof GRADES)[number]}`;
 const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
 type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
 const PERM_KEYS: PermKey[] = PERM_ACTIONS.map((a) => `perm-${a}` as PermKey);
-type Key = PermKey | 'clerk-limit' | 'cap' | 'proof-threshold' | 'note-threshold' | 'review-threshold' | 'floor' | 'terms' | GradeTerms | GradeGrace | GradeProof | 'late-pct' | 'rounding' | 'policy-date' | 'period-numbering-from' | 'entry-date' | 'grace-days' | 'escalate-after' | 'review-sla' | 'pot' | 'alert-threshold' | 'fiscal-start-month' | 'proof-kinds' | 'parent';
-const KEYS: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'note-threshold', 'review-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'late-pct', 'rounding', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'pot', 'alert-threshold', 'fiscal-start-month', 'proof-kinds', 'parent', ...PERM_KEYS];
+type Key = PermKey | 'clerk-limit' | 'cap' | 'proof-threshold' | 'note-threshold' | 'review-threshold' | 'floor' | 'terms' | GradeTerms | GradeGrace | GradeProof | 'late-pct' | 'rounding' | 'policy-date' | 'period-numbering-from' | 'entry-date' | 'grace-days' | 'escalate-after' | 'review-sla' | 'pot' | 'alert-threshold' | 'fiscal-start-month' | 'proof-kinds' | 'parent' | 'default-grade';
+const KEYS: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'note-threshold', 'review-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'late-pct', 'rounding', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'pot', 'alert-threshold', 'fiscal-start-month', 'proof-kinds', 'parent', 'default-grade', ...PERM_KEYS];
 const BLANK: Record<Key, string> = {
-  'clerk-limit': '', cap: '', 'proof-threshold': '', 'note-threshold': '', 'review-threshold': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'late-pct': '', rounding: '', 'policy-date': '', 'period-numbering-from': '', 'entry-date': '', 'grace-days': '', 'escalate-after': '', 'review-sla': '', pot: '', 'alert-threshold': '', 'fiscal-start-month': '', 'proof-kinds': '', parent: '',
+  'clerk-limit': '', cap: '', 'proof-threshold': '', 'note-threshold': '', 'review-threshold': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'late-pct': '', rounding: '', 'policy-date': '', 'period-numbering-from': '', 'entry-date': '', 'grace-days': '', 'escalate-after': '', 'review-sla': '', pot: '', 'alert-threshold': '', 'fiscal-start-month': '', 'proof-kinds': '', parent: '', 'default-grade': '',
   ...(Object.fromEntries(PERM_KEYS.map((k) => [k, ''])) as Record<PermKey, string>),
 };
 /** The keys whose values are dated: each saved from a from-date (blank: the sheet's today). */
@@ -39,7 +39,7 @@ const dated = (key: Key) => DATED.includes(key);
  *  sheet's today changes, every open period whose to-date plus them is before the new today is closed) and the escalation gap
  *  (a whole number of days; blank: off — reminding a claim whose previous reminder was at least that many days before the
  *  sheet's today escalates it, once per claim; undated) and the review SLA (a whole number of days; blank: none — a REVIEW claim
- *  whose review day plus them is before the sheet's today is review-late; undated) and the permission matrix (for each of open, settle,
+ *  whose review day plus them is before the sheet's today is review-late; undated) and the default grade (A, B or C; blank: A — the grade a person added by the quick-add bar, or by an import line with a blank grade, takes; undated) and the permission matrix (for each of open, settle,
  *  void, reassign, close and reopen, the roles that may take it, comma separated; blank: the standing rule — open, settle,
  *  void and close by clerk and steward, reassign and reopen by steward; undated). Every setting but the policy date, the
  *  period numbering from-date, the entry date, the grace days, the escalation gap, the review SLA, the fiscal year start month, the proof kinds and the permissions is dated: saved with its from-date (blank: the sheet's today) it keeps the values from
@@ -149,6 +149,7 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {field('fiscal-start-month', 'Fiscal year start month (1 to 12)', 'numeric')}{' '}
         {field('proof-kinds', 'Proof kinds (receipt, photo; comma separated)', 'text')}{' '}
         {field('parent', 'Parent sheet', 'text')}{' '}
+        {field('default-grade', 'Default grade (A, B or C)', 'text')}{' '}
         {PERM_ACTIONS.map((a) => (
           <span key={a}>{field(`perm-${a}`, `Roles that may ${a} (comma separated)`, 'text')} </span>
         ))}
@@ -158,7 +159,7 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {save.isError && (
           <span data-testid="settings-error">
             The from-date must be yyyy-MM-dd, or blank; the clerk limit must be an amount with up to two decimals, or blank; the cap, the proof threshold, a grade's proof threshold and the note threshold likewise; the floor an amount with up to two
-            decimals; the terms, and a grade's terms, a whole number of days, 0 or more; a grade's grace a whole number of days, 0 or more, or blank; the late percent a percent with up to two decimals; the rounding half-up or half-even, or blank; the policy date yyyy-MM-dd, or blank; the period numbering from-date yyyy-MM-dd, or blank; the entry date yyyy-MM-dd, or blank; the grace days, the escalation gap and the review SLA a whole number, 0 or more, or blank; the pot an amount with up to two decimals, or blank; the alert threshold an amount with up to two decimals, or blank; the fiscal year start month a whole month 1 to 12; the proof kinds kinds (receipt, photo) separated by commas, or blank; a permission roles (clerk, steward) separated by commas, or blank; the parent a sheet that exists (has been loaded), not this sheet nor one that has this sheet as an ancestor, or blank.
+            decimals; the terms, and a grade's terms, a whole number of days, 0 or more; a grade's grace a whole number of days, 0 or more, or blank; the late percent a percent with up to two decimals; the rounding half-up or half-even, or blank; the policy date yyyy-MM-dd, or blank; the period numbering from-date yyyy-MM-dd, or blank; the entry date yyyy-MM-dd, or blank; the grace days, the escalation gap and the review SLA a whole number, 0 or more, or blank; the pot an amount with up to two decimals, or blank; the alert threshold an amount with up to two decimals, or blank; the fiscal year start month a whole month 1 to 12; the proof kinds kinds (receipt, photo) separated by commas, or blank; a permission roles (clerk, steward) separated by commas, or blank; the default grade A, B or C, or blank; the parent a sheet that exists (has been loaded), not this sheet nor one that has this sheet as an ancestor, or blank.
           </span>
         )}
       </form>
@@ -242,6 +243,9 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
       </p>
       <p>
         Parent sheet <span data-testid="setting-parent-current">{current('parent')}</span>
+      </p>
+      <p>
+        Default grade <span data-testid="setting-default-grade-current">{current('default-grade')}</span>
       </p>
       {PERM_ACTIONS.map((a) => (
         <p key={a}>

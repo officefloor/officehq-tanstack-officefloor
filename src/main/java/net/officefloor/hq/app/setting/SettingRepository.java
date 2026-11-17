@@ -109,6 +109,13 @@ public class SettingRepository {
     /** The fiscal year start month a sheet has until one is set. */
     public static final int DEFAULT_FISCAL_START_MONTH = 1;
 
+    /** The grade a new person takes from the quick-add bar or a people import line with a blank grade: A, B or C;
+     *  blank for A (undated). */
+    public static final String DEFAULT_GRADE = "default-grade";
+
+    /** The grade a sheet's new people take until a default grade is set. */
+    public static final String STANDING_GRADE = "A";
+
     /** The sheet's parent sheet: its id, or blank for none (undated). A grade with no rate in force on a date takes
      *  the parent's, then the parent's parent's, up to PARENT_LEVELS levels up. */
     public static final String PARENT = "parent";
@@ -270,6 +277,12 @@ public class SettingRepository {
     public LocalDate entryDate(String sheetId) {
         String value = value(sheetId, ENTRY_DATE);
         return value == null ? null : LocalDate.parse(value);
+    }
+
+    /** The grade a new person takes when none is given: the sheet's default grade, else A. */
+    public String defaultGrade(String sheetId) {
+        String value = value(sheetId, DEFAULT_GRADE);
+        return value == null ? STANDING_GRADE : value;
     }
 
     /** The date a new claim given no date takes: the sheet's entry date while set, else the sheet's today. */
