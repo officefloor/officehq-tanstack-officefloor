@@ -43,6 +43,18 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
     },
     onSettled: submit.end,
   });
+  // withdraw the newest version of a grade and from-date (a steward only): the version before it applies again
+  const withdraw = useMutation({
+    mutationFn: (v: { grade: string; from: string | null }) =>
+      postJson<{ version: number }>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/rates/${encodeURIComponent(v.grade)}/withdraw`,
+        { from: v.from ?? '', by: user },
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
+    },
+    onSettled: submit.end,
+  });
 
   return (
     <section data-testid="rates">
@@ -53,6 +65,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
           e.preventDefault();
           if (!submit.begin()) return;
           save.reset();
+          withdraw.reset();
           save.mutate({ grade, rate: pct, from, to });
         }}
       >
@@ -64,6 +77,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
             onChange={(e) => {
               setGrade(e.target.value);
               save.reset();
+              withdraw.reset();
             }}
           >
             {gradeCodes.map((g) => (
@@ -82,6 +96,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
             onChange={(e) => {
               setPct(e.target.value);
               save.reset();
+              withdraw.reset();
             }}
           />
         </label>{' '}
@@ -94,6 +109,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
             onChange={(e) => {
               setFrom(e.target.value);
               save.reset();
+              withdraw.reset();
             }}
           />
         </label>{' '}
@@ -106,6 +122,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
             onChange={(e) => {
               setTo(e.target.value);
               save.reset();
+              withdraw.reset();
             }}
           />
         </label>{' '}
@@ -114,6 +131,9 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="rate-form-error">The rate must be a percent 0.00 or more, with up to two decimals; the from- and to-dates must be dates, the to-date not before the from-date.</span>
+        )}
+        {withdraw.isError && !save.isError && (
+          <span data-testid="rate-form-error">Only a steward may withdraw a rate, and only one the sheet has.</span>
         )}
       </form>
       <ImportRates sheetId={sheetId} user={user} />
@@ -160,6 +180,21 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid="rate-from">{r.from ?? ''}</td>
               <td data-testid="rate-to">{r.to ?? ''}</td>
               <td data-testid="rate-version">{r.version}</td>
+              <td>
+                <button
+                  type="button"
+                  data-testid="rate-withdraw"
+                  disabled={withdraw.isPending}
+                  onClick={() => {
+                    if (!submit.begin()) return;
+                    save.reset();
+                    withdraw.reset();
+                    withdraw.mutate({ grade: r.grade, from: r.from });
+                  }}
+                >
+                  Withdraw
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>

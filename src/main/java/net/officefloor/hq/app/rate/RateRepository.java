@@ -174,10 +174,50 @@ public class RateRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Every rate stored on the sheet while its today was on or before the date, in the order stored. */
-    public List<Rate> storedBy(String sheetId, LocalDate madeOn) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM rate_log WHERE sheet_id = ? AND made_on <= ? ORDER BY id",
-                RateRepository::logged, sheetId, Date.valueOf(madeOn));
+    /** A rate stored, or withdrawn (the newest version of its grade and from-date removed), as logged. */
+    public record Logged(Rate rate, boolean withdrawn) {
+    }
+
+    /** Every rate stored or withdrawn on the sheet while its today was on or before the date, in the order done. */
+    public List<Logged> storedBy(String sheetId, LocalDate madeOn) {
+        return jdbc.query("SELECT " + COLUMNS + ", withdrawn FROM rate_log WHERE sheet_id = ? AND made_on <= ? ORDER BY id",
+                (rs, n) -> new Logged(logged(rs, n), rs.getBoolean("withdrawn")), sheetId, Date.valueOf(madeOn));
+    }
+
+    /** Whether the sheet has its own rate for the grade and from-date (null: none). */
+    public boolean has(String sheetId, String grade, LocalDate from) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM rate WHERE sheet_id = ? AND grade = ?"
+                + " AND from_date IS NOT DISTINCT FROM ?", Integer.class, sheetId, grade,
+                from == null ? null : Date.valueOf(from));
+        return n != null && n > 0;
+    }
+
+    /** Withdraws the newest version of the grade's rate for the from-date: the newest older version, when there is one,
+     *  is put back as the one in force; with none the rate is gone. Logs the withdrawal with the sheet's today. Returns
+     *  the version put back, or null when the rate is gone. */
+    public Rate withdraw(String sheetId, String grade, LocalDate from) {
+        Date fromDate = from == null ? null : Date.valueOf(from);
+        String same = " WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?";
+        List<Rate> current = jdbc.query("SELECT " + VERSIONED + " FROM rate" + same, RateRepository::map,
+                sheetId, grade, fromDate);
+        jdbc.update("DELETE FROM rate" + same, sheetId, grade, fromDate);
+        List<Long> ids = jdbc.queryForList("SELECT id FROM rate_version" + same + " ORDER BY version DESC, id DESC LIMIT 1",
+                Long.class, sheetId, grade, fromDate);
+        Rate restored = null;
+        if (!ids.isEmpty()) {
+            jdbc.update("INSERT INTO rate (" + VERSIONED + ") SELECT " + VERSIONED + " FROM rate_version WHERE id = ?",
+                    ids.get(0));
+            jdbc.update("DELETE FROM rate_version WHERE id = ?", ids.get(0));
+            restored = jdbc.query("SELECT " + VERSIONED + " FROM rate" + same, RateRepository::map,
+                    sheetId, grade, fromDate).get(0);
+        }
+        if (!current.isEmpty()) {
+            Rate gone = current.get(0);
+            jdbc.update("INSERT INTO rate_log (" + COLUMNS + ", made_on, withdrawn) VALUES (?, ?, ?, ?, ?, ?, ?, TRUE)",
+                    sheetId, grade, gone.rate(), fromDate, gone.to() == null ? null : Date.valueOf(gone.to()),
+                    gone.after(), Date.valueOf(sheets.today(sheetId)));
+        }
+        return restored;
     }
 
     /** Stores the rate as the newest version of the grade's rate for its from-date: the one it had for that from-date

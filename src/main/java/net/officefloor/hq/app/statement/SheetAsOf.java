@@ -34,10 +34,30 @@ public final class SheetAsOf {
     public static SheetAsOf read(String sheetId, LocalDate date, RateRepository rates, SettingRepository settings) {
         Map<String, Rate> byKey = new LinkedHashMap<>();
         List<Rate> versions = new ArrayList<>();
-        for (Rate r : rates.storedBy(sheetId, date)) {
-            Rate older = byKey.get(r.grade() + "@" + r.from());
+        for (RateRepository.Logged logged : rates.storedBy(sheetId, date)) {
+            Rate r = logged.rate();
+            String key = r.grade() + "@" + r.from();
+            Rate older = byKey.get(key);
+            if (logged.withdrawn()) {
+                // the newest version goes; the one before it, when there is one, applies again
+                if (older != null) {
+                    versions.remove(older);
+                    Rate back = null;
+                    for (Rate v : versions) {
+                        if (v.grade().equals(r.grade()) && Objects.equals(v.from(), r.from())
+                                && (back == null || v.version() > back.version())) {
+                            back = v;
+                        }
+                    }
+                    byKey.remove(key);
+                    if (back != null) {
+                        byKey.put(key, back);
+                    }
+                }
+                continue;
+            }
             Rate version = r.withVersion(older == null ? 1 : older.version() + 1);
-            byKey.put(r.grade() + "@" + r.from(), version);
+            byKey.put(key, version);
             versions.add(version);
         }
         Map<String, Setting> byFrom = new LinkedHashMap<>();
