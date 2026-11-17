@@ -1,0 +1,150 @@
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 9339b81b8..39e165399 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -9,6 +9,23 @@ import { tagsKey } from '../tags/tags';
+ import { usePeopleDue } from '../header/totals';
+ import { GRADES, peopleKey, shownName, SORT_KEYS, sortPeople, useEditingPerson, usePeople, useShowRetired, useSortBy, type Person } from './people';
+ import { useShownColumns } from '../columns/columns';
++import { useCrews, type Crew } from '../crews/crews';
++import { useActingRole } from '../roles/roles';
++
++/** The ids of the people a restricted user may see on the list: the person with the user's name (case and outer
++ *  spaces ignored) and everyone in the crews that person leads or belongs to. */
++function visibleTo(user: string, people: Person[], crews: Crew[]): Set<number> {
++  const me = people.find((p) => p.name.trim().toLowerCase() === user.trim().toLowerCase());
++  const ids = new Set<number>();
++  if (!me) return ids;
++  ids.add(me.id);
++  for (const c of crews) {
++    if (c.leadId !== me.id && !c.members.some((m) => m.personId === me.id)) continue;
++    if (c.leadId !== null) ids.add(c.leadId);
++    c.members.forEach((m) => ids.add(m.personId));
++  }
++  return ids;
++}
+ 
+ /** The form's values. `gradeFrom` (yyyy-MM-dd) is the date the grade is given from; blank, the sheet's today. A
+  *  person's first grade applies from the beginning of time. `terms` are the person's own terms in days; blank, none. `termsFrom` (yyyy-MM-dd) is the date they are given from;
+@@ -98,6 +115,11 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const [showRetired, setShowRetired] = useShowRetired();
+   const [sortBy, setSortBy] = useSortBy();
+   const due = usePeopleDue(sheetId);
++  const role = useActingRole(sheetId, user);
++  const crews = useCrews(sheetId);
++  // until the user's role is known, no row shows: a restricted user never glimpses another's row
++  const restricted = role.data ? role.data.role === 'restricted' : user.trim() !== '' && !role.isError;
++  const visible = restricted ? visibleTo(user, people.data ?? [], crews.data ?? []) : null;
+   const queryClient = useQueryClient();
+   const [editingId, setEditingId] = useEditingPerson();
+   const editing = people.data?.find((p) => String(p.id) === editingId);
+@@ -275,7 +297,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
+           </tr>
+         </thead>
+         <tbody>
+-          {sortPeople(people.data?.filter((p) => showRetired || p.retiredFrom === null) ?? [], sortBy, due).map((p) => (
++          {sortPeople(people.data?.filter((p) => (showRetired || p.retiredFrom === null) && (visible === null || visible.has(p.id))) ?? [], sortBy, due).map((p) => (
+             <tr key={p.id} data-testid={`person-row-${p.id}`}>
+               <td data-testid="person-name">{shownName(p)}</td>
+               <td data-testid="person-grade">{p.grade}</td>
+diff --git a/src/main/frontend/features/roles/roles.slot.tsx b/src/main/frontend/features/roles/roles.slot.tsx
+index e215e40b5..803ee2505 100644
+--- a/src/main/frontend/features/roles/roles.slot.tsx
++++ b/src/main/frontend/features/roles/roles.slot.tsx
+@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { SheetPage } from '../../slots/defs/sheetPage';
+ import { rolesKey, useRoles, type Role } from './roles';
+ 
+-/** The sheet's roles: the form that gives a user name a role (clerk, steward or viewer — a viewer sees everything and changes nothing), and every role given. */
++/** The sheet's roles: the form that gives a user name a role (clerk, steward, viewer or restricted — a viewer sees everything and changes nothing; a restricted user sees on the people list only their crews' people and themselves), and every role given. */
+ function Roles({ sheetId, user }: { sheetId: string; user: string }) {
+   const roles = useRoles(sheetId);
+   const queryClient = useQueryClient();
+@@ -65,13 +65,14 @@ function Roles({ sheetId, user }: { sheetId: string; user: string }) {
+             <option value="clerk" />
+             <option value="steward" />
+             <option value="viewer" />
++            <option value="restricted" />
+           </datalist>
+         </label>{' '}
+         <button type="submit" data-testid="role-form-submit" disabled={save.isPending}>
+           Set role
+         </button>
+         {save.isError && (
+-          <span data-testid="role-form-error">The user name must not be blank and the role must be clerk, steward or viewer.</span>
++          <span data-testid="role-form-error">The user name must not be blank and the role must be clerk, steward, viewer or restricted.</span>
+         )}
+       </form>
+       {roles.isError && <p data-testid="roles-load-error">Could not load roles.</p>}
+diff --git a/src/main/frontend/features/roles/roles.ts b/src/main/frontend/features/roles/roles.ts
+index 7f18e2fb2..30357965e 100644
+--- a/src/main/frontend/features/roles/roles.ts
++++ b/src/main/frontend/features/roles/roles.ts
+@@ -1,7 +1,8 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+-/** The role a user name has on the sheet: clerk (any name not given one), steward or viewer (sees everything, changes nothing). */
++/** The role a user name has on the sheet: clerk (any name not given one), steward, viewer (sees everything, changes nothing) or
++ *  restricted (sees on the people list only the people of the crews they lead or belong to, and themselves). */
+ export type Role = { sheetId: string; user: string; role: string };
+ 
+ export const rolesKey = (sheetId: string) => ['sheet', sheetId, 'roles'];
+diff --git a/src/main/java/net/officefloor/hq/app/role/Role.java b/src/main/java/net/officefloor/hq/app/role/Role.java
+index 5ef882bb8..e4b8336dc 100644
+--- a/src/main/java/net/officefloor/hq/app/role/Role.java
++++ b/src/main/java/net/officefloor/hq/app/role/Role.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.role;
+ 
+-/** The role a user name has on a sheet: clerk, steward or viewer. */
++/** The role a user name has on a sheet: clerk, steward, viewer or restricted. */
+ public record Role(String sheetId, String user, String role) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/RoleRepository.java b/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
+index feb30c60d..bef8225e2 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
++++ b/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
+@@ -8,13 +8,15 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+-/** The stored roles (clerk, steward or viewer), one per user name per sheet. A name with no row is a clerk. */
++/** The stored roles (clerk, steward, viewer or restricted), one per user name per sheet. A name with no row is a clerk. */
+ @Repository
+ public class RoleRepository {
+ 
+     public static final String CLERK = "clerk";
+     public static final String STEWARD = "steward";
+     public static final String VIEWER = "viewer";
++    /** Sees on the people list only their own crews' people and themselves; otherwise as a clerk. */
++    public static final String RESTRICTED = "restricted";
+ 
+     private final JdbcTemplate jdbc;
+     private final DelegationRepository delegations;
+diff --git a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+index 1157bd933..94ddf1f45 100644
+--- a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
++++ b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+@@ -5,9 +5,10 @@ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** Reads the body: the user name is not blank, the role clerk, steward or viewer. */
++/** Reads the body: the user name is not blank, the role clerk, steward, viewer or restricted. */
+ public class ValidateRole {
+-    private static final Set<String> ROLES = Set.of(RoleRepository.CLERK, RoleRepository.STEWARD, RoleRepository.VIEWER);
++    private static final Set<String> ROLES = Set.of(RoleRepository.CLERK, RoleRepository.STEWARD, RoleRepository.VIEWER,
++            RoleRepository.RESTRICTED);
+ 
+     public void validate(@PathVariable("user") String user, @RequestBody RoleRequest request, Out<RoleValues> values)
+             throws InvalidRoleException {
+@@ -17,7 +18,7 @@ public class ValidateRole {
+         }
+         String role = request == null || request.role() == null ? "" : request.role().trim();
+         if (!ROLES.contains(role)) {
+-            throw new InvalidRoleException("The role must be clerk, steward or viewer");
++            throw new InvalidRoleException("The role must be clerk, steward, viewer or restricted");
+         }
+         values.set(new RoleValues(u, role, request.by() == null ? "" : request.by().trim()));
+     }
