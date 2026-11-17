@@ -62,6 +62,14 @@ export function isReviewLate(claim: Claim, sla: number | null, today: string): b
   return reviewed !== undefined && plusDays(reviewed.date, sla) < today;
 }
 
+/** Whether a PENDING claim is pending-late: its pending day (the sheet's today on the latest PENDING line of its status log)
+ *  plus the pending SLA days is before the sheet's today (never with no SLA, or for a claim not PENDING). */
+export function isPendingLate(claim: Claim, sla: number | null, today: string): boolean {
+  if (claim.status !== 'PENDING' || sla === null || today === '') return false;
+  const pending = [...claim.log].reverse().find((l) => l.status === 'PENDING');
+  return pending !== undefined && plusDays(pending.date, sla) < today;
+}
+
 /** The 30-day boundaries an overdue claim has passed (its due-by plus its grace plus 30, 60, 90 ... days, on or before today), each
  *  bearing the late percent in force on it; none when it bears no late charge (see lateSteps). */
 export function lateBoundaries(claim: Claim, late: Late): string[] {

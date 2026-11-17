@@ -18,12 +18,12 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  decimals; or floor or late-pct, its value such an amount (not blank), all kept with two decimals; or terms, its value a
  *  whole number of days 0 or more (not blank), kept without leading zeros, and so is terms-A, terms-B or terms-C (a
  *  grade's own terms); or grace-A, grace-B or grace-C (a grade's grace), its value blank (none) or a whole number of days 0 or
- *  more, kept without leading zeros; or grace-days, escalate-after or review-sla, its value blank (off) or a whole number of days 0 or more (undated); or pot, or alert-threshold, its value blank (none; off) or an amount with up to two decimals, kept with two (undated); or fiscal-start-month, its value a whole month 1 to 12 (not blank), kept without leading zeros (undated); or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today); or
+ *  more, kept without leading zeros; or grace-days, escalate-after, review-sla or pending-sla, its value blank (off) or a whole number of days 0 or more (undated); or pot, or alert-threshold, its value blank (none; off) or an amount with up to two decimals, kept with two (undated); or fiscal-start-month, its value a whole month 1 to 12 (not blank), kept without leading zeros (undated); or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today); or
  *  period-numbering-from or entry-date, its value a date yyyy-MM-dd or blank (off); or cap, proof-threshold, proof-threshold-A, -B or -C (a grade's own) or note-threshold or review-threshold, its value blank (none) or
  *  an amount like the clerk limit; or perm-open, perm-settle, perm-void, perm-reassign, perm-close or perm-reopen, its value
  *  blank (the standing rule) or roles (clerk, steward) separated by commas, kept without spaces or repeats; or proof-kinds, its value blank (none) or kinds (receipt, photo) separated by commas, kept without spaces or repeats (undated); or rounding, its value blank (none) or half-up or half-even; or parent, its
  *  value blank (none) or the id of a sheet that exists (has been loaded), is not this sheet and does not have this sheet
- *  as an ancestor (undated); or default-grade, its value blank (A) or one of the sheet's grades (undated); or score-mid or score-high, its value blank (none) or a whole number, kept without leading zeros (undated); or score-log, its value blank (off) or on (undated); or max-open, its value blank (none) or a whole number 0 or more, kept without leading zeros (undated). Every key but policy-date, period-numbering-from, entry-date, grace-days, escalate-after, review-sla, pot, alert-threshold, fiscal-start-month, proof-kinds, score-mid, score-high, score-log, max-open and the permissions is dated: its from-date is blank (the
+ *  as an ancestor (undated); or default-grade, its value blank (A) or one of the sheet's grades (undated); or score-mid or score-high, its value blank (none) or a whole number, kept without leading zeros (undated); or score-log, its value blank (off) or on (undated); or max-open, its value blank (none) or a whole number 0 or more, kept without leading zeros (undated). Every key but policy-date, period-numbering-from, entry-date, grace-days, escalate-after, review-sla, pending-sla, pot, alert-threshold, fiscal-start-month, proof-kinds, score-mid, score-high, score-log, max-open and the permissions is dated: its from-date is blank (the
  *  sheet's today) or a date yyyy-MM-dd. */
 public class ValidateSetting {
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
@@ -47,6 +47,7 @@ public class ValidateSetting {
         boolean graceDays = SettingRepository.GRACE_DAYS.equals(k);
         boolean escalateAfter = SettingRepository.ESCALATE_AFTER.equals(k);
         boolean reviewSla = SettingRepository.REVIEW_SLA.equals(k);
+        boolean pendingSla = SettingRepository.PENDING_SLA.equals(k);
         boolean entryDate = SettingRepository.ENTRY_DATE.equals(k);
         boolean pot = SettingRepository.POT.equals(k);
         boolean alertThreshold = SettingRepository.ALERT_THRESHOLD.equals(k);
@@ -69,14 +70,14 @@ public class ValidateSetting {
         boolean rounding = SettingRepository.ROUNDING.equals(k);
         boolean perm = k.startsWith(SettingRepository.PERM_PREFIX)
                 && SettingRepository.PERMISSIONS.containsKey(k.substring(SettingRepository.PERM_PREFIX.length()));
-        if (!proofKinds && !parent && !rounding && !perm && !clerkLimit && !cap && !proofThreshold && !noteThreshold && !reviewThreshold && !floor && !terms && !grace && !latePct && !policyDate && !numberingFrom && !graceDays && !escalateAfter && !reviewSla && !entryDate && !pot && !alertThreshold && !fiscalStart && !defaultGrade && !scoreThreshold && !scoreLog && !maxOpen) {
+        if (!proofKinds && !parent && !rounding && !perm && !clerkLimit && !cap && !proofThreshold && !noteThreshold && !reviewThreshold && !floor && !terms && !grace && !latePct && !policyDate && !numberingFrom && !graceDays && !escalateAfter && !reviewSla && !pendingSla && !entryDate && !pot && !alertThreshold && !fiscalStart && !defaultGrade && !scoreThreshold && !scoreLog && !maxOpen) {
             throw new InvalidSettingException("Unknown setting " + k);
         }
         String value = request == null || request.value() == null ? "" : request.value().trim();
         String by = request == null || request.by() == null ? "" : request.by().trim();
         String fromText = request == null || request.from() == null ? "" : request.from().trim();
         LocalDate from = null;
-        if (!proofKinds && !policyDate && !numberingFrom && !entryDate && !graceDays && !escalateAfter && !reviewSla && !pot && !alertThreshold && !fiscalStart && !defaultGrade && !scoreThreshold && !scoreLog && !maxOpen && !fromText.isEmpty()) {
+        if (!proofKinds && !policyDate && !numberingFrom && !entryDate && !graceDays && !escalateAfter && !reviewSla && !pendingSla && !pot && !alertThreshold && !fiscalStart && !defaultGrade && !scoreThreshold && !scoreLog && !maxOpen && !fromText.isEmpty()) {
             try {
                 from = LocalDate.parse(fromText);
             } catch (DateTimeParseException e) {
@@ -150,13 +151,13 @@ public class ValidateSetting {
             }
             return;
         }
-        if (graceDays || escalateAfter || reviewSla) {
+        if (graceDays || escalateAfter || reviewSla || pendingSla) {
             if (value.isEmpty()) {
                 values.set(new SettingValues(k, null, null, false, by));
                 return;
             }
             if (!DAYS.matcher(value).matches()) {
-                throw new InvalidSettingException((escalateAfter ? "The escalation gap" : reviewSla ? "The review SLA" : "The grace days") + " must be a whole number of days, 0 or more, or blank");
+                throw new InvalidSettingException((escalateAfter ? "The escalation gap" : reviewSla ? "The review SLA" : pendingSla ? "The pending SLA" : "The grace days") + " must be a whole number of days, 0 or more, or blank");
             }
             values.set(new SettingValues(k, String.valueOf(Integer.parseInt(value)), null, false, by));
             return;

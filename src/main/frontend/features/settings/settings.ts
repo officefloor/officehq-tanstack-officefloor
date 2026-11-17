@@ -98,3 +98,10 @@ export function useReviewSla(sheetId: string): number | null {
   const value = settings.data?.find((s) => s.key === 'review-sla')?.value;
   return value === null || value === undefined ? null : Number(value);
 }
+
+/** The sheet's pending SLA in whole days (undated); null when blank (none). */
+export function usePendingSla(sheetId: string): number | null {
+  const settings = useSettings(sheetId);
+  const value = settings.data?.find((s) => s.key === 'pending-sla')?.value;
+  return value === null || value === undefined ? null : Number(value);
+}

@@ -99,6 +99,10 @@ public class SettingRepository {
      *  is before the sheet's today is review-late; blank for none (undated). */
     public static final String REVIEW_SLA = "review-sla";
 
+    /** The pending SLA: a PENDING claim whose pending day (the sheet's today when it went to PENDING) plus this many
+     *  days is before the sheet's today is pending-late; blank for none (undated). */
+    public static final String PENDING_SLA = "pending-sla";
+
     /** The sheet's pot, shared out as each balanced pool's cuts (two decimals); blank for none (undated). */
     public static final String POT = "pot";
 

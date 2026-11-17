@@ -6,14 +6,14 @@ import { gradeOn, usePeople } from '../people/people';
 import { useGradeCodes } from '../grades/grades';
 import { periodDue, usePeriods } from '../periods/periods';
 import { difference, useRates } from '../rates/rates';
-import { isReviewLate } from '../overdue/late';
-import { useFloor, useLate, useReviewSla } from '../settings/settings';
+import { isPendingLate, isReviewLate } from '../overdue/late';
+import { useFloor, useLate, usePendingSla, useReviewSla } from '../settings/settings';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 
 /** The sheet's summary, worked out from the same figures the lists show. Per grade: the people on it on the sheet's
  *  today (retired people excluded), their due-totals added up (skipping n/a) and how many of them are active. Per period: its due-total, and its
  *  change from the period before it by start date (blank for the earliest). Per
- *  status: how many of the sheet's claims have it, and how many REVIEW claims are review-late (see isReviewLate). Per void reason on the sheet's list: how many VOID claims were voided
+ *  status: how many of the sheet's claims have it, and how many REVIEW claims are review-late (see isReviewLate), and how many PENDING claims are pending-late (see isPendingLate). Per void reason on the sheet's list: how many VOID claims were voided
  *  with it. */
 function Summary({ sheetId }: { sheetId: string }) {
   const gradeCodes = useGradeCodes(sheetId);
@@ -24,6 +24,7 @@ function Summary({ sheetId }: { sheetId: string }) {
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
   const reviewSla = useReviewSla(sheetId);
+  const pendingSla = usePendingSla(sheetId);
 
   const active = (people.data ?? []).filter((p) => p.retiredFrom === null);
   const onGrade = (grade: string) => active.filter((p) => gradeOn(p, late.today) === grade);
@@ -99,6 +100,12 @@ function Summary({ sheetId }: { sheetId: string }) {
             <td>Review late</td>
             <td data-testid="summary-review-late-count">
               {(claims.data ?? []).filter((c) => isReviewLate(c, reviewSla, late.today)).length}
+            </td>
+          </tr>
+          <tr>
+            <td>Pending late</td>
+            <td data-testid="summary-pending-late-count">
+              {(claims.data ?? []).filter((c) => isPendingLate(c, pendingSla, late.today)).length}
             </td>
           </tr>
         </tbody>

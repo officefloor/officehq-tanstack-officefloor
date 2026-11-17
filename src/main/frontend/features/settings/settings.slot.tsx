@@ -15,10 +15,10 @@ type GradeClerkLimit = `clerk-limit-${(typeof GRADES)[number]}`;
 const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
 type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
 const PERM_KEYS: PermKey[] = PERM_ACTIONS.map((a) => `perm-${a}` as PermKey);
-type Key = PermKey | 'clerk-limit' | 'cap' | 'proof-threshold' | 'note-threshold' | 'review-threshold' | 'floor' | 'terms' | GradeTerms | GradeGrace | GradeProof | GradeClerkLimit | 'late-pct' | 'rounding' | 'policy-date' | 'period-numbering-from' | 'entry-date' | 'grace-days' | 'escalate-after' | 'review-sla' | 'pot' | 'alert-threshold' | 'fiscal-start-month' | 'proof-kinds' | 'parent' | 'default-grade' | 'score-mid' | 'score-high' | 'score-log' | 'max-open';
-const KEYS: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'note-threshold', 'review-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'clerk-limit-A', 'clerk-limit-B', 'clerk-limit-C', 'late-pct', 'rounding', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'pot', 'alert-threshold', 'fiscal-start-month', 'proof-kinds', 'parent', 'default-grade', 'score-mid', 'score-high', 'score-log', 'max-open', ...PERM_KEYS];
+type Key = PermKey | 'clerk-limit' | 'cap' | 'proof-threshold' | 'note-threshold' | 'review-threshold' | 'floor' | 'terms' | GradeTerms | GradeGrace | GradeProof | GradeClerkLimit | 'late-pct' | 'rounding' | 'policy-date' | 'period-numbering-from' | 'entry-date' | 'grace-days' | 'escalate-after' | 'review-sla' | 'pending-sla' | 'pot' | 'alert-threshold' | 'fiscal-start-month' | 'proof-kinds' | 'parent' | 'default-grade' | 'score-mid' | 'score-high' | 'score-log' | 'max-open';
+const KEYS: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'note-threshold', 'review-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'clerk-limit-A', 'clerk-limit-B', 'clerk-limit-C', 'late-pct', 'rounding', 'policy-date', 'period-numbering-from', 'entry-date', 'grace-days', 'escalate-after', 'review-sla', 'pending-sla', 'pot', 'alert-threshold', 'fiscal-start-month', 'proof-kinds', 'parent', 'default-grade', 'score-mid', 'score-high', 'score-log', 'max-open', ...PERM_KEYS];
 const BLANK: Record<Key, string> = {
-  'clerk-limit': '', cap: '', 'proof-threshold': '', 'note-threshold': '', 'review-threshold': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'clerk-limit-A': '', 'clerk-limit-B': '', 'clerk-limit-C': '', 'late-pct': '', rounding: '', 'policy-date': '', 'period-numbering-from': '', 'entry-date': '', 'grace-days': '', 'escalate-after': '', 'review-sla': '', pot: '', 'alert-threshold': '', 'fiscal-start-month': '', 'proof-kinds': '', parent: '', 'default-grade': '', 'score-mid': '', 'score-high': '', 'score-log': '', 'max-open': '',
+  'clerk-limit': '', cap: '', 'proof-threshold': '', 'note-threshold': '', 'review-threshold': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'clerk-limit-A': '', 'clerk-limit-B': '', 'clerk-limit-C': '', 'late-pct': '', rounding: '', 'policy-date': '', 'period-numbering-from': '', 'entry-date': '', 'grace-days': '', 'escalate-after': '', 'review-sla': '', 'pending-sla': '', pot: '', 'alert-threshold': '', 'fiscal-start-month': '', 'proof-kinds': '', parent: '', 'default-grade': '', 'score-mid': '', 'score-high': '', 'score-log': '', 'max-open': '',
   ...(Object.fromEntries(PERM_KEYS.map((k) => [k, ''])) as Record<PermKey, string>),
 };
 /** The keys whose values are dated: each saved from a from-date (blank: the sheet's today). */
@@ -40,7 +40,7 @@ const dated = (key: Key) => DATED.includes(key);
  *  sheet's today changes, every open period whose to-date plus them is before the new today is closed) and the escalation gap
  *  (a whole number of days; blank: off — reminding a claim whose previous reminder was at least that many days before the
  *  sheet's today escalates it, once per claim; undated) and the review SLA (a whole number of days; blank: none — a REVIEW claim
- *  whose review day plus them is before the sheet's today is review-late; undated) and the default grade (A, B or C; blank: A — the grade a person added by the quick-add bar, or by an import line with a blank grade, takes; undated) and the score thresholds score-mid and score-high (whole numbers; blank: none — while both are set each person shows a band; undated) and the max open claims per person (a whole number; blank: none — opening a claim, alone, in bulk or by a paste, is refused while its person has that many OPEN or PENDING claims; undated) and the score log (on or blank: off — while on, changing the sheet's today writes each person's score on the day being left to the audit; undated) and the permission matrix (for each of open, settle,
+ *  whose review day plus them is before the sheet's today is review-late; undated) and the pending SLA (whole days; blank: none — a PENDING claim whose pending day plus them is before the sheet's today is pending-late; undated) and the default grade (A, B or C; blank: A — the grade a person added by the quick-add bar, or by an import line with a blank grade, takes; undated) and the score thresholds score-mid and score-high (whole numbers; blank: none — while both are set each person shows a band; undated) and the max open claims per person (a whole number; blank: none — opening a claim, alone, in bulk or by a paste, is refused while its person has that many OPEN or PENDING claims; undated) and the score log (on or blank: off — while on, changing the sheet's today writes each person's score on the day being left to the audit; undated) and the permission matrix (for each of open, settle,
  *  void, reassign, close and reopen, the roles that may take it, comma separated; blank: the standing rule — open, settle,
  *  void and close by clerk and steward, reassign and reopen by steward; undated). Every setting but the policy date, the
  *  period numbering from-date, the entry date, the grace days, the escalation gap, the review SLA, the fiscal year start month, the proof kinds and the permissions is dated: saved with its from-date (blank: the sheet's today) it keeps the values from
@@ -148,6 +148,7 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {field('grace-days', 'Grace days', 'numeric')}{' '}
         {field('escalate-after', 'Escalate after (days)', 'numeric')}{' '}
         {field('review-sla', 'Review SLA (days)', 'numeric')}{' '}
+        {field('pending-sla', 'Pending SLA (days)', 'numeric')}{' '}
         {field('pot', 'Pot')}{' '}
         {field('alert-threshold', 'Alert threshold')}{' '}
         {field('fiscal-start-month', 'Fiscal year start month (1 to 12)', 'numeric')}{' '}
@@ -241,6 +242,9 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
       </p>
       <p>
         Review SLA <span data-testid="setting-review-sla-current">{current('review-sla')}</span>
+      </p>
+      <p>
+        Pending SLA <span data-testid="setting-pending-sla-current">{current('pending-sla')}</span>
       </p>
       <p>
         Pot <span data-testid="setting-pot-current">{current('pot')}</span>
