@@ -76,6 +76,21 @@ export function useSheetOverdue(sheetId: string): { count: number; total: string
   return { count: all.reduce((n, o) => n + o.count, 0), total: trimmedSum(all.map((o) => o.total)) };
 }
 
+/** Each person's overdue-total (two decimals), by person id. */
+export function usePeopleOverdue(sheetId: string): Map<number, string> {
+  const people = usePeople(sheetId);
+  const claims = useClaims(sheetId);
+  const rates = useRates(sheetId);
+  const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
+  return new Map(
+    (people.data ?? []).map((p) => [
+      p.id,
+      overdue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor).total,
+    ]),
+  );
+}
+
 /** The person on the sheet whose name or an alias is the user's name (as names are compared: case ignored), or
  *  undefined when there is no such person. */
 function findUser(people: Person[], user: string): Person | undefined {

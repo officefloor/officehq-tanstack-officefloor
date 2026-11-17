@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { SheetPage } from '../../slots/defs/sheetPage';
-import { STATUSES, useGradeDue, useSheetDueTotal, useSheetOverdue, useStatusCounts } from '../header/totals';
+import { STATUSES, useGradeDue, usePeopleDue, usePeopleOverdue, useStatusCounts } from '../header/totals';
 import { GRADES, usePeople } from '../people/people';
-import { sum } from '../rates/rates';
+import { sum, trimmedSum } from '../rates/rates';
 
 /** The ids of the sheet's descendants: the sheets naming it as their parent, then theirs, and so on. */
 function useDescendants(sheetId: string) {
@@ -14,36 +14,58 @@ function useDescendants(sheetId: string) {
   });
 }
 
-/** One sheet's own figures, as its header and summary show them: the due-total per grade and the claim count per
- *  status in the order of GRADES and STATUSES. */
-type Figures = { people: number; due: string; overdue: string; grades: string[]; statuses: number[] };
+/** One sheet's own figures: its people's names (each person's name then aliases), due-totals and overdue-totals (as
+ *  their rows show them, in the same order), and as its summary shows them the due-total per grade and the claim count
+ *  per status in the order of GRADES and STATUSES. */
+type Figures = { names: string[][]; due: string[]; overdue: string[]; grades: string[]; statuses: number[] };
+
+/** How many people the sheets' people make, each counted once over them all: people whose names or aliases match (as
+ *  names are compared: case and outer spaces ignored) are one person. */
+function distinctPeople(names: string[][]): number {
+  const parent = names.map((_, i) => i);
+  const root = (i: number): number => (parent[i] === i ? i : (parent[i] = root(parent[i])));
+  const byKey = new Map<string, number>();
+  names.forEach((ns, i) => {
+    for (const n of ns) {
+      const key = n.trim().toLowerCase();
+      const other = byKey.get(key);
+      if (other === undefined) byKey.set(key, i);
+      else parent[root(i)] = root(other);
+    }
+  });
+  return names.filter((_, i) => root(i) === i).length;
+}
 
 /** Works out one sheet's figures with the same hooks as its header, and reports them. Shows nothing. */
 function SheetFigures({ sheetId, report }: { sheetId: string; report: (sheetId: string, f: Figures) => void }) {
-  const people = (usePeople(sheetId).data ?? []).length;
-  const due = useSheetDueTotal(sheetId);
-  const overdue = useSheetOverdue(sheetId).total;
+  const people = usePeople(sheetId).data ?? [];
+  const peopleDue = usePeopleDue(sheetId);
+  const peopleOverdue = usePeopleOverdue(sheetId);
+  // Joined into strings so the effect re-runs only when a value changes, not on every new array.
+  const names = JSON.stringify(people.map((p) => [p.name, ...(p.aliases ?? [])]));
+  const due = people.map((p) => peopleDue.get(p.id) ?? 'n/a').join(',');
+  const overdue = people.map((p) => peopleOverdue.get(p.id) ?? '0.00').join(',');
   const gradeDue = useGradeDue(sheetId);
   const statusCount = useStatusCounts(sheetId);
-  // Joined into strings so the effect re-runs only when a value changes, not on every new array.
   const grades = GRADES.map(gradeDue).join(',');
   const statuses = STATUSES.map(statusCount).join(',');
   useEffect(
     () =>
       report(sheetId, {
-        people,
-        due,
-        overdue,
+        names: JSON.parse(names) as string[][],
+        due: due === '' ? [] : due.split(','),
+        overdue: overdue === '' ? [] : overdue.split(','),
         grades: grades.split(','),
         statuses: statuses.split(',').map(Number),
       }),
-    [report, sheetId, people, due, overdue, grades, statuses],
+    [report, sheetId, names, due, overdue, grades, statuses],
   );
   return null;
 }
 
-/** The consolidated figures over the sheet and all its descendants: their people counted, and each sheet's
- *  due-total and overdue-total (as that sheet shows it) added up, and per grade and per status each sheet's grade
+/** The consolidated figures over the sheet and all its descendants: their people counted once over the tree (see
+ *  distinctPeople), the due-total and overdue-total trimmed once over the whole tree (every person's figure added up,
+ *  leaving out the single highest and lowest of all people of the tree when three or more have one), and per grade and per status each sheet's grade
  *  due-total and status count (as its summary shows them) added up. A sheet with no children shows its own. While an
  *  as-of date is set (see features/asof), every sheet of the tree is read as it stood at the end of that date, with
  *  that date as its today. */
@@ -62,9 +84,9 @@ function Consolidated({ sheetId }: { sheetId: string }) {
       {sheets.map((id) => (
         <SheetFigures key={id} sheetId={id} report={report} />
       ))}
-      Consolidated: people <span data-testid="consolidated-people-count">{counted.reduce((n, f) => n + f.people, 0)}</span>
-      {' · '}Due total <span data-testid="consolidated-due-total">{sum(counted.map((f) => f.due))}</span>
-      {' · '}Overdue total <span data-testid="consolidated-overdue-total">{sum(counted.map((f) => f.overdue))}</span>
+      Consolidated: people <span data-testid="consolidated-people-count">{distinctPeople(counted.flatMap((f) => f.names))}</span>
+      {' · '}Due total <span data-testid="consolidated-due-total">{trimmedSum(counted.flatMap((f) => f.due))}</span>
+      {' · '}Overdue total <span data-testid="consolidated-overdue-total">{trimmedSum(counted.flatMap((f) => f.overdue))}</span>
       <table data-testid="consolidated-grades">
         <tbody>
           {GRADES.map((g, i) => (
