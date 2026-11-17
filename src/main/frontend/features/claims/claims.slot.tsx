@@ -43,7 +43,7 @@ type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | '
 /** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, its status log (oldest first), due-by (fixed when it was added), whether it is overdue, whether it is deferred and until when, its proofs count, and the period its due-by falls in, with the buttons that edit it or change its status. Open above the review threshold on its date makes it REVIEW, which only a steward's Review makes OPEN (refused, with the claim's error, for anyone else). A clerk's settle above the clerk limit makes it PENDING; a
  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
- *  shows the claim's error. A steward waives an OPEN or PENDING claim's late charge with Waive late charge, shown as waived yes/no: from then on it bears none (refused, with the claim's error, for anyone else, any other claim or one already waived). An OPEN or PENDING claim is held and released with Hold / Release, shown as held yes/no: while held and not bound by a statement it counts in no due figure (it stays in claimed), as a claim dated within a hold of its person does (refused, with the claim's error, for any other claim). An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one whose due-by is inside a closed period); a proof has the kind chosen beside it (receipt when none is), shown as counts per kind beside the total; a claim with no proofs whose due is above the proof threshold on its date, or with none of one of the sheet's proof kinds, cannot be settled nor approved; a claim with an empty note whose due is above the note threshold on its date cannot be opened (alone or in bulk). While the sheet has void reasons, Void needs one chosen beside it (refused, with the claim's error, without one). A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). Delete makes a DRAFT DELETED (it counts nowhere); Restore makes it a DRAFT again, only on the sheet-today it was deleted (refused, with the claim's error, otherwise). A steward re-dates an OPEN or PENDING claim to the date typed beside Re-date (its due-by and any statement figure stay; refused, with the claim's error, for anyone else, any other claim, or a date after the person's retirement). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
+ *  shows the claim's error. A steward waives an OPEN or PENDING claim's late charge with Waive late charge, shown as waived yes/no: from then on it bears none (refused, with the claim's error, for anyone else, any other claim or one already waived). A claim is shared with the person picked beside Share, by the share typed there (a percent more than 0.00, two decimals), shown as `<name> <share>`, comma and space separated: each holder's part of its due counts in their figures instead of its own person's (refused, with the claim's error, for its own person, a person already holding a share, shares adding up to more than 100.00, or a SETTLED, VOID or DELETED claim). An OPEN or PENDING claim is held and released with Hold / Release, shown as held yes/no: while held and not bound by a statement it counts in no due figure (it stays in claimed), as a claim dated within a hold of its person does (refused, with the claim's error, for any other claim). An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one whose due-by is inside a closed period); a proof has the kind chosen beside it (receipt when none is), shown as counts per kind beside the total; a claim with no proofs whose due is above the proof threshold on its date, or with none of one of the sheet's proof kinds, cannot be settled nor approved; a claim with an empty note whose due is above the note threshold on its date cannot be opened (alone or in bulk). While the sheet has void reasons, Void needs one chosen beside it (refused, with the claim's error, without one). A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). Delete makes a DRAFT DELETED (it counts nowhere); Restore makes it a DRAFT again, only on the sheet-today it was deleted (refused, with the claim's error, otherwise). A steward re-dates an OPEN or PENDING claim to the date typed beside Re-date (its due-by and any statement figure stay; refused, with the claim's error, for anyone else, any other claim, or a date after the person's retirement). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
  *  with the claim's error, for anyone else or any other claim). Remind writes a reminder for an OPEN or PENDING claim, once per sheet-today, which becomes its reminded date (refused, with the claim's error, for any other claim or a second reminder that day). Comment adds the text typed beside it to the claim's comments, shown in the order written as `<user> on <date>: <text>` (an empty one is refused with the claim's error). Split takes the amount typed beside it off an OPEN claim (not deferred, nor with its due-by inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Settle part splits the amount typed beside it off exactly as Split does and settles the new claim at once exactly as Settle does (PENDING above a clerk's limit), the four-eyes and proof rules judged on the original claim; when either would be refused the whole is refused with the claim's error and nothing changes. Only a DRAFT whose due-by is not inside a closed period can be edited: Edit opens the editor and locks the claim for the user until it
  *  is saved or cancelled (Cancel) or the sheet's today changes; Edit on any other claim, on a claim another user holds, or by a
  *  viewer shows the claim's error instead and takes no lock. The row's own amount entry and Save amount change a DRAFT's amount
@@ -130,6 +130,17 @@ function ClaimRow({
   const hold = useMutation({
     mutationFn: () => putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/hold`, { held: !c.held, by: user }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
+  const [shareWith, setShareWith] = useState('');
+  const [sharePct, setSharePct] = useState('');
+  const share = useMutation({
+    mutationFn: (s: { personId: number | null; share: string }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/shares`, { ...s, by: user }),
+    onSuccess: () => {
+      setShareWith('');
+      setSharePct('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
   });
   const [newDate, setNewDate] = useState('');
   const redate = useMutation({
@@ -232,6 +243,7 @@ function ClaimRow({
     defer.reset();
     waive.reset();
     hold.reset();
+    share.reset();
     redate.reset();
     proof.reset();
     split.reset();
@@ -281,6 +293,61 @@ function ClaimRow({
       <span data-testid="claim-reminded">{c.reminded ?? ''}</span>{' '}
       <span data-testid="claim-batch">{c.batch ?? ''}</span>{' '}
       <span data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</span>{' '}
+      <span data-testid="claim-shares">
+        {(c.shares ?? []).map((x) => `${people.data?.find((p) => p.id === x.personId)?.name ?? ''} ${x.share}`).join(', ')}
+      </span>{' '}
+      <select
+        data-testid="claim-share-select"
+        aria-label="Share with"
+        value={shareWith}
+        onChange={(e) => {
+          setShareWith(e.target.value);
+          share.reset();
+        }}
+      >
+        <option value="">Share with…</option>
+        {(people.data ?? []).map((p) => (
+          <option key={p.id} value={String(p.id)}>
+            {p.name}
+          </option>
+        ))}
+      </select>{' '}
+      <input
+        data-testid="claim-share-pct"
+        aria-label="Share %"
+        inputMode="decimal"
+        value={sharePct}
+        onChange={(e) => {
+          setSharePct(e.target.value);
+          share.reset();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-share-add"
+        disabled={share.isPending}
+        onClick={() => {
+          setEditRefused(null);
+          lock.reset();
+          status.reset();
+          reassign.reset();
+          defer.reset();
+          waive.reset();
+          hold.reset();
+          redate.reset();
+          proof.reset();
+          split.reset();
+          settlePart.reset();
+          remind.reset();
+          comment.reset();
+          line.reset();
+          inline.reset();
+          share.reset();
+          share.mutate({ personId: shareWith === '' ? null : Number(shareWith), share: sharePct.trim() });
+        }}
+      >
+        Share
+      </button>{' '}
       <button
         type="button"
         data-testid="claim-edit"
@@ -290,6 +357,7 @@ function ClaimRow({
           defer.reset();
           waive.reset();
           hold.reset();
+          share.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -346,6 +414,7 @@ function ClaimRow({
           defer.reset();
           waive.reset();
           hold.reset();
+          share.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -432,6 +501,7 @@ function ClaimRow({
           defer.reset();
           waive.reset();
           hold.reset();
+          share.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -467,6 +537,7 @@ function ClaimRow({
           defer.reset();
           waive.reset();
           hold.reset();
+          share.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -489,6 +560,7 @@ function ClaimRow({
           defer.reset();
           waive.reset();
           hold.reset();
+          share.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -514,6 +586,7 @@ function ClaimRow({
           defer.reset();
           waive.reset();
           hold.reset();
+          share.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -547,6 +620,7 @@ function ClaimRow({
           line.reset();
           inline.reset();
           hold.reset();
+          share.reset();
           hold.mutate();
         }}
       >
@@ -574,6 +648,7 @@ function ClaimRow({
           defer.reset();
           waive.reset();
           hold.reset();
+          share.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -614,6 +689,7 @@ function ClaimRow({
           defer.reset();
           waive.reset();
           hold.reset();
+          share.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -654,6 +730,7 @@ function ClaimRow({
           defer.reset();
           waive.reset();
           hold.reset();
+          share.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -697,6 +774,7 @@ function ClaimRow({
           defer.reset();
           waive.reset();
           hold.reset();
+          share.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -722,6 +800,7 @@ function ClaimRow({
           defer.reset();
           waive.reset();
           hold.reset();
+          share.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -757,6 +836,7 @@ function ClaimRow({
           defer.reset();
           waive.reset();
           hold.reset();
+          share.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -816,6 +896,7 @@ function ClaimRow({
           defer.reset();
           waive.reset();
           hold.reset();
+          share.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -861,6 +942,13 @@ function ClaimRow({
         <span data-testid="claim-error">
           {' '}
           Only an open or pending claim can be held or released.
+        </span>
+      )}
+      {share.isError && (
+        <span data-testid="claim-error">
+          {' '}
+          A claim is shared only with another person of the sheet not already holding a share of it, by a share more than 0.00
+          with up to two decimals that keeps its shares at most 100.00, and a settled, void or deleted claim is not shared.
         </span>
       )}
       {redate.isError && (

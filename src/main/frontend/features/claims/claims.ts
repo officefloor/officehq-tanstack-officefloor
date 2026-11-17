@@ -71,7 +71,13 @@ export type Claim = {
   /** The order it was added in, across every sheet: a forward-only rate applies only to claims whose seq is above its
    *  `after` (see claimRate); absent for a claim not yet added. */
   seq?: number;
+  /** The shares of it other people of the sheet hold, in the order made: each holder's person id and share (a percent,
+   *  two decimals). Each holder's part of its due counts in their figures instead of its own person's (see shareParts). */
+  shares?: ClaimShare[];
 };
+
+/** A share of a claim: its holder's person id and their share (a percent, two decimals). */
+export type ClaimShare = { personId: number; share: string };
 
 /** A line of a claim: its label, quantity (a whole number, at least 1) and unit amount (two decimals). */
 export type ClaimLine = { label: string; qty: number; unit: string };

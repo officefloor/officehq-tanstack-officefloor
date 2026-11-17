@@ -2,7 +2,7 @@ import { live, useClaims, type ClaimStatus } from '../claims/claims';
 import { crewDueTotal, useCrews } from '../crews/crews';
 import { overdue } from '../overdue/overdue';
 import { gradeOn, usePeople, type Person } from '../people/people';
-import { personDue, personSplit, sum, trimmedSum, useRates } from '../rates/rates';
+import { personDue, personSplit, shareParts, sum, trimmedSum, useRates, type SharePart } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../settings/settings';
 
 // The sheet-wide figures shown in more than one place (the rollups, the summary and the header), worked out once
@@ -11,9 +11,21 @@ import { useCap, useFloor, useLate } from '../settings/settings';
 /** The statuses claims are counted by. */
 export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'];
 
+/** Each person's share parts of the sheet's shared claims that count live (see shareParts), by person id. */
+export function useShareParts(sheetId: string): (personId: number) => SharePart[] {
+  const people = usePeople(sheetId);
+  const claims = useClaims(sheetId);
+  const rates = useRates(sheetId);
+  const late = useLate(sheetId);
+  const floor = useFloor(sheetId);
+  const parts = shareParts(live(claims.data ?? [], people.data, late.today), people.data, rates.data, late, floor);
+  return (personId) => parts.get(personId) ?? [];
+}
+
 /** The sheet's due-total: everyone's due-total added up, skipping n/a, leaving out the single highest and lowest
  *  when three or more people have one. */
 export function useSheetDueTotal(sheetId: string): string {
+  const parts = useShareParts(sheetId);
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
@@ -22,7 +34,7 @@ export function useSheetDueTotal(sheetId: string): string {
   const cap = useCap(sheetId);
   return trimmedSum(
     (people.data ?? []).map((p) =>
-      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap),
+      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap, parts(p.id)),
     ),
   );
 }
@@ -35,6 +47,7 @@ export function useSheetDueSum(sheetId: string): string {
 
 /** Each person's due-total as their row shows it (two decimals, or n/a), by person id. */
 export function usePeopleDue(sheetId: string): Map<number, string> {
+  const parts = useShareParts(sheetId);
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
@@ -44,20 +57,21 @@ export function usePeopleDue(sheetId: string): Map<number, string> {
   return new Map(
     (people.data ?? []).map((p) => [
       p.id,
-      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap),
+      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap, parts(p.id)),
     ]),
   );
 }
 
 /** The sheet's settled-total and open-total: everyone's added up (not trimmed). */
 export function useSheetSplit(sheetId: string): { settled: string; open: string } {
+  const parts = useShareParts(sheetId);
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
   const all = (people.data ?? []).map((p) =>
-    personSplit(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor),
+    personSplit(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, parts(p.id)),
   );
   return { settled: sum(all.map((s) => s.settled)), open: sum(all.map((s) => s.open)) };
 }
@@ -102,6 +116,7 @@ function findUser(people: Person[], user: string): Person | undefined {
 /** The signed-in user's own due-total and overdue-total: those of the person on the sheet whose name or an alias is the
  *  user's name (as names are compared: case ignored), or null when there is no such person. */
 export function useMyFigures(sheetId: string, user: string): { due: string; overdue: string } | null {
+  const parts = useShareParts(sheetId);
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
@@ -112,7 +127,7 @@ export function useMyFigures(sheetId: string, user: string): { due: string; over
   if (!p) return null;
   const mine = live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today);
   return {
-    due: personDue(mine, rates.data, p, late, floor, cap),
+    due: personDue(mine, rates.data, p, late, floor, cap, parts(p.id)),
     overdue: overdue(mine, rates.data, p, late, floor).total,
   };
 }

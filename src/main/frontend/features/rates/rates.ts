@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { nowKey, useReadNow } from '../../query/readNow';
-import { counts, isOpen, type Claim } from '../claims/claims';
+import { counts, isOpen, type Claim, type ClaimStatus } from '../claims/claims';
 import { lateBoundaries, roundsHalfUp, type Late } from '../overdue/late';
 import { gradeOn, type Person } from '../people/people';
 import type { Dated } from '../settings/settings';
@@ -141,39 +141,69 @@ export function claimDue(claim: Claim, rate: string | undefined, floor: Dated, l
   return shown(boundaries.reduce((t, b) => t + percentOf(shown(t), late!.pct(b), 1, halfUp), floored));
 }
 
+/** What a share of a shared claim moves in one person's figures: the claim's status and the part (two decimals; below
+ *  zero for the claim's own person, who gives it up). */
+export type SharePart = { status: ClaimStatus; part: string };
+
+/** A holder's part of a claim's due: the due times their share divided by 100, rounded half to even. */
+export function sharePart(due: string, share: string): string {
+  return shown(percentOf(due, share, 1, false));
+}
+
+/** Each person's share parts, by person id: of the given claims (those that count live) with a figure, each holder of a
+ *  share gains their part (see sharePart) and the claim's own person loses it. */
+export function shareParts(claims: Claim[], people: Person[] | undefined, rates: Rate[] | undefined, late: Late, floor: Dated): Map<number, SharePart[]> {
+  const byId = new Map((people ?? []).map((p) => [p.id, p]));
+  const out = new Map<number, SharePart[]>();
+  const add = (id: number, p: SharePart) => out.set(id, [...(out.get(id) ?? []), p]);
+  for (const c of claims) {
+    const owner = byId.get(c.personId);
+    if (!c.shares?.length || owner === undefined || !counts(c)) continue;
+    const figure = claimDue(c, claimRate(rates, gradeOn(owner, c.date), c), floor, late);
+    if (figure === 'n/a') continue;
+    for (const s of c.shares) {
+      const part = sharePart(figure, s.share);
+      add(s.personId, { status: c.status, part });
+      add(owner.id, { status: c.status, part: shown(-hundredths(part)) });
+    }
+  }
+  return out;
+}
+
 /** The sum of a person's figures: the figures of their claims that count (each at the rate, of the grade in force,
- *  on its date, with its late charge) added up; 'n/a' when their grade has no rate today and none of those claims has
- *  a figure. */
-function personFigures(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated): string {
+ *  on its date, with its late charge) and their share parts added up; 'n/a' when their grade has no rate today and
+ *  none of those claims has a figure, nor do they have a share part. */
+function personFigures(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, parts: SharePart[] = []): string {
   const counted = claims.filter(counts);
   const figures = counted.map((c) => claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late));
-  if (rateFor(rates, gradeOn(person, late.today), late.today) === undefined && figures.every((f) => f === 'n/a')) return 'n/a';
-  return sum(figures);
+  if (rateFor(rates, gradeOn(person, late.today), late.today) === undefined && figures.every((f) => f === 'n/a') && parts.length === 0) return 'n/a';
+  return sum([...figures, ...parts.map((p) => p.part)]);
 }
 
 /** A person's settled-total and open-total: the figures (see personFigures) of their SETTLED claims that count
- *  (frozen when settled, corrections included), and of their OPEN and PENDING ones, each added up, skipping n/a.
+ *  (frozen when settled, corrections included), and of their OPEN and PENDING ones, each with the share parts of
+ *  claims of that status (see shareParts) added up, skipping n/a.
  *  Together they make the sum of their figures, before the cap. */
-export function personSplit(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated): { settled: string; open: string } {
+export function personSplit(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, parts: SharePart[] = []): { settled: string; open: string } {
   const figure = (c: Claim) => claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late);
   const counted = claims.filter(counts);
   return {
-    settled: sum(counted.filter((c) => c.status === 'SETTLED').map(figure)),
-    open: sum(counted.filter((c) => c.status !== 'SETTLED').map(figure)),
+    settled: sum([...counted.filter((c) => c.status === 'SETTLED').map(figure), ...parts.filter((p) => p.status === 'SETTLED').map((p) => p.part)]),
+    open: sum([...counted.filter((c) => c.status !== 'SETTLED').map(figure), ...parts.filter((p) => p.status !== 'SETTLED').map((p) => p.part)]),
   };
 }
 
 /** A person's due-total: the sum of their figures (see personFigures), at most the sheet's cap (null: none); 'n/a'
  *  is not capped. */
-export function personDue(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, cap: string | null): string {
-  const total = personFigures(claims, rates, person, late, floor);
+export function personDue(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, cap: string | null, parts: SharePart[] = []): string {
+  const total = personFigures(claims, rates, person, late, floor, parts);
   return total !== 'n/a' && cap !== null && hundredths(total) > hundredths(cap) ? shown(hundredths(cap)) : total;
 }
 
 /** A person's excess: how far the sum of their figures is above the sheet's cap; 0.00 when it is not (or with no
  *  cap, or an n/a due-total). */
-export function personExcess(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, cap: string | null): string {
-  const total = personFigures(claims, rates, person, late, floor);
+export function personExcess(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, cap: string | null, parts: SharePart[] = []): string {
+  const total = personFigures(claims, rates, person, late, floor, parts);
   return total !== 'n/a' && cap !== null && hundredths(total) > hundredths(cap)
     ? shown(hundredths(total) - hundredths(cap))
     : '0.00';

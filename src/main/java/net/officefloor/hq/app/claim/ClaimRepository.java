@@ -253,6 +253,35 @@ public class ClaimRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** Stores a share of the claim held by the person, made on {@code today}, but only while the claim is still not
+     *  SETTLED, VOID or DELETED; false otherwise (nothing is written). */
+    public boolean share(Claim claim, long personId, BigDecimal share, LocalDate today) {
+        return jdbc.update("INSERT INTO claim_share (sheet_id, claim_id, person_id, share, made_on) SELECT sheet_id, id, ?, ?, ?"
+                + " FROM claim WHERE sheet_id = ? AND id = ? AND status NOT IN ('SETTLED', 'VOID', 'DELETED')",
+                personId, share, Date.valueOf(today), claim.sheetId(), claim.id()) == 1;
+    }
+
+    /** The claim's shares, in the order made. */
+    public List<ClaimShare> shares(String sheetId, long claimId) {
+        return jdbc.query("SELECT claim_id, person_id, share, made_on FROM claim_share WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
+                ClaimRepository::mapShare, sheetId, claimId);
+    }
+
+    /** The shares of the sheet's claims made on or before the date (null: ever), each claim's in the order made, by claim id. */
+    public Map<Long, List<ClaimShare>> shares(String sheetId, LocalDate asOf) {
+        Map<Long, List<ClaimShare>> out = new HashMap<>();
+        jdbc.query("SELECT claim_id, person_id, share, made_on FROM claim_share WHERE sheet_id = ? "
+                + "AND (CAST(? AS DATE) IS NULL OR made_on <= ?) ORDER BY id",
+                (rs) -> { ClaimShare s = mapShare(rs, 0); out.computeIfAbsent(s.claimId(), (k) -> new java.util.ArrayList<>()).add(s); },
+                sheetId, asOf == null ? null : Date.valueOf(asOf), asOf == null ? null : Date.valueOf(asOf));
+        return out;
+    }
+
+    private static ClaimShare mapShare(ResultSet rs, int row) throws SQLException {
+        return new ClaimShare(rs.getLong("claim_id"), rs.getLong("person_id"), rs.getBigDecimal("share").setScale(2),
+                rs.getObject("made_on", LocalDate.class));
+    }
+
     /** The ids of the sheet's claims whose late charge was waived on or before the date (null: ever). */
     public Set<Long> waived(String sheetId, LocalDate asOf) {
         return new HashSet<>(asOf == null

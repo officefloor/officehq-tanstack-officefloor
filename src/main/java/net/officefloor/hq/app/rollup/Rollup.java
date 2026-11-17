@@ -3,6 +3,7 @@ package net.officefloor.hq.app.rollup;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +12,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimDue;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.ClaimShare;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.LateCharge;
 import net.officefloor.hq.app.person.Person;
@@ -22,7 +24,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * The sheet's figures as the screen shows them: each person's claimed (the amounts of their claims that count added up, leaving out corrections; a person's OPEN or PENDING claims, once their retirement date is reached, not bound by a statement, do not, nor do deferred claims; a held claim still does) and
- * due-total (the figures of the claims that count live — held ones included, each with its late charge, added up; n/a when their grade has no rate today and no counting claim
+ * due-total (the figures of the claims that count live — held ones included, each with its late charge, added up, less
+ * the parts of them other people hold by a share, plus their own parts of others' shared claims (see ClaimShare#part); n/a when their grade has no rate today and no counting claim
  * has a figure, kept or at the grade in force on its date; at most the sheet's cap), overdue-total (the figures, late charge included, of those claims that are overdue — open, their due-by plus
  * their grace (see LateCharge#lateFrom) before today — added up, skipping n/a; not capped), and the sheet's claimed-total, due-total and overdue-total (everyone's added up, skipping n/a; the due-total and
  * overdue-total leave out the single highest and the single lowest figure when three or more people have one).
@@ -59,8 +62,10 @@ public class Rollup {
         BigDecimal cap = settings.cap(sheetId);
         LateCharge late = LateCharge.of(sheetId, sheets, settings, claims);
         List<Claim> all = claims.list(sheetId);
+        List<Person> listed = people.list(sheetId);
+        Map<Long, BigDecimal> parts = shareParts(sheetId, today, late, all, listed);
         Map<Long, Figures> figures = new LinkedHashMap<>();
-        for (Person person : people.list(sheetId)) {
+        for (Person person : listed) {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             BigDecimal overdue = BigDecimal.ZERO.setScale(2);
@@ -93,12 +98,48 @@ public class Rollup {
                     }
                 }
             }
+            BigDecimal part = parts.get(person.id());
+            if (part != null) {
+                due = due.add(part);
+                figured = true;
+            }
             String dueTotal = rates.find(sheetId, person.gradeOn(today), today) == null && !figured ? "n/a"
                     : SettingRepository.capped(due, cap).toPlainString();
             figures.put(person.id(), new Figures(person.name(), claimed.toPlainString(), dueTotal,
                     overdue.toPlainString(), score(settled, overdueCount)));
         }
         return new RollupBefore(figures);
+    }
+
+    /** What the shares of the claims that count live move in each person's due-total, by person id: each holder gains
+     *  their part of the claim's figure (see ClaimShare#part), and the claim's own person loses it. A person with no
+     *  share of a claim that has a figure is left out. */
+    private Map<Long, BigDecimal> shareParts(String sheetId, LocalDate today, LateCharge late, List<Claim> all,
+            List<Person> listed) {
+        Map<Long, List<ClaimShare>> shares = claims.shares(sheetId, (LocalDate) null);
+        Map<Long, BigDecimal> parts = new HashMap<>();
+        if (shares.isEmpty()) {
+            return parts;
+        }
+        Map<Long, Person> byId = new HashMap<>();
+        listed.forEach((p) -> byId.put(p.id(), p));
+        for (Claim c : all) {
+            List<ClaimShare> held = shares.get(c.id());
+            Person owner = byId.get(c.personId());
+            if (held == null || owner == null || !ClaimDue.countsLive(c, owner, today)) {
+                continue;
+            }
+            BigDecimal figure = late.add(c, ClaimDue.figure(c, owner.gradeOn(c.date()), rates, late.rounding()), settings.floor(sheetId, c.date()));
+            if (figure == null) {
+                continue;
+            }
+            for (ClaimShare s : held) {
+                BigDecimal part = s.part(figure);
+                parts.merge(s.personId(), part, BigDecimal::add);
+                parts.merge(owner.id(), part.negate(), BigDecimal::add);
+            }
+        }
+        return parts;
     }
 
     /** A score from settled figures and an overdue count: settled / 100, minus 5 for every overdue claim, rounded once,

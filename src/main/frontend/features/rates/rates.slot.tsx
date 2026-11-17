@@ -5,7 +5,7 @@ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
-import { useSheetDueTotal, useSheetSplit } from '../header/totals';
+import { useShareParts, useSheetDueTotal, useSheetSplit } from '../header/totals';
 import { GRADES, usePeople, type Person } from '../people/people';
 import { useSheetToday } from '../session/session';
 import { useCap, useFloor, useLate } from '../settings/settings';
@@ -328,11 +328,12 @@ function PersonDueTotal({ sheetId, user, person }: { sheetId: string; user: stri
   const floor = useFloor(sheetId);
   const cap = useCap(sheetId);
   const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person], late.today);
-  const split = personSplit(mine, rates.data, person, late, floor);
+  const parts = useShareParts(sheetId)(person.id);
+  const split = personSplit(mine, rates.data, person, late, floor, parts);
   return (
     <>
-      {shown('due-total') && <td data-testid="person-due-total">{personDue(mine, rates.data, person, late, floor, cap)}</td>}
-      {shown('excess') && <td data-testid="person-excess">{personExcess(mine, rates.data, person, late, floor, cap)}</td>}
+      {shown('due-total') && <td data-testid="person-due-total">{personDue(mine, rates.data, person, late, floor, cap, parts)}</td>}
+      {shown('excess') && <td data-testid="person-excess">{personExcess(mine, rates.data, person, late, floor, cap, parts)}</td>}
       <td data-testid="person-settled-total">{split.settled}</td>
       <td data-testid="person-open-total">{split.open}</td>
     </>
