@@ -1,0 +1,306 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 31a0f9785..14beb4115 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -88,11 +88,16 @@ function ClaimRow({
+         action,
+         by: user,
+         reason: action === 'reject' ? reason : action === 'void' ? voidReason : '',
++        on: action === 'settle' ? settleOn.trim() : '',
+       }),
+     onSuccess: (_, action) => {
+       if (action === 'reject') setReason('');
+       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+     },
++    // a settle's as-of date is for that one settle: a later settle is as of today unless a date is typed again
++    onSettled: (_, __, action) => {
++      if (action === 'settle') setSettleOn('');
++    },
+   });
+   const people = usePeople(sheetId);
+   const [moveTo, setMoveTo] = useState('');
+@@ -105,6 +110,8 @@ function ClaimRow({
+     },
+   });
+   const [reason, setReason] = useState('');
++  /** The date (yyyy-MM-dd) to settle the claim as of: its due frozen as it stood at the end of that date; '' for today. */
++  const [settleOn, setSettleOn] = useState('');
+   const voidReasons = useVoidReasons(sheetId);
+   const [voidReason, setVoidReason] = useState('');
+   const [deferUntil, setDeferUntil] = useState('');
+@@ -355,6 +362,15 @@ function ClaimRow({
+       <button type="button" data-testid="claim-open" disabled={status.isPending} onClick={() => act('open')}>
+         Open
+       </button>
++      <input
++        type="date"
++        data-testid="claim-settle-date"
++        value={settleOn}
++        onChange={(e) => {
++          setSettleOn(e.target.value);
++          status.reset();
++        }}
++      />
+       <button type="button" data-testid="claim-settle" disabled={status.isPending} onClick={() => act('settle')}>
+         Settle
+       </button>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index f9eaa4e9b..059e1b658 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -9,6 +9,7 @@ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.role.RoleRepository;
+ import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.hq.app.statement.StatementRepository;
+ import net.officefloor.hq.app.voidreason.VoidReasonRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+@@ -42,6 +43,8 @@ import net.officefloor.plugin.variable.Val;
+  * Opening a claim whose due is above the sheet's review threshold in force on its date (if it has one) makes it REVIEW
+  * instead, unnumbered, recording who opened it (see #needsReview); only a steward reviews it, making it OPEN (numbered
+  * then). A REVIEW claim may otherwise only be voided.
++ * A settle made as of a date (on or before the sheet's today; a later one is refused, as is one before the claim was
++ * added) fixes the claim's due as it stood at the end of that date (see ClaimDueAsOf) instead of today's.
+  * While the claim's person is flagged (the sheet's today on or before the flag's until-date) only a steward opens it.
+  */
+ public class ApplyClaimStatus {
+@@ -66,15 +69,31 @@ public class ApplyClaimStatus {
+     static final int VOID_SETTLED_DAYS = 7;
+ 
+     public void apply(@Val Claim claim, @Val ClaimStatusChange change, PersonRepository people, RateRepository rates,
+-            PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, ClaimLog log, VoidReasonRepository voidReasons, Out<Claim> changed, Out<ClaimNumber> number, Out<PreviousDue> previous) throws InvalidClaimStatusException {
++            PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, ClaimLog log, VoidReasonRepository voidReasons, ClaimLogRepository logs, StatementRepository statements, Out<Claim> changed, Out<ClaimNumber> number, Out<PreviousDue> previous) throws InvalidClaimStatusException {
++        BigDecimal[] asOfDue = null;
++        if (change.action() == ClaimAction.SETTLE && change.on() != null) {
++            if (change.on().isAfter(sheets.today(claim.sheetId()))) {
++                throw new InvalidClaimStatusException("A claim cannot be settled as of a date after the sheet's today");
++            }
++            asOfDue = new BigDecimal[] { ClaimDueAsOf.of(claim, change.on(), claims, logs, people, rates, settings,
++                    statements).value() };
++        }
+         applyJudged(claim, claim, change, people, rates, periods, settings, roles, sheets, claims, log, voidReasons,
+-                changed, number, previous);
++                changed, number, previous, asOfDue);
+     }
+ 
+     /** As #apply, but the four-eyes rules and the proof rule are judged on the claim given as judged (a part-settle
+      *  judges them on the claim it splits from, see SettlePart) instead of on the claim changed. */
+     static void applyJudged(Claim claim, Claim judged, ClaimStatusChange change, PersonRepository people, RateRepository rates,
+             PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, ClaimLog log, VoidReasonRepository voidReasons, Out<Claim> changed, Out<ClaimNumber> number, Out<PreviousDue> previous) throws InvalidClaimStatusException {
++        applyJudged(claim, judged, change, people, rates, periods, settings, roles, sheets, claims, log, voidReasons,
++                changed, number, previous, null);
++    }
++
++    /** As above; a settle given its due as of a date (asOfDue: a one-element array, its element null for n/a; null
++     *  for none, see ClaimDueAsOf) fixes that due instead of today's. */
++    static void applyJudged(Claim claim, Claim judged, ClaimStatusChange change, PersonRepository people, RateRepository rates,
++            PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, ClaimLog log, VoidReasonRepository voidReasons, Out<Claim> changed, Out<ClaimNumber> number, Out<PreviousDue> previous, BigDecimal[] asOfDue) throws InvalidClaimStatusException {
+         boolean allowed = switch (change.action()) {
+             case OPEN -> claim.status() == ClaimStatus.DRAFT;
+             case SETTLE -> claim.status() == ClaimStatus.OPEN;
+@@ -160,6 +179,8 @@ public class ApplyClaimStatus {
+                     claim.note(), ClaimStatus.OPEN, claim.number(), null, claim.openedBy(), false, null,
+                     claim.corrects(), claim.dueBy(), null, claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags(), claim.held());
+             settledDue = late.add(asOpen, due(asOpen, people, rates, late.rounding()), settings.floor(claim.sheetId(), claim.date()));
++        } else if (asOfDue != null) {
++            settledDue = asOfDue[0];
+         } else {
+             settledDue = to == ClaimStatus.SETTLED ? late.add(claim, due(claim, people, rates, late.rounding()), settings.floor(claim.sheetId(), claim.date())) : claim.due();
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimDueAsOf.java b/src/main/java/net/officefloor/hq/app/claim/ClaimDueAsOf.java
+new file mode 100644
+index 000000000..2136d638f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimDueAsOf.java
+@@ -0,0 +1,83 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import java.math.RoundingMode;
++import java.time.LocalDate;
++import java.util.List;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.Rate;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.AsOf;
++import net.officefloor.hq.app.statement.SheetAsOf;
++import net.officefloor.hq.app.statement.Statement;
++import net.officefloor.hq.app.statement.StatementRepository;
++
++/**
++ * A claim's due as it stood at the end of a date, as the as-of view works it out (see AsOf, RespondWithClaims): every
++ * change made while the sheet's today was on or before the date counts (the claim's status its log shows then, its
++ * values before any later edit, its deferral, its person's grades, the rates and settings, a statement binding it),
++ * and the date stands in for the sheet's today, late charge and floor included.
++ */
++public final class ClaimDueAsOf {
++
++    private ClaimDueAsOf() {
++    }
++
++    /** The claim's due at the end of the date; throws when the claim was not yet on the sheet then. The due is the
++     *  figure (null: n/a) in the result. */
++    public static Figure of(Claim claim, LocalDate date, ClaimRepository claims, ClaimLogRepository log,
++            PersonRepository people, RateRepository rates, SettingRepository settings, StatementRepository statements)
++            throws InvalidClaimStatusException {
++        String sheetId = claim.sheetId();
++        List<ClaimLogLine> lines = log.of(sheetId, claim.id());
++        ClaimStatus status = lines.isEmpty() ? claim.status() : ClaimDue.statusAsOf(lines, date);
++        if (status == null) {
++            throw new InvalidClaimStatusException("The claim was not on the sheet on " + date);
++        }
++        Person current = people.find(sheetId, claim.personId());
++        Person person = current == null ? null : people.asOf(current, date);
++        SheetAsOf sheet = SheetAsOf.read(sheetId, date, rates, settings);
++        LocalDate policy = sheet.policyDate();
++        Rounding rounding = new Rounding(policy == null ? date : policy, claims,
++                (on) -> sheet.value(SettingRepository.ROUNDING, on));
++        LateCharge late = new LateCharge(date, sheet::latePct, rounding,
++                (c) -> sheet.grace(person == null ? null : person.gradeOn(c.date()), c.date()),
++                LateCharge.waivedIn(claims.waived(sheetId, date)));
++        Claim values = claims.editedAfter(sheetId, date).getOrDefault(claim.id(), claim);
++        var deferred = claims.deferredAsOf(sheetId, date);
++        Statement last = claim.stated() ? statements.last(sheetId, claim.personId()) : null;
++        boolean stated = last != null && AsOf.counts(last.madeOn(), date);
++        Claim then = new Claim(claim.id(), sheetId, claim.personId(), values.amount(), values.date(), values.note(),
++                status, claim.number(), status == ClaimStatus.SETTLED ? claim.due() : null, claim.openedBy(), stated,
++                stated ? claim.statedDue() : null, values.corrects(), claim.dueBy(),
++                deferred.containsKey(claim.id()) ? deferred.get(claim.id()) : claim.deferredUntil(), claim.proofs(),
++                claim.splitFrom(), values.ref(), values.tags(), claim.held());
++        if (person == null) {
++            return new Figure(then.due());
++        }
++        return new Figure(late.add(then, figure(then, person.gradeOn(then.date()), sheet, rounding, rates),
++                sheet.floor(then.date())));
++    }
++
++    /** The figure the claim had then (see ClaimDue#figure), at the rate in force then on its date. */
++    private static BigDecimal figure(Claim c, String grade, SheetAsOf sheet, Rounding rounding, RateRepository rates) {
++        if (c.due() != null) {
++            return c.due();
++        }
++        if (ClaimDue.bound(c)) {
++            return c.statedDue();
++        }
++        Rate rate = sheet.rate(grade, c.date(), rates.seqOf(c.id()));
++        if (rate == null) {
++            return null;
++        }
++        RoundingMode mode = rounding.mode(c);
++        return c.amount().multiply(rate.rate()).movePointLeft(2).setScale(2, mode);
++    }
++
++    /** A due worked out as of a date; its value is null when it is n/a. */
++    public record Figure(BigDecimal value) {
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+index 259e5dfcf..d82527b15 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+@@ -2,6 +2,10 @@ package net.officefloor.hq.app.claim;
+ 
+ /** A status change once validated: the action taken, the status it moves the claim to (a clerk's settle may yet
+  *  make it PENDING), who makes it, the reason a rejection gives, or the void reason a void was given (empty for any other action, or a void
+- *  given none). */
+-public record ClaimStatusChange(ClaimAction action, ClaimStatus to, String by, String reason) {
++ *  given none), and the date a settle is made as of (null: the sheet's today; see ClaimDueAsOf). */
++public record ClaimStatusChange(ClaimAction action, ClaimStatus to, String by, String reason, java.time.LocalDate on) {
++
++    public ClaimStatusChange(ClaimAction action, ClaimStatus to, String by, String reason) {
++        this(action, to, by, reason, null);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
+index 5806dade9..13c4e4b97 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+ /** Body of a status change of a claim: the action (open, settle, approve, reject or void), who takes it, and the
+- *  reason a rejection gives or the void reason chosen for a void. */
+-public record ClaimStatusRequest(String action, String by, String reason) {
++ *  reason a rejection gives or the void reason chosen for a void, and the date (yyyy-MM-dd) a settle is made as of
++ *  (blank: the sheet's today). */
++public record ClaimStatusRequest(String action, String by, String reason, String on) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
+index 60bacc397..2e8bb40d4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
+@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Writes CLAIM_OPENED (CLAIM_REVIEW for an open that went to REVIEW; CLAIM_REVIEWED then CLAIM_OPENED for a review), CLAIM_SETTLED, CLAIM_PENDING, CLAIM_APPROVED, CLAIM_REJECTED, CLAIM_VOIDED, CLAIM_RESETTLED, CLAIM_DELETED or CLAIM_RESTORED to the audit
+  * file once the status is stored, ending with number=<number> when the claim has one; CLAIM_SETTLED and CLAIM_APPROVED
+- * then end with the due they fixed (due=n/a when its grade had no rate), CLAIM_REJECTED with reason=<reason>, CLAIM_RESETTLED with old=<previous due> new=<new due>, and CLAIM_VOIDED of a SETTLED claim with reversed=<its frozen due>, and a CLAIM_VOIDED given a void reason with reason=<reason> last. Then writes the
++ * then end with the due they fixed (due=n/a when its grade had no rate), CLAIM_REJECTED with reason=<reason>, CLAIM_RESETTLED with old=<previous due> new=<new due>, and CLAIM_VOIDED of a SETTLED claim with reversed=<its frozen due>, and a CLAIM_VOIDED given a void reason with reason=<reason> last; a CLAIM_SETTLED made as of a date ends with on=<date>. Then writes the
+  * figures the change moved (see Rollup). A settle, approve or re-settle that leaves the claim SETTLED first writes, after
+  * its own line, one NOTIFY user=<watcher> person=<name> number=<number> per user watching the claim's person, in the
+  * order they started watching. */
+@@ -45,7 +45,9 @@ public class RecordClaimStatusChanged {
+                 + (change.action() == ClaimAction.REJECT ? " reason=" + change.reason() : "")
+                 + (change.action() == ClaimAction.VOID && previous.status() == ClaimStatus.SETTLED
+                         ? " reversed=" + figure(previous.value()) : "")
+-                + (change.action() == ClaimAction.VOID && !change.reason().isEmpty() ? " reason=" + change.reason() : ""));
++                + (change.action() == ClaimAction.VOID && !change.reason().isEmpty() ? " reason=" + change.reason() : "")
++                + (change.action() == ClaimAction.SETTLE && change.on() != null && claim.status() == ClaimStatus.SETTLED
++                        ? " on=" + change.on() : ""));
+         if (person != null && claim.status() == ClaimStatus.SETTLED && (change.action() == ClaimAction.SETTLE
+                 || change.action() == ClaimAction.APPROVE || change.action() == ClaimAction.RESETTLE)) {
+             for (String watcher : watches.watchers(claim.sheetId(), person.id())) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+index c6adacbfa..ccf2d49e7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+@@ -71,7 +71,7 @@ public class SettleClaims {
+             ClaimNumber[] number = new ClaimNumber[1];
+             PreviousDue[] previous = new PreviousDue[1];
+             try {
+-                apply.apply(claim, change, people, rates, periods, settings, roles, sheets, claims, log, voidReasons,
++                apply.apply(claim, change, people, rates, periods, settings, roles, sheets, claims, log, voidReasons, null, null,
+                         (c) -> changed[0] = c, (n) -> number[0] = n, (p) -> previous[0] = p);
+                 save.save(changed[0], change, claims, periods, settings, sheets, log, voidReasons, (c) -> stored[0] = c,
+                         (n) -> number[0] = n);
+@@ -97,7 +97,7 @@ public class SettleClaims {
+             RateRepository rates, PeriodRepository periods, SettingRepository settings, RoleRepository roles,
+             SheetRepository sheets, ClaimRepository claims, ClaimLog log, VoidReasonRepository voidReasons) {
+         try {
+-            apply.apply(claim, change, people, rates, periods, settings, roles, sheets, claims, log, voidReasons,
++            apply.apply(claim, change, people, rates, periods, settings, roles, sheets, claims, log, voidReasons, null, null,
+                     (c) -> { }, (n) -> { }, (p) -> { });
+             return true;
+         } catch (InvalidClaimStatusException refused) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+index 720452f84..03beddeef 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+@@ -4,7 +4,7 @@ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /** Reads the body: the action is open, settle, approve, reject (which needs a reason), review, void (with the void reason
+- *  chosen, if any), resettle, delete or restore. */
++ *  chosen, if any), resettle, delete or restore; a settle may be made as of a date. */
+ public class ValidateClaimStatus {
+     public void validate(@RequestBody ClaimStatusRequest request, Out<ClaimStatusChange> change)
+             throws InvalidClaimStatusException {
+@@ -32,7 +32,15 @@ public class ValidateClaimStatus {
+         if (taken == ClaimAction.REJECT && reason.isEmpty()) {
+             throw new InvalidClaimStatusException("A rejection needs a reason");
+         }
++        String onText = taken != ClaimAction.SETTLE || request.on() == null ? "" : request.on().trim();
++        java.time.LocalDate on = null;
++        if (!onText.isEmpty()) {
++            on = net.officefloor.hq.app.sheet.AsOf.parse(onText);
++            if (on == null) {
++                throw new InvalidClaimStatusException("A settle's as-of date must be a date (yyyy-MM-dd)");
++            }
++        }
+         change.set(new ClaimStatusChange(taken, to, request.by() == null ? "" : request.by().trim(),
+-                taken == ClaimAction.REJECT || taken == ClaimAction.VOID ? reason : ""));
++                taken == ClaimAction.REJECT || taken == ClaimAction.VOID ? reason : "", on));
+     }
+ }
