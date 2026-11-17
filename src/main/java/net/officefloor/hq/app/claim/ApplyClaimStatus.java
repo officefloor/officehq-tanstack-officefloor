@@ -9,6 +9,7 @@ import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
+import net.officefloor.hq.app.statement.StatementRepository;
 import net.officefloor.hq.app.voidreason.VoidReasonRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
@@ -42,6 +43,8 @@ import net.officefloor.plugin.variable.Val;
  * Opening a claim whose due is above the sheet's review threshold in force on its date (if it has one) makes it REVIEW
  * instead, unnumbered, recording who opened it (see #needsReview); only a steward reviews it, making it OPEN (numbered
  * then). A REVIEW claim may otherwise only be voided.
+ * A settle made as of a date (on or before the sheet's today; a later one is refused, as is one before the claim was
+ * added) fixes the claim's due as it stood at the end of that date (see ClaimDueAsOf) instead of today's.
  * While the claim's person is flagged (the sheet's today on or before the flag's until-date) only a steward opens it.
  */
 public class ApplyClaimStatus {
@@ -66,15 +69,31 @@ public class ApplyClaimStatus {
     static final int VOID_SETTLED_DAYS = 7;
 
     public void apply(@Val Claim claim, @Val ClaimStatusChange change, PersonRepository people, RateRepository rates,
-            PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, ClaimLog log, VoidReasonRepository voidReasons, Out<Claim> changed, Out<ClaimNumber> number, Out<PreviousDue> previous) throws InvalidClaimStatusException {
+            PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, ClaimLog log, VoidReasonRepository voidReasons, ClaimLogRepository logs, StatementRepository statements, Out<Claim> changed, Out<ClaimNumber> number, Out<PreviousDue> previous) throws InvalidClaimStatusException {
+        BigDecimal[] asOfDue = null;
+        if (change.action() == ClaimAction.SETTLE && change.on() != null) {
+            if (change.on().isAfter(sheets.today(claim.sheetId()))) {
+                throw new InvalidClaimStatusException("A claim cannot be settled as of a date after the sheet's today");
+            }
+            asOfDue = new BigDecimal[] { ClaimDueAsOf.of(claim, change.on(), claims, logs, people, rates, settings,
+                    statements).value() };
+        }
         applyJudged(claim, claim, change, people, rates, periods, settings, roles, sheets, claims, log, voidReasons,
-                changed, number, previous);
+                changed, number, previous, asOfDue);
     }
 
     /** As #apply, but the four-eyes rules and the proof rule are judged on the claim given as judged (a part-settle
      *  judges them on the claim it splits from, see SettlePart) instead of on the claim changed. */
     static void applyJudged(Claim claim, Claim judged, ClaimStatusChange change, PersonRepository people, RateRepository rates,
             PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, ClaimLog log, VoidReasonRepository voidReasons, Out<Claim> changed, Out<ClaimNumber> number, Out<PreviousDue> previous) throws InvalidClaimStatusException {
+        applyJudged(claim, judged, change, people, rates, periods, settings, roles, sheets, claims, log, voidReasons,
+                changed, number, previous, null);
+    }
+
+    /** As above; a settle given its due as of a date (asOfDue: a one-element array, its element null for n/a; null
+     *  for none, see ClaimDueAsOf) fixes that due instead of today's. */
+    static void applyJudged(Claim claim, Claim judged, ClaimStatusChange change, PersonRepository people, RateRepository rates,
+            PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, ClaimLog log, VoidReasonRepository voidReasons, Out<Claim> changed, Out<ClaimNumber> number, Out<PreviousDue> previous, BigDecimal[] asOfDue) throws InvalidClaimStatusException {
         boolean allowed = switch (change.action()) {
             case OPEN -> claim.status() == ClaimStatus.DRAFT;
             case SETTLE -> claim.status() == ClaimStatus.OPEN;
@@ -160,6 +179,8 @@ public class ApplyClaimStatus {
                     claim.note(), ClaimStatus.OPEN, claim.number(), null, claim.openedBy(), false, null,
                     claim.corrects(), claim.dueBy(), null, claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags(), claim.held());
             settledDue = late.add(asOpen, due(asOpen, people, rates, late.rounding()), settings.floor(claim.sheetId(), claim.date()));
+        } else if (asOfDue != null) {
+            settledDue = asOfDue[0];
         } else {
             settledDue = to == ClaimStatus.SETTLED ? late.add(claim, due(claim, people, rates, late.rounding()), settings.floor(claim.sheetId(), claim.date())) : claim.due();
         }

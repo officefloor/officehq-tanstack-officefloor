@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
 
 /** Writes CLAIM_OPENED (CLAIM_REVIEW for an open that went to REVIEW; CLAIM_REVIEWED then CLAIM_OPENED for a review), CLAIM_SETTLED, CLAIM_PENDING, CLAIM_APPROVED, CLAIM_REJECTED, CLAIM_VOIDED, CLAIM_RESETTLED, CLAIM_DELETED or CLAIM_RESTORED to the audit
  * file once the status is stored, ending with number=<number> when the claim has one; CLAIM_SETTLED and CLAIM_APPROVED
- * then end with the due they fixed (due=n/a when its grade had no rate), CLAIM_REJECTED with reason=<reason>, CLAIM_RESETTLED with old=<previous due> new=<new due>, and CLAIM_VOIDED of a SETTLED claim with reversed=<its frozen due>, and a CLAIM_VOIDED given a void reason with reason=<reason> last. Then writes the
+ * then end with the due they fixed (due=n/a when its grade had no rate), CLAIM_REJECTED with reason=<reason>, CLAIM_RESETTLED with old=<previous due> new=<new due>, and CLAIM_VOIDED of a SETTLED claim with reversed=<its frozen due>, and a CLAIM_VOIDED given a void reason with reason=<reason> last; a CLAIM_SETTLED made as of a date ends with on=<date>. Then writes the
  * figures the change moved (see Rollup). A settle, approve or re-settle that leaves the claim SETTLED first writes, after
  * its own line, one NOTIFY user=<watcher> person=<name> number=<number> per user watching the claim's person, in the
  * order they started watching. */
@@ -45,7 +45,9 @@ public class RecordClaimStatusChanged {
                 + (change.action() == ClaimAction.REJECT ? " reason=" + change.reason() : "")
                 + (change.action() == ClaimAction.VOID && previous.status() == ClaimStatus.SETTLED
                         ? " reversed=" + figure(previous.value()) : "")
-                + (change.action() == ClaimAction.VOID && !change.reason().isEmpty() ? " reason=" + change.reason() : ""));
+                + (change.action() == ClaimAction.VOID && !change.reason().isEmpty() ? " reason=" + change.reason() : "")
+                + (change.action() == ClaimAction.SETTLE && change.on() != null && claim.status() == ClaimStatus.SETTLED
+                        ? " on=" + change.on() : ""));
         if (person != null && claim.status() == ClaimStatus.SETTLED && (change.action() == ClaimAction.SETTLE
                 || change.action() == ClaimAction.APPROVE || change.action() == ClaimAction.RESETTLE)) {
             for (String watcher : watches.watchers(claim.sheetId(), person.id())) {

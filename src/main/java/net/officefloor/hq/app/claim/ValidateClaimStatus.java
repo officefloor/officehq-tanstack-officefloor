@@ -4,7 +4,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Reads the body: the action is open, settle, approve, reject (which needs a reason), review, void (with the void reason
- *  chosen, if any), resettle, delete or restore. */
+ *  chosen, if any), resettle, delete or restore; a settle may be made as of a date. */
 public class ValidateClaimStatus {
     public void validate(@RequestBody ClaimStatusRequest request, Out<ClaimStatusChange> change)
             throws InvalidClaimStatusException {
@@ -32,7 +32,15 @@ public class ValidateClaimStatus {
         if (taken == ClaimAction.REJECT && reason.isEmpty()) {
             throw new InvalidClaimStatusException("A rejection needs a reason");
         }
+        String onText = taken != ClaimAction.SETTLE || request.on() == null ? "" : request.on().trim();
+        java.time.LocalDate on = null;
+        if (!onText.isEmpty()) {
+            on = net.officefloor.hq.app.sheet.AsOf.parse(onText);
+            if (on == null) {
+                throw new InvalidClaimStatusException("A settle's as-of date must be a date (yyyy-MM-dd)");
+            }
+        }
         change.set(new ClaimStatusChange(taken, to, request.by() == null ? "" : request.by().trim(),
-                taken == ClaimAction.REJECT || taken == ClaimAction.VOID ? reason : ""));
+                taken == ClaimAction.REJECT || taken == ClaimAction.VOID ? reason : "", on));
     }
 }

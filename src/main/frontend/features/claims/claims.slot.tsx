@@ -88,10 +88,15 @@ function ClaimRow({
         action,
         by: user,
         reason: action === 'reject' ? reason : action === 'void' ? voidReason : '',
+        on: action === 'settle' ? settleOn.trim() : '',
       }),
     onSuccess: (_, action) => {
       if (action === 'reject') setReason('');
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    // a settle's as-of date is for that one settle: a later settle is as of today unless a date is typed again
+    onSettled: (_, __, action) => {
+      if (action === 'settle') setSettleOn('');
     },
   });
   const people = usePeople(sheetId);
@@ -105,6 +110,8 @@ function ClaimRow({
     },
   });
   const [reason, setReason] = useState('');
+  /** The date (yyyy-MM-dd) to settle the claim as of: its due frozen as it stood at the end of that date; '' for today. */
+  const [settleOn, setSettleOn] = useState('');
   const voidReasons = useVoidReasons(sheetId);
   const [voidReason, setVoidReason] = useState('');
   const [deferUntil, setDeferUntil] = useState('');
@@ -355,6 +362,15 @@ function ClaimRow({
       <button type="button" data-testid="claim-open" disabled={status.isPending} onClick={() => act('open')}>
         Open
       </button>
+      <input
+        type="date"
+        data-testid="claim-settle-date"
+        value={settleOn}
+        onChange={(e) => {
+          setSettleOn(e.target.value);
+          status.reset();
+        }}
+      />
       <button type="button" data-testid="claim-settle" disabled={status.isPending} onClick={() => act('settle')}>
         Settle
       </button>
