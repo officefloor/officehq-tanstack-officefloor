@@ -75,7 +75,7 @@ function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string;
 /** A plan (amount, interval, start, end, how many claims it has made, its next dates, whether it is paused and its
  *  changes of amount, oldest first), the buttons that pause and resume it — a date on or after the day it is paused
  *  and before the day it is resumed is skipped — and the entry that changes its amount for the claims generated from
- *  then on. The server refuses pausing a paused plan, resuming a running one or a bad amount: the plan's error shows,
+ *  then on and for those it made that are still DRAFT. The server refuses pausing a paused plan, resuming a running one or a bad amount: the plan's error shows,
  *  until the next press or the amount is changed. */
 function PlanRow({ sheetId, user, plan: p }: { sheetId: string; user: string; plan: Plan }) {
   const queryClient = useQueryClient();
@@ -92,6 +92,8 @@ function PlanRow({ sheetId, user, plan: p }: { sheetId: string; user: string; pl
       postJson<void>(`/api/sheets/${encodeURIComponent(sheetId)}/plans/${p.id}/amount`, { amount: a, by: user }),
     onSuccess: () => {
       setAmount('');
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
       return queryClient.invalidateQueries({ queryKey: plansKey(sheetId) });
     },
     onSettled: submit.end,
