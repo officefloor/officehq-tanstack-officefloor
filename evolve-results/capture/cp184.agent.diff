@@ -1,0 +1,121 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index b2be6af76..ead9cf0e3 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -12,7 +12,7 @@ import { claimDue, claimRate, useRates } from '../rates/rates';
+ import { dueBy, isOverdue } from '../overdue/overdue';
+ import { isReviewLate } from '../overdue/late';
+ import { useFloor, useLate, useReviewSla, type Dated } from '../settings/settings';
+-import { claimsKey, commentLine, lineLine, live, logLine, claimed, useClaims, type Claim } from './claims';
++import { claimsKey, commentLine, lineLine, live, liveClaimed, logLine, claimed, useClaims, type Claim } from './claims';
+ import { useSelectedClaims } from './selection';
+ import { useSheetToday } from '../session/session';
+ import { useVoidReasons } from '../voidreasons/voidreasons';
+@@ -43,7 +43,7 @@ type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | '
+ /** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, its status log (oldest first), due-by (fixed when it was added), whether it is overdue, whether it is deferred and until when, its proofs count, and the period its due-by falls in, with the buttons that edit it or change its status. Open above the review threshold on its date makes it REVIEW, which only a steward's Review makes OPEN (refused, with the claim's error, for anyone else). A clerk's settle above the clerk limit makes it PENDING; a
+  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
+  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
+- *  shows the claim's error. A steward waives an OPEN or PENDING claim's late charge with Waive late charge, shown as waived yes/no: from then on it bears none (refused, with the claim's error, for anyone else, any other claim or one already waived). An OPEN or PENDING claim is held and released with Hold / Release, shown as held yes/no: while held and not bound by a statement it counts in no live total, as a claim dated within a hold of its person does (refused, with the claim's error, for any other claim). An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one whose due-by is inside a closed period); a proof has the kind chosen beside it (receipt when none is), shown as counts per kind beside the total; a claim with no proofs whose due is above the proof threshold on its date, or with none of one of the sheet's proof kinds, cannot be settled nor approved; a claim with an empty note whose due is above the note threshold on its date cannot be opened (alone or in bulk). While the sheet has void reasons, Void needs one chosen beside it (refused, with the claim's error, without one). A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). Delete makes a DRAFT DELETED (it counts nowhere); Restore makes it a DRAFT again, only on the sheet-today it was deleted (refused, with the claim's error, otherwise). A steward re-dates an OPEN or PENDING claim to the date typed beside Re-date (its due-by and any statement figure stay; refused, with the claim's error, for anyone else, any other claim, or a date after the person's retirement). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
++ *  shows the claim's error. A steward waives an OPEN or PENDING claim's late charge with Waive late charge, shown as waived yes/no: from then on it bears none (refused, with the claim's error, for anyone else, any other claim or one already waived). An OPEN or PENDING claim is held and released with Hold / Release, shown as held yes/no: while held and not bound by a statement it counts in no due figure (it stays in claimed), as a claim dated within a hold of its person does (refused, with the claim's error, for any other claim). An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one whose due-by is inside a closed period); a proof has the kind chosen beside it (receipt when none is), shown as counts per kind beside the total; a claim with no proofs whose due is above the proof threshold on its date, or with none of one of the sheet's proof kinds, cannot be settled nor approved; a claim with an empty note whose due is above the note threshold on its date cannot be opened (alone or in bulk). While the sheet has void reasons, Void needs one chosen beside it (refused, with the claim's error, without one). A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). Delete makes a DRAFT DELETED (it counts nowhere); Restore makes it a DRAFT again, only on the sheet-today it was deleted (refused, with the claim's error, otherwise). A steward re-dates an OPEN or PENDING claim to the date typed beside Re-date (its due-by and any statement figure stay; refused, with the claim's error, for anyone else, any other claim, or a date after the person's retirement). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
+  *  with the claim's error, for anyone else or any other claim). Remind writes a reminder for an OPEN or PENDING claim, once per sheet-today, which becomes its reminded date (refused, with the claim's error, for any other claim or a second reminder that day). Comment adds the text typed beside it to the claim's comments, shown in the order written as `<user> on <date>: <text>` (an empty one is refused with the claim's error). Split takes the amount typed beside it off an OPEN claim (not deferred, nor with its due-by inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Only a DRAFT whose due-by is not inside a closed period can be edited: Edit opens the editor and locks the claim for the user until it
+  *  is saved or cancelled (Cancel) or the sheet's today changes; Edit on any other claim, on a claim another user holds, or by a
+  *  viewer shows the claim's error instead and takes no lock. The row's own amount entry and Save amount change a DRAFT's amount
+@@ -950,7 +950,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
+ 
+   return (
+     <>
+-      {shown('claimed') && <td data-testid="person-claimed">{claimed(live(mine, [person], today))}</td>}
++      {shown('claimed') && <td data-testid="person-claimed">{claimed(liveClaimed(mine, [person], today))}</td>}
+       <td>
+         <form
+           data-testid="claim-form"
+@@ -1038,14 +1038,14 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
+   );
+ }
+ 
+-/** The sheet's claimed-total: everyone's claimed (OPEN, PENDING and SETTLED claims that correct no other, but no OPEN or PENDING ones dated within a hold of their person, or of one whose retirement date is reached, and not bound by a statement) added up. */
++/** The sheet's claimed-total: everyone's claimed (OPEN, PENDING and SETTLED claims that correct no other, held ones included, but no OPEN or PENDING ones of a person whose retirement date is reached, and not bound by a statement) added up. */
+ function ClaimedTotal({ sheetId }: { sheetId: string }) {
+   const claims = useClaims(sheetId);
+   const people = usePeople(sheetId);
+   const today = useSheetToday(sheetId);
+   return (
+     <p>
+-      Claimed total <span data-testid="rollup-claimed-total">{claimed(live(claims.data ?? [], people.data, today))}</span>
++      Claimed total <span data-testid="rollup-claimed-total">{claimed(liveClaimed(claims.data ?? [], people.data, today))}</span>
+       {claims.isError && <span data-testid="claims-load-error"> Could not load claims.</span>}
+     </p>
+   );
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 1a0ccbb10..4c61dca8e 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -126,6 +126,16 @@ export function live(claims: Claim[], people: Person[] | undefined, today: strin
+   });
+ }
+ 
++/** The claims that count toward claimed (a person's claimed, the claimed-total): as live, except that a hold (the
++ *  claim's or its person's) does not take a claim out; only the due figures leave the totals while held. */
++export function liveClaimed(claims: Claim[], people: Person[] | undefined, today: string): Claim[] {
++  const byId = new Map((people ?? []).map((p) => [p.id, p]));
++  return claims.filter((c) => {
++    const p = byId.get(c.personId);
++    return counts(c) && !(isOpen(c) && !bound(c) && p !== undefined && retiredOn(p, today));
++  });
++}
++
+ /** A person's or the sheet's claimed: the amounts of the claims that count added up, leaving out corrections
+  *  (claims that correct another), shown with two decimals. */
+ export function claimed(claims: Claim[]): string {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java b/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java
+index 04e44e680..0a1bb7a99 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java
+@@ -47,6 +47,14 @@ public final class ClaimDue {
+         return countsLive(claim, person) && !deferred(claim, today) && !retiredOut(claim, person, today);
+     }
+ 
++    /** Whether a claim counts toward claimed (a person's claimed, the claimed-total) on the given today: as {@link
++     *  #countsLive(Claim, net.officefloor.hq.app.person.Person, java.time.LocalDate)}, except that a hold (the
++     *  claim's or its person's) does not take it out: only the due figures leave the totals while held. */
++    public static boolean countsClaimed(Claim claim, net.officefloor.hq.app.person.Person person,
++            java.time.LocalDate today) {
++        return counts(claim) && !deferred(claim, today) && !retiredOut(claim, person, today);
++    }
++
+     /** Whether a claim leaves the live totals for its person's retirement: it is open (OPEN or PENDING), not bound by
+      *  a statement, and its person's retirement date is on or before today (null person: never). */
+     public static boolean retiredOut(Claim claim, net.officefloor.hq.app.person.Person person,
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 2c2413bfc..5c7632380 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -20,8 +20,8 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ import org.springframework.stereotype.Service;
+ 
+ /**
+- * The sheet's figures as the screen shows them: each person's claimed (the amounts of their claims that count added up, leaving out corrections; a person's OPEN or PENDING claims dated within a hold of theirs, or any once their retirement date is reached, not bound by a statement, do not, nor do deferred claims) and
+- * due-total (the figures of those claims, each with its late charge, added up; n/a when their grade has no rate today and no counting claim
++ * The sheet's figures as the screen shows them: each person's claimed (the amounts of their claims that count added up, leaving out corrections; a person's OPEN or PENDING claims, once their retirement date is reached, not bound by a statement, do not, nor do deferred claims; a held claim still does) and
++ * due-total (the figures of the claims that count live — held ones, the claim's or its person's hold, left out, each with its late charge, added up; n/a when their grade has no rate today and no counting claim
+  * has a figure, kept or at the grade in force on its date; at most the sheet's cap), overdue-total (the figures, late charge included, of those claims that are overdue — open, their due-by plus
+  * their grace (see LateCharge#lateFrom) before today — added up, skipping n/a; not capped), and the sheet's claimed-total, due-total and overdue-total (everyone's added up, skipping n/a; the due-total and
+  * overdue-total leave out the single highest and the single lowest figure when three or more people have one).
+@@ -65,12 +65,15 @@ public class Rollup {
+             BigDecimal overdue = BigDecimal.ZERO.setScale(2);
+             boolean figured = false;
+             for (Claim c : all) {
+-                if (c.personId() != person.id() || !ClaimDue.countsLive(c, person, today)) {
++                if (c.personId() != person.id()) {
+                     continue;
+                 }
+-                if (c.corrects() == null) {
++                if (c.corrects() == null && ClaimDue.countsClaimed(c, person, today)) {
+                     claimed = claimed.add(c.amount());
+                 }
++                if (!ClaimDue.countsLive(c, person, today)) {
++                    continue;
++                }
+                 BigDecimal figure = late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, late.rounding()), settings.floor(sheetId, c.date()));
+                 figured |= figure != null;
+                 if (figure != null) {
