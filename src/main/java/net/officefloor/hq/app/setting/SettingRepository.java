@@ -19,6 +19,9 @@ public class SettingRepository {
     /** The most a clerk may settle a claim for; blank for no limit. */
     public static final String CLERK_LIMIT = "clerk-limit";
 
+    /** The prefix of a grade's own clerk limit: clerk-limit-A, -B or -C (blank: none, so the sheet's applies). */
+    public static final String CLERK_LIMIT_PREFIX = "clerk-limit-";
+
     /** The most a person's due-total may be; blank for none. */
     public static final String CAP = "cap";
 
@@ -177,6 +180,13 @@ public class SettingRepository {
     public BigDecimal clerkLimit(String sheetId) {
         String value = value(sheetId, CLERK_LIMIT, sheets.today(sheetId));
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The clerk limit of a grade in force on the sheet's today: its own when one is set on it, else the sheet's (a
+     *  null grade has the sheet's); null when there is none. */
+    public BigDecimal clerkLimit(String sheetId, String grade) {
+        String value = grade == null ? null : value(sheetId, CLERK_LIMIT_PREFIX + grade, sheets.today(sheetId));
+        return value == null ? clerkLimit(sheetId) : new BigDecimal(value);
     }
 
     /** The sheet's cap in force on its today, or null when there is none. */

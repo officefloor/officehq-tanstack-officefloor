@@ -55,6 +55,8 @@ public class ValidateSetting {
         boolean gradeProofThreshold = k.startsWith(SettingRepository.PROOF_THRESHOLD_PREFIX)
                 && GRADES.contains(k.substring(SettingRepository.PROOF_THRESHOLD_PREFIX.length()));
         proofThreshold = proofThreshold || gradeProofThreshold;
+        boolean clerkLimit = SettingRepository.CLERK_LIMIT.equals(k) || (k.startsWith(SettingRepository.CLERK_LIMIT_PREFIX)
+                && GRADES.contains(k.substring(SettingRepository.CLERK_LIMIT_PREFIX.length())));
         boolean proofKinds = SettingRepository.PROOF_KINDS.equals(k);
         boolean noteThreshold = SettingRepository.NOTE_THRESHOLD.equals(k);
         boolean reviewThreshold = SettingRepository.REVIEW_THRESHOLD.equals(k);
@@ -62,7 +64,7 @@ public class ValidateSetting {
         boolean rounding = SettingRepository.ROUNDING.equals(k);
         boolean perm = k.startsWith(SettingRepository.PERM_PREFIX)
                 && SettingRepository.PERMISSIONS.containsKey(k.substring(SettingRepository.PERM_PREFIX.length()));
-        if (!proofKinds && !parent && !rounding && !perm && !SettingRepository.CLERK_LIMIT.equals(k) && !cap && !proofThreshold && !noteThreshold && !reviewThreshold && !floor && !terms && !grace && !latePct && !policyDate && !numberingFrom && !graceDays && !escalateAfter && !reviewSla && !entryDate && !pot && !alertThreshold && !fiscalStart && !defaultGrade) {
+        if (!proofKinds && !parent && !rounding && !perm && !clerkLimit && !cap && !proofThreshold && !noteThreshold && !reviewThreshold && !floor && !terms && !grace && !latePct && !policyDate && !numberingFrom && !graceDays && !escalateAfter && !reviewSla && !entryDate && !pot && !alertThreshold && !fiscalStart && !defaultGrade) {
             throw new InvalidSettingException("Unknown setting " + k);
         }
         String value = request == null || request.value() == null ? "" : request.value().trim();

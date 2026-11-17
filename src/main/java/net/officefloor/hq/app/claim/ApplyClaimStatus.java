@@ -178,7 +178,9 @@ public class ApplyClaimStatus {
             }
         }
         if (change.action() == ClaimAction.SETTLE && settledDue != null && !steward) {
-            BigDecimal limit = settings.clerkLimit(claim.sheetId());
+            Person person = people.find(claim.sheetId(), claim.personId());
+            BigDecimal limit = settings.clerkLimit(claim.sheetId(),
+                    person == null ? null : person.gradeOn(sheets.today(claim.sheetId())));
             if (limit != null && settledDue.compareTo(limit) > 0) {
                 to = ClaimStatus.PENDING;
                 settledDue = null;
