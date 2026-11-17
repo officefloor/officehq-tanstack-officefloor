@@ -147,8 +147,8 @@ public class SettingRepository {
     /** How many levels up the parent chain a rate is looked for. */
     public static final int PARENT_LEVELS = 3;
 
-    /** The prefix of an action's permission: perm-open, perm-settle, perm-void, perm-reassign, perm-close or
-     *  perm-reopen, its value the roles that may take it, comma separated; blank: the standing rule (see PERMISSIONS). */
+    /** The prefix of an action's permission: perm-open, perm-settle, perm-void, perm-reassign, perm-close,
+     *  perm-reopen or perm-today (changing the sheet's today), its value the roles that may take it, comma separated; blank: the standing rule (see PERMISSIONS). */
     public static final String PERM_PREFIX = "perm-";
 
     /** The actions with a permission, each with the roles that may take it while its permission is blank. */
@@ -158,7 +158,8 @@ public class SettingRepository {
             "void", RoleRepository.CLERK + "," + RoleRepository.STEWARD,
             "close", RoleRepository.CLERK + "," + RoleRepository.STEWARD,
             "reassign", RoleRepository.STEWARD,
-            "reopen", RoleRepository.STEWARD);
+            "reopen", RoleRepository.STEWARD,
+            "today", RoleRepository.CLERK + "," + RoleRepository.STEWARD + "," + RoleRepository.RESTRICTED);
 
     /** The from-date an undated setting is stored under: before every date. */
     private static final LocalDate UNDATED = LocalDate.of(1, 1, 1);
@@ -455,7 +456,7 @@ public class SettingRepository {
         return ancestors(sheetId, Integer.MAX_VALUE).contains(ancestor);
     }
 
-    /** Whether the role may take the action (open, settle, void, reassign, close or reopen) on the sheet: the roles its
+    /** Whether the role may take the action (open, settle, void, reassign, close, reopen or today) on the sheet: the roles its
      *  permission lists, or the standing rule while it is blank. */
     public boolean permits(String sheetId, String action, String role) {
         String value = value(sheetId, PERM_PREFIX + action);
