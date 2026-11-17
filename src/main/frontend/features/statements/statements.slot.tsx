@@ -1,10 +1,14 @@
-import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { useIsFetching, useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import type { Person } from '../people/people';
 import { usePersonRowAction } from '../people/rowAction';
-import { claimsKey } from '../claims/claims';
+import { claimsKey, useClaims } from '../claims/claims';
+import { gradeOn } from '../people/people';
+import { claimDue, claimRate, useRates } from '../rates/rates';
+import { useFloor, useLate } from '../settings/settings';
+import { csvValue, download } from '../export/csv';
 import { statementsKey, useStatements } from './statements';
 import { useShownColumns } from '../columns/columns';
 
@@ -16,6 +20,7 @@ function StatementsHead({ user }: { user: string }) {
       {shown('stated-total') && <th>Stated total</th>}
       {shown('statement-date') && <th>Stated on</th>}
       <th>Statement lines</th>
+      <th />
       <th />
     </>
   );
@@ -110,7 +115,40 @@ function PersonStatements({ sheetId, user, person }: { sheetId: string; user: st
   );
 }
 
+/** The button that downloads the person's statement as a CSV file: number, date, amount, figure and status of each
+ *  claim of theirs bound by their last statement, oldest first, the figure as the claim row shows it. Made once the
+ *  sheet's figures are no longer being re-read, so it holds what the screen shows. */
+function PersonExportStatement({ sheetId, person }: { sheetId: string; person: Person }) {
+  const claims = useClaims(sheetId);
+  const rates = useRates(sheetId);
+  const late = useLate(sheetId);
+  const floor = useFloor(sheetId);
+  const fetching = useIsFetching({ queryKey: ['sheet', sheetId] });
+  const [wanted, setWanted] = useState(false);
+
+  useEffect(() => {
+    if (!wanted || fetching > 0 || !claims.data) return;
+    setWanted(false);
+    const lines = ['number,date,amount,figure,status'];
+    const bound = claims.data.filter((c) => c.personId === person.id && c.stated).reverse();
+    for (const c of bound) {
+      const figure = claimDue(c, claimRate(rates.data, gradeOn(person, c.date), c), floor, late);
+      lines.push([c.number ?? '', c.date, c.amount, figure, c.status].map(csvValue).join(','));
+    }
+    download(`statement-${sheetId}-${person.id}.csv`, lines);
+  }, [wanted, fetching, claims.data, rates.data, late, floor, person, sheetId]);
+
+  return (
+    <td>
+      <button type="button" data-testid="person-export-statement" onClick={() => setWanted(true)}>
+        Export statement (CSV)
+      </button>
+    </td>
+  );
+}
+
 export const contributions = [
   PeopleHead.fill({ order: 30, Component: StatementsHead }),
   PersonRow.fill({ order: 30, Component: PersonStatements }),
+  PersonRow.fill({ order: 30.5, Component: PersonExportStatement }),
 ];

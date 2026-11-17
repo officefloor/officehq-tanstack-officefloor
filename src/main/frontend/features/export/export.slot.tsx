@@ -7,23 +7,7 @@ import { periodOf, usePeriods } from '../periods/periods';
 import { usePools } from '../pools/pools';
 import { claimDue, personDue, claimRate, useRates } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../settings/settings';
-
-/** A CSV value: wrapped in double quotes, any quote inside doubled, when it holds a comma, a quote or a line break. */
-function csvValue(v: string): string {
-  return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-}
-
-/** Downloads `lines` as a CSV file named `name`, each line ended by a line feed. */
-function download(name: string, lines: string[]) {
-  const url = URL.createObjectURL(new Blob([lines.join('\n') + '\n'], { type: 'text/csv' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+import { csvValue, download } from './csv';
 
 /** The button that downloads the people as a CSV file: name, grade in force today, retired-from date (or nothing)
  *  and due-total as shown, one line per person in list order, retired people included. The file is made once the
