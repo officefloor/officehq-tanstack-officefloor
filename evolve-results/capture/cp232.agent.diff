@@ -1,0 +1,62 @@
+diff --git a/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java b/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
+index 4d6527ff1..b1354c22f 100644
+--- a/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
++++ b/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
+@@ -19,7 +19,9 @@ import org.springframework.web.bind.annotation.PathVariable;
+ /**
+  * Merges the grade into the other: writes GRADE_MERGED, then gives every person whose grade in force on the sheet's
+  * today is the merged grade the other from the sheet's today, in list order, each exactly as the person form would (see
+- * PeopleGrader); then the figures the whole merge moved (see Rollup). The other grade retired on the sheet, when anyone
++ * PeopleGrader); then, retroactively, every grade record of each of them on the merged grade becomes the other, so all
++ * their claims, whatever their date, use the other grade (frozen figures and those bound by a statement are kept);
++ * then the figures the whole merge moved (see Rollup). The other grade retired on the sheet, when anyone
+  * is to be given it, refuses the merge before anything is written.
+  */
+ public class MergeGrade {
+@@ -34,6 +36,9 @@ public class MergeGrade {
+                 + values.into());
+         RollupBefore before = rollup.take(sheet);
+         int merged = PeopleGrader.give(sheet, ids, values.into(), values.by(), null, people, sheets, rollup, audit);
++        for (Long id : ids) {
++            people.regrade(sheet, id, values.from(), values.into());
++        }
+         rollup.record(sheet, values.by(), before);
+         result.set(new MergeGradeResult(merged));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 9b758ace2..42cfd9460 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -344,6 +344,16 @@ public class PersonRepository {
+         return terms[0];
+     }
+ 
++    /** Makes every grade record of the person's on the grade {@code from} the grade {@code into}, whatever its date
++     *  (a retroactive grade merge), and logs their grades as stored now. */
++    public void regrade(String sheetId, long id, String from, String into) {
++        jdbc.update("UPDATE person_grade SET grade = ? WHERE sheet_id = ? AND person_id = ? AND grade = ?", into, sheetId, id, from);
++        Person person = find(sheetId, id);
++        if (person != null) {
++            logGrades(sheetId, id, person.grades());
++        }
++    }
++
+     /** Logs the person's grades as stored now, with the sheet's today. */
+     private void logGrades(String sheetId, long id, List<PersonGrade> grades) {
+         StringBuilder text = new StringBuilder();
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
+index bfa4e94fc..9e1ca5d1f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
+@@ -1,7 +1,9 @@
+ # POST /api/sheets/{sheetId}/grades/merge — merge a grade into another: every person whose grade in force on the sheet's
+ # today is the merged grade is given the other from the sheet's today, in list order, each exactly as the person form
+-# would (PERSON_EDITED and the figures it moved; see MergeGrade). The same grade twice, a grade other than A, B or C, a
+-# merger who is not a steward, or the other grade retired when anyone is to be given it, is a 400 and writes nothing.
++# would (PERSON_EDITED and the figures it moved; see MergeGrade); then every grade record of theirs on the merged grade,
++# whatever its date, becomes the other (retroactive), and the figures the whole merge moved are written. The same grade
++# twice, a grade other than A, B or C, a merger who is not a steward, or the other grade retired when anyone is to be
++# given it, is a 400 and writes nothing.
+ # Writes GRADE_MERGED before the edits. Responds with how many people were given the other grade.
+ validate:
+   class: net.officefloor.hq.app.grade.ValidateMergeGrade
