@@ -32,7 +32,8 @@ import net.officefloor.plugin.variable.Val;
  * A claim whose due (as it shows: its live figure at least the floor, or the figure a statement bound it to) is above
  * the sheet's note threshold in force on its date (if it has one) cannot be opened while its note is empty; a due of
  * n/a is within any threshold (see #needsNote). Nor can a claim be opened when its person already has as many OPEN or PENDING
- * claims in the period its due-by falls in as the period's cap (see ClaimRules#overCap).
+ * claims in the period its due-by falls in as the period's cap (see ClaimRules#overCap), nor when they already have as many
+ * OPEN or PENDING claims as the sheet's maximum of open claims (see ClaimRules#overMaxOpen).
  * Opening, settling and voiding are each taken only by the roles the sheet's permission allows (see SettingRepository#permits).
  * While the sheet has void reasons, a void needs one of them (see VoidReasonRepository); a reason not on its list is refused.
  * Only a steward voids a SETTLED claim, and only within 7 days of its settlement (the sheet's today on its status log's
@@ -144,6 +145,9 @@ public class ApplyClaimStatus {
         }
         if (change.action() == ClaimAction.OPEN && ClaimRules.overCap(claim, periods, claims)) {
             throw new InvalidClaimStatusException("The person already has as many open claims in the period as its cap allows");
+        }
+        if (change.action() == ClaimAction.OPEN && ClaimRules.overMaxOpen(claim, settings, claims)) {
+            throw new InvalidClaimStatusException("The person already has as many open claims as the sheet's maximum allows");
         }
         if ((change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE)
                 && change.by().equals(judged.openedBy())) {

@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  an amount like the clerk limit; or perm-open, perm-settle, perm-void, perm-reassign, perm-close or perm-reopen, its value
  *  blank (the standing rule) or roles (clerk, steward) separated by commas, kept without spaces or repeats; or proof-kinds, its value blank (none) or kinds (receipt, photo) separated by commas, kept without spaces or repeats (undated); or rounding, its value blank (none) or half-up or half-even; or parent, its
  *  value blank (none) or the id of a sheet that exists (has been loaded), is not this sheet and does not have this sheet
- *  as an ancestor (undated); or default-grade, its value blank (A) or a grade A, B or C (undated); or score-mid or score-high, its value blank (none) or a whole number, kept without leading zeros (undated); or score-log, its value blank (off) or on (undated). Every key but policy-date, period-numbering-from, entry-date, grace-days, escalate-after, review-sla, pot, alert-threshold, fiscal-start-month, proof-kinds, score-mid, score-high, score-log and the permissions is dated: its from-date is blank (the
+ *  as an ancestor (undated); or default-grade, its value blank (A) or a grade A, B or C (undated); or score-mid or score-high, its value blank (none) or a whole number, kept without leading zeros (undated); or score-log, its value blank (off) or on (undated); or max-open, its value blank (none) or a whole number 0 or more, kept without leading zeros (undated). Every key but policy-date, period-numbering-from, entry-date, grace-days, escalate-after, review-sla, pot, alert-threshold, fiscal-start-month, proof-kinds, score-mid, score-high, score-log, max-open and the permissions is dated: its from-date is blank (the
  *  sheet's today) or a date yyyy-MM-dd. */
 public class ValidateSetting {
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
@@ -53,6 +53,7 @@ public class ValidateSetting {
         boolean defaultGrade = SettingRepository.DEFAULT_GRADE.equals(k);
         boolean scoreThreshold = SettingRepository.SCORE_MID.equals(k) || SettingRepository.SCORE_HIGH.equals(k);
         boolean scoreLog = SettingRepository.SCORE_LOG.equals(k);
+        boolean maxOpen = SettingRepository.MAX_OPEN.equals(k);
         boolean cap = SettingRepository.CAP.equals(k);
         boolean proofThreshold = SettingRepository.PROOF_THRESHOLD.equals(k);
         boolean gradeProofThreshold = k.startsWith(SettingRepository.PROOF_THRESHOLD_PREFIX)
@@ -67,14 +68,14 @@ public class ValidateSetting {
         boolean rounding = SettingRepository.ROUNDING.equals(k);
         boolean perm = k.startsWith(SettingRepository.PERM_PREFIX)
                 && SettingRepository.PERMISSIONS.containsKey(k.substring(SettingRepository.PERM_PREFIX.length()));
-        if (!proofKinds && !parent && !rounding && !perm && !clerkLimit && !cap && !proofThreshold && !noteThreshold && !reviewThreshold && !floor && !terms && !grace && !latePct && !policyDate && !numberingFrom && !graceDays && !escalateAfter && !reviewSla && !entryDate && !pot && !alertThreshold && !fiscalStart && !defaultGrade && !scoreThreshold && !scoreLog) {
+        if (!proofKinds && !parent && !rounding && !perm && !clerkLimit && !cap && !proofThreshold && !noteThreshold && !reviewThreshold && !floor && !terms && !grace && !latePct && !policyDate && !numberingFrom && !graceDays && !escalateAfter && !reviewSla && !entryDate && !pot && !alertThreshold && !fiscalStart && !defaultGrade && !scoreThreshold && !scoreLog && !maxOpen) {
             throw new InvalidSettingException("Unknown setting " + k);
         }
         String value = request == null || request.value() == null ? "" : request.value().trim();
         String by = request == null || request.by() == null ? "" : request.by().trim();
         String fromText = request == null || request.from() == null ? "" : request.from().trim();
         LocalDate from = null;
-        if (!proofKinds && !policyDate && !numberingFrom && !entryDate && !graceDays && !escalateAfter && !reviewSla && !pot && !alertThreshold && !fiscalStart && !defaultGrade && !scoreThreshold && !scoreLog && !fromText.isEmpty()) {
+        if (!proofKinds && !policyDate && !numberingFrom && !entryDate && !graceDays && !escalateAfter && !reviewSla && !pot && !alertThreshold && !fiscalStart && !defaultGrade && !scoreThreshold && !scoreLog && !maxOpen && !fromText.isEmpty()) {
             try {
                 from = LocalDate.parse(fromText);
             } catch (DateTimeParseException e) {
@@ -166,6 +167,17 @@ public class ValidateSetting {
             }
             if (!WHOLE.matcher(value).matches()) {
                 throw new InvalidSettingException("A score threshold must be a whole number, or blank");
+            }
+            values.set(new SettingValues(k, String.valueOf(Integer.parseInt(value)), null, false, by));
+            return;
+        }
+        if (maxOpen) {
+            if (value.isEmpty()) {
+                values.set(new SettingValues(k, null, null, false, by));
+                return;
+            }
+            if (!DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("The maximum of open claims must be a whole number, 0 or more, or blank");
             }
             values.set(new SettingValues(k, String.valueOf(Integer.parseInt(value)), null, false, by));
             return;

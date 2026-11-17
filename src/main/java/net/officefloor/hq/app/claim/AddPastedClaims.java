@@ -2,7 +2,9 @@ package net.officefloor.hq.app.claim;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -20,7 +22,9 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  line that updates a DRAFT edits it to the line's amount as the claim's editor would, writing CLAIM_EDITED when the
  *  amount changes. Either claim is then opened by the user pasting as the open button opens it (see ApplyClaimStatus,
  *  SaveClaimStatus): one with an empty note whose due is above the note threshold, or one that would take its person
- *  past its period's cap (those opened before it in the paste count), refuses the whole paste. It stays unnumbered (numbered at settlement, see SaveClaimStatus),
+ *  past its period's cap (those opened before it in the paste count), refuses the whole paste; so does a paste whose lines would
+ *  take a person past the sheet's maximum of open claims (see ClaimRules#overMaxOpen), each line counted as one more, checked
+ *  before any line is written. It stays unnumbered (numbered at settlement, see SaveClaimStatus),
  *  writes CLAIM_OPENED (or, its due above the review threshold, goes to REVIEW and writes CLAIM_REVIEW, see
  *  ApplyClaimStatus#needsReview) and the figures the line moved (see Rollup). No line is written to the audit file until every
  *  line has gone through; a refusal writes nothing (the transaction gives back what was stored). */
@@ -31,6 +35,17 @@ public class AddPastedClaims {
             Out<PasteClaimsResult> result) throws InvalidClaimException {
         String sheet = sheetId.trim();
         String by = pasted.by();
+        Integer maxOpen = settings.maxOpen(sheet);
+        if (maxOpen != null) {
+            Map<Long, Integer> opening = new HashMap<>();
+            for (PastedClaim c : checked.claims()) {
+                long personId = c.person().id();
+                int n = opening.merge(personId, 1, Integer::sum);
+                if (claims.held(sheet, personId) + n > maxOpen) {
+                    throw new InvalidClaimException("The person already has as many open claims as the sheet's maximum allows");
+                }
+            }
+        }
         List<String> lines = new ArrayList<>();
         for (PastedClaim c : checked.claims()) {
             RollupBefore before = rollup.take(sheet);

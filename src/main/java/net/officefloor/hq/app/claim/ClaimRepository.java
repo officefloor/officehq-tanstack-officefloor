@@ -94,6 +94,13 @@ public class ClaimRepository {
         return n == null ? 0 : n;
     }
 
+    /** How many of the person's claims are OPEN or PENDING, whatever their due-by. */
+    public int held(String sheetId, long personId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ? AND status IN ('OPEN', 'PENDING')",
+                Integer.class, sheetId, personId);
+        return n == null ? 0 : n;
+    }
+
     /** Whether a claim of the sheet other than {@code self} (null: none) has the reference, comparing without regard to case. */
     public boolean refUsed(String sheetId, String ref, Long self) {
         return jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND ref_key = ? AND (CAST(? AS BIGINT) IS NULL OR id <> ?)",

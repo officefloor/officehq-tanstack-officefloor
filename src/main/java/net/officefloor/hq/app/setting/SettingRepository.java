@@ -115,6 +115,10 @@ public class SettingRepository {
 
     public static final String SCORE_HIGH = "score-high";
 
+    /** The most OPEN or PENDING claims a person may have; opening one more is refused (see ClaimRules#overMaxOpen); a whole
+     *  number, blank for none (undated). */
+    public static final String MAX_OPEN = "max-open";
+
     /** The sheet's score log: on, or blank for off; while on, changing the sheet's today writes SCORE for every person
      *  (see RecordSnapshot) (undated). */
     public static final String SCORE_LOG = "score-log";
@@ -328,6 +332,12 @@ public class SettingRepository {
     /** The sheet's escalation gap in days, or null when it is blank (off). */
     public Integer escalateAfter(String sheetId) {
         String value = value(sheetId, ESCALATE_AFTER);
+        return value == null ? null : Integer.valueOf(value);
+    }
+
+    /** The sheet's maximum of open claims per person, or null when it is blank (none). */
+    public Integer maxOpen(String sheetId) {
+        String value = value(sheetId, MAX_OPEN);
         return value == null ? null : Integer.valueOf(value);
     }
 

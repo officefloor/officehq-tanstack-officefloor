@@ -62,6 +62,13 @@ public final class ClaimRules {
                 && claims.heldIn(claim.sheetId(), claim.personId(), period.from(), period.to()) >= period.cap();
     }
 
+    /** Whether opening the claim would take its person past the sheet's maximum of open claims: they already have that
+     *  many OPEN or PENDING claims (no maximum set: never). */
+    public static boolean overMaxOpen(Claim claim, SettingRepository settings, ClaimRepository claims) {
+        Integer max = settings.maxOpen(claim.sheetId());
+        return max != null && claims.held(claim.sheetId(), claim.personId()) >= max;
+    }
+
     /** A claim's date, the number it corrects (null when none), its due-by and the terms it was fixed with, once its rules are kept. */
     public record Checked(LocalDate date, String corrects, LocalDate dueBy, int terms) {
     }
