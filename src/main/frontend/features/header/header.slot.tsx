@@ -1,11 +1,12 @@
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { usePeople } from '../people/people';
-import { STATUSES, useSheetDueTotal, useSheetOverdue, useMyCrewDue, useMyFigures, useMyReviewsCount, useStatusCounts } from './totals';
+import { STATUSES, useSheetDueTotal, useSheetOverdue, useMyCrewDue, useMyFigures, useMyReviewsCount, useStatusCounts, useWatchedDue } from './totals';
 
 /** The sheet's header counters, at the top of the sheet: its people (retired included), its claims per status
  *  (as the summary counts them), its due-total and overdue-total (as the rollups show them), and the signed-in user's
  *  own due-total and overdue-total (blank when no person on the sheet has the user's name or alias) and crew total
- *  (blank unless that person leads a crew), and how many REVIEW claims are assigned to the user for review. */
+ *  (blank unless that person leads a crew), how many REVIEW claims are assigned to the user for review, and the
+ *  due-totals of the people the user watches added up (0.00 when watching no one). */
 function Header({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
   const withStatus = useStatusCounts(sheetId);
@@ -14,6 +15,7 @@ function Header({ sheetId, user }: { sheetId: string; user: string }) {
   const my = useMyFigures(sheetId, user);
   const myCrew = useMyCrewDue(sheetId, user);
   const myReviews = useMyReviewsCount(sheetId, user);
+  const watchedDue = useWatchedDue(sheetId, user);
 
   return (
     <header data-testid="header">
@@ -30,6 +32,7 @@ function Header({ sheetId, user }: { sheetId: string; user: string }) {
       {' · '}My overdue total <span data-testid="my-overdue-total">{my?.overdue ?? ''}</span>
       {' · '}My crew due total <span data-testid="my-crew-due-total">{myCrew ?? ''}</span>
       {' · '}My reviews <span data-testid="my-reviews-count">{myReviews}</span>
+      {' · '}Watched due total <span data-testid="watched-due-total">{watchedDue}</span>
     </header>
   );
 }

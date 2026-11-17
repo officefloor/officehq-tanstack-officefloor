@@ -4,6 +4,7 @@ import { overdue } from '../overdue/overdue';
 import { gradeOn, usePeople, type Person } from '../people/people';
 import { personDue, personSplit, shareParts, sum, trimmedSum, useRates, type SharePart } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../settings/settings';
+import { useWatches } from '../watch/watch';
 
 // The sheet-wide figures shown in more than one place (the rollups, the summary and the header), worked out once
 // here so every place that shows one shows the same value.
@@ -142,6 +143,15 @@ export function useMyCrewDue(sheetId: string, user: string): string | null {
   const led = p ? (crews.data ?? []).filter((c) => c.leadId === p.id) : [];
   if (led.length === 0) return null;
   return sum(led.map((c) => crewDueTotal(c, due)));
+}
+
+/** The signed-in user's watched total: the due-totals of the people the user watches (as their rows show them) added
+ *  up, skipping n/a; 0.00 when the user watches no one. */
+export function useWatchedDue(sheetId: string, user: string): string {
+  const watches = useWatches(sheetId);
+  const due = usePeopleDue(sheetId);
+  const watched = new Set((watches.data ?? []).filter((w) => w.user === user).map((w) => w.personId));
+  return sum([...watched].map((id) => due.get(id) ?? 'n/a'));
 }
 
 /** How many of the sheet's claims have each status. */
