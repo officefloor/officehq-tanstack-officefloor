@@ -1,0 +1,363 @@
+diff --git a/src/main/frontend/features/approver/approver.slot.tsx b/src/main/frontend/features/approver/approver.slot.tsx
+new file mode 100644
+index 000000000..e9aa6763c
+--- /dev/null
++++ b/src/main/frontend/features/approver/approver.slot.tsx
+@@ -0,0 +1,66 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { type Person } from '../people/people';
++import { usePersonRowAction } from '../people/rowAction';
++import { approversKey, useApprovers, type Approver } from './approver';
++
++function ApproverHead() {
++  return <th>Approver</th>;
++}
++
++/** The person's approver (blank: none), and the user name and button that set it. The approver may approve or reject
++ *  the person's PENDING claims as a steward may. A refused change shows the row's error. */
++function PersonApprover({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
++  const queryClient = useQueryClient();
++  const approvers = useApprovers(sheetId);
++  const [entry, setEntry] = useState('');
++  const submit = useSubmitOnce();
++  const rowAction = usePersonRowAction(sheetId, person.id, 'approver');
++  const approver = (approvers.data ?? []).find((a) => a.personId === person.id)?.user ?? '';
++  const save = useMutation({
++    mutationFn: (to: string) =>
++      postJson<Approver>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/approver`, { user: to, by: user }),
++    onSuccess: () => {
++      setEntry('');
++      return queryClient.invalidateQueries({ queryKey: approversKey(sheetId) });
++    },
++    onSettled: submit.end,
++  });
++
++  return (
++    <td>
++      <span data-testid="person-approver">{approver}</span>{' '}
++      <input
++        data-testid="person-approver-input"
++        placeholder="user"
++        value={entry}
++        onChange={(e) => {
++          setEntry(e.target.value);
++          save.reset();
++        }}
++      />{' '}
++      <button
++        type="button"
++        data-testid="person-approver-save"
++        disabled={save.isPending}
++        onClick={() => {
++          if (!submit.begin()) return;
++          rowAction.take();
++          save.reset();
++          save.mutate(entry.trim());
++        }}
++      >
++        Set approver
++      </button>
++      {save.isError && rowAction.isLatest && <span data-testid="person-error"> Could not set this person's approver.</span>}
++    </td>
++  );
++}
++
++export const contributions = [
++  PeopleHead.fill({ order: 72, Component: ApproverHead }),
++  PersonRow.fill({ order: 72, Component: PersonApprover }),
++];
+diff --git a/src/main/frontend/features/approver/approver.ts b/src/main/frontend/features/approver/approver.ts
+new file mode 100644
+index 000000000..0d9129c79
+--- /dev/null
++++ b/src/main/frontend/features/approver/approver.ts
+@@ -0,0 +1,16 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++/** That `user` is the approver of the person `personId`: they may approve or reject the person's PENDING claims as a
++ *  steward may. */
++export type Approver = { personId: number; user: string };
++
++export const approversKey = (sheetId: string) => ['sheet', sheetId, 'approvers'];
++
++/** Every person's approver on the sheet. */
++export function useApprovers(sheetId: string) {
++  return useQuery({
++    queryKey: approversKey(sheetId),
++    queryFn: () => getJson<Approver[]>(`/api/sheets/${encodeURIComponent(sheetId)}/approvers`),
++  });
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 059e1b658..835a1550d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -26,7 +26,8 @@ import net.officefloor.plugin.variable.Val;
+  * count is 0, nor while the sheet's proof kinds are set and it has no proof of one of them (checked before the clerk limit, so it never goes PENDING); a due of n/a is within any threshold. A claim whose due-by falls inside a closed
+  * period cannot change status, nor can a deferred claim be settled (see ClaimDue#deferred). A clerk (any user not made a steward) settling a claim whose due is above the sheet's
+  * clerk limit, if it has one, makes it PENDING instead (its due left unfixed, still bound by its statement if one binds it); a due of n/a is
+- * within any limit. A steward settles anything. Only a steward approves a PENDING claim (fixing its figure, live or bound by a statement, late
++ * within any limit. A steward settles anything. Only a steward, or the claim's person's approver (see
++ * PersonRepository#approver), approves a PENDING claim (fixing its figure, live or bound by a statement, late
+  * charge included, at that moment) or rejects it (OPEN again, still bound by its statement if one binds it).
+  * A claim whose due (as it shows: its live figure at least the floor, or the figure a statement bound it to) is above
+  * the sheet's note threshold in force on its date (if it has one) cannot be opened while its note is empty; a due of
+@@ -152,8 +153,9 @@ public class ApplyClaimStatus {
+                 && change.by().equals(claims.editedBy(judged))) {
+             throw new InvalidClaimStatusException("The user who last edited a claim cannot settle nor approve it");
+         }
+-        if ((change.action() == ClaimAction.APPROVE || change.action() == ClaimAction.REJECT) && !steward) {
+-            throw new InvalidClaimStatusException("Only a steward approves or rejects a pending claim");
++        if ((change.action() == ClaimAction.APPROVE || change.action() == ClaimAction.REJECT) && !steward
++                && !change.by().equals(people.approver(claim.sheetId(), claim.personId()))) {
++            throw new InvalidClaimStatusException("Only a steward or the person's approver approves or rejects a pending claim");
+         }
+         if (change.action() == ClaimAction.VOID && claim.status() == ClaimStatus.SETTLED) {
+             if (!steward) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyApprover.java b/src/main/java/net/officefloor/hq/app/person/ApplyApprover.java
+new file mode 100644
+index 000000000..9a5003e4a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyApprover.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Val;
++
++/** Makes the user the person's approver, replacing any they had. */
++public class ApplyApprover {
++    public void apply(@Val Person person, @Val ApproverChange change, PersonRepository people) {
++        people.approver(person.sheetId(), person.id(), change.user());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Approver.java b/src/main/java/net/officefloor/hq/app/person/Approver.java
+new file mode 100644
+index 000000000..ae2074df6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/Approver.java
+@@ -0,0 +1,6 @@
++package net.officefloor.hq.app.person;
++
++/** That {@code user} is the approver of the person {@code personId}: they may approve or reject the person's PENDING
++ *  claims as a steward may. */
++public record Approver(long personId, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApproverChange.java b/src/main/java/net/officefloor/hq/app/person/ApproverChange.java
+new file mode 100644
+index 000000000..5f5a08a32
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ApproverChange.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** An approver change once validated: the user made approver, and who sets it. */
++public record ApproverChange(String user, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApproverRequest.java b/src/main/java/net/officefloor/hq/app/person/ApproverRequest.java
+new file mode 100644
+index 000000000..8fbfcd727
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ApproverRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** Body of setting a person's approver: the user to make approver, and who sets it. */
++public record ApproverRequest(String user, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonMerger.java b/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
+index f2999970c..4d0f3b180 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
+@@ -85,7 +85,7 @@ public class PersonMerger {
+                 + " SELECT id, sheet_id, name, ?, retired_from, terms, contact, added_on, ? FROM person WHERE sheet_id = ? AND id = ?",
+                 grades.toString(), java.sql.Date.valueOf(sheets.today(sheetId)), sheetId, f);
+ 
+-        for (String table : List.of("person_hold", "watch", "person_grade", "person_grade_log",
++        for (String table : List.of("person_hold", "watch", "person_approver", "person_grade", "person_grade_log",
+                 "person_retire_log", "person_retirement", "person_terms_log", "person_terms_from")) {
+             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, f);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index b8cafc285..de84a462b 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -464,6 +464,25 @@ public class PersonRepository {
+                 Date.valueOf(flag.until()), sheetId, id);
+     }
+ 
++    /** The person's approver (see person_approver), or null when they have none. */
++    public String approver(String sheetId, long id) {
++        List<String> users = jdbc.queryForList("SELECT user_name FROM person_approver WHERE sheet_id = ? AND person_id = ?",
++                String.class, sheetId, id);
++        return users.isEmpty() ? null : users.get(0);
++    }
++
++    /** Every approver on the sheet, by person id. */
++    public List<Approver> approvers(String sheetId) {
++        return jdbc.query("SELECT person_id, user_name FROM person_approver WHERE sheet_id = ? ORDER BY person_id",
++                (rs, n) -> new Approver(rs.getLong("person_id"), rs.getString("user_name")), sheetId);
++    }
++
++    /** Makes the user the person's approver, replacing any they had. */
++    public void approver(String sheetId, long id, String user) {
++        jdbc.update("DELETE FROM person_approver WHERE sheet_id = ? AND person_id = ?", sheetId, id);
++        jdbc.update("INSERT INTO person_approver (sheet_id, person_id, user_name) VALUES (?, ?, ?)", sheetId, id, user);
++    }
++
+     /** Adds a hold on the person, from the date until the date (null: open-ended). */
+     public void hold(String sheetId, long id, PersonHold hold) {
+         jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, made_on) VALUES (?, ?, ?, ?, ?)", sheetId, id,
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java b/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
+index 0ae621f20..b2892c2be 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
+@@ -58,7 +58,7 @@ public class PersonTransferrer {
+         // the crews they lead stay, without a lead
+         jdbc.update("UPDATE crew SET lead_id = NULL WHERE lead_id = ?", id);
+         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", from, id);
+-        for (String table : List.of("person_hold", "watch", "person_retire_log")) {
++        for (String table : List.of("person_hold", "watch", "person_approver", "person_retire_log")) {
+             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", from, id);
+         }
+         for (String table : List.of("person_grade", "person_grade_log", "person_terms_log", "person_terms_from", "person_alias",
+@@ -107,7 +107,7 @@ public class PersonTransferrer {
+         // the crews they lead stay, without a lead
+         jdbc.update("UPDATE crew SET lead_id = NULL WHERE lead_id = ?", id);
+         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", from, id);
+-        for (String table : List.of("person_hold", "watch", "person_retire_log", "person_grade", "person_grade_log",
++        for (String table : List.of("person_hold", "watch", "person_approver", "person_retire_log", "person_grade", "person_grade_log",
+                 "person_terms_log", "person_terms_from", "person_retirement")) {
+             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", from, id);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordApproverSet.java b/src/main/java/net/officefloor/hq/app/person/RecordApproverSet.java
+new file mode 100644
+index 000000000..952a298fa
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RecordApproverSet.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Writes APPROVER_SET to the audit file once the approver is stored. */
++public class RecordApproverSet {
++    public void record(@Val Person person, @Val ApproverChange change, Audit audit) {
++        audit.record("APPROVER_SET sheet=" + person.sheetId() + " by=" + change.by() + " name=" + person.name()
++                + " user=" + change.user());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithApprover.java b/src/main/java/net/officefloor/hq/app/person/RespondWithApprover.java
+new file mode 100644
+index 000000000..a71c50343
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithApprover.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithApprover {
++    public void respond(@Val Person person, @Val ApproverChange change, ObjectResponse<Approver> response) {
++        response.send(new Approver(person.id(), change.user()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithApprovers.java b/src/main/java/net/officefloor/hq/app/person/RespondWithApprovers.java
+new file mode 100644
+index 000000000..a3cad8793
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithApprovers.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Every approver on the sheet, by person id. */
++public class RespondWithApprovers {
++    public void respond(@PathVariable("sheetId") String sheetId, PersonRepository people,
++            ObjectResponse<List<Approver>> response) {
++        response.send(people.approvers(sheetId.trim()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateApprover.java b/src/main/java/net/officefloor/hq/app/person/ValidateApprover.java
+new file mode 100644
+index 000000000..70a384a1e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateApprover.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Reads the body: the approver's user name (a single word) and the signed-in user are required. */
++public class ValidateApprover {
++    public void validate(@RequestBody ApproverRequest request, Out<ApproverChange> change) throws InvalidPersonException {
++        String user = request == null || request.user() == null ? "" : request.user().trim();
++        if (user.isEmpty() || user.chars().anyMatch(Character::isWhitespace)) {
++            throw new InvalidPersonException("The approver must be a user name");
++        }
++        String by = request.by() == null ? "" : request.by().trim();
++        if (by.isEmpty()) {
++            throw new InvalidPersonException("The user setting the approver is required");
++        }
++        change.set(new ApproverChange(user, by));
++    }
++}
+diff --git a/src/main/resources/db/migration/V98__person_approver.sql b/src/main/resources/db/migration/V98__person_approver.sql
+new file mode 100644
+index 000000000..bc9b9d82f
+--- /dev/null
++++ b/src/main/resources/db/migration/V98__person_approver.sql
+@@ -0,0 +1,7 @@
++-- A person's approver: a user who may approve or reject the person's PENDING claims as a steward may. A person has
++-- at most one approver; none: no row.
++CREATE TABLE person_approver (
++    sheet_id   VARCHAR(200) NOT NULL,
++    person_id  BIGINT       NOT NULL PRIMARY KEY REFERENCES person (id),
++    user_name  VARCHAR(200) NOT NULL
++);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/approvers.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/approvers.GET.yml
+new file mode 100644
+index 000000000..300f286fb
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/approvers.GET.yml
+@@ -0,0 +1,4 @@
++# GET /api/sheets/{sheetId}/approvers — every person's approver on the sheet: the person and the user, by person id.
++respond:
++  class: net.officefloor.hq.app.person.RespondWithApprovers
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/approver.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/approver.POST.yml
+new file mode 100644
+index 000000000..7492de646
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/approver.POST.yml
+@@ -0,0 +1,21 @@
++# POST /api/sheets/{sheetId}/people/{personId}/approver — makes the user the person's approver (replacing any): they
++# may approve or reject the person's PENDING claims as a steward may (see ApplyClaimStatus). A blank user, one not a
++# single word, or a body without by is a 400 and a person not on the sheet a 404, none writing anything. Responds with
++# the approver.
++validate:
++  class: net.officefloor.hq.app.person.ValidateApprover
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.person.ApplyApprover
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.RecordApproverSet
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithApprover
