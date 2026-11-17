@@ -20,15 +20,10 @@ public final class ClaimDue {
         return claim.status() == ClaimStatus.OPEN || claim.status() == ClaimStatus.PENDING;
     }
 
-    /** Whether a claim counts toward the live totals (claimed, due-totals, a period's due-total): one that counts,
-     *  unless it is open (OPEN or PENDING), not bound by a statement, and held (see #held). */
+    /** Whether a claim counts toward the live totals (claimed, due-totals, a period's due-total): one that counts. A
+     *  hold (the claim's or its person's) does not take it out; a hold only takes a person's cut in the pools. */
     public static boolean countsLive(Claim claim, net.officefloor.hq.app.person.Person person) {
-        return counts(claim) && !(isOpen(claim) && !bound(claim) && held(claim, person));
-    }
-
-    /** Whether a claim is held: held itself (see ApplyClaimHold), or dated within a hold of its person (null: none). */
-    public static boolean held(Claim claim, net.officefloor.hq.app.person.Person person) {
-        return claim.held() || (person != null && person.heldOn(claim.date()));
+        return counts(claim);
     }
 
     /** Whether a claim is deferred on the given today: an OPEN claim deferred until a date after it. Until then it
@@ -48,8 +43,7 @@ public final class ClaimDue {
     }
 
     /** Whether a claim counts toward claimed (a person's claimed, the claimed-total) on the given today: as {@link
-     *  #countsLive(Claim, net.officefloor.hq.app.person.Person, java.time.LocalDate)}, except that a hold (the
-     *  claim's or its person's) does not take it out: only the due figures leave the totals while held. */
+     *  #countsLive(Claim, net.officefloor.hq.app.person.Person, java.time.LocalDate)}, which it now matches. */
     public static boolean countsClaimed(Claim claim, net.officefloor.hq.app.person.Person person,
             java.time.LocalDate today) {
         return counts(claim) && !deferred(claim, today) && !retiredOut(claim, person, today);

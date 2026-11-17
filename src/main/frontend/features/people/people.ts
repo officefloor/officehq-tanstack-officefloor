@@ -13,8 +13,8 @@ export type PersonGrade = { grade: string; from: string | null };
  *  grades recorded, by from-date, and `grade` (A, B or C) the one in force on the sheet's today.
  *  `version` goes up by one on each stored edit; an edit sends the version it was made from. `retiredFrom` (yyyy-MM-dd)
  *  is the date the person is retired from, null when not retired: a person with one counts as retired at once. `holds` are
- *  the person's holds, by from-date: an OPEN or PENDING claim of theirs dated within one, and not bound by a statement,
- *  counts in no live total. `held` is whether they have any hold. `terms` are the person's own terms in days (ahead of
+ *  the person's holds, by from-date: a claim of theirs dated within one still counts in every total; a hold
+ *  only takes the person's cut in the pools. `held` is whether they have any hold. `terms` are the person's own terms in days (ahead of
  *  their grade's and the sheet's when a claim is added) in force on the sheet's today, null when they have none;
  *  `ownTerms` are their own terms as recorded, by from-date (null: from the beginning of time), a claim having those in
  *  force on its date. `contact` is the person's contact
@@ -70,7 +70,7 @@ export const heldOn = (person: Pick<Person, 'holds'>, on: string) =>
   (person.holds ?? []).some((h) => h.from <= on && (h.to === null || on <= h.to));
 
 /** Whether the person's retirement date is reached on the day (yyyy-MM-dd): it is on or before it. From then on their
- *  open (OPEN or PENDING) claims not bound by a statement count in no live total, as a hold's would. */
+ *  open (OPEN or PENDING) claims not bound by a statement count in no live total. */
 export const retiredOn = (person: Pick<Person, 'retiredFrom'>, on: string) =>
   person.retiredFrom !== null && on !== '' && person.retiredFrom <= on;
 

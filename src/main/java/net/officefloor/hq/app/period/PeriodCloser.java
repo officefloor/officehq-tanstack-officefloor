@@ -93,7 +93,6 @@ public class PeriodCloser {
             }
             ClaimStatus status = ClaimDue.statusAsOf(logs.getOrDefault(c.id(), List.of()), period.to());
             if ((status != ClaimStatus.OPEN && status != ClaimStatus.PENDING)
-                    || (ClaimDue.isOpen(c) && !ClaimDue.bound(c) && ClaimDue.held(c, person))
                     || ClaimDue.retiredOut(c, person, late.today())
                     || ClaimDue.deferred(c, late.today())) {
                 continue;
@@ -128,7 +127,6 @@ public class PeriodCloser {
             }
             ClaimStatus status = ClaimDue.statusAsOf(logs.getOrDefault(c.id(), List.of()), period.to());
             if (status == null || !ClaimDue.counts(ClaimDue.withStatus(c, status))
-                    || (ClaimDue.isOpen(c) && !ClaimDue.bound(c) && ClaimDue.held(c, person))
                     || ClaimDue.retiredOut(c, person, late.today())
                     || ClaimDue.deferred(c, late.today())) {
                 continue;

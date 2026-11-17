@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { bound, counts, isOpen, type Claim, type ClaimStatus } from '../claims/claims';
 import type { Late } from '../overdue/late';
-import { gradeOn, heldOn, retiredOn, type Person } from '../people/people';
+import { gradeOn, retiredOn, type Person } from '../people/people';
 import { claimDue, claimRate, sum, type Rate } from '../rates/rates';
 import type { Dated } from '../settings/settings';
 
@@ -65,7 +65,7 @@ export function statusAsOf(claim: Claim, day: string): ClaimStatus | undefined {
 /** A person's due-total for a period: the figures (each due as shown now, with its late charge) of their claims
  *  whose due-by falls in it and that counted by the status each had at the end of the period's last day (see
  *  statusAsOf; a claim added after it does not count), the live rules otherwise applying (a deferred claim does
- *  not count, nor a claim open now dated within a hold of its person, or of a person whose retirement date is reached,
+ *  not count, nor a claim open now of a person whose retirement date is reached,
  *  not bound by a statement), added up (skipping
  *  n/a); for a closed or soft-closed period, their figure fixed when it was (soft-)closed (0.00 for a person added after).
  *  With `statusNow`, each claim counts by its status now instead (the classic summary). */
@@ -82,7 +82,7 @@ export function personPeriodDue(
   const mine = (claims ?? []).filter((c) => {
     if (c.personId !== person.id || c.dueBy < period.from || period.to < c.dueBy) return false;
     const status = statusNow ? c.status : statusAsOf(c, period.to);
-    return status !== undefined && counts({ ...c, status }) && !(isOpen(c) && !bound(c) && (c.held || heldOn(person, c.date) || retiredOn(person, late.today)));
+    return status !== undefined && counts({ ...c, status }) && !(isOpen(c) && !bound(c) && retiredOn(person, late.today));
   });
   return sum(mine.map((c) => claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late)));
 }
@@ -109,7 +109,7 @@ export function personPeriodCarried(
     if (c.personId !== person.id || !earlier.some((p) => p.from <= c.dueBy && c.dueBy <= p.to)) return false;
     const status = statusAsOf(c, period.to);
     if (status !== 'OPEN' && status !== 'PENDING') return false;
-    return counts({ ...c, status }) && !(isOpen(c) && !bound(c) && (c.held || heldOn(person, c.date) || retiredOn(person, late.today)));
+    return counts({ ...c, status }) && !(isOpen(c) && !bound(c) && retiredOn(person, late.today));
   });
   const opening = period.openings?.[String(person.id)] ?? '0.00';
   return sum([...mine.map((c) => claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late)), opening]);
