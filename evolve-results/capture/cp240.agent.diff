@@ -1,0 +1,200 @@
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index a1a12b313..dca46c08a 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -145,13 +145,26 @@ export function claimDue(claim: Claim, rate: string | undefined, floor: Dated, l
+  *  zero for the claim's own person, who gives it up). */
+ export type SharePart = { status: ClaimStatus; part: string };
+ 
+-/** A holder's part of a claim's due: the due times their share divided by 100, rounded half to even. */
++/** A holder's part of a claim's due: the due times their share divided by 100, rounded half to even (a settled
++ *  claim's parts, frozen with its due). */
+ export function sharePart(due: string, share: string): string {
+   return shown(percentOf(due, share, 1, false));
+ }
+ 
++/** A holder's part of a claim not settled: its amount times their share divided by 100, times the rate of their own
++ *  grade in force on its date divided by 100, rounded like the claim; 0.00 when their grade has no rate. */
++export function holderPart(amount: string, share: string, rate: string | undefined, halfUp: boolean): string {
++  if (rate === undefined) return '0.00';
++  const p = hundredths(amount) * hundredths(share) * hundredths(rate); // in 1/100000000 of a hundredth
++  const a = p < 0n ? -p : p;
++  const q = a / 100000000n;
++  const rem = a % 100000000n;
++  const r = rem > 50000000n || (rem === 50000000n && (halfUp || q % 2n === 1n)) ? q + 1n : q;
++  return shown(p < 0n ? -r : r);
++}
++
+ /** Each person's share parts, by person id: of the given claims (those that count live) with a figure, each holder of a
+- *  share gains their part (see sharePart) and the claim's own person loses it. */
++ *  share gains their part (see holderPart; sharePart once settled) and the claim's own person loses it. */
+ export function shareParts(claims: Claim[], people: Person[] | undefined, rates: Rate[] | undefined, late: Late, floor: Dated): Map<number, SharePart[]> {
+   const byId = new Map((people ?? []).map((p) => [p.id, p]));
+   const out = new Map<number, SharePart[]>();
+@@ -161,8 +174,12 @@ export function shareParts(claims: Claim[], people: Person[] | undefined, rates:
+     if (!c.shares?.length || owner === undefined || !counts(c)) continue;
+     const figure = claimDue(c, claimRate(rates, gradeOn(owner, c.date), c), floor, late);
+     if (figure === 'n/a') continue;
++    const halfUp = roundsHalfUp(c, late);
+     for (const s of c.shares) {
+-      const part = sharePart(figure, s.share);
++      const holder = byId.get(s.personId);
++      const rate = holder === undefined ? undefined : claimRate(rates, gradeOn(holder, c.date), c);
++      if (c.due === null && rate === undefined) continue; // a 0.00 part: it leaves the holder's figures as they were
++      const part = c.due !== null ? sharePart(figure, s.share) : holderPart(c.amount, s.share, rate, halfUp);
+       add(s.personId, { status: c.status, part });
+       add(owner.id, { status: c.status, part: shown(-hundredths(part)) });
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimShare.java b/src/main/java/net/officefloor/hq/app/claim/ClaimShare.java
+index c51955339..c57a24d7f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimShare.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimShare.java
+@@ -8,8 +8,18 @@ import java.time.LocalDate;
+  *  sheet's today it was made on. */
+ public record ClaimShare(long claimId, long personId, BigDecimal share, LocalDate madeOn) {
+ 
+-    /** The holder's part of a claim's due: the due times the share divided by 100, rounded half to even. */
++    /** The holder's part of a settled claim's due, frozen with it: the due times the share divided by 100, rounded half
++     *  to even. */
+     public BigDecimal part(BigDecimal due) {
+         return due.multiply(share).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+     }
++
++    /** The holder's part of a claim not settled: its amount times the share divided by 100, times the rate of the
++     *  holder's own grade in force on its date (null: none) divided by 100, rounded like the claim; 0.00 with no rate. */
++    public BigDecimal part(BigDecimal amount, BigDecimal rate, RoundingMode rounding) {
++        if (rate == null) {
++            return BigDecimal.ZERO.setScale(2);
++        }
++        return amount.multiply(share).multiply(rate).movePointLeft(4).setScale(2, rounding);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+index 43e1e7e49..b1d1cb602 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+@@ -28,9 +28,19 @@ public class PeriodRepository {
+         this.sheets = sheets;
+     }
+ 
+-    /** A period as it stood at the end of a date: closed or soft-closed then, with the figures that fixed. */
++    /** A period as it stood at the end of a date: closed or soft-closed then, with the figures that fixed, and whether
++     *  it was locked then. */
+     public record StateAsOf(boolean closed, boolean soft, BigDecimal closedTotal, Map<Long, BigDecimal> personTotals,
+-            Map<Long, BigDecimal> personCarried) {
++            Map<Long, BigDecimal> personCarried, boolean locked) {
++
++        public StateAsOf(boolean closed, boolean soft, BigDecimal closedTotal, Map<Long, BigDecimal> personTotals,
++                Map<Long, BigDecimal> personCarried) {
++            this(closed, soft, closedTotal, personTotals, personCarried, false);
++        }
++
++        StateAsOf withLocked(boolean locked) {
++            return new StateAsOf(closed, soft, closedTotal, personTotals, personCarried, locked);
++        }
+     }
+ 
+     /** Figures by person id from their logged text: "personId=figure" joined by ";". */
+@@ -55,12 +65,15 @@ public class PeriodRepository {
+     }
+ 
+     /** The sheet's periods as they stood at the end of the date, by from-date, each with its state then: one added while
+-     *  the sheet's today was after it is left out; one never closed, soft-closed or reopened is as it is now. */
++     *  the sheet's today was after it is left out; one never closed, soft-closed or reopened is as it is now; one is
++     *  locked only when it was locked on or before the date. */
+     public Map<Period, StateAsOf> listAsOf(String sheetId, LocalDate date) {
+         Map<Long, LocalDate> added = new java.util.HashMap<>();
+-        jdbc.query("SELECT id, added_on FROM period WHERE sheet_id = ?",
++        Map<Long, LocalDate> lockedOn = new java.util.HashMap<>();
++        jdbc.query("SELECT id, added_on, locked_on FROM period WHERE sheet_id = ?",
+                 (ResultSet rs) -> {
+                     added.put(rs.getLong("id"), rs.getObject("added_on", LocalDate.class));
++                    lockedOn.put(rs.getLong("id"), rs.getObject("locked_on", LocalDate.class));
+                 }, sheetId);
+         Map<Long, StateAsOf> states = new java.util.HashMap<>();
+         java.util.Set<Long> logged = new java.util.HashSet<>();
+@@ -87,7 +100,7 @@ public class PeriodRepository {
+                         : new StateAsOf(p.closed(), p.soft(), p.closedTotal(), p.closed() || p.soft() ? personTotals(p) : Map.of(),
+                                 p.closed() || p.soft() ? personCarried(p) : Map.of());
+             }
+-            out.put(p, state);
++            out.put(p, state.withLocked(p.locked() && AsOf.counts(lockedOn.get(p.id()), date)));
+         }
+         return out;
+     }
+@@ -255,8 +268,9 @@ public class PeriodRepository {
+ 
+     /** Locks or unlocks the period, but only while it is not already so; false when it was. */
+     public boolean setLocked(Period period, boolean locked) {
+-        return jdbc.update("UPDATE period SET locked = ? WHERE sheet_id = ? AND id = ? AND locked = ?",
+-                locked, period.sheetId(), period.id(), !locked) == 1;
++        return jdbc.update("UPDATE period SET locked = ?, locked_on = ? WHERE sheet_id = ? AND id = ? AND locked = ?",
++                locked, locked ? Date.valueOf(sheets.today(period.sheetId())) : null, period.sheetId(), period.id(),
++                !locked) == 1;
+     }
+ 
+     /** Stores a new period and returns it with its id. */
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+index 22c4b2749..4a1e230b0 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+@@ -41,6 +41,6 @@ public record PeriodResponse(long id, String sheetId, String name, String from,
+         return new PeriodResponse(period.id(), period.sheetId(), period.name(), period.from().toString(),
+                 period.to().toString(), state.closed(), state.soft(),
+                 state.closedTotal() == null ? null : state.closedTotal().toPlainString(), totals, period.cap(), carried,
+-                openings(openings), period.locked());
++                openings(openings), state.locked());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index eb149b418..dbd0d9ce2 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
+ /**
+  * The sheet's figures as the screen shows them: each person's claimed (the amounts of their claims that count added up, leaving out corrections; a person's OPEN or PENDING claims, once their retirement date is reached, not bound by a statement, do not, nor do deferred claims; a held claim still does) and
+  * due-total (the figures of the claims that count live — held ones included, each with its late charge, added up, less
+- * the parts of them other people hold by a share, plus their own parts of others' shared claims (see ClaimShare#part); n/a when their grade has no rate today and no counting claim
++ * the parts of them other people hold by a share, plus their own parts of others' shared claims (see ClaimShare#part, at their own grade's rate); n/a when their grade has no rate today and no counting claim
+  * has a figure, kept or at the grade in force on its date; at most the sheet's cap less their cut total, not below 0.00), overdue-total (the figures, late charge included, of those claims that are overdue — open, their due-by plus
+  * their grace (see LateCharge#lateFrom) before today — added up, skipping n/a; not capped), and the sheet's claimed-total, due-total and overdue-total (everyone's added up, skipping n/a; the due-total and
+  * overdue-total leave out the single highest and the single lowest figure when three or more people have one).
+@@ -123,7 +123,8 @@ public class Rollup {
+     }
+ 
+     /** What the shares of the claims that count live move in each person's due-total, by person id: each holder gains
+-     *  their part of the claim's figure (see ClaimShare#part), and the claim's own person loses it. A person with no
++     *  their part of the claim (see ClaimShare#part: at their own grade's rate; frozen with the due once settled), and
++     *  the claim's own person loses it. A person with no
+      *  share of a claim that has a figure is left out. */
+     private Map<Long, BigDecimal> shareParts(String sheetId, LocalDate today, LateCharge late, List<Claim> all,
+             List<Person> listed) {
+@@ -145,7 +146,18 @@ public class Rollup {
+                 continue;
+             }
+             for (ClaimShare s : held) {
+-                BigDecimal part = s.part(figure);
++                BigDecimal part;
++                if (c.due() != null) {
++                    part = s.part(figure);
++                } else {
++                    Person holder = byId.get(s.personId());
++                    net.officefloor.hq.app.rate.Rate rate = holder == null ? null
++                            : rates.forClaim(sheetId, holder.gradeOn(c.date()), c.date(), rates.seqOf(c.id()));
++                    if (rate == null) {
++                        continue; // a 0.00 part: it leaves the holder's figures as they were
++                    }
++                    part = s.part(c.amount(), rate.rate(), late.rounding().mode(c));
++                }
+                 parts.merge(s.personId(), part, BigDecimal::add);
+                 parts.merge(owner.id(), part.negate(), BigDecimal::add);
+             }
+diff --git a/src/main/resources/db/migration/V112__period_locked_on.sql b/src/main/resources/db/migration/V112__period_locked_on.sql
+new file mode 100644
+index 000000000..e285066aa
+--- /dev/null
++++ b/src/main/resources/db/migration/V112__period_locked_on.sql
+@@ -0,0 +1,3 @@
++-- The sheet's today a period was last locked on (null: not locked, or locked before this was kept), so the sheet as of
++-- an earlier date shows it unlocked.
++ALTER TABLE period ADD COLUMN locked_on DATE;
