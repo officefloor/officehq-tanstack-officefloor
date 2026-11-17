@@ -3,7 +3,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
-import { GRADES, type Person } from '../people/people';
+import { type Person } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
 import { usePersonRowAction } from '../people/rowAction';
 
 function InlineGradeHead() {
@@ -14,6 +15,7 @@ function InlineGradeHead() {
  *  (PERSON_EDITED and the figures it moved). The select shows the person's grade until another is chosen. A refused
  *  save shows the row's error and changes nothing. */
 function PersonInlineGrade({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+  const gradeCodes = useGradeCodes(sheetId);
   const queryClient = useQueryClient();
   const [chosen, setChosen] = useState<string | undefined>(undefined);
   const submit = useSubmitOnce();
@@ -39,7 +41,7 @@ function PersonInlineGrade({ sheetId, user, person }: { sheetId: string; user: s
           save.reset();
         }}
       >
-        {GRADES.map((g) => (
+        {gradeCodes.map((g) => (
           <option key={g} value={g}>
             {g}
           </option>

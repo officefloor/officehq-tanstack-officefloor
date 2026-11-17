@@ -3,28 +3,29 @@ package net.officefloor.hq.app.rate;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.util.Set;
+import java.util.Collection;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Reads the body: the grade is A, B or C; the rate a percent 0.00 or more with up to two decimals;
+/** Reads the body: the grade is one of the sheet's grades; the rate a percent 0.00 or more with up to two decimals;
  *  the from-date and to-date blank (none) or a date yyyy-MM-dd, the to-date not before the from-date. */
 public class ValidateRate {
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
     private static final Pattern RATE = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?");
 
-    public void validate(@PathVariable("grade") String grade, @RequestBody RateRequest request, Out<RateValues> values)
+    public void validate(@PathVariable("sheetId") String sheetId, @PathVariable("grade") String grade, @RequestBody RateRequest request,
+            GradeRepository grades, Out<RateValues> values)
             throws InvalidRateException {
-        values.set(check(grade, request));
+        values.set(check(grade, request, grades.grades(sheetId.trim())));
     }
 
     /** The rate form's rules: the grade's rate as set by the request, or refused. */
-    static RateValues check(String grade, RateRequest request) throws InvalidRateException {
+    static RateValues check(String grade, RateRequest request, Collection<String> grades) throws InvalidRateException {
         String g = grade == null ? "" : grade.trim();
-        if (!GRADES.contains(g)) {
-            throw new InvalidRateException("Grade must be A, B or C");
+        if (!grades.contains(g)) {
+            throw new InvalidRateException("Grade must be one of the sheet's grades");
         }
         String rate = request == null || request.rate() == null ? "" : request.rate().trim();
         if (!RATE.matcher(rate).matches()) {

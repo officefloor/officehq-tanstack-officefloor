@@ -209,12 +209,14 @@ export function personDue(claims: Claim[], rates: Rate[] | undefined, person: Pe
   return total !== 'n/a' && limit !== null && hundredths(total) > limit ? shown(limit) : total;
 }
 
-/** A person's excess: how far the sum of their figures plus their cut total is above the sheet's cap; 0.00 when it is
- *  not (or with no cap, or an n/a due-total). */
+/** A person's excess: how far the sum of their figures is above the most their due-total may be (the sheet's cap less
+ *  their cut total, not below 0.00; see capLimit) — what the cap takes off it; 0.00 when it is not (or with no cap, or
+ *  an n/a due-total). A cut above the cap alone is no excess. */
 export function personExcess(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, cap: string | null, cut: string, parts: SharePart[] = []): string {
   const total = personFigures(claims, rates, person, late, floor, parts);
-  if (total === 'n/a' || cap === null) return '0.00';
-  const over = hundredths(total) + hundredths(cut) - hundredths(cap);
+  const limit = capLimit(cap, cut);
+  if (total === 'n/a' || limit === null) return '0.00';
+  const over = hundredths(total) - limit;
   return over > 0n ? shown(over) : '0.00';
 }
 

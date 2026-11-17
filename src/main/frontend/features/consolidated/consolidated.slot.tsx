@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { STATUSES, useGradeDue, usePeopleDue, usePeopleOverdue, useStatusCounts } from '../header/totals';
-import { GRADES, usePeople } from '../people/people';
+import { usePeople } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
 import { sum, trimmedSum } from '../rates/rates';
 import { useDescendants } from './descendants';
 
 /** One sheet's own figures: its people's names (each person's name then aliases), due-totals and overdue-totals (as
  *  their rows show them, in the same order), and as its summary shows them the due-total per grade and the claim count
- *  per status in the order of GRADES and STATUSES. */
+ *  per status in the order of the grades given (the sheet's own) and STATUSES. */
 type Figures = { names: string[][]; due: string[]; overdue: string[]; grades: string[]; statuses: number[] };
 
 /** How many people the sheets' people make, each counted once over them all: people whose names or aliases match (as
@@ -28,7 +29,11 @@ function distinctPeople(names: string[][]): number {
 }
 
 /** Works out one sheet's figures with the same hooks as its header, and reports them. Shows nothing. */
-function SheetFigures({ sheetId, report }: { sheetId: string; report: (sheetId: string, f: Figures) => void }) {
+function SheetFigures({ sheetId, gradeCodes, report }: {
+  sheetId: string;
+  gradeCodes: string[];
+  report: (sheetId: string, f: Figures) => void;
+}) {
   const people = usePeople(sheetId).data ?? [];
   const peopleDue = usePeopleDue(sheetId);
   const peopleOverdue = usePeopleOverdue(sheetId);
@@ -38,7 +43,7 @@ function SheetFigures({ sheetId, report }: { sheetId: string; report: (sheetId: 
   const overdue = people.map((p) => peopleOverdue.get(p.id) ?? '0.00').join(',');
   const gradeDue = useGradeDue(sheetId);
   const statusCount = useStatusCounts(sheetId);
-  const grades = GRADES.map(gradeDue).join(',');
+  const grades = gradeCodes.map(gradeDue).join(',');
   const statuses = STATUSES.map(statusCount).join(',');
   useEffect(
     () =>
@@ -62,6 +67,7 @@ function SheetFigures({ sheetId, report }: { sheetId: string; report: (sheetId: 
  *  that date as its today. */
 function Consolidated({ sheetId }: { sheetId: string }) {
   const descendants = useDescendants(sheetId);
+  const gradeCodes = useGradeCodes(sheetId);
   const sheets = [sheetId, ...(descendants.data ?? [])];
   const [figures, setFigures] = useState<Record<string, Figures>>({});
   const report = useCallback(
@@ -73,17 +79,18 @@ function Consolidated({ sheetId }: { sheetId: string }) {
   return (
     <section data-testid="consolidated">
       {sheets.map((id) => (
-        <SheetFigures key={id} sheetId={id} report={report} />
+        <SheetFigures key={id} sheetId={id} gradeCodes={gradeCodes} report={report} />
       ))}
       Consolidated: people <span data-testid="consolidated-people-count">{distinctPeople(counted.flatMap((f) => f.names))}</span>
       {' · '}Due total <span data-testid="consolidated-due-total">{trimmedSum(counted.flatMap((f) => f.due))}</span>
       {' · '}Overdue total <span data-testid="consolidated-overdue-total">{trimmedSum(counted.flatMap((f) => f.overdue))}</span>
       <table data-testid="consolidated-grades">
         <tbody>
-          {GRADES.map((g, i) => (
+          {gradeCodes.map((g, i) => (
             <tr key={g}>
               <td>Grade {g} due total</td>
-              <td data-testid={`consolidated-grade-${g}-due-total`}>{sum(counted.map((f) => f.grades[i]))}</td>
+              {/* a sheet's figures reported before the grade was added have none for it yet */}
+              <td data-testid={`consolidated-grade-${g}-due-total`}>{sum(counted.map((f) => f.grades[i]).filter((d): d is string => d !== undefined))}</td>
             </tr>
           ))}
         </tbody>

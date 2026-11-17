@@ -4,7 +4,8 @@ import { postJson } from '../../api/http';
 import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
-import { GRADES, type Person } from '../people/people';
+import { type Person } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
 import { useSelectedPeople } from './selection';
 
 type Result = { graded: number };
@@ -34,6 +35,7 @@ function PersonSelect({ person }: { sheetId: string; user: string; person: Perso
  *  exactly as the person form would. Shows how many were changed; the count is cleared while a new press runs. A refused
  *  bulk grade shows the error and changes nothing. */
 function BulkGrade({ sheetId, user }: { sheetId: string; user: string }) {
+  const gradeCodes = useGradeCodes(sheetId);
   const queryClient = useQueryClient();
   const [selected, setSelected] = useSelectedPeople();
   const [grade, setGrade] = useState<string>('A');
@@ -66,7 +68,7 @@ function BulkGrade({ sheetId, user }: { sheetId: string; user: string }) {
           apply.reset();
         }}
       >
-        {GRADES.map((g) => (
+        {gradeCodes.map((g) => (
           <option key={g} value={g}>
             {g}
           </option>

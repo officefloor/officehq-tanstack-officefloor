@@ -20,7 +20,8 @@ public class ValidateQuickAdd {
         String name = request == null ? null : request.name();
         String amount = request == null ? null : request.amount();
         String by = request == null ? null : request.by();
-        person.set(PersonValues.from(new PersonRequest(name, grades.defaultGrade(sheetId.trim(), settings), by, null, null, null, null, null)));
+        person.set(PersonValues.from(new PersonRequest(name, grades.defaultGrade(sheetId.trim(), settings), by, null, null, null, null, null),
+                grades.grades(sheetId.trim())));
         claim.set(ClaimValues.from(new ClaimRequest(amount, "", "", "", by, "", null)));
     }
 }

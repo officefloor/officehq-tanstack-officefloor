@@ -17,6 +17,7 @@ public class ValidateImportPeople {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ImportPeopleRequest request, SettingRepository settings, GradeRepository grades, Out<ImportedPeople> imported) throws InvalidPersonException {
         String text = request == null || request.text() == null ? "" : request.text();
         String by = request == null || request.by() == null ? "" : request.by().trim();
+        List<String> sheetGrades = grades.grades(sheetId.trim());
         String defaultGrade = grades.defaultGrade(sheetId.trim(), settings);
         List<PersonValues> people = new ArrayList<>();
         Set<String> names = new HashSet<>();
@@ -28,7 +29,7 @@ public class ValidateImportPeople {
             String[] fields = line.split(",", 4);
             PersonValues values = PersonValues.from(new PersonRequest(fields[0],
                     fields.length > 1 && !fields[1].isBlank() ? fields[1] : defaultGrade, by, null,
-                    "", fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", null));
+                    "", fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", null), sheetGrades);
             if (!names.add(PersonRepository.key(values.name()))) {
                 throw new InvalidPersonException("The name " + values.name() + " is imported more than once");
             }

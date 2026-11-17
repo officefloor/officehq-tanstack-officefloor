@@ -7,7 +7,8 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { claimsKey, type Claim } from '../claims/claims';
 import { tagsKey } from '../tags/tags';
 import { usePeopleDue } from '../header/totals';
-import { GRADES, peopleKey, shownName, SORT_KEYS, sortPeople, useEditingPerson, usePeople, useShowRetired, useSortBy, type Person } from './people';
+import { peopleKey, shownName, SORT_KEYS, sortPeople, useEditingPerson, usePeople, useShowRetired, useSortBy, type Person } from './people';
+import { useGradeCodes } from '../grades/grades';
 import { useShownColumns } from '../columns/columns';
 import { useCrews, type Crew } from '../crews/crews';
 import { useActingRole } from '../roles/roles';
@@ -110,6 +111,7 @@ function QuickAdd({ sheetId, user }: { sheetId: string; user: string }) {
  *  (412) shows the error and puts the current values, and their version, in the form; an edit refused otherwise shows the
  *  error and closes the editor. */
 function People({ sheetId, user }: { sheetId: string; user: string }) {
+  const gradeCodes = useGradeCodes(sheetId);
   const shown = useShownColumns(user);
   const people = usePeople(sheetId);
   const [showRetired, setShowRetired] = useShowRetired();
@@ -195,7 +197,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
         <label>
           Grade{' '}
           <select data-testid="person-form-grade" value={values.grade} onChange={(e) => change({ grade: e.target.value })}>
-            {GRADES.map((g) => (
+            {gradeCodes.map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>

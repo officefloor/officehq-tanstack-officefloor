@@ -7,6 +7,7 @@ import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
 import { useShareParts, useSheetDueTotal, useSheetSplit } from '../header/totals';
 import { GRADES, usePeople, type Person } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
 import { personCutTotal, usePools } from '../pools/pools';
 import { useSheetToday } from '../session/session';
 import { useCap, useFloor, useLate } from '../settings/settings';
@@ -16,6 +17,7 @@ import { useShownColumns } from '../columns/columns';
 /** The sheet's rates: the form that sets one (from an optional from-date, through an optional to-date), each grade's rate in force on the
  *  sheet's today, a calendar of each grade's rate in force on the first of each month of today's year, and every rate set. */
 function Rates({ sheetId, user }: { sheetId: string; user: string }) {
+  const gradeCodes = useGradeCodes(sheetId);
   const rates = useRates(sheetId);
   const today = useSheetToday(sheetId);
   const queryClient = useQueryClient();
@@ -64,7 +66,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
               save.reset();
             }}
           >
-            {GRADES.map((g) => (
+            {gradeCodes.map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>
@@ -119,7 +121,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
       <RatePreview sheetId={sheetId} rates={rates.data} />
       <table data-testid="rates-current">
         <tbody>
-          {GRADES.map((g) => (
+          {gradeCodes.map((g) => (
             <tr key={g}>
               <td>{g}</td>
               <td data-testid={`rate-current-${g}`}>{rateFor(rates.data, g, today) ?? 'n/a'}</td>
@@ -137,7 +139,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => (
+          {gradeCodes.map((g) => (
             <tr key={g}>
               <td>{g}</td>
               {calendarMonths(today).map((m) => (
@@ -236,6 +238,7 @@ function ImportRates({ sheetId, user }: { sheetId: string; user: string }) {
 /** A preview of a candidate rate for a grade: how many OPEN and PENDING claims of people on the grade (on the
  *  claim's date) would show a different due, and the sum of the differences (see ratePreview). Nothing is saved. */
 function RatePreview({ sheetId, rates }: { sheetId: string; rates: Rate[] | undefined }) {
+  const gradeCodes = useGradeCodes(sheetId);
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
   const late = useLate(sheetId);
@@ -274,7 +277,7 @@ function RatePreview({ sheetId, rates }: { sheetId: string; rates: Rate[] | unde
             clear();
           }}
         >
-          {GRADES.map((g) => (
+          {gradeCodes.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>

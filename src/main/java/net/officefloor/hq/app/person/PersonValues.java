@@ -3,9 +3,9 @@ package net.officefloor.hq.app.person;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 import java.util.TreeSet;
 
 /** A person's values once validated, and who gives them; for an edit, the version it was made from (null for an add).
@@ -16,22 +16,20 @@ import java.util.TreeSet;
  *  #tags). */
 public record PersonValues(String name, String grade, String by, Long version, LocalDate gradeFrom, Integer terms, String contact,
         List<String> tags, LocalDate termsFrom) {
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
-
     public PersonValues(String name, String grade, String by, Long version, LocalDate gradeFrom, Integer terms, String contact,
             List<String> tags) {
         this(name, grade, by, version, gradeFrom, terms, contact, tags, null);
     }
 
-    /** The request's values by the person form's rules (see ValidatePerson). */
-    public static PersonValues from(PersonRequest request) throws InvalidPersonException {
+    /** The request's values by the person form's rules (see ValidatePerson), the grade one of the sheet's grades. */
+    public static PersonValues from(PersonRequest request, Collection<String> grades) throws InvalidPersonException {
         String name = request == null || request.name() == null ? "" : request.name().trim();
         if (name.isEmpty()) {
             throw new InvalidPersonException("A name is required");
         }
         String grade = request.grade() == null ? "" : request.grade().trim();
-        if (!GRADES.contains(grade)) {
-            throw new InvalidPersonException("Grade must be A, B or C");
+        if (!grades.contains(grade)) {
+            throw new InvalidPersonException("Grade must be one of the sheet's grades");
         }
         String from = request.gradeFrom() == null ? "" : request.gradeFrom().trim();
         LocalDate gradeFrom = null;

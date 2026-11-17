@@ -4,10 +4,11 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { GRADES } from '../people/people';
-import { gradesKey, useGrades, type Grade } from './grades';
+import { gradesKey, useGradeCodes, useGrades, type Grade } from './grades';
 
-/** The sheet's grades: the select and button that retire one, the selects and button a steward merges one into another
- *  with, and each grade with whether it is retired. A grade already retired is refused; so is a merge of a grade into
+/** The sheet's grades: the entry and button that add one (a code of one to three capital letters, kept without the
+ *  spaces around it, not yet a grade of the sheet), the select and button that retire one, the selects and button a steward merges one into another
+ *  with, and each grade with whether it is retired. A code not of that form, or already a grade, is refused; so is a grade already retired; so is a merge of a grade into
  *  itself, or by anyone but a steward. A merge gives everyone on the merged grade today the other, each as the person
  *  form would, and shows how many it changed; the count is cleared while a new press runs. */
 function Grades({ sheetId, user }: { sheetId: string; user: string }) {
@@ -16,13 +17,24 @@ function Grades({ sheetId, user }: { sheetId: string; user: string }) {
 }
 
 function SheetGrades({ sheetId, user }: { sheetId: string; user: string }) {
+  const gradeCodes = useGradeCodes(sheetId);
   const grades = useGrades(sheetId);
   const queryClient = useQueryClient();
   const [grade, setGrade] = useState<string>(GRADES[0]);
   const [mergeFrom, setMergeFrom] = useState<string>(GRADES[0]);
   const [mergeInto, setMergeInto] = useState<string>(GRADES[1]);
+  const [code, setCode] = useState('');
 
   const submit = useSubmitOnce();
+  const add = useMutation({
+    mutationFn: (g: string) =>
+      postJson<Grade[]>(`/api/sheets/${encodeURIComponent(sheetId)}/grades`, { grade: g, by: user }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(gradesKey(sheetId), data);
+      setCode('');
+    },
+    onSettled: submit.end,
+  });
   const retire = useMutation({
     mutationFn: (g: string) =>
       postJson<Grade[]>(`/api/sheets/${encodeURIComponent(sheetId)}/grades/retire`, { grade: g, by: user }),
@@ -44,6 +56,7 @@ function SheetGrades({ sheetId, user }: { sheetId: string; user: string }) {
     onSettled: submit.end,
   });
   const resetAll = () => {
+    add.reset();
     retire.reset();
     merge.reset();
   };
@@ -51,6 +64,27 @@ function SheetGrades({ sheetId, user }: { sheetId: string; user: string }) {
   return (
     <section data-testid="grades">
       <h3>Grades</h3>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!submit.begin()) return;
+          resetAll();
+          add.mutate(code);
+        }}
+      >
+        <input
+          data-testid="grade-add-code"
+          placeholder="Code, e.g. D"
+          value={code}
+          onChange={(e) => {
+            setCode(e.target.value);
+            resetAll();
+          }}
+        />{' '}
+        <button type="submit" data-testid="grade-add" disabled={add.isPending}>
+          Add grade
+        </button>
+      </form>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -67,7 +101,7 @@ function SheetGrades({ sheetId, user }: { sheetId: string; user: string }) {
             resetAll();
           }}
         >
-          {GRADES.map((g) => (
+          {gradeCodes.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>
@@ -94,7 +128,7 @@ function SheetGrades({ sheetId, user }: { sheetId: string; user: string }) {
             resetAll();
           }}
         >
-          {GRADES.map((g) => (
+          {gradeCodes.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>
@@ -109,7 +143,7 @@ function SheetGrades({ sheetId, user }: { sheetId: string; user: string }) {
             resetAll();
           }}
         >
-          {GRADES.map((g) => (
+          {gradeCodes.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>
@@ -125,6 +159,7 @@ function SheetGrades({ sheetId, user }: { sheetId: string; user: string }) {
           </>
         )}
       </form>
+      {add.isError && <p data-testid="grade-error">The grade must be one to three capital letters, not yet a grade.</p>}
       {retire.isError && <p data-testid="grade-error">The grade is already retired.</p>}
       {merge.isError && <p data-testid="grade-error">The grade could not be merged.</p>}
       {grades.isError && <p data-testid="grades-load-error">Could not load grades.</p>}

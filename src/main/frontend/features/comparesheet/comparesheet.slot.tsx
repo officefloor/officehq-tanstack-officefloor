@@ -4,7 +4,8 @@ import { getJson } from '../../api/http';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { useClaims } from '../claims/claims';
 import { useGradeDue } from '../header/totals';
-import { GRADES, usePeople } from '../people/people';
+import { usePeople } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
 import { useRates } from '../rates/rates';
 import { useSheet } from '../session/session';
 import { useSettings } from '../settings/settings';
@@ -12,13 +13,14 @@ import { useSettings } from '../settings/settings';
 /** The lines comparing this sheet with the other: one per grade, <grade> <this sheet's summary due-total for it>
  *  <the other sheet's>, shown only once every figure of the other sheet has been read. */
 function CompareLines({ sheetId, otherId }: { sheetId: string; otherId: string }) {
+  const gradeCodes = useGradeCodes(sheetId);
   const mine = useGradeDue(sheetId);
   const theirs = useGradeDue(otherId);
   const read = [usePeople(otherId), useClaims(otherId), useRates(otherId), useSettings(otherId), useSheet(otherId)];
   if (!read.every((q) => q.isSuccess)) return null;
   return (
     <ul>
-      {GRADES.map((g) => (
+      {gradeCodes.map((g) => (
         <li key={g} data-testid="compare-line">
           {`${g} ${mine(g)} ${theirs(g)}`}
         </li>

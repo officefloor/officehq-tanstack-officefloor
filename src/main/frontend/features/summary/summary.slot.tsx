@@ -2,7 +2,8 @@ import { SheetPage } from '../../slots/defs/sheetPage';
 import { isActive } from '../active/active';
 import { useClaims } from '../claims/claims';
 import { STATUSES, useGradeDue, useStatusCounts } from '../header/totals';
-import { GRADES, gradeOn, usePeople } from '../people/people';
+import { gradeOn, usePeople } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
 import { periodDue, usePeriods } from '../periods/periods';
 import { difference, useRates } from '../rates/rates';
 import { isReviewLate } from '../overdue/late';
@@ -15,6 +16,7 @@ import { useVoidReasons } from '../voidreasons/voidreasons';
  *  status: how many of the sheet's claims have it, and how many REVIEW claims are review-late (see isReviewLate). Per void reason on the sheet's list: how many VOID claims were voided
  *  with it. */
 function Summary({ sheetId }: { sheetId: string }) {
+  const gradeCodes = useGradeCodes(sheetId);
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const periods = usePeriods(sheetId);
@@ -47,7 +49,7 @@ function Summary({ sheetId }: { sheetId: string }) {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => (
+          {gradeCodes.map((g) => (
             <tr key={g}>
               <td>{g}</td>
               <td data-testid={`summary-grade-${g}-count`}>{onGrade(g).length}</td>

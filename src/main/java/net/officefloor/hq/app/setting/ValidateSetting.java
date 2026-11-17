@@ -9,6 +9,7 @@ import java.util.Set;
 import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,24 +23,24 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  an amount like the clerk limit; or perm-open, perm-settle, perm-void, perm-reassign, perm-close or perm-reopen, its value
  *  blank (the standing rule) or roles (clerk, steward) separated by commas, kept without spaces or repeats; or proof-kinds, its value blank (none) or kinds (receipt, photo) separated by commas, kept without spaces or repeats (undated); or rounding, its value blank (none) or half-up or half-even; or parent, its
  *  value blank (none) or the id of a sheet that exists (has been loaded), is not this sheet and does not have this sheet
- *  as an ancestor (undated); or default-grade, its value blank (A) or a grade A, B or C (undated); or score-mid or score-high, its value blank (none) or a whole number, kept without leading zeros (undated); or score-log, its value blank (off) or on (undated); or max-open, its value blank (none) or a whole number 0 or more, kept without leading zeros (undated). Every key but policy-date, period-numbering-from, entry-date, grace-days, escalate-after, review-sla, pot, alert-threshold, fiscal-start-month, proof-kinds, score-mid, score-high, score-log, max-open and the permissions is dated: its from-date is blank (the
+ *  as an ancestor (undated); or default-grade, its value blank (A) or one of the sheet's grades (undated); or score-mid or score-high, its value blank (none) or a whole number, kept without leading zeros (undated); or score-log, its value blank (off) or on (undated); or max-open, its value blank (none) or a whole number 0 or more, kept without leading zeros (undated). Every key but policy-date, period-numbering-from, entry-date, grace-days, escalate-after, review-sla, pot, alert-threshold, fiscal-start-month, proof-kinds, score-mid, score-high, score-log, max-open and the permissions is dated: its from-date is blank (the
  *  sheet's today) or a date yyyy-MM-dd. */
 public class ValidateSetting {
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
     private static final Pattern WHOLE = Pattern.compile("-?\\d{1,9}");
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
     private static final Set<String> ROLES = Set.of(RoleRepository.CLERK, RoleRepository.STEWARD);
 
     public void validate(@PathVariable("sheetId") String sheetId, @PathVariable("key") String key,
             @RequestBody SettingRequest request, SettingRepository settings, SheetRepository sheets,
-            Out<SettingValues> values) throws InvalidSettingException {
+            GradeRepository grades, Out<SettingValues> values) throws InvalidSettingException {
+        List<String> sheetGrades = grades.grades(sheetId.trim());
         String k = key == null ? "" : key.trim();
         boolean floor = SettingRepository.FLOOR.equals(k);
         boolean terms = SettingRepository.TERMS.equals(k) || (k.startsWith(SettingRepository.TERMS_PREFIX)
-                && GRADES.contains(k.substring(SettingRepository.TERMS_PREFIX.length())));
+                && sheetGrades.contains(k.substring(SettingRepository.TERMS_PREFIX.length())));
         boolean grace = k.startsWith(SettingRepository.GRACE_PREFIX)
-                && GRADES.contains(k.substring(SettingRepository.GRACE_PREFIX.length()));
+                && sheetGrades.contains(k.substring(SettingRepository.GRACE_PREFIX.length()));
         boolean latePct = SettingRepository.LATE_PCT.equals(k);
         boolean policyDate = SettingRepository.POLICY_DATE.equals(k);
         boolean numberingFrom = SettingRepository.PERIOD_NUMBERING_FROM.equals(k);
@@ -57,10 +58,10 @@ public class ValidateSetting {
         boolean cap = SettingRepository.CAP.equals(k);
         boolean proofThreshold = SettingRepository.PROOF_THRESHOLD.equals(k);
         boolean gradeProofThreshold = k.startsWith(SettingRepository.PROOF_THRESHOLD_PREFIX)
-                && GRADES.contains(k.substring(SettingRepository.PROOF_THRESHOLD_PREFIX.length()));
+                && sheetGrades.contains(k.substring(SettingRepository.PROOF_THRESHOLD_PREFIX.length()));
         proofThreshold = proofThreshold || gradeProofThreshold;
         boolean clerkLimit = SettingRepository.CLERK_LIMIT.equals(k) || (k.startsWith(SettingRepository.CLERK_LIMIT_PREFIX)
-                && GRADES.contains(k.substring(SettingRepository.CLERK_LIMIT_PREFIX.length())));
+                && sheetGrades.contains(k.substring(SettingRepository.CLERK_LIMIT_PREFIX.length())));
         boolean proofKinds = SettingRepository.PROOF_KINDS.equals(k);
         boolean noteThreshold = SettingRepository.NOTE_THRESHOLD.equals(k);
         boolean reviewThreshold = SettingRepository.REVIEW_THRESHOLD.equals(k);
@@ -198,8 +199,8 @@ public class ValidateSetting {
             return;
         }
         if (defaultGrade) {
-            if (!value.isEmpty() && !GRADES.contains(value)) {
-                throw new InvalidSettingException("The default grade must be A, B or C, or blank");
+            if (!value.isEmpty() && !sheetGrades.contains(value)) {
+                throw new InvalidSettingException("The default grade must be one of the sheet's grades, or blank");
             }
             values.set(new SettingValues(k, value.isEmpty() ? null : value, null, false, by));
             return;
