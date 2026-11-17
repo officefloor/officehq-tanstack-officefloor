@@ -275,7 +275,12 @@ public class SettingRepository {
     /** The date a new claim given no date takes: the sheet's entry date while set, else the sheet's today. */
     public LocalDate claimDate(String sheetId) {
         LocalDate entry = entryDate(sheetId);
-        return entry != null ? entry : sheets.today(sheetId);
+        return entry != null ? entry : today(sheetId);
+    }
+
+    /** The sheet's today (see SheetRepository#today). */
+    public LocalDate today(String sheetId) {
+        return sheets.today(sheetId);
     }
 
     /** The sheet's grace days, or null when it is blank (off). */

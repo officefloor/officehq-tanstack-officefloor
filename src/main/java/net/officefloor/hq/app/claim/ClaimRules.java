@@ -19,7 +19,7 @@ public final class ClaimRules {
     public static Checked check(Person person, ClaimValues values, SettingRepository settings, PeriodRepository periods,
             ClaimRepository claims, HolidayRepository holidays) throws InvalidClaimException {
         LocalDate date = values.date() != null ? values.date() : settings.claimDate(person.sheetId());
-        int terms = terms(person, date, settings);
+        int terms = terms(person, settings);
         LocalDate dueBy = holidays.businessDaysAfter(person.sheetId(), date, terms);
         if (periods.closedOn(person.sheetId(), dueBy)) {
             throw new InvalidClaimException("The claim's due-by is inside a closed period");
@@ -40,16 +40,18 @@ public final class ClaimRules {
     }
 
     /** The due-by a claim of the person dated the date is fixed with as it is added: the terms-th business day after its date (see
-     *  HolidayRepository.businessDaysAfter), the terms being the person's own in force on that date, else those of their grade in force on it (the
+     *  HolidayRepository.businessDaysAfter), the terms being those in force on the day it is added (see terms; the
      *  holidays on the sheet now decide; one added later works it out again, see ClaimRepository#refixDueBys). */
     public static LocalDate dueBy(Person person, LocalDate date, SettingRepository settings, HolidayRepository holidays) {
-        return holidays.businessDaysAfter(person.sheetId(), date, terms(person, date, settings));
+        return holidays.businessDaysAfter(person.sheetId(), date, terms(person, settings));
     }
 
-    /** The terms a claim of the person dated the date is fixed with: the person's own in force on that date, else those of their grade in force on
-     *  that date. The claim keeps them, so its due-by can be worked out again when a holiday is added (see ClaimRepository#refixDueBys). */
-    public static int terms(Person person, LocalDate date, SettingRepository settings) {
-        return settings.terms(person.sheetId(), person.termsOn(date), person.gradeOn(date), date);
+    /** The terms a claim of the person is fixed with as it is added, whatever its date: those in force on the day it is added (the sheet's
+     *  today) — the person's own in force on that day, else those of the grade they had that day in force on it, else the sheet's. The claim
+     *  keeps them, so its due-by can be worked out again when a holiday is added (see ClaimRepository#refixDueBys). */
+    public static int terms(Person person, SettingRepository settings) {
+        LocalDate today = settings.today(person.sheetId());
+        return settings.terms(person.sheetId(), person.termsOn(today), person.gradeOn(today), today);
     }
 
     /** Whether opening the claim would take its person past the cap of the period its due-by falls in: they already have

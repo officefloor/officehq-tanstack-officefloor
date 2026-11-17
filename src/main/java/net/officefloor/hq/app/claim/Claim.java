@@ -10,7 +10,7 @@ import java.time.LocalDate;
  * whether it is bound to the due it showed (late charge included) at its person's last statement ({@code stated}) and that due
  * ({@code statedDue}; null when it had none), and for a correction (a negative amount) the number of the SETTLED
  * claim of the same person it corrects ({@code corrects}; null for any other claim), and its due-by ({@code dueBy}), fixed
- * when it is added from its person's own terms, else those of their grade in force on its date (see SettingRepository#terms), and the
+ * when it is added from the terms in force on the day it was added (see ClaimRules#terms), and the
  * date it is deferred until ({@code deferredUntil}; null when never deferred; see ClaimDue#deferred), and its proofs
  * count ({@code proofs}; 0 when added, raised by one at a time; see ApplyProof), and for a claim split off another
  * the number of the claim it was split from ({@code splitFrom}; null for any other claim; see ApplySplit), and its external
