@@ -1,0 +1,126 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 7448cb1d9..13685db66 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -18,8 +18,9 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'D
+  *  the number of the SETTLED claim of the same person it corrects (null for any other claim); `roundsOn` (yyyy-MM-dd)
+  *  is the date that decides how its live figures round: the corrected claim's date for a correction, else its own;
+  *  `dueBy` (yyyy-MM-dd) is its due-by, fixed when it was added from the terms in force on that day (its person's own, else their grade's, else the sheet's), or as a steward last set it directly (then kept, whatever holiday is added later);
+- *  `deferred` is whether it is deferred on the sheet's today (an OPEN claim deferred until a date after it: it counts in no
+- *  total, is not overdue and cannot be settled) and `deferredUntil` (yyyy-MM-dd) the date it was last deferred until (shown
++ *  `deferred` is whether it is deferred on the sheet's today (a claim that counts, deferred until a date after it and
++ *  not bound by a statement: it counts in no total, is not overdue and cannot be settled; while bound the deferral
++ *  waits for the binding to end) and `deferredUntil` (yyyy-MM-dd) the date it was last deferred until (shown
+  *  even once that date has passed; null when never deferred); `proofs` is its proofs count (a claim whose due is above the sheet's proof threshold
+  *  on its date cannot be settled nor approved while it is 0); `splitFrom` is the number of the claim it was split from
+  *  (null for any other claim); `log` is its status log, oldest first; `lockedBy` is who has its editor open (it is locked for
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+index 825c0ed03..c413b0d6c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+@@ -15,6 +15,8 @@ import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
++import org.springframework.transaction.PlatformTransactionManager;
++import org.springframework.transaction.support.TransactionTemplate;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ /** Takes the checked lines in the order pasted. A line that adds a claim adds it as a DRAFT as AddClaim adds one,
+@@ -27,12 +29,33 @@ import org.springframework.web.bind.annotation.PathVariable;
+  *  before any line is written. It stays unnumbered (numbered at settlement, see SaveClaimStatus),
+  *  writes CLAIM_OPENED (or, its due above the review threshold, goes to REVIEW and writes CLAIM_REVIEW, see
+  *  ApplyClaimStatus#needsReview) and the figures the line moved (see Rollup). No line is written to the audit file until every
+- *  line has gone through; a refusal writes nothing (the transaction gives back what was stored). */
++ *  line has gone through; a refusal writes nothing (the transaction gives back what was stored: the lines are written
++ *  in a transaction of their own, as the repositories are not governed by the pipeline's). */
+ public class AddPastedClaims {
+     public void add(@PathVariable("sheetId") String sheetId, @Val PastedClaims checked, @Val PastedLines pasted,
+             ClaimRepository claims, PersonRepository people, RateRepository rates, SettingRepository settings,
+             PeriodRepository periods, SheetRepository sheets, ClaimLog log, Rollup rollup, Audit audit,
+-            Out<PasteClaimsResult> result) throws InvalidClaimException {
++            PlatformTransactionManager transactions, Out<PasteClaimsResult> result) throws InvalidClaimException {
++        InvalidClaimException[] refused = new InvalidClaimException[1];
++        List<String> lines = new TransactionTemplate(transactions).execute((status) -> {
++            try {
++                return write(sheetId, checked, pasted, claims, people, rates, settings, periods, sheets, log, rollup);
++            } catch (InvalidClaimException e) {
++                status.setRollbackOnly();
++                refused[0] = e;
++                return null;
++            }
++        });
++        if (refused[0] != null) {
++            throw refused[0];
++        }
++        lines.forEach(audit::record);
++        result.set(new PasteClaimsResult(checked.claims().size()));
++    }
++
++    private static List<String> write(String sheetId, PastedClaims checked, PastedLines pasted, ClaimRepository claims,
++            PersonRepository people, RateRepository rates, SettingRepository settings, PeriodRepository periods,
++            SheetRepository sheets, ClaimLog log, Rollup rollup) throws InvalidClaimException {
+         String sheet = sheetId.trim();
+         String by = pasted.by();
+         Integer maxOpen = settings.maxOpen(sheet);
+@@ -100,7 +123,6 @@ public class AddPastedClaims {
+                     + " amount=" + opened.amount().toPlainString() + " date=" + opened.date());
+             lines.addAll(rollup.lines(sheet, by, before));
+         }
+-        lines.forEach(audit::record);
+-        result.set(new PasteClaimsResult(checked.claims().size()));
++        return lines;
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java b/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java
+index 5e179c496..0ff1a1c4c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimDue.java
+@@ -26,11 +26,13 @@ public final class ClaimDue {
+         return counts(claim);
+     }
+ 
+-    /** Whether a claim is deferred on the given today: an OPEN claim deferred until a date after it. Until then it
+-     *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement; from that day on
+-     *  it is an OPEN claim like any other. */
++    /** Whether a claim is deferred on the given today: a claim that counts, deferred until a date after it, and not
++     *  bound by a statement. Until then it counts in no total, is not overdue, cannot be settled and is left unbound
++     *  by a statement; from that day on it is a claim like any other. A claim deferred while a statement binds it
++     *  stays in the totals, counts and can be settled while bound: the deferral takes effect only once the binding
++     *  ends (the statement is cancelled, or the next statement leaves it unbound). */
+     public static boolean deferred(Claim claim, java.time.LocalDate today) {
+-        return claim.status() == ClaimStatus.OPEN && claim.deferredUntil() != null
++        return counts(claim) && !bound(claim) && claim.deferredUntil() != null
+                 && claim.deferredUntil().isAfter(today);
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonMerger.java b/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
+index d7198a66b..bdc11de1a 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
+@@ -45,6 +45,25 @@ public class PersonMerger {
+ 
+         statements.moveAll(sheetId, f, sheetId, t);
+ 
++        // the figures fixed for them by a (soft) close are added to into's (moved where into has none)
++        for (Map<String, Object> p : jdbc.queryForList("SELECT period_id, total, carried FROM period_person_total"
++                + " WHERE sheet_id = ? AND person_id = ?", sheetId, f)) {
++            Object period = p.get("period_id");
++            Integer theirs = jdbc.queryForObject("SELECT COUNT(*) FROM period_person_total WHERE sheet_id = ? AND period_id = ?"
++                    + " AND person_id = ?", Integer.class, sheetId, period, t);
++            if (theirs != null && theirs > 0) {
++                jdbc.update("UPDATE period_person_total SET total = total + ?, carried = CASE WHEN carried IS NULL AND ? IS NULL"
++                        + " THEN NULL ELSE COALESCE(carried, 0) + COALESCE(CAST(? AS DECIMAL(12, 2)), 0) END"
++                        + " WHERE sheet_id = ? AND period_id = ? AND person_id = ?",
++                        p.get("total"), p.get("carried"), p.get("carried"), sheetId, period, t);
++                jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_id = ? AND person_id = ?",
++                        sheetId, period, f);
++            } else {
++                jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND period_id = ? AND person_id = ?",
++                        t, sheetId, period, f);
++            }
++        }
++
+         jdbc.update("UPDATE person_alias SET person_id = ? WHERE sheet_id = ? AND person_id = ?", t, sheetId, f);
+ 
+         for (Map<String, Object> p : jdbc.queryForList("SELECT patron_id, added_on FROM patron WHERE sheet_id = ? AND person_id = ?",
