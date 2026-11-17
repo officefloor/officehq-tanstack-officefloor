@@ -44,6 +44,9 @@ export type Claim = {
   deferredUntil: string | null;
   /** Whether a steward waived its late charge: from then on it bears none, whatever its overdue state. */
   waived: boolean;
+  /** Whether it is held (an OPEN or PENDING claim is held and released with Hold): while held, open and not bound by a
+   *  statement it counts in no live total, as one dated within a hold of its person does. */
+  held: boolean;
   proofs: number;
   /** How many of its proofs are receipts (the kind when none is chosen) and photos. */
   proofsReceipt: number;
@@ -113,13 +116,13 @@ export const counts = (c: Claim) => (isOpen(c) || c.status === 'SETTLED') && !c.
 export const bound = (c: Claim) => c.stated;
 
 /** The claims that count in the live totals (claimed, due-totals, a period's due-total): a person's open (OPEN or
- *  PENDING) claims dated within a hold of theirs, or any once their retirement date is reached on the sheet's today
+ *  PENDING) claims held, or dated within a hold of theirs, or any once their retirement date is reached on the sheet's today
  *  (yyyy-MM-dd), and not bound by a statement, do not; their other claims still do. */
 export function live(claims: Claim[], people: Person[] | undefined, today: string): Claim[] {
   const byId = new Map((people ?? []).map((p) => [p.id, p]));
   return claims.filter((c) => {
     const p = byId.get(c.personId);
-    return counts(c) && !(isOpen(c) && !bound(c) && p !== undefined && (heldOn(p, c.date) || retiredOn(p, today)));
+    return counts(c) && !(isOpen(c) && !bound(c) && (c.held || (p !== undefined && (heldOn(p, c.date) || retiredOn(p, today)))));
   });
 }
 

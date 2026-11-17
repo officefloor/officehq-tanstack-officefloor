@@ -56,7 +56,7 @@ public class AddPastedClaims {
                     claim = new Claim(draft.id(), draft.sheetId(), draft.personId(), c.values().amount(), draft.date(),
                             draft.note(), draft.status(), draft.number(), draft.due(), draft.openedBy(), draft.stated(),
                             draft.statedDue(), draft.corrects(), draft.dueBy(), draft.deferredUntil(), draft.proofs(),
-                            draft.splitFrom(), draft.ref(), draft.tags());
+                            draft.splitFrom(), draft.ref(), draft.tags(), draft.held());
                     if (!claims.update(claim, by, sheets.today(sheet))) {
                         throw new InvalidClaimException("Only a DRAFT claim no one else is editing can be edited");
                     }
@@ -76,7 +76,7 @@ public class AddPastedClaims {
             Claim opened = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                     claim.note(), review ? ClaimStatus.REVIEW : ClaimStatus.OPEN, number, claim.due(), by, claim.stated(), claim.statedDue(),
                     claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(),
-                    claim.ref(), claim.tags());
+                    claim.ref(), claim.tags(), claim.held());
             if (!claims.updateStatus(opened, ClaimStatus.DRAFT)) {
                 throw new InvalidClaimException("The claim was changed by someone else");
             }

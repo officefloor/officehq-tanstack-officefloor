@@ -42,6 +42,6 @@ public class ApplyRedate {
         String number = claim.number();
         return new Claim(claim.id(), sheet, claim.personId(), claim.amount(), request.date(), claim.note(),
                 claim.status(), number, claim.due(), claim.openedBy(), claim.stated(), claim.statedDue(),
-                claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags());
+                claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags(), claim.held());
     }
 }

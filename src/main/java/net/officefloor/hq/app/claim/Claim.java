@@ -15,10 +15,12 @@ import java.time.LocalDate;
  * count ({@code proofs}; 0 when added, raised by one at a time; see ApplyProof), and for a claim split off another
  * the number of the claim it was split from ({@code splitFrom}; null for any other claim; see ApplySplit), and its external
  * reference ({@code ref}; surrounding spaces removed; null when none was given), no two of a sheet's claims sharing one in any case,
- * and its tags ({@code tags}; each trimmed and in lower case, no repeats, sorted, joined by commas; null when it has none; see ClaimValues#tags).
+ * and its tags ({@code tags}; each trimmed and in lower case, no repeats, sorted, joined by commas; null when it has none; see ClaimValues#tags),
+ * and whether it is held ({@code held}; see ApplyClaimHold): an OPEN or PENDING held claim not bound by a statement counts in no
+ * live total, as one dated within a hold of its person does.
  */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
         String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs,
-        String splitFrom, String ref, String tags) {
+        String splitFrom, String ref, String tags, boolean held) {
 }

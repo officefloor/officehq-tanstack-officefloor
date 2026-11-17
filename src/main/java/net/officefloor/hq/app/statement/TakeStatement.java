@@ -127,7 +127,7 @@ public class TakeStatement {
         boolean stated = boundThen && c.stated();
         return new Claim(c.id(), c.sheetId(), c.personId(), c.amount(), c.date(), c.note(), status, c.number(),
                 status == ClaimStatus.SETTLED ? c.due() : null, c.openedBy(), stated, stated ? c.statedDue() : null,
-                c.corrects(), c.dueBy(), c.deferredUntil(), c.proofs(), c.splitFrom(), c.ref(), c.tags());
+                c.corrects(), c.dueBy(), c.deferredUntil(), c.proofs(), c.splitFrom(), c.ref(), c.tags(), c.held());
     }
 
     /** The figure the claim had then (see ClaimDue#figure), at the rate in force then on its date. */

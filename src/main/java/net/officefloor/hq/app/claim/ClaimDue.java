@@ -21,9 +21,14 @@ public final class ClaimDue {
     }
 
     /** Whether a claim counts toward the live totals (claimed, due-totals, a period's due-total): one that counts,
-     *  unless it is open (OPEN or PENDING), not bound by a statement, and dated within a hold of its person (null: none). */
+     *  unless it is open (OPEN or PENDING), not bound by a statement, and held (see #held). */
     public static boolean countsLive(Claim claim, net.officefloor.hq.app.person.Person person) {
-        return counts(claim) && !(isOpen(claim) && !bound(claim) && person != null && person.heldOn(claim.date()));
+        return counts(claim) && !(isOpen(claim) && !bound(claim) && held(claim, person));
+    }
+
+    /** Whether a claim is held: held itself (see ApplyClaimHold), or dated within a hold of its person (null: none). */
+    public static boolean held(Claim claim, net.officefloor.hq.app.person.Person person) {
+        return claim.held() || (person != null && person.heldOn(claim.date()));
     }
 
     /** Whether a claim is deferred on the given today: an OPEN claim deferred until a date after it. Until then it
@@ -100,6 +105,6 @@ public final class ClaimDue {
     /** The claim as it would be with another status, all else kept. */
     public static Claim withStatus(Claim c, ClaimStatus status) {
         return new Claim(c.id(), c.sheetId(), c.personId(), c.amount(), c.date(), c.note(), status, c.number(), c.due(),
-                c.openedBy(), c.stated(), c.statedDue(), c.corrects(), c.dueBy(), c.deferredUntil(), c.proofs(), c.splitFrom(), c.ref(), c.tags());
+                c.openedBy(), c.stated(), c.statedDue(), c.corrects(), c.dueBy(), c.deferredUntil(), c.proofs(), c.splitFrom(), c.ref(), c.tags(), c.held());
     }
 }

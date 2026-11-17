@@ -16,12 +16,12 @@ import java.util.List;
  *  reminder was written for it, null when none; ref is its external reference, null when none; tags are its tags, sorted (empty when none); comments are its comments in the order written, each with who wrote it and
  *  the sheet's today (yyyy-MM-dd) then; batch is the number of the bulk settle batch that settled it, null when none did; lines are its lines in the order added (empty when none); seq is the order it was added in, across every sheet (a
  *  forward-only rate applies only to claims whose seq is above its after; see Rate#appliesTo); waived is whether a steward waived its late charge
- *  (see ApplyWaive). */
+ *  (see ApplyWaive); held is whether it is held (see ApplyClaimHold). */
 public record ClaimResponse(long id, String sheetId, long personId, String amount, String date, String note,
         String status, String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
         String roundsOn, String dueBy, boolean deferred, String deferredUntil, int proofs, int proofsReceipt, int proofsPhoto, String splitFrom, List<LogLine> log,
         String lockedBy, boolean lateEntry, String reminded, String ref, List<String> tags,
-        List<Comment> comments, Integer batch, List<Line> lines, long seq, boolean waived) {
+        List<Comment> comments, Integer batch, List<Line> lines, long seq, boolean waived, boolean held) {
 
     /** One line of a claim as sent to the screen: its label, quantity and unit amount (two decimals). */
     public record Line(String label, int qty, String unit) {
@@ -62,6 +62,6 @@ public record ClaimResponse(long id, String sheetId, long personId, String amoun
                 lockedBy, lateEntry, reminded == null ? null : reminded.toString(), claim.ref(),
                 claim.tags() == null ? List.of() : List.of(claim.tags().split(",")),
                 comments.stream().map((m) -> new Comment(m.by(), m.date().toString(), m.text())).toList(), batch,
-                lines.stream().map((l) -> new Line(l.label(), l.qty(), l.unit().toPlainString())).toList(), seq, waived);
+                lines.stream().map((l) -> new Line(l.label(), l.qty(), l.unit().toPlainString())).toList(), seq, waived, claim.held());
     }
 }

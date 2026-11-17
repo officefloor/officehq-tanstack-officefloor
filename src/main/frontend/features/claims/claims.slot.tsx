@@ -43,7 +43,7 @@ type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | '
 /** One claim: its select checkbox (the selection a bulk action takes), its values, status, due, its status log (oldest first), due-by (fixed when it was added), whether it is overdue, whether it is deferred and until when, its proofs count, and the period its due-by falls in, with the buttons that edit it or change its status. Open above the review threshold on its date makes it REVIEW, which only a steward's Review makes OPEN (refused, with the claim's error, for anyone else). A clerk's settle above the clerk limit makes it PENDING; a
  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
- *  shows the claim's error. A steward waives an OPEN or PENDING claim's late charge with Waive late charge, shown as waived yes/no: from then on it bears none (refused, with the claim's error, for anyone else, any other claim or one already waived). An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one whose due-by is inside a closed period); a proof has the kind chosen beside it (receipt when none is), shown as counts per kind beside the total; a claim with no proofs whose due is above the proof threshold on its date, or with none of one of the sheet's proof kinds, cannot be settled nor approved; a claim with an empty note whose due is above the note threshold on its date cannot be opened (alone or in bulk). While the sheet has void reasons, Void needs one chosen beside it (refused, with the claim's error, without one). A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). Delete makes a DRAFT DELETED (it counts nowhere); Restore makes it a DRAFT again, only on the sheet-today it was deleted (refused, with the claim's error, otherwise). A steward re-dates an OPEN or PENDING claim to the date typed beside Re-date (its due-by and any statement figure stay; refused, with the claim's error, for anyone else, any other claim, or a date after the person's retirement). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
+ *  shows the claim's error. A steward waives an OPEN or PENDING claim's late charge with Waive late charge, shown as waived yes/no: from then on it bears none (refused, with the claim's error, for anyone else, any other claim or one already waived). An OPEN or PENDING claim is held and released with Hold / Release, shown as held yes/no: while held and not bound by a statement it counts in no live total, as a claim dated within a hold of its person does (refused, with the claim's error, for any other claim). An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one whose due-by is inside a closed period); a proof has the kind chosen beside it (receipt when none is), shown as counts per kind beside the total; a claim with no proofs whose due is above the proof threshold on its date, or with none of one of the sheet's proof kinds, cannot be settled nor approved; a claim with an empty note whose due is above the note threshold on its date cannot be opened (alone or in bulk). While the sheet has void reasons, Void needs one chosen beside it (refused, with the claim's error, without one). A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). Delete makes a DRAFT DELETED (it counts nowhere); Restore makes it a DRAFT again, only on the sheet-today it was deleted (refused, with the claim's error, otherwise). A steward re-dates an OPEN or PENDING claim to the date typed beside Re-date (its due-by and any statement figure stay; refused, with the claim's error, for anyone else, any other claim, or a date after the person's retirement). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
  *  with the claim's error, for anyone else or any other claim). Remind writes a reminder for an OPEN or PENDING claim, once per sheet-today, which becomes its reminded date (refused, with the claim's error, for any other claim or a second reminder that day). Comment adds the text typed beside it to the claim's comments, shown in the order written as `<user> on <date>: <text>` (an empty one is refused with the claim's error). Split takes the amount typed beside it off an OPEN claim (not deferred, nor with its due-by inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Only a DRAFT whose due-by is not inside a closed period can be edited: Edit opens the editor and locks the claim for the user until it
  *  is saved or cancelled (Cancel) or the sheet's today changes; Edit on any other claim, on a claim another user holds, or by a
  *  viewer shows the claim's error instead and takes no lock. The row's own amount entry and Save amount change a DRAFT's amount
@@ -118,6 +118,10 @@ function ClaimRow({
   });
   const waive = useMutation({
     mutationFn: () => putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/waive`, { by: user }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
+  const hold = useMutation({
+    mutationFn: () => putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/hold`, { held: !c.held, by: user }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
   const [newDate, setNewDate] = useState('');
@@ -210,6 +214,7 @@ function ClaimRow({
     reassign.reset();
     defer.reset();
     waive.reset();
+    hold.reset();
     redate.reset();
     proof.reset();
     split.reset();
@@ -249,6 +254,7 @@ function ClaimRow({
       </span>{' '}
       <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
       <span data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="claim-held">{c.held ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-proofs">{c.proofs}</span>{' '}
       (receipts <span data-testid="claim-proofs-receipt">{c.proofsReceipt}</span>, photos{' '}
       <span data-testid="claim-proofs-photo">{c.proofsPhoto}</span>){' '}
@@ -265,6 +271,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          hold.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -319,6 +326,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          hold.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -394,6 +402,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          hold.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -427,6 +436,7 @@ function ClaimRow({
           setDeferUntil(e.target.value);
           defer.reset();
           waive.reset();
+          hold.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -447,6 +457,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          hold.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -470,6 +481,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          hold.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -481,6 +493,30 @@ function ClaimRow({
         }}
       >
         Waive late charge
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="claim-hold"
+        disabled={hold.isPending}
+        onClick={() => {
+          setEditRefused(null);
+          lock.reset();
+          status.reset();
+          reassign.reset();
+          defer.reset();
+          waive.reset();
+          redate.reset();
+          proof.reset();
+          split.reset();
+          remind.reset();
+          comment.reset();
+          line.reset();
+          inline.reset();
+          hold.reset();
+          hold.mutate();
+        }}
+      >
+        {c.held ? 'Release' : 'Hold'}
       </button>{' '}
       <input
         type="date"
@@ -503,6 +539,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          hold.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -540,6 +577,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          hold.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -581,6 +619,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          hold.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -604,6 +643,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          hold.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -637,6 +677,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          hold.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -694,6 +735,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          hold.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -732,6 +774,12 @@ function ClaimRow({
         <span data-testid="claim-error">
           {' '}
           Only a steward waives a late charge, and only on an open or pending claim not already waived.
+        </span>
+      )}
+      {hold.isError && (
+        <span data-testid="claim-error">
+          {' '}
+          Only an open or pending claim can be held or released.
         </span>
       )}
       {redate.isError && (

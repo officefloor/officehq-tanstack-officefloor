@@ -24,7 +24,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, ref, tags";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, ref, tags, held";
 
     private final JdbcTemplate jdbc;
     private final DataSource dataSource;
@@ -70,7 +70,7 @@ public class ClaimRepository {
         }, keys);
         jdbc.update("UPDATE claim SET listed = (SELECT COALESCE(MAX(c.listed), 0) + 1 FROM claim c WHERE c.sheet_id = ?) WHERE id = ?",
                 sheetId, keys.getKey().longValue());
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects, dueBy, null, 0, null, ref, tags);
+        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects, dueBy, null, 0, null, ref, tags, false);
     }
 
     /** Works the due-by out again of every claim of the sheet that is neither SETTLED nor VOID and whose due-by is on or
@@ -230,6 +230,13 @@ public class ClaimRepository {
     public boolean waive(Claim claim, LocalDate today) {
         return jdbc.update("UPDATE claim SET waived_on = ? WHERE sheet_id = ? AND id = ? AND status IN ('OPEN', 'PENDING')"
                 + " AND waived_on IS NULL", Date.valueOf(today), claim.sheetId(), claim.id()) == 1;
+    }
+
+    /** Stores whether the claim is held, but only while it is still OPEN or PENDING and not already so; false otherwise
+     *  (nothing is written). */
+    public boolean hold(Claim claim) {
+        return jdbc.update("UPDATE claim SET held = ? WHERE sheet_id = ? AND id = ? AND status IN ('OPEN', 'PENDING')"
+                + " AND held = ?", claim.held(), claim.sheetId(), claim.id(), !claim.held()) == 1;
     }
 
     /** The sheet's today the claim's late charge was waived on; null when it was never waived. */
@@ -473,7 +480,7 @@ public class ClaimRepository {
                     out.putIfAbsent(rs.getLong("claim_id"), new Claim(rs.getLong("claim_id"), sheetId, 0,
                             rs.getBigDecimal("amount").setScale(2), rs.getObject("claim_date", LocalDate.class),
                             rs.getString("note"), null, null, null, null, false, null, rs.getString("corrects"), null,
-                            null, 0, null, rs.getString("ref"), rs.getString("tags")));
+                            null, 0, null, rs.getString("ref"), rs.getString("tags"), false));
                 }, sheetId, Date.valueOf(date));
         return out;
     }
@@ -617,6 +624,7 @@ public class ClaimRepository {
                 rs.getString("claim_number"), due == null ? null : due.setScale(2),
                 rs.getString("opened_by"), rs.getBoolean("stated"), statedDue == null ? null : statedDue.setScale(2),
                 rs.getString("corrects"), rs.getObject("due_by", LocalDate.class),
-                rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"), rs.getString("split_from"), rs.getString("ref"), rs.getString("tags"));
+                rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"), rs.getString("split_from"), rs.getString("ref"), rs.getString("tags"),
+                rs.getBoolean("held"));
     }
 }

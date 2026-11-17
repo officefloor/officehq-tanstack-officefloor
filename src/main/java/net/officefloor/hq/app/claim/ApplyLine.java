@@ -27,6 +27,6 @@ public class ApplyLine {
         }
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), amount.setScale(2), claim.date(), claim.note(),
                 claim.status(), claim.number(), claim.due(), claim.openedBy(), claim.stated(), claim.statedDue(),
-                claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags()));
+                claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags(), claim.held()));
     }
 }

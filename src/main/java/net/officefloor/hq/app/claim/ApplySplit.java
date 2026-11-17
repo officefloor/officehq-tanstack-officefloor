@@ -34,6 +34,6 @@ public class ApplySplit {
         }
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount().subtract(split.amount()),
                 claim.date(), claim.note(), claim.status(), claim.number(), claim.due(), claim.openedBy(), false, null,
-                claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags()));
+                claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags(), claim.held()));
     }
 }

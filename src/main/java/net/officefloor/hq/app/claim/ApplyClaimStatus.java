@@ -150,7 +150,7 @@ public class ApplyClaimStatus {
         if (change.action() == ClaimAction.RESETTLE) {
             Claim asOpen = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                     claim.note(), ClaimStatus.OPEN, claim.number(), null, claim.openedBy(), false, null,
-                    claim.corrects(), claim.dueBy(), null, claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags());
+                    claim.corrects(), claim.dueBy(), null, claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags(), claim.held());
             settledDue = late.add(asOpen, due(asOpen, people, rates, late.rounding()), settings.floor(claim.sheetId(), claim.date()));
         } else {
             settledDue = to == ClaimStatus.SETTLED ? late.add(claim, due(claim, people, rates, late.rounding()), settings.floor(claim.sheetId(), claim.date())) : claim.due();
@@ -181,7 +181,7 @@ public class ApplyClaimStatus {
         previous.set(new PreviousDue(claim.due(), claim.status()));
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                 claim.note(), to, claim.number(), settledDue,
-                change.action() == ClaimAction.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags()));
+                change.action() == ClaimAction.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags(), claim.held()));
     }
 
     /** Whether the claim's person is flagged on the sheet's today (see Person#flaggedOn): only a steward may open it. */

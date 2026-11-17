@@ -34,7 +34,7 @@ public class SaveSplit {
         String number = ClaimNumbering.next(added, claims, periods, settings, sheets);
         Claim opened = new Claim(added.id(), added.sheetId(), added.personId(), added.amount(), added.date(),
                 added.note(), ClaimStatus.OPEN, number, null, split.by(), false, null, null, added.dueBy(), null, 0,
-                claim.number(), null, added.tags());
+                claim.number(), null, added.tags(), false);
         claims.updateStatus(opened, ClaimStatus.DRAFT);
         claims.splitFrom(opened);
         log.write(opened, split.by());

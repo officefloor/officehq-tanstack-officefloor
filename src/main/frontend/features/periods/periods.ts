@@ -80,7 +80,7 @@ export function personPeriodDue(
   const mine = (claims ?? []).filter((c) => {
     if (c.personId !== person.id || c.dueBy < period.from || period.to < c.dueBy) return false;
     const status = statusNow ? c.status : statusAsOf(c, period.to);
-    return status !== undefined && counts({ ...c, status }) && !(isOpen(c) && !bound(c) && (heldOn(person, c.date) || retiredOn(person, late.today)));
+    return status !== undefined && counts({ ...c, status }) && !(isOpen(c) && !bound(c) && (c.held || heldOn(person, c.date) || retiredOn(person, late.today)));
   });
   return sum(mine.map((c) => claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late)));
 }
@@ -107,7 +107,7 @@ export function personPeriodCarried(
     if (c.personId !== person.id || !earlier.some((p) => p.from <= c.dueBy && c.dueBy <= p.to)) return false;
     const status = statusAsOf(c, period.to);
     if (status !== 'OPEN' && status !== 'PENDING') return false;
-    return counts({ ...c, status }) && !(isOpen(c) && !bound(c) && (heldOn(person, c.date) || retiredOn(person, late.today)));
+    return counts({ ...c, status }) && !(isOpen(c) && !bound(c) && (c.held || heldOn(person, c.date) || retiredOn(person, late.today)));
   });
   const opening = period.openings?.[String(person.id)] ?? '0.00';
   return sum([...mine.map((c) => claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late)), opening]);
