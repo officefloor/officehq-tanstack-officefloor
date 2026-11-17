@@ -15,14 +15,15 @@ function ScoreHead() {
   );
 }
 
-/** A person's score (see score), and their band by it (see band), over their claims that count in the live totals. */
+/** A person's score (see score), and their band by it (see band), over their claims that count in the live totals; its
+ *  settled figures leave out corrections. */
 function PersonScore({ sheetId, person }: { sheetId: string; person: Person }) {
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person], late.today);
-  const settled = personSplit(mine, rates.data, person, late, floor).settled;
+  const settled = personSplit(mine.filter((c) => !c.corrects), rates.data, person, late, floor).settled;
   const count = overdue(mine, rates.data, person, late, floor).count;
   const thresholds = useScoreThresholds(sheetId);
   const shown = score(settled, count);

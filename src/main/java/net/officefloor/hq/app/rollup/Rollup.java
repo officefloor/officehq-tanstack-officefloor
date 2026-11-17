@@ -83,7 +83,7 @@ public class Rollup {
                 if (overdueNow) {
                     overdueCount++;
                 }
-                if (figure != null && c.status() == ClaimStatus.SETTLED) {
+                if (figure != null && c.status() == ClaimStatus.SETTLED && c.corrects() == null) {
                     settled = settled.add(figure);
                 }
                 if (figure != null) {
