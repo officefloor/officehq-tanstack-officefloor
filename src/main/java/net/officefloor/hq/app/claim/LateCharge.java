@@ -14,7 +14,8 @@ import net.officefloor.hq.app.sheet.SheetRepository;
  * boundary whose percent is 0.00 adds nothing. A statement binds the claim's due as shown, the charge included: while
  * bound it no longer follows today (see #add); settling freezes it into the claim's due.
  * A claim whose late charge a steward waived bears none (see ApplyWaive).
- * The floor is applied last: a claim's live due is the greater of the floor in force on its date and its figure plus its charge.
+ * The floor is applied first: a claim's live due is its figure floored (the greater of it and the floor in force on its date)
+ * plus the charge worked out on that floored figure.
  */
 public record LateCharge(LocalDate today, Function<LocalDate, BigDecimal> pct, Rounding rounding,
         Function<Claim, Integer> grace, java.util.function.Predicate<Claim> waived) {
@@ -59,8 +60,8 @@ public record LateCharge(LocalDate today, Function<LocalDate, BigDecimal> pct, R
         return charge;
     }
 
-    /** The claim's due: the figure with its charge added on top, at least the floor (none for a correction, nor for a
-     *  settled figure, which stays frozen); null when it has none. A claim bound by a statement (not settled) has the
+    /** The claim's due: the figure, at least the floor (none for a correction, nor for a settled figure, which stays
+     *  frozen), with the charge on that floored figure added on top; null when it has none. A claim bound by a statement (not settled) has the
      *  due it was bound to, its figure, as it is. */
     public BigDecimal add(Claim claim, BigDecimal figure, BigDecimal floor) {
         if (figure == null) {
@@ -69,7 +70,7 @@ public record LateCharge(LocalDate today, Function<LocalDate, BigDecimal> pct, R
         if (claim.due() == null && ClaimDue.bound(claim)) {
             return figure;
         }
-        BigDecimal due = figure.add(on(claim, figure));
-        return claim.due() != null || ClaimDue.isCorrection(claim) ? due : due.max(floor);
+        BigDecimal floored = claim.due() != null || ClaimDue.isCorrection(claim) ? figure : figure.max(floor);
+        return floored.add(on(claim, floored));
     }
 }

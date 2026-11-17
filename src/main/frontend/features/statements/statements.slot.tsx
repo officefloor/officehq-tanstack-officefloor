@@ -29,7 +29,7 @@ function StatementsHead({ user }: { user: string }) {
 /** A person's statement count, their last statement's due-total and date, a line per statement in force (in the order
  *  taken), and the date (blank: now) and button that
  *  take one: it records their due-total as of that date and binds each of their claims that counted then to its rate
- *  figure then (not floored); and
+ *  floored figure then, its late charge on it included; and
  *  the button that cancels their last statement (a steward only), making the claims it bound live again. */
 function PersonStatements({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const shown = useShownColumns(user);

@@ -124,21 +124,21 @@ function percentOf(value: string, pct: string, times: number, halfUp: boolean): 
 }
 
 /** A claim's due: the figure fixed when it was settled, otherwise the due as shown (late charge included) its person's
- *  last statement bound it to (PENDING included), otherwise its amount at the rate in force on its date. Given the
- *  sheet's late charge, an overdue claim's figure gains, for every full 30 days overdue, the late percent in force on
+ *  last statement bound it to (PENDING included), otherwise its amount at the rate in force on its date, at least
+ *  the sheet's floor in force on its date (a correction has no floor). Given the sheet's late charge, an overdue
+ *  claim's floored figure gains, for every full 30 days overdue, the late percent in force on
  *  that boundary (its due-by plus 30, 60, 90 ... days) of it plus the charges of the boundaries before it
- *  (compounding), each rounded like the claim and added up (frozen in when settled). Last, the live due is at least
- *  the sheet's floor in force on its date (a correction has no floor). Both round by the sheet's policy date (see Late). */
+ *  (compounding), each rounded like the claim and added up (frozen in when settled). Both round by the sheet's policy date (see Late). */
 export function claimDue(claim: Claim, rate: string | undefined, floor: Dated, late?: Late): string {
   if (claim.due !== null) return claim.due;
   if (claim.stated) return claim.statedDue ?? 'n/a';
   const halfUp = roundsHalfUp(claim, late);
   const figure = due(claim.amount, rate, halfUp);
   if (figure === 'n/a') return figure;
-  const boundaries = late === undefined ? [] : lateBoundaries(claim, late);
-  const charged = boundaries.reduce((t, b) => t + percentOf(shown(t), late!.pct(b), 1, halfUp), hundredths(figure));
   const f = hundredths(floor(claim.date));
-  return shown(charged < f && hundredths(claim.amount) >= 0n ? f : charged);
+  const floored = hundredths(figure) < f && hundredths(claim.amount) >= 0n ? f : hundredths(figure);
+  const boundaries = late === undefined ? [] : lateBoundaries(claim, late);
+  return shown(boundaries.reduce((t, b) => t + percentOf(shown(t), late!.pct(b), 1, halfUp), floored));
 }
 
 /** The sum of a person's figures: the figures of their claims that count (each at the rate, of the grade in force,
