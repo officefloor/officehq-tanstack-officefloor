@@ -70,23 +70,41 @@ function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string;
   );
 }
 
-/** A plan (amount, interval, start, end, how many claims it has made, its next dates and whether it is paused) and
- *  the buttons that pause and resume it: a date on or after the day it is paused and before the day it is resumed is
- *  skipped. The server refuses pausing a paused plan or resuming a running one: the plan's error shows, until the next
- *  press. */
+/** A plan (amount, interval, start, end, how many claims it has made, its next dates, whether it is paused and its
+ *  changes of amount, oldest first), the buttons that pause and resume it — a date on or after the day it is paused
+ *  and before the day it is resumed is skipped — and the entry that changes its amount for the claims generated from
+ *  then on. The server refuses pausing a paused plan, resuming a running one or a bad amount: the plan's error shows,
+ *  until the next press or the amount is changed. */
 function PlanRow({ sheetId, user, plan: p }: { sheetId: string; user: string; plan: Plan }) {
   const queryClient = useQueryClient();
   const submit = useSubmitOnce();
+  const [amount, setAmount] = useState('');
   const act = useMutation({
     mutationFn: (action: 'pause' | 'resume') =>
       postJson<void>(`/api/sheets/${encodeURIComponent(sheetId)}/plans/${p.id}/${action}`, { by: user }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: plansKey(sheetId) }),
     onSettled: submit.end,
   });
+  const save = useMutation({
+    mutationFn: (a: string) =>
+      postJson<void>(`/api/sheets/${encodeURIComponent(sheetId)}/plans/${p.id}/amount`, { amount: a, by: user }),
+    onSuccess: () => {
+      setAmount('');
+      return queryClient.invalidateQueries({ queryKey: plansKey(sheetId) });
+    },
+    onSettled: submit.end,
+  });
   const press = (action: 'pause' | 'resume') => () => {
     if (!submit.begin()) return;
     act.reset();
+    save.reset();
     act.mutate(action);
+  };
+  const pressSave = () => {
+    if (!submit.begin()) return;
+    act.reset();
+    save.reset();
+    save.mutate(amount);
   };
 
   return (
@@ -101,7 +119,29 @@ function PlanRow({ sheetId, user, plan: p }: { sheetId: string; user: string; pl
       <button type="button" data-testid="plan-resume" disabled={act.isPending} onClick={press('resume')}>
         Resume
       </button>
-      {act.isError && <span data-testid="plan-error"> Could not change this plan.</span>}
+{' '}
+      <input
+        data-testid="plan-amount"
+        placeholder="New amount"
+        size={7}
+        value={amount}
+        onChange={(e) => {
+          setAmount(e.target.value);
+          act.reset();
+          save.reset();
+        }}
+      />{' '}
+      <button type="button" data-testid="plan-amount-save" disabled={save.isPending} onClick={pressSave}>
+        Save amount
+      </button>
+      {(act.isError || save.isError) && <span data-testid="plan-error"> Could not change this plan.</span>}
+      <ul>
+        {p.changes.map((c, i) => (
+          <li key={i} data-testid="plan-change-line">
+            {c}
+          </li>
+        ))}
+      </ul>
     </li>
   );
 }

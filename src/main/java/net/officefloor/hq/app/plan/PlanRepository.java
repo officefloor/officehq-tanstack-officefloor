@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.plan;
 
+import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Types;
 import java.time.LocalDate;
@@ -30,15 +31,21 @@ public class PlanRepository {
     public List<Plan> list(String sheetId, LocalDate asOf) {
         Date until = asOf == null ? null : Date.valueOf(asOf);
         Map<Long, List<PlanPause>> pauses = pauses(sheetId, asOf);
+        Map<Long, List<PlanChange>> changes = changes(sheetId, asOf);
         return jdbc.query("SELECT p.id, p.person_id, p.amount, p.start_date, p.every_days, p.month_day, p.end_date,"
                 + " (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id"
                 + " AND (CAST(? AS DATE) IS NULL OR c.made_on IS NULL OR c.made_on <= ?)) AS generated"
                 + " FROM plan p WHERE p.sheet_id = ? AND (CAST(? AS DATE) IS NULL OR p.added_on IS NULL OR p.added_on <= ?)"
                 + " ORDER BY p.id",
-                (rs, n) -> new Plan(rs.getLong("id"), rs.getLong("person_id"), rs.getBigDecimal("amount").setScale(2),
-                        rs.getObject("start_date", LocalDate.class), rs.getObject("every_days", Integer.class), rs.getObject("month_day", Integer.class),
-                        rs.getObject("end_date", LocalDate.class), rs.getInt("generated"),
-                        pauses.getOrDefault(rs.getLong("id"), List.of())),
+                (rs, n) -> {
+                    List<PlanChange> made = changes.getOrDefault(rs.getLong("id"), List.of());
+                    BigDecimal amount = made.isEmpty() ? rs.getBigDecimal("amount").setScale(2)
+                            : made.get(made.size() - 1).amount();
+                    return new Plan(rs.getLong("id"), rs.getLong("person_id"), amount,
+                            rs.getObject("start_date", LocalDate.class), rs.getObject("every_days", Integer.class), rs.getObject("month_day", Integer.class),
+                            rs.getObject("end_date", LocalDate.class), rs.getInt("generated"),
+                            pauses.getOrDefault(rs.getLong("id"), List.of()), made);
+                },
                 until, until, sheetId, until, until);
     }
 
@@ -57,6 +64,30 @@ public class PlanRepository {
     public void resume(String sheetId, long planId) {
         jdbc.update("UPDATE plan_pause SET resumed_on = ? WHERE plan_id = ? AND resumed_on IS NULL",
                 Date.valueOf(sheets.today(sheetId)), planId);
+    }
+
+    /** Changes the plan's amount from the sheet's today; the change as stored. */
+    public PlanChange change(String sheetId, long planId, BigDecimal amount) {
+        LocalDate today = sheets.today(sheetId);
+        jdbc.update("INSERT INTO plan_change (plan_id, changed_on, amount) VALUES (?, ?, ?)", planId, Date.valueOf(today),
+                amount);
+        return new PlanChange(today, amount.setScale(2));
+    }
+
+    /** The changes of amount of the sheet's plans by plan, oldest first; as of the date when one is given (only those
+     *  made while the sheet's today was on or before it). */
+    private Map<Long, List<PlanChange>> changes(String sheetId, LocalDate asOf) {
+        Map<Long, List<PlanChange>> byPlan = new HashMap<>();
+        jdbc.query("SELECT z.plan_id, z.changed_on, z.amount FROM plan_change z JOIN plan p ON p.id = z.plan_id"
+                + " WHERE p.sheet_id = ? ORDER BY z.id", (rs) -> {
+                    LocalDate on = rs.getObject("changed_on", LocalDate.class);
+                    if (asOf != null && on.isAfter(asOf)) {
+                        return;
+                    }
+                    byPlan.computeIfAbsent(rs.getLong("plan_id"), (k) -> new ArrayList<>())
+                            .add(new PlanChange(on, rs.getBigDecimal("amount").setScale(2)));
+                }, sheetId);
+        return byPlan;
     }
 
     /** The pauses of the sheet's plans by plan, in the order made; as of the date when one is given (only those
@@ -95,7 +126,7 @@ public class PlanRepository {
             return ps;
         }, key);
         return new Plan(key.getKey().longValue(), personId, values.amount(), values.start(), values.every(), values.day(),
-                values.end(), 0, List.of());
+                values.end(), 0, List.of(), List.of());
     }
 
     /** Whether the plan has made a claim for the date. */
