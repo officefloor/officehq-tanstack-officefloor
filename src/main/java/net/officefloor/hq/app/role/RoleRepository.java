@@ -3,6 +3,7 @@ package net.officefloor.hq.app.role;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -32,6 +33,25 @@ public class RoleRepository {
     public List<Role> list(String sheetId) {
         return jdbc.query("SELECT sheet_id, user_name, role FROM user_role WHERE sheet_id = ? ORDER BY user_name",
                 RoleRepository::map, sheetId);
+    }
+
+    /** The roles in force on the sheet at the end of the date, by user name: for each name given a role, the role given
+     *  as of the date (see givenRoleOfAsOf); a name first given one after the date is left out. */
+    public List<Role> listAsOf(String sheetId, LocalDate asOf) {
+        List<String> users = jdbc.queryForList("SELECT user_name FROM user_role WHERE sheet_id = ?"
+                + " UNION SELECT user_name FROM user_role_log WHERE sheet_id = ? ORDER BY user_name",
+                String.class, sheetId, sheetId);
+        List<Role> inForce = new ArrayList<>();
+        for (String user : users) {
+            Integer logged = jdbc.queryForObject("SELECT COUNT(*) FROM user_role_log WHERE sheet_id = ?"
+                    + " AND user_name = ?", Integer.class, sheetId, user);
+            Integer counted = jdbc.queryForObject("SELECT COUNT(*) FROM user_role_log WHERE sheet_id = ?"
+                    + " AND user_name = ? AND set_on <= ?", Integer.class, sheetId, user, asOf);
+            if (logged == null || logged == 0 || (counted != null && counted > 0)) {
+                inForce.add(new Role(sheetId, user, givenRoleOfAsOf(sheetId, user, asOf)));
+            }
+        }
+        return inForce;
     }
 
     /** The role the user acts in on the sheet, for every rule: a steward while a delegation to the user holds the
