@@ -12,12 +12,13 @@ function PlansHead() {
   return <th>Plans</th>;
 }
 
-type PlanForm = { amount: string; start: string; every: string; day: string; end: string };
-const EMPTY: PlanForm = { amount: '', start: '', every: '', day: '', end: '' };
+type PlanForm = { amount: string; start: string; every: string; day: string; end: string; sheet: string };
+const EMPTY: PlanForm = { amount: '', start: '', every: '', day: '', end: '', sheet: '' };
 
 /** A person's plans (amount, start, every N days or monthly on a day of the month, end, how many claims each has
  *  made so far, and its next five dates), in the order added, and the form that adds one (fill every N days or the day of the month, 1 to 31,
- *  not both). The server refuses a bad amount, interval or day, or an end before the start: the row's
+ *  not both, and optionally one of the sheet's descendants to make its claims on, for the person of the same name there).
+ *  The server refuses a bad amount, interval or day, an end before the start, or a sheet that is not a descendant: the row's
  *  plan error shows, until the form is changed or submitted again. */
 function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const plans = usePlans(sheetId);
@@ -60,6 +61,7 @@ function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string;
         <input data-testid="plan-form-start" type="date" value={form.start} onChange={change('start')} />{' '}
         <input data-testid="plan-form-every" placeholder="Every N days" size={4} value={form.every} onChange={change('every')} />{' '}
         <input data-testid="plan-form-day" placeholder="Or day of month" size={4} value={form.day} onChange={change('day')} />{' '}
+        <input data-testid="plan-form-sheet" placeholder="Descendant sheet" size={10} value={form.sheet} onChange={change('sheet')} />{' '}
         <input data-testid="plan-form-end" type="date" value={form.end} onChange={change('end')} />{' '}
         <button type="submit" data-testid="plan-form-submit" disabled={add.isPending}>
           Add plan
@@ -109,7 +111,8 @@ function PlanRow({ sheetId, user, plan: p }: { sheetId: string; user: string; pl
 
   return (
     <li data-testid={`plan-row-${p.id}`}>
-      {p.amount} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} from {p.start} to {p.end}; made{' '}
+      {p.amount} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} from {p.start} to {p.end}
+      {p.sheet != null && ` on sheet ${p.sheet}`}; made{' '}
       <span data-testid="plan-generated">{p.generated}</span>; next{' '}
       <span data-testid="plan-next-dates">{p.nextDates}</span>; paused{' '}
       <span data-testid="plan-paused">{p.paused ? 'yes' : 'no'}</span>{' '}
@@ -150,8 +153,8 @@ type Generated = { made: number };
 
 /** The generate button: for every plan on the sheet, in the order added, a DRAFT claim of the plan's amount for each
  *  plan date (the start, then every N days; or its day in every month from the start's month, on or after the
- *  start) up to its end and the sheet's today that it has made none for yet, by the
- *  claim form's rules (a date they refuse is skipped, and tried again next time). Shows how many were made; the count
+ *  start) up to its end and the sheet's today that it has made none for yet (on its descendant sheet, for the person of the
+ *  same name there, when it names one), by the claim form's rules (a date they refuse is skipped, and tried again next time). Shows how many were made; the count
  *  is cleared while a new press runs. */
 function GeneratePlans({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();

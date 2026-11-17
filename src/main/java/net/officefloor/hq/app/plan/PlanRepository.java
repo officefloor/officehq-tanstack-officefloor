@@ -32,7 +32,7 @@ public class PlanRepository {
         Date until = asOf == null ? null : Date.valueOf(asOf);
         Map<Long, List<PlanPause>> pauses = pauses(sheetId, asOf);
         Map<Long, List<PlanChange>> changes = changes(sheetId, asOf);
-        return jdbc.query("SELECT p.id, p.person_id, p.amount, p.start_date, p.every_days, p.month_day, p.end_date,"
+        return jdbc.query("SELECT p.id, p.person_id, p.amount, p.start_date, p.every_days, p.month_day, p.end_date, p.target_sheet,"
                 + " (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id"
                 + " AND (CAST(? AS DATE) IS NULL OR c.made_on IS NULL OR c.made_on <= ?)) AS generated"
                 + " FROM plan p WHERE p.sheet_id = ? AND (CAST(? AS DATE) IS NULL OR p.added_on IS NULL OR p.added_on <= ?)"
@@ -44,7 +44,7 @@ public class PlanRepository {
                     return new Plan(rs.getLong("id"), rs.getLong("person_id"), amount,
                             rs.getObject("start_date", LocalDate.class), rs.getObject("every_days", Integer.class), rs.getObject("month_day", Integer.class),
                             rs.getObject("end_date", LocalDate.class), rs.getInt("generated"),
-                            pauses.getOrDefault(rs.getLong("id"), List.of()), made);
+                            pauses.getOrDefault(rs.getLong("id"), List.of()), made, rs.getString("target_sheet"));
                 },
                 until, until, sheetId, until, until);
     }
@@ -114,7 +114,7 @@ public class PlanRepository {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update((con) -> {
             var ps = con.prepareStatement("INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, month_day, end_date,"
-                    + " added_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
+                    + " added_on, target_sheet) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
             ps.setBigDecimal(3, values.amount());
@@ -123,10 +123,11 @@ public class PlanRepository {
             ps.setObject(6, values.day(), Types.INTEGER);
             ps.setDate(7, Date.valueOf(values.end()));
             ps.setDate(8, Date.valueOf(sheets.today(sheetId)));
+            ps.setString(9, values.sheet());
             return ps;
         }, key);
         return new Plan(key.getKey().longValue(), personId, values.amount(), values.start(), values.every(), values.day(),
-                values.end(), 0, List.of(), List.of());
+                values.end(), 0, List.of(), List.of(), values.sheet());
     }
 
     /** Whether the plan has made a claim for the date. */

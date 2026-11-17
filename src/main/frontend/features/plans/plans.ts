@@ -6,7 +6,8 @@ import { getJson } from '../../api/http';
  *  far, and its next dates: its first five dates after the sheet's today and on or before `end`, comma and space
  *  separated, leaving out the dates its pauses skip (none while it stays paused) — whether it is paused, and its
  *  changes of amount, oldest first, each as `<date> amount=<amount>` (the amount is that of the last change). Exactly
- *  one of `every` and `day` is set. */
+ *  one of `every` and `day` is set. `sheet`, when set, is the descendant sheet its claims are made on, for the person of
+ *  the same name there. */
 export type Plan = {
   id: number;
   personId: number;
@@ -19,6 +20,7 @@ export type Plan = {
   nextDates: string;
   paused: boolean;
   changes: string[];
+  sheet: string | null;
 };
 
 export const plansKey = (sheetId: string) => ['sheet', sheetId, 'plans'];
