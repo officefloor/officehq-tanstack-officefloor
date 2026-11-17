@@ -1221,6 +1221,14 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
       setEditingId(undefined);
       void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
+    // A refused save of the editor shows the form's error and gives the form back to adding: the claim is let go, so
+    // the next submit adds a claim rather than retrying the refused edit.
+    onError: (_e, { id }) => {
+      if (id === undefined) return;
+      unlock.mutate(id);
+      setValues(EMPTY);
+      setEditingId(undefined);
+    },
     onSettled: submit.end,
   });
 
