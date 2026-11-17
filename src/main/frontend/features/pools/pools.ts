@@ -9,7 +9,8 @@ import { peopleKey } from '../people/people';
  *  `to` date (yyyy-MM-dd, null for none); a member not `active` (its dates do not include the sheet's today) is left out
  *  entirely: not in the total, no cut. `history` is their cut as it stood at the end of each period whose to-date is on or
  *  before the sheet's today (by from-date): the pool, its members, the pot and the holds as they were then, with that day
- *  as the sheet's today (`cut` null: none then). */
+ *  as the sheet's today (`cut` null: none then); for a period closed or soft-closed, whatever its dates, their cut fixed
+ *  at that moment instead, until it is reopened. */
 export type PoolMember = {
   personId: number | null;
   name: string;

@@ -14,12 +14,14 @@ import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.LateCharge;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.pool.PoolRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.stereotype.Service;
 
-/** Closes an open period, fixing its due-total as it is now (see ClosePeriod): used by a close by hand and by the
+/** Closes an open period, fixing its due-total as it is now (see ClosePeriod), and every pool member's cut for it as
+ *  it stands now: used by a close by hand and by the
  *  automatic close a change of the sheet's today makes. */
 @Service
 public class PeriodCloser {
@@ -30,9 +32,11 @@ public class PeriodCloser {
     private final SettingRepository settings;
     private final SheetRepository sheets;
     private final ClaimLogRepository log;
+    private final PoolRepository pools;
 
     public PeriodCloser(PeriodRepository periods, ClaimRepository claims, PersonRepository people, RateRepository rates,
-            SettingRepository settings, SheetRepository sheets, ClaimLogRepository log) {
+            SettingRepository settings, SheetRepository sheets, ClaimLogRepository log, PoolRepository pools) {
+        this.pools = pools;
         this.periods = periods;
         this.claims = claims;
         this.people = people;
@@ -54,6 +58,7 @@ public class PeriodCloser {
             throw new InvalidPeriodException("The period " + period.name() + " is already closed");
         }
         periods.fixPersonTotals(period, perPerson, carried(period));
+        periods.fixPoolCuts(period, pools.liveCuts(period.sheetId()));
         return total;
     }
 
@@ -69,6 +74,7 @@ public class PeriodCloser {
             throw new InvalidPeriodException("The period " + period.name() + " is not open");
         }
         periods.fixPersonTotals(period, perPerson, carried(period));
+        periods.fixPoolCuts(period, pools.liveCuts(period.sheetId()));
         return total;
     }
 

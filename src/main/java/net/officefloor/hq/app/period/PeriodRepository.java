@@ -179,6 +179,34 @@ public class PeriodRepository {
                 + " WHERE sheet_id = ? AND period_id = ?)", figuresText(totals), figuresText(carried), period.sheetId(), period.id());
     }
 
+    /** Fixes every pool member's cut for the period, as it is closed or soft-closed, on its close's log line (see
+     *  PoolRepository#liveCuts for the text). */
+    public void fixPoolCuts(Period period, String cuts) {
+        jdbc.update("UPDATE period_log SET pool_cuts = ? WHERE id = (SELECT MAX(id) FROM period_log"
+                + " WHERE sheet_id = ? AND period_id = ?)", cuts, period.sheetId(), period.id());
+    }
+
+    /** The pool cuts fixed for each of the sheet's periods closed or soft-closed at the end of the date (null: now), by
+     *  period id, as their close's log line keeps them; a period open then, or one closed before cuts were kept, is left
+     *  out. */
+    public Map<Long, String> poolCuts(String sheetId, LocalDate date) {
+        Map<Long, String> cuts = new java.util.HashMap<>();
+        jdbc.query("SELECT period_id, closed, soft_closed, pool_cuts, made_on FROM period_log WHERE sheet_id = ? ORDER BY id",
+                (ResultSet rs) -> {
+                    if (date != null && !AsOf.counts(rs.getObject("made_on", LocalDate.class), date)) {
+                        return;
+                    }
+                    long id = rs.getLong("period_id");
+                    String text = rs.getString("pool_cuts");
+                    if ((rs.getBoolean("closed") || rs.getBoolean("soft_closed")) && text != null) {
+                        cuts.put(id, text);
+                    } else {
+                        cuts.remove(id);
+                    }
+                }, sheetId);
+        return cuts;
+    }
+
     /** The fixed carried figure of each person for the closed period, by person id (one fixed before carried figures
      *  were kept is left out). */
     public Map<Long, BigDecimal> personCarried(Period period) {

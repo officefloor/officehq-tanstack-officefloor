@@ -51,24 +51,24 @@ public class PoolRepository {
     }
 
     /** The sheet's pools (see #list) read as of a date (null: now): the date stands in for the sheet's today, and the pot is
-     *  the one stored by then. Each member carries their cut history: for every period whose to-date is on or before the
-     *  sheet's today (by from-date), their cut as it stood at the end of that period (see #stood), null when they had
-     *  none then. */
+     *  the one stored by then. Each member carries their cut history, by the periods' from-dates: for every period closed
+     *  or soft-closed by then, their cut fixed when it was (see #liveCuts), whatever its dates; for every other period
+     *  whose to-date is on or before the sheet's today, their cut as it stood at the end of that period (see #stood).
+     *  Null when they had none then. */
     public List<Pool> list(String sheetId, LocalDate asOf) {
         List<Pool> now = stood(sheetId, asOf);
         LocalDate today = asOf != null ? asOf : sheets.today(sheetId);
+        Map<Long, String> fixed = periods.poolCuts(sheetId, asOf);
         List<String> ended = new ArrayList<>();
         List<Map<String, String>> cutsThen = new ArrayList<>();
         for (Period period : periods.list(sheetId)) {
-            if (!period.to().isAfter(today)) {
+            String text = fixed.get(period.id());
+            if (text != null) {
                 ended.add(period.name());
-                Map<String, String> cuts = new HashMap<>();
-                for (Pool pool : stood(sheetId, period.to())) {
-                    for (PoolMember m : pool.members()) {
-                        cuts.put(key(pool, m), m.cut());
-                    }
-                }
-                cutsThen.add(cuts);
+                cutsThen.add(parseCuts(text));
+            } else if (!period.to().isAfter(today)) {
+                ended.add(period.name());
+                cutsThen.add(cutsOf(stood(sheetId, period.to())));
             }
         }
         List<Pool> out = new ArrayList<>();
@@ -84,6 +84,41 @@ public class PoolRepository {
             out.add(new Pool(pool.name(), members, pool.totalShare(), pool.balanced()));
         }
         return out;
+    }
+
+    /** Every member's cut as it stands now, as text to fix on a period's close: one line per member, its key (see #key),
+     *  a tab and the cut (empty when none), joined by newlines. */
+    public String liveCuts(String sheetId) {
+        StringBuilder text = new StringBuilder();
+        for (Map.Entry<String, String> e : cutsOf(stood(sheetId, null)).entrySet()) {
+            text.append(text.length() == 0 ? "" : "\n").append(e.getKey()).append('\t')
+                    .append(e.getValue() == null ? "" : e.getValue());
+        }
+        return text.toString();
+    }
+
+    /** The cuts by member key from their text (see #liveCuts). */
+    private static Map<String, String> parseCuts(String text) {
+        Map<String, String> cuts = new HashMap<>();
+        for (String line : text.split("\n")) {
+            int at = line.lastIndexOf('\t');
+            if (at > 0) {
+                String cut = line.substring(at + 1);
+                cuts.put(line.substring(0, at), cut.isEmpty() ? null : cut);
+            }
+        }
+        return cuts;
+    }
+
+    /** Each member's cut in the pools, by member key. */
+    private static Map<String, String> cutsOf(List<Pool> pools) {
+        Map<String, String> cuts = new LinkedHashMap<>();
+        for (Pool pool : pools) {
+            for (PoolMember m : pool.members()) {
+                cuts.put(key(pool, m), m.cut());
+            }
+        }
+        return cuts;
     }
 
     /** The member of the pool, the same across reads. */
