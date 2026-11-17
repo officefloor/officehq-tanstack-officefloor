@@ -28,6 +28,8 @@ export type Period = {
   personCarried: Record<string, string>;
   /** Each person's opening balances pasted for the period added up, by person id (added to their live carried figure). */
   openings: Record<string, string>;
+  /** Locked by a steward: it cannot be reopened until unlocked. */
+  locked: boolean;
 };
 
 export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'];

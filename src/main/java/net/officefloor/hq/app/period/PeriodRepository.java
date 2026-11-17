@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PeriodRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, from_date, to_date, closed, closed_total, soft_closed, cap";
+    private static final String COLUMNS = "id, sheet_id, name, from_date, to_date, closed, closed_total, soft_closed, cap, locked";
 
     private final JdbcTemplate jdbc;
     private final SheetRepository sheets;
@@ -217,12 +217,18 @@ public class PeriodRepository {
     public boolean reopen(Period period) {
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_id = ?", period.sheetId(), period.id());
         boolean done = jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND id = ? "
-                + "AND (closed = TRUE OR soft_closed = TRUE)",
+                + "AND (closed = TRUE OR soft_closed = TRUE) AND locked = FALSE",
                 period.sheetId(), period.id()) == 1;
         if (done) {
             log(period, false, false, null);
         }
         return done;
+    }
+
+    /** Locks or unlocks the period, but only while it is not already so; false when it was. */
+    public boolean setLocked(Period period, boolean locked) {
+        return jdbc.update("UPDATE period SET locked = ? WHERE sheet_id = ? AND id = ? AND locked = ?",
+                locked, period.sheetId(), period.id(), !locked) == 1;
     }
 
     /** Stores a new period and returns it with its id. */
@@ -239,13 +245,13 @@ public class PeriodRepository {
             ps.setObject(6, cap);
             return ps;
         }, keys);
-        return new Period(keys.getKey().longValue(), sheetId, name, from, to, false, null, false, cap);
+        return new Period(keys.getKey().longValue(), sheetId, name, from, to, false, null, false, cap, false);
     }
 
     private static Period map(ResultSet rs, int n) throws SQLException {
         BigDecimal total = rs.getBigDecimal("closed_total");
         return new Period(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
                 rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate(), rs.getBoolean("closed"), total == null ? null : total.setScale(2),
-                rs.getBoolean("soft_closed"), rs.getObject("cap", Integer.class));
+                rs.getBoolean("soft_closed"), rs.getObject("cap", Integer.class), rs.getBoolean("locked"));
     }
 }

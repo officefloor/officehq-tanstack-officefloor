@@ -98,6 +98,7 @@ public class CloneRepository {
         open.put("closed", (r) -> false);
         open.put("soft_closed", (r) -> false);
         open.put("closed_total", (r) -> null);
+        open.put("locked", (r) -> false);
         copy("period", "WHERE sheet_id = ? ORDER BY id", from, to, open);
 
         Map<String, Function<Map<String, Object>, Object>> claim = new HashMap<>();

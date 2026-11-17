@@ -87,6 +87,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
               <td data-testid="period-fy">{fiscalYearOf(p.from, fiscalStart)}</td>
               <td data-testid="period-cap">{p.cap ?? ''}</td>
+              <td data-testid="period-locked">{p.locked ? 'yes' : 'no'}</td>
               <td>
                 <PeriodClose sheetId={sheetId} user={user} period={p} />
               </td>
@@ -232,10 +233,10 @@ export const contributions = [
 
 /** Closes a period: its due-total is fixed as it is now. Soft-closes an open one: its due-total is fixed as it is now, but
  *  claims dated inside it can still change (both by the roles the close permission allows). Reopens a closed or soft-closed one (the roles the reopen permission allows; a steward while blank): its due-total is
- *  live again. A refused action shows the period's error; the next action on the period clears it. */
+ *  live again, unless it is locked. Locks or unlocks one (a steward only); a locked period cannot be reopened. A refused action shows the period's error; the next action on the period clears it. */
 function PeriodClose({ sheetId, user, period }: { sheetId: string; user: string; period: Period }) {
   const queryClient = useQueryClient();
-  const act = (action: 'close' | 'soft-close' | 'reopen') =>
+  const act = (action: 'close' | 'soft-close' | 'reopen' | 'lock' | 'unlock') =>
     postJson<Period>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/${period.id}/${action}`, { by: user });
   const onSuccess = () => {
     void queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
@@ -243,11 +244,15 @@ function PeriodClose({ sheetId, user, period }: { sheetId: string; user: string;
   const close = useMutation({ mutationFn: () => act('close'), onSuccess });
   const softClose = useMutation({ mutationFn: () => act('soft-close'), onSuccess });
   const reopen = useMutation({ mutationFn: () => act('reopen'), onSuccess });
-  const pending = close.isPending || softClose.isPending || reopen.isPending;
+  const lock = useMutation({ mutationFn: () => act('lock'), onSuccess });
+  const unlock = useMutation({ mutationFn: () => act('unlock'), onSuccess });
+  const pending = close.isPending || softClose.isPending || reopen.isPending || lock.isPending || unlock.isPending;
   const resetAll = () => {
     close.reset();
     softClose.reset();
     reopen.reset();
+    lock.reset();
+    unlock.reset();
   };
   return (
     <>
@@ -283,10 +288,34 @@ function PeriodClose({ sheetId, user, period }: { sheetId: string; user: string;
         }}
       >
         Reopen
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="period-lock"
+        disabled={pending}
+        onClick={() => {
+          resetAll();
+          lock.mutate();
+        }}
+      >
+        Lock
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="period-unlock"
+        disabled={pending}
+        onClick={() => {
+          resetAll();
+          unlock.mutate();
+        }}
+      >
+        Unlock
       </button>
       {close.isError && <span data-testid="period-error"> This period is already closed, or your role may not close a period.</span>}
       {softClose.isError && <span data-testid="period-error"> Only an open period can be soft-closed, by a role the sheet lets close.</span>}
-      {reopen.isError && <span data-testid="period-error"> Only a role the sheet lets reopen (a steward unless set) can reopen a period, and only a closed or soft-closed one.</span>}
+      {reopen.isError && <span data-testid="period-error"> Only a role the sheet lets reopen (a steward unless set) can reopen a period, and only a closed or soft-closed one that is not locked.</span>}
+      {lock.isError && <span data-testid="period-error"> Only a steward can lock a period, and only one that is not locked.</span>}
+      {unlock.isError && <span data-testid="period-error"> Only a steward can unlock a period, and only one that is locked.</span>}
     </>
   );
 }
