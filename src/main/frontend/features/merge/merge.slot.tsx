@@ -64,7 +64,47 @@ function PersonMerge({ sheetId, user, person }: { sheetId: string; user: string;
   );
 }
 
+function MergeUndoHead() {
+  return <th>Undo merge</th>;
+}
+
+/** The button that undoes the last merge into this person (the steward who made it, on the sheet's today it was made):
+ *  the merged person is back with the claims and aliases that came from them, so every part of the sheet is re-read. An
+ *  undo by anyone else, on a later day, or for a person with no merge to undo shows the row's error. */
+function PersonMergeUndo({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+  const queryClient = useQueryClient();
+  const submit = useSubmitOnce();
+  const rowAction = usePersonRowAction(sheetId, person.id, 'merge-undo');
+  const undo = useMutation({
+    mutationFn: () =>
+      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/merge-undo`, { by: user }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] }),
+    onSettled: submit.end,
+  });
+
+  return (
+    <td>
+      <button
+        type="button"
+        data-testid="person-merge-undo"
+        disabled={undo.isPending}
+        onClick={() => {
+          if (!submit.begin()) return;
+          rowAction.take();
+          undo.reset();
+          undo.mutate();
+        }}
+      >
+        Undo merge
+      </button>
+      {undo.isError && rowAction.isLatest && <span data-testid="person-error"> Could not undo this merge.</span>}
+    </td>
+  );
+}
+
 export const contributions = [
   PeopleHead.fill({ order: 80, Component: MergeHead }),
   PersonRow.fill({ order: 80, Component: PersonMerge }),
+  PeopleHead.fill({ order: 81, Component: MergeUndoHead }),
+  PersonRow.fill({ order: 81, Component: PersonMergeUndo }),
 ];

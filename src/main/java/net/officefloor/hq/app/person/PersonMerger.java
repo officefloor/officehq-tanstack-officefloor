@@ -15,11 +15,13 @@ public class PersonMerger {
     private final JdbcTemplate jdbc;
     private final SheetRepository sheets;
     private final StatementRepository statements;
+    private final MergeUndoer undoer;
 
-    public PersonMerger(JdbcTemplate jdbc, SheetRepository sheets, StatementRepository statements) {
+    public PersonMerger(JdbcTemplate jdbc, SheetRepository sheets, StatementRepository statements, MergeUndoer undoer) {
         this.jdbc = jdbc;
         this.sheets = sheets;
         this.statements = statements;
+        this.undoer = undoer;
     }
 
     /**
@@ -30,13 +32,15 @@ public class PersonMerger {
      * into's aliases; from's patrons are added to into's (not into themselves, no repeats) and anyone naming from as
      * patron names into instead (no repeats; into never their own patron); from's pool memberships move to into (shares
      * added where into is already a member). From's holds, watchers, contact and grades are dropped, and from
-     * leaves the sheet (kept, as they stood, only for reading the sheet as of a date before the merge).
+     * leaves the sheet (kept, as they stood, only for reading the sheet as of a date before the merge). The merge is
+     * kept, with what it moved and removed, for {@link MergeUndoer} to undo.
      */
-    public void merge(String sheetId, Person from, Person into) {
+    public void merge(String sheetId, Person from, Person into, String by) {
         long f = from.id();
         long t = into.id();
         List<Long> claims = jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed, id",
                 Long.class, sheetId, f);
+        long mergeId = undoer.keep(sheetId, f, t, by, claims);
         for (Long id : claims) {
             jdbc.update("UPDATE claim SET person_id = ?, "
                     + "listed = (SELECT COALESCE(MAX(c.listed), 0) + 1 FROM claim c WHERE c.sheet_id = ?) WHERE id = ?",
@@ -116,6 +120,7 @@ public class PersonMerger {
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, f);
         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, added_on) VALUES (?, ?, ?, ?)", sheetId, t, from.name(),
                 java.sql.Date.valueOf(sheets.today(sheetId)));
+        undoer.keepNameAlias(mergeId, sheetId, t, from.name());
     }
 
     /** Keeps the crew memberships the condition picks as they stood, as left on the sheet's today. */
