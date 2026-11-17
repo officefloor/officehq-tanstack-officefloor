@@ -104,12 +104,14 @@ type Range = { from: string; to: string };
 /** Generates one period per calendar month from the from-date's month to the to-date's month, each from the first to
  *  the last day of its month and named yyyy-mm; a month whose name is already a period, or whose days overlap one, is
  *  left out. Or generates a fiscal year's twelve monthly periods the same way: the year (yyyy) is the one its first
- *  day falls in, starting with the sheet's fiscal start month. Shows how many the last press made; the count is
+ *  day falls in, starting with the sheet's fiscal start month. Or generates a calendar year's four quarters (yyyy) as
+ *  periods named yyyy-Q1 to yyyy-Q4, one left out the same way. Shows how many the last press made; the count is
  *  cleared while a new press of either runs. A to-date before the from-date, or a year that is not yyyy, is refused. */
 function PeriodGenerate({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const [range, setRange] = useState<Range>({ from: '', to: '' });
   const [year, setYear] = useState('');
+  const [quartersYear, setQuartersYear] = useState('');
   const onSuccess = async () => {
     await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
   };
@@ -123,16 +125,28 @@ function PeriodGenerate({ sheetId, user }: { sheetId: string; user: string }) {
       postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/generate-fy`, { year: y, by: user }),
     onSuccess,
   });
+  const generateQuarters = useMutation({
+    mutationFn: (y: string) =>
+      postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/generate-quarters`, { year: y, by: user }),
+    onSuccess,
+  });
   const resetAll = () => {
     generate.reset();
     generateFy.reset();
+    generateQuarters.reset();
   };
   const change = (r: Partial<Range>) => {
     setRange((was) => ({ ...was, ...r }));
     resetAll();
   };
-  const pending = generate.isPending || generateFy.isPending;
-  const made = generate.isSuccess ? generate.data.made : generateFy.isSuccess ? generateFy.data.made : undefined;
+  const pending = generate.isPending || generateFy.isPending || generateQuarters.isPending;
+  const made = generate.isSuccess
+    ? generate.data.made
+    : generateFy.isSuccess
+      ? generateFy.data.made
+      : generateQuarters.isSuccess
+        ? generateQuarters.data.made
+        : undefined;
   return (
     <p>
       Generate monthly periods{' '}
@@ -174,6 +188,28 @@ function PeriodGenerate({ sheetId, user }: { sheetId: string; user: string }) {
         }}
       >
         Generate fiscal year
+      </button>{' '}
+      or quarters of{' '}
+      <input
+        data-testid="period-generate-quarters-year"
+        inputMode="numeric"
+        placeholder="yyyy"
+        value={quartersYear}
+        onChange={(e) => {
+          setQuartersYear(e.target.value);
+          resetAll();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="period-generate-quarters"
+        disabled={pending}
+        onClick={() => {
+          resetAll();
+          generateQuarters.mutate(quartersYear);
+        }}
+      >
+        Generate quarters
       </button>
       {made !== undefined && (
         <>
@@ -183,6 +219,7 @@ function PeriodGenerate({ sheetId, user }: { sheetId: string; user: string }) {
       )}
       {generate.isError && <span data-testid="period-generate-error"> The to-date may not be before the from-date.</span>}
       {generateFy.isError && <span data-testid="period-generate-error"> The fiscal year must be a year yyyy.</span>}
+      {generateQuarters.isError && <span data-testid="period-generate-error"> The year must be a year yyyy.</span>}
     </p>
   );
 }
