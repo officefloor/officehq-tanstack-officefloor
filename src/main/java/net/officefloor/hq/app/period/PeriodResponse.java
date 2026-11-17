@@ -41,6 +41,6 @@ public record PeriodResponse(long id, String sheetId, String name, String from, 
         return new PeriodResponse(period.id(), period.sheetId(), period.name(), period.from().toString(),
                 period.to().toString(), state.closed(), state.soft(),
                 state.closedTotal() == null ? null : state.closedTotal().toPlainString(), totals, period.cap(), carried,
-                openings(openings), period.locked());
+                openings(openings), state.locked());
     }
 }

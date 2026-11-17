@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
 /**
  * The sheet's figures as the screen shows them: each person's claimed (the amounts of their claims that count added up, leaving out corrections; a person's OPEN or PENDING claims, once their retirement date is reached, not bound by a statement, do not, nor do deferred claims; a held claim still does) and
  * due-total (the figures of the claims that count live — held ones included, each with its late charge, added up, less
- * the parts of them other people hold by a share, plus their own parts of others' shared claims (see ClaimShare#part); n/a when their grade has no rate today and no counting claim
+ * the parts of them other people hold by a share, plus their own parts of others' shared claims (see ClaimShare#part, at their own grade's rate); n/a when their grade has no rate today and no counting claim
  * has a figure, kept or at the grade in force on its date; at most the sheet's cap less their cut total, not below 0.00), overdue-total (the figures, late charge included, of those claims that are overdue — open, their due-by plus
  * their grace (see LateCharge#lateFrom) before today — added up, skipping n/a; not capped), and the sheet's claimed-total, due-total and overdue-total (everyone's added up, skipping n/a; the due-total and
  * overdue-total leave out the single highest and the single lowest figure when three or more people have one).
@@ -123,7 +123,8 @@ public class Rollup {
     }
 
     /** What the shares of the claims that count live move in each person's due-total, by person id: each holder gains
-     *  their part of the claim's figure (see ClaimShare#part), and the claim's own person loses it. A person with no
+     *  their part of the claim (see ClaimShare#part: at their own grade's rate; frozen with the due once settled), and
+     *  the claim's own person loses it. A person with no
      *  share of a claim that has a figure is left out. */
     private Map<Long, BigDecimal> shareParts(String sheetId, LocalDate today, LateCharge late, List<Claim> all,
             List<Person> listed) {
@@ -145,7 +146,18 @@ public class Rollup {
                 continue;
             }
             for (ClaimShare s : held) {
-                BigDecimal part = s.part(figure);
+                BigDecimal part;
+                if (c.due() != null) {
+                    part = s.part(figure);
+                } else {
+                    Person holder = byId.get(s.personId());
+                    net.officefloor.hq.app.rate.Rate rate = holder == null ? null
+                            : rates.forClaim(sheetId, holder.gradeOn(c.date()), c.date(), rates.seqOf(c.id()));
+                    if (rate == null) {
+                        continue; // a 0.00 part: it leaves the holder's figures as they were
+                    }
+                    part = s.part(c.amount(), rate.rate(), late.rounding().mode(c));
+                }
                 parts.merge(s.personId(), part, BigDecimal::add);
                 parts.merge(owner.id(), part.negate(), BigDecimal::add);
             }

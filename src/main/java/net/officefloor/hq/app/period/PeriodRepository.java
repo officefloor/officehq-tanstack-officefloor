@@ -28,9 +28,19 @@ public class PeriodRepository {
         this.sheets = sheets;
     }
 
-    /** A period as it stood at the end of a date: closed or soft-closed then, with the figures that fixed. */
+    /** A period as it stood at the end of a date: closed or soft-closed then, with the figures that fixed, and whether
+     *  it was locked then. */
     public record StateAsOf(boolean closed, boolean soft, BigDecimal closedTotal, Map<Long, BigDecimal> personTotals,
-            Map<Long, BigDecimal> personCarried) {
+            Map<Long, BigDecimal> personCarried, boolean locked) {
+
+        public StateAsOf(boolean closed, boolean soft, BigDecimal closedTotal, Map<Long, BigDecimal> personTotals,
+                Map<Long, BigDecimal> personCarried) {
+            this(closed, soft, closedTotal, personTotals, personCarried, false);
+        }
+
+        StateAsOf withLocked(boolean locked) {
+            return new StateAsOf(closed, soft, closedTotal, personTotals, personCarried, locked);
+        }
     }
 
     /** Figures by person id from their logged text: "personId=figure" joined by ";". */
@@ -55,12 +65,15 @@ public class PeriodRepository {
     }
 
     /** The sheet's periods as they stood at the end of the date, by from-date, each with its state then: one added while
-     *  the sheet's today was after it is left out; one never closed, soft-closed or reopened is as it is now. */
+     *  the sheet's today was after it is left out; one never closed, soft-closed or reopened is as it is now; one is
+     *  locked only when it was locked on or before the date. */
     public Map<Period, StateAsOf> listAsOf(String sheetId, LocalDate date) {
         Map<Long, LocalDate> added = new java.util.HashMap<>();
-        jdbc.query("SELECT id, added_on FROM period WHERE sheet_id = ?",
+        Map<Long, LocalDate> lockedOn = new java.util.HashMap<>();
+        jdbc.query("SELECT id, added_on, locked_on FROM period WHERE sheet_id = ?",
                 (ResultSet rs) -> {
                     added.put(rs.getLong("id"), rs.getObject("added_on", LocalDate.class));
+                    lockedOn.put(rs.getLong("id"), rs.getObject("locked_on", LocalDate.class));
                 }, sheetId);
         Map<Long, StateAsOf> states = new java.util.HashMap<>();
         java.util.Set<Long> logged = new java.util.HashSet<>();
@@ -87,7 +100,7 @@ public class PeriodRepository {
                         : new StateAsOf(p.closed(), p.soft(), p.closedTotal(), p.closed() || p.soft() ? personTotals(p) : Map.of(),
                                 p.closed() || p.soft() ? personCarried(p) : Map.of());
             }
-            out.put(p, state);
+            out.put(p, state.withLocked(p.locked() && AsOf.counts(lockedOn.get(p.id()), date)));
         }
         return out;
     }
@@ -255,8 +268,9 @@ public class PeriodRepository {
 
     /** Locks or unlocks the period, but only while it is not already so; false when it was. */
     public boolean setLocked(Period period, boolean locked) {
-        return jdbc.update("UPDATE period SET locked = ? WHERE sheet_id = ? AND id = ? AND locked = ?",
-                locked, period.sheetId(), period.id(), !locked) == 1;
+        return jdbc.update("UPDATE period SET locked = ?, locked_on = ? WHERE sheet_id = ? AND id = ? AND locked = ?",
+                locked, locked ? Date.valueOf(sheets.today(period.sheetId())) : null, period.sheetId(), period.id(),
+                !locked) == 1;
     }
 
     /** Stores a new period and returns it with its id. */

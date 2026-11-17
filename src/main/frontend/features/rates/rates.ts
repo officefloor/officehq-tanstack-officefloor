@@ -145,13 +145,26 @@ export function claimDue(claim: Claim, rate: string | undefined, floor: Dated, l
  *  zero for the claim's own person, who gives it up). */
 export type SharePart = { status: ClaimStatus; part: string };
 
-/** A holder's part of a claim's due: the due times their share divided by 100, rounded half to even. */
+/** A holder's part of a claim's due: the due times their share divided by 100, rounded half to even (a settled
+ *  claim's parts, frozen with its due). */
 export function sharePart(due: string, share: string): string {
   return shown(percentOf(due, share, 1, false));
 }
 
+/** A holder's part of a claim not settled: its amount times their share divided by 100, times the rate of their own
+ *  grade in force on its date divided by 100, rounded like the claim; 0.00 when their grade has no rate. */
+export function holderPart(amount: string, share: string, rate: string | undefined, halfUp: boolean): string {
+  if (rate === undefined) return '0.00';
+  const p = hundredths(amount) * hundredths(share) * hundredths(rate); // in 1/100000000 of a hundredth
+  const a = p < 0n ? -p : p;
+  const q = a / 100000000n;
+  const rem = a % 100000000n;
+  const r = rem > 50000000n || (rem === 50000000n && (halfUp || q % 2n === 1n)) ? q + 1n : q;
+  return shown(p < 0n ? -r : r);
+}
+
 /** Each person's share parts, by person id: of the given claims (those that count live) with a figure, each holder of a
- *  share gains their part (see sharePart) and the claim's own person loses it. */
+ *  share gains their part (see holderPart; sharePart once settled) and the claim's own person loses it. */
 export function shareParts(claims: Claim[], people: Person[] | undefined, rates: Rate[] | undefined, late: Late, floor: Dated): Map<number, SharePart[]> {
   const byId = new Map((people ?? []).map((p) => [p.id, p]));
   const out = new Map<number, SharePart[]>();
@@ -161,8 +174,12 @@ export function shareParts(claims: Claim[], people: Person[] | undefined, rates:
     if (!c.shares?.length || owner === undefined || !counts(c)) continue;
     const figure = claimDue(c, claimRate(rates, gradeOn(owner, c.date), c), floor, late);
     if (figure === 'n/a') continue;
+    const halfUp = roundsHalfUp(c, late);
     for (const s of c.shares) {
-      const part = sharePart(figure, s.share);
+      const holder = byId.get(s.personId);
+      const rate = holder === undefined ? undefined : claimRate(rates, gradeOn(holder, c.date), c);
+      if (c.due === null && rate === undefined) continue; // a 0.00 part: it leaves the holder's figures as they were
+      const part = c.due !== null ? sharePart(figure, s.share) : holderPart(c.amount, s.share, rate, halfUp);
       add(s.personId, { status: c.status, part });
       add(owner.id, { status: c.status, part: shown(-hundredths(part)) });
     }
