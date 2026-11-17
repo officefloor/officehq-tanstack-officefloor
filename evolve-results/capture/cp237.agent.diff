@@ -1,0 +1,125 @@
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index d768d9dbf..2692c7d54 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -12,7 +12,7 @@ type GradeTerms = `terms-${(typeof GRADES)[number]}`;
+ type GradeGrace = `grace-${(typeof GRADES)[number]}`;
+ type GradeProof = `proof-threshold-${(typeof GRADES)[number]}`;
+ type GradeClerkLimit = `clerk-limit-${(typeof GRADES)[number]}`;
+-const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
++const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'] as const;
+ type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
+ const PERM_KEYS: PermKey[] = PERM_ACTIONS.map((a) => `perm-${a}` as PermKey);
+ type Key = PermKey | 'clerk-limit' | 'cap' | 'proof-threshold' | 'note-threshold' | 'review-threshold' | 'floor' | 'terms' | GradeTerms | GradeGrace | GradeProof | GradeClerkLimit | 'late-pct' | 'rounding' | 'policy-date' | 'period-numbering-from' | 'entry-date' | 'grace-days' | 'escalate-after' | 'review-sla' | 'pending-sla' | 'pot' | 'alert-threshold' | 'fiscal-start-month' | 'proof-kinds' | 'parent' | 'default-grade' | 'score-mid' | 'score-high' | 'score-log' | 'max-open';
+@@ -41,8 +41,8 @@ const dated = (key: Key) => DATED.includes(key);
+  *  (a whole number of days; blank: off — reminding a claim whose previous reminder was at least that many days before the
+  *  sheet's today escalates it, once per claim; undated) and the review SLA (a whole number of days; blank: none — a REVIEW claim
+  *  whose review day plus them is before the sheet's today is review-late; undated) and the pending SLA (whole days; blank: none — a PENDING claim whose pending day plus them is before the sheet's today is pending-late; undated) and the default grade (A, B or C; blank: A — the grade a person added by the quick-add bar, or by an import line with a blank grade, takes; undated) and the score thresholds score-mid and score-high (whole numbers; blank: none — while both are set each person shows a band; undated) and the max open claims per person (a whole number; blank: none — opening a claim, alone, in bulk or by a paste, is refused while its person has that many OPEN or PENDING claims; undated) and the score log (on or blank: off — while on, changing the sheet's today writes each person's score on the day being left to the audit; undated) and the permission matrix (for each of open, settle,
+- *  void, reassign, close and reopen, the roles that may take it, comma separated; blank: the standing rule — open, settle,
+- *  void and close by clerk and steward, reassign and reopen by steward; undated). Every setting but the policy date, the
++ *  void, reassign, close, reopen and today (changing the sheet's today), the roles that may take it, comma separated; blank: the standing rule — open, settle,
++ *  void and close by clerk and steward, reassign and reopen by steward, today by anyone but a viewer; undated). Every setting but the policy date, the
+  *  period numbering from-date, the entry date, the grace days, the escalation gap, the review SLA, the fiscal year start month, the proof kinds and the permissions is dated: saved with its from-date (blank: the sheet's today) it keeps the values from
+  *  other dates, and what shows in force is the value on the sheet's today (a claim takes its floor, late percent and
+  *  terms, and proof and note thresholds, from its own date). Saving stores the fields entered since the last save
+@@ -160,7 +160,7 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
+         {field('score-log', 'Score log (on or blank)', 'text')}{' '}
+         {field('max-open', 'Max open claims per person', 'numeric')}{' '}
+         {PERM_ACTIONS.map((a) => (
+-          <span key={a}>{field(`perm-${a}`, `Roles that may ${a} (comma separated)`, 'text')} </span>
++          <span key={a}>{field(`perm-${a}`, a === 'today' ? "Roles that may change the sheet's today (comma separated)" : `Roles that may ${a} (comma separated)`, 'text')} </span>
+         ))}
+         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
+           Save settings
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 1db0be342..23eea530d 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -147,8 +147,8 @@ public class SettingRepository {
+     /** How many levels up the parent chain a rate is looked for. */
+     public static final int PARENT_LEVELS = 3;
+ 
+-    /** The prefix of an action's permission: perm-open, perm-settle, perm-void, perm-reassign, perm-close or
+-     *  perm-reopen, its value the roles that may take it, comma separated; blank: the standing rule (see PERMISSIONS). */
++    /** The prefix of an action's permission: perm-open, perm-settle, perm-void, perm-reassign, perm-close,
++     *  perm-reopen or perm-today (changing the sheet's today), its value the roles that may take it, comma separated; blank: the standing rule (see PERMISSIONS). */
+     public static final String PERM_PREFIX = "perm-";
+ 
+     /** The actions with a permission, each with the roles that may take it while its permission is blank. */
+@@ -158,7 +158,8 @@ public class SettingRepository {
+             "void", RoleRepository.CLERK + "," + RoleRepository.STEWARD,
+             "close", RoleRepository.CLERK + "," + RoleRepository.STEWARD,
+             "reassign", RoleRepository.STEWARD,
+-            "reopen", RoleRepository.STEWARD);
++            "reopen", RoleRepository.STEWARD,
++            "today", RoleRepository.CLERK + "," + RoleRepository.STEWARD + "," + RoleRepository.RESTRICTED);
+ 
+     /** The from-date an undated setting is stored under: before every date. */
+     private static final LocalDate UNDATED = LocalDate.of(1, 1, 1);
+@@ -455,7 +456,7 @@ public class SettingRepository {
+         return ancestors(sheetId, Integer.MAX_VALUE).contains(ancestor);
+     }
+ 
+-    /** Whether the role may take the action (open, settle, void, reassign, close or reopen) on the sheet: the roles its
++    /** Whether the role may take the action (open, settle, void, reassign, close, reopen or today) on the sheet: the roles its
+      *  permission lists, or the standing rule while it is blank. */
+     public boolean permits(String sheetId, String action, String role) {
+         String value = value(sheetId, PERM_PREFIX + action);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index deb7df579..858d86716 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+  *  grade's own terms); or grace-A, grace-B or grace-C (a grade's grace), its value blank (none) or a whole number of days 0 or
+  *  more, kept without leading zeros; or grace-days, escalate-after, review-sla or pending-sla, its value blank (off) or a whole number of days 0 or more (undated); or pot, or alert-threshold, its value blank (none; off) or an amount with up to two decimals, kept with two (undated); or fiscal-start-month, its value a whole month 1 to 12 (not blank), kept without leading zeros (undated); or policy-date, its value a date yyyy-MM-dd or blank (the sheet's today); or
+  *  period-numbering-from or entry-date, its value a date yyyy-MM-dd or blank (off); or cap, proof-threshold, proof-threshold-A, -B or -C (a grade's own) or note-threshold or review-threshold, its value blank (none) or
+- *  an amount like the clerk limit; or perm-open, perm-settle, perm-void, perm-reassign, perm-close or perm-reopen, its value
++ *  an amount like the clerk limit; or perm-open, perm-settle, perm-void, perm-reassign, perm-close, perm-reopen or perm-today, its value
+  *  blank (the standing rule) or roles (clerk, steward) separated by commas, kept without spaces or repeats; or proof-kinds, its value blank (none) or kinds (receipt, photo) separated by commas, kept without spaces or repeats (undated); or rounding, its value blank (none) or half-up or half-even; or parent, its
+  *  value blank (none) or the id of a sheet that exists (has been loaded), is not this sheet and does not have this sheet
+  *  as an ancestor (undated); or default-grade, its value blank (A) or one of the sheet's grades (undated); or score-mid or score-high, its value blank (none) or a whole number, kept without leading zeros (undated); or score-log, its value blank (off) or on (undated); or max-open, its value blank (none) or a whole number 0 or more, kept without leading zeros (undated). Every key but policy-date, period-numbering-from, entry-date, grace-days, escalate-after, review-sla, pending-sla, pot, alert-threshold, fiscal-start-month, proof-kinds, score-mid, score-high, score-log, max-open and the permissions is dated: its from-date is blank (the
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/PermitToday.java b/src/main/java/net/officefloor/hq/app/sheet/PermitToday.java
+new file mode 100644
+index 000000000..029e1d4b3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/PermitToday.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Only a role the sheet's today permission allows (anyone but a viewer while it is blank) may change its today. */
++public class PermitToday {
++    public void permit(@PathVariable("sheetId") String sheetId, @Val TodayBy by, RoleRepository roles,
++            SettingRepository settings) throws InvalidTodayException {
++        String sheet = sheetId.trim();
++        if (!settings.permits(sheet, "today", roles.roleOf(sheet, by.by()))) {
++            throw new InvalidTodayException("The sheet's permission does not let this user change its today");
++        }
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index 21494d777..d2c13ca05 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -1,5 +1,5 @@
+ # PUT /api/sheets/{sheetId}/today — change the sheet's today. A body that is not a real date is a
+-# 400 and writes nothing. Once stored, every open period whose to-date plus the sheet's grace days is before the new
++# 400 and writes nothing, and so is a change by a role the sheet's today permission (perm-today) does not allow. Once stored, every open period whose to-date plus the sheet's grace days is before the new
+ # today is closed (PERIOD_CLOSED ... auto=yes), before the figures it moved are written. Responds with the sheet as
+ # stored. A today that differs from the stored one first writes SNAPSHOT for every person, in list order, with
+ # their due-total on the day being left (preceded, while the score log is on, by SCORE for every person with their
+@@ -7,6 +7,10 @@
+ # open claim editor).
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateToday
++  next: permit
++permit:
++  class: net.officefloor.hq.app.sheet.PermitToday
++  govern: [ transaction ]
+   next: rollup
+ rollup:
+   class: net.officefloor.hq.app.rollup.TakeRollup
