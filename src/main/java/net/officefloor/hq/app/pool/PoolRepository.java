@@ -229,9 +229,13 @@ public class PoolRepository {
                                 ? rs.getDate("retired_from") != null : retiredThen.getOrDefault(leadId, false) });
                     }
                 }, sheetId, then);
-        jdbc.query("SELECT m.crew_id, m.person_id, p.name, p.retired_from FROM crew_member m JOIN crew c ON c.id = m.crew_id"
+        // with the memberships a merge removed after the date (see PersonMerger), in the order added
+        jdbc.query("SELECT crew_id, person_id, name, retired_from FROM (SELECT m.id, m.crew_id, m.person_id, p.name,"
+                + " p.retired_from FROM crew_member m JOIN crew c ON c.id = m.crew_id"
                 + " JOIN person p ON p.id = m.person_id WHERE c.sheet_id = ? AND (m.made_on IS NULL OR m.made_on <= ?)"
-                + " ORDER BY m.id",
+                + " UNION ALL SELECT l.id, l.crew_id, l.person_id, l.name, CAST(NULL AS DATE) FROM crew_member_left l"
+                + " JOIN crew c ON c.id = l.crew_id WHERE c.sheet_id = ? AND (l.made_on IS NULL OR l.made_on <= ?)"
+                + " AND l.left_on > ?) x ORDER BY id",
                 rs -> {
                     List<Object[]> in = people.get(rs.getLong("crew_id"));
                     long personId = rs.getLong("person_id");
@@ -239,7 +243,7 @@ public class PoolRepository {
                         in.add(new Object[] { personId, rs.getString("name"), retiredThen == null
                                 ? rs.getDate("retired_from") != null : retiredThen.getOrDefault(personId, false) });
                     }
-                }, sheetId, then);
+                }, sheetId, then, sheetId, then, then);
         List<Pool> out = new ArrayList<>();
         for (Map.Entry<Long, String> crew : names.entrySet()) {
             List<Object[]> in = people.get(crew.getKey());

@@ -70,11 +70,16 @@ public class PersonMerger {
             }
         }
 
-        // the crews they lead are led by the person kept (no longer a member of them); their memberships move to them
-        jdbc.update("DELETE FROM crew_member WHERE person_id = ? AND crew_id IN (SELECT id FROM crew WHERE lead_id = ?)", t, f);
+        // the crews they lead are led by the person kept (no longer a member of them); their memberships move to them;
+        // a membership removed is kept, as it stood, for reading the crews as of a date before the merge
+        String kept = " WHERE person_id = ? AND crew_id IN (SELECT id FROM crew WHERE lead_id = ?)";
+        leaveCrews(sheetId, kept, t, f);
+        jdbc.update("DELETE FROM crew_member" + kept, t, f);
         jdbc.update("UPDATE crew SET lead_id = ? WHERE lead_id = ?", t, f);
-        jdbc.update("DELETE FROM crew_member WHERE person_id = ? AND (crew_id IN (SELECT id FROM crew WHERE lead_id = ?)"
-                + " OR crew_id IN (SELECT crew_id FROM crew_member WHERE person_id = ?))", f, t, t);
+        String gone = " WHERE person_id = ? AND (crew_id IN (SELECT id FROM crew WHERE lead_id = ?)"
+                + " OR crew_id IN (SELECT crew_id FROM crew_member WHERE person_id = ?))";
+        leaveCrews(sheetId, gone, f, t, t);
+        jdbc.update("DELETE FROM crew_member" + gone, f, t, t);
         jdbc.update("UPDATE crew_member SET person_id = ? WHERE person_id = ?", t, f);
 
         StringBuilder grades = new StringBuilder();
@@ -92,6 +97,16 @@ public class PersonMerger {
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, f);
         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, added_on) VALUES (?, ?, ?, ?)", sheetId, t, from.name(),
                 java.sql.Date.valueOf(sheets.today(sheetId)));
+    }
+
+    /** Keeps the crew memberships the condition picks as they stood, as left on the sheet's today. */
+    private void leaveCrews(String sheetId, String where, Object... args) {
+        java.sql.Date today = java.sql.Date.valueOf(sheets.today(sheetId));
+        for (Map<String, Object> m : jdbc.queryForList("SELECT id, crew_id, person_id, made_on FROM crew_member" + where, args)) {
+            jdbc.update("INSERT INTO crew_member_left (id, crew_id, person_id, name, made_on, left_on)"
+                    + " SELECT ?, ?, id, name, ?, ? FROM person WHERE id = ?", m.get("id"), m.get("crew_id"), m.get("made_on"),
+                    today, m.get("person_id"));
+        }
     }
 
     /** Names the patron for the person, unless it is themselves or they already have them. */
