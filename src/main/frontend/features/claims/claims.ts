@@ -126,6 +126,16 @@ export function live(claims: Claim[], people: Person[] | undefined, today: strin
   });
 }
 
+/** The claims that count toward claimed (a person's claimed, the claimed-total): as live, except that a hold (the
+ *  claim's or its person's) does not take a claim out; only the due figures leave the totals while held. */
+export function liveClaimed(claims: Claim[], people: Person[] | undefined, today: string): Claim[] {
+  const byId = new Map((people ?? []).map((p) => [p.id, p]));
+  return claims.filter((c) => {
+    const p = byId.get(c.personId);
+    return counts(c) && !(isOpen(c) && !bound(c) && p !== undefined && retiredOn(p, today));
+  });
+}
+
 /** A person's or the sheet's claimed: the amounts of the claims that count added up, leaving out corrections
  *  (claims that correct another), shown with two decimals. */
 export function claimed(claims: Claim[]): string {

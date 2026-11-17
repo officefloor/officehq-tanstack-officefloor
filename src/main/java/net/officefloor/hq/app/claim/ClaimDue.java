@@ -47,6 +47,14 @@ public final class ClaimDue {
         return countsLive(claim, person) && !deferred(claim, today) && !retiredOut(claim, person, today);
     }
 
+    /** Whether a claim counts toward claimed (a person's claimed, the claimed-total) on the given today: as {@link
+     *  #countsLive(Claim, net.officefloor.hq.app.person.Person, java.time.LocalDate)}, except that a hold (the
+     *  claim's or its person's) does not take it out: only the due figures leave the totals while held. */
+    public static boolean countsClaimed(Claim claim, net.officefloor.hq.app.person.Person person,
+            java.time.LocalDate today) {
+        return counts(claim) && !deferred(claim, today) && !retiredOut(claim, person, today);
+    }
+
     /** Whether a claim leaves the live totals for its person's retirement: it is open (OPEN or PENDING), not bound by
      *  a statement, and its person's retirement date is on or before today (null person: never). */
     public static boolean retiredOut(Claim claim, net.officefloor.hq.app.person.Person person,
