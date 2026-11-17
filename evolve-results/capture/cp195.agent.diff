@@ -1,0 +1,122 @@
+diff --git a/src/main/frontend/features/export/csv.ts b/src/main/frontend/features/export/csv.ts
+new file mode 100644
+index 000000000..b25468f96
+--- /dev/null
++++ b/src/main/frontend/features/export/csv.ts
+@@ -0,0 +1,16 @@
++/** A CSV value: wrapped in double quotes, any quote inside doubled, when it holds a comma, a quote or a line break. */
++export function csvValue(v: string): string {
++  return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
++}
++
++/** Downloads `lines` as a CSV file named `name`, each line ended by a line feed. */
++export function download(name: string, lines: string[]) {
++  const url = URL.createObjectURL(new Blob([lines.join('\n') + '\n'], { type: 'text/csv' }));
++  const a = document.createElement('a');
++  a.href = url;
++  a.download = name;
++  document.body.appendChild(a);
++  a.click();
++  a.remove();
++  setTimeout(() => URL.revokeObjectURL(url), 1000);
++}
+diff --git a/src/main/frontend/features/export/export.slot.tsx b/src/main/frontend/features/export/export.slot.tsx
+index b8f51b871..5c9c68e98 100644
+--- a/src/main/frontend/features/export/export.slot.tsx
++++ b/src/main/frontend/features/export/export.slot.tsx
+@@ -7,23 +7,7 @@ import { periodOf, usePeriods } from '../periods/periods';
+ import { usePools } from '../pools/pools';
+ import { claimDue, personDue, claimRate, useRates } from '../rates/rates';
+ import { useCap, useFloor, useLate } from '../settings/settings';
+-
+-/** A CSV value: wrapped in double quotes, any quote inside doubled, when it holds a comma, a quote or a line break. */
+-function csvValue(v: string): string {
+-  return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+-}
+-
+-/** Downloads `lines` as a CSV file named `name`, each line ended by a line feed. */
+-function download(name: string, lines: string[]) {
+-  const url = URL.createObjectURL(new Blob([lines.join('\n') + '\n'], { type: 'text/csv' }));
+-  const a = document.createElement('a');
+-  a.href = url;
+-  a.download = name;
+-  document.body.appendChild(a);
+-  a.click();
+-  a.remove();
+-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+-}
++import { csvValue, download } from './csv';
+ 
+ /** The button that downloads the people as a CSV file: name, grade in force today, retired-from date (or nothing)
+  *  and due-total as shown, one line per person in list order, retired people included. The file is made once the
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index 6f6335e98..8c17eed41 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -1,10 +1,14 @@
+-import { useState } from 'react';
+-import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { useEffect, useState } from 'react';
++import { useIsFetching, useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
+ import type { Person } from '../people/people';
+ import { usePersonRowAction } from '../people/rowAction';
+-import { claimsKey } from '../claims/claims';
++import { claimsKey, useClaims } from '../claims/claims';
++import { gradeOn } from '../people/people';
++import { claimDue, claimRate, useRates } from '../rates/rates';
++import { useFloor, useLate } from '../settings/settings';
++import { csvValue, download } from '../export/csv';
+ import { statementsKey, useStatements } from './statements';
+ import { useShownColumns } from '../columns/columns';
+ 
+@@ -17,6 +21,7 @@ function StatementsHead({ user }: { user: string }) {
+       {shown('statement-date') && <th>Stated on</th>}
+       <th>Statement lines</th>
+       <th />
++      <th />
+     </>
+   );
+ }
+@@ -110,7 +115,40 @@ function PersonStatements({ sheetId, user, person }: { sheetId: string; user: st
+   );
+ }
+ 
++/** The button that downloads the person's statement as a CSV file: number, date, amount, figure and status of each
++ *  claim of theirs bound by their last statement, oldest first, the figure as the claim row shows it. Made once the
++ *  sheet's figures are no longer being re-read, so it holds what the screen shows. */
++function PersonExportStatement({ sheetId, person }: { sheetId: string; person: Person }) {
++  const claims = useClaims(sheetId);
++  const rates = useRates(sheetId);
++  const late = useLate(sheetId);
++  const floor = useFloor(sheetId);
++  const fetching = useIsFetching({ queryKey: ['sheet', sheetId] });
++  const [wanted, setWanted] = useState(false);
++
++  useEffect(() => {
++    if (!wanted || fetching > 0 || !claims.data) return;
++    setWanted(false);
++    const lines = ['number,date,amount,figure,status'];
++    const bound = claims.data.filter((c) => c.personId === person.id && c.stated).reverse();
++    for (const c of bound) {
++      const figure = claimDue(c, claimRate(rates.data, gradeOn(person, c.date), c), floor, late);
++      lines.push([c.number ?? '', c.date, c.amount, figure, c.status].map(csvValue).join(','));
++    }
++    download(`statement-${sheetId}-${person.id}.csv`, lines);
++  }, [wanted, fetching, claims.data, rates.data, late, floor, person, sheetId]);
++
++  return (
++    <td>
++      <button type="button" data-testid="person-export-statement" onClick={() => setWanted(true)}>
++        Export statement (CSV)
++      </button>
++    </td>
++  );
++}
++
+ export const contributions = [
+   PeopleHead.fill({ order: 30, Component: StatementsHead }),
+   PersonRow.fill({ order: 30, Component: PersonStatements }),
++  PersonRow.fill({ order: 30.5, Component: PersonExportStatement }),
+ ];
