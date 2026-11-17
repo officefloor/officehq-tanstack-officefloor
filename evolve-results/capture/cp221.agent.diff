@@ -1,0 +1,63 @@
+diff --git a/src/main/frontend/features/header/header.slot.tsx b/src/main/frontend/features/header/header.slot.tsx
+index 5402266cb..94ad3edc1 100644
+--- a/src/main/frontend/features/header/header.slot.tsx
++++ b/src/main/frontend/features/header/header.slot.tsx
+@@ -1,11 +1,12 @@
+ import { SheetPage } from '../../slots/defs/sheetPage';
+ import { usePeople } from '../people/people';
+-import { STATUSES, useSheetDueTotal, useSheetOverdue, useMyCrewDue, useMyFigures, useMyReviewsCount, useStatusCounts } from './totals';
++import { STATUSES, useSheetDueTotal, useSheetOverdue, useMyCrewDue, useMyFigures, useMyReviewsCount, useStatusCounts, useWatchedDue } from './totals';
+ 
+ /** The sheet's header counters, at the top of the sheet: its people (retired included), its claims per status
+  *  (as the summary counts them), its due-total and overdue-total (as the rollups show them), and the signed-in user's
+  *  own due-total and overdue-total (blank when no person on the sheet has the user's name or alias) and crew total
+- *  (blank unless that person leads a crew), and how many REVIEW claims are assigned to the user for review. */
++ *  (blank unless that person leads a crew), how many REVIEW claims are assigned to the user for review, and the
++ *  due-totals of the people the user watches added up (0.00 when watching no one). */
+ function Header({ sheetId, user }: { sheetId: string; user: string }) {
+   const people = usePeople(sheetId);
+   const withStatus = useStatusCounts(sheetId);
+@@ -14,6 +15,7 @@ function Header({ sheetId, user }: { sheetId: string; user: string }) {
+   const my = useMyFigures(sheetId, user);
+   const myCrew = useMyCrewDue(sheetId, user);
+   const myReviews = useMyReviewsCount(sheetId, user);
++  const watchedDue = useWatchedDue(sheetId, user);
+ 
+   return (
+     <header data-testid="header">
+@@ -30,6 +32,7 @@ function Header({ sheetId, user }: { sheetId: string; user: string }) {
+       {' · '}My overdue total <span data-testid="my-overdue-total">{my?.overdue ?? ''}</span>
+       {' · '}My crew due total <span data-testid="my-crew-due-total">{myCrew ?? ''}</span>
+       {' · '}My reviews <span data-testid="my-reviews-count">{myReviews}</span>
++      {' · '}Watched due total <span data-testid="watched-due-total">{watchedDue}</span>
+     </header>
+   );
+ }
+diff --git a/src/main/frontend/features/header/totals.ts b/src/main/frontend/features/header/totals.ts
+index ba676cb4d..c27de5df7 100644
+--- a/src/main/frontend/features/header/totals.ts
++++ b/src/main/frontend/features/header/totals.ts
+@@ -4,6 +4,7 @@ import { overdue } from '../overdue/overdue';
+ import { gradeOn, usePeople, type Person } from '../people/people';
+ import { personDue, personSplit, shareParts, sum, trimmedSum, useRates, type SharePart } from '../rates/rates';
+ import { useCap, useFloor, useLate } from '../settings/settings';
++import { useWatches } from '../watch/watch';
+ 
+ // The sheet-wide figures shown in more than one place (the rollups, the summary and the header), worked out once
+ // here so every place that shows one shows the same value.
+@@ -144,6 +145,15 @@ export function useMyCrewDue(sheetId: string, user: string): string | null {
+   return sum(led.map((c) => crewDueTotal(c, due)));
+ }
+ 
++/** The signed-in user's watched total: the due-totals of the people the user watches (as their rows show them) added
++ *  up, skipping n/a; 0.00 when the user watches no one. */
++export function useWatchedDue(sheetId: string, user: string): string {
++  const watches = useWatches(sheetId);
++  const due = usePeopleDue(sheetId);
++  const watched = new Set((watches.data ?? []).filter((w) => w.user === user).map((w) => w.personId));
++  return sum([...watched].map((id) => due.get(id) ?? 'n/a'));
++}
++
+ /** How many of the sheet's claims have each status. */
+ export function useStatusCounts(sheetId: string): (status: ClaimStatus) => number {
+   const claims = useClaims(sheetId);
