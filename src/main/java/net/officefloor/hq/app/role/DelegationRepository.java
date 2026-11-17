@@ -28,8 +28,8 @@ public class DelegationRepository {
     }
 
     public Delegation add(String sheetId, DelegationValues values) {
-        jdbc.update("INSERT INTO delegation (sheet_id, user_name, steward, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
-                sheetId, values.user(), values.by(), values.from(), values.to());
+        jdbc.update("INSERT INTO delegation (sheet_id, user_name, steward, from_date, to_date, made_on) VALUES (?, ?, ?, ?, ?, ?)",
+                sheetId, values.user(), values.by(), values.from(), values.to(), sheets.today(sheetId));
         Long id = jdbc.queryForObject("SELECT MAX(id) FROM delegation WHERE sheet_id = ?", Long.class, sheetId);
         return new Delegation(id, sheetId, values.user(), values.by(), values.from().toString(),
                 values.to().toString());
@@ -51,6 +51,18 @@ public class DelegationRepository {
         }
         List<String> found = jdbc.queryForList("SELECT steward FROM delegation WHERE sheet_id = ? AND user_name = ?"
                 + " AND from_date <= ? AND to_date >= ? ORDER BY id", String.class, sheetId, user, today, today);
+        return found.isEmpty() ? Optional.empty() : Optional.of(found.get(0));
+    }
+
+    /** The steward the user acted for at the end of the date: as {@link #actingFor(String, String, LocalDate)}, counting
+     *  only the delegations already made then (made while the sheet's today was on or before the date). */
+    public Optional<String> actingForAsOf(String sheetId, String user, LocalDate asOf) {
+        if (user == null || user.isEmpty()) {
+            return Optional.empty();
+        }
+        List<String> found = jdbc.queryForList("SELECT steward FROM delegation WHERE sheet_id = ? AND user_name = ?"
+                + " AND from_date <= ? AND to_date >= ? AND (made_on IS NULL OR made_on <= ?) ORDER BY id", String.class,
+                sheetId, user, asOf, asOf, asOf);
         return found.isEmpty() ? Optional.empty() : Optional.of(found.get(0));
     }
 

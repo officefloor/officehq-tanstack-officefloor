@@ -5,15 +5,15 @@ import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupBefore;
 import net.officefloor.plugin.variable.Val;
 
-/** Writes PERSON_EDITED to the audit file once the edit is stored, with terms= at the end when the edit changed the
- * person's own terms recorded, giving those in force on the sheet's today (empty when none), and contact= after it
+/** Writes PERSON_EDITED to the audit file once the edit is stored, with terms= at the end when the edit recorded the
+ * person's own terms (see ApplyPerson#termsGiven) or changed them, giving those in force on the sheet's today (empty when none), and contact= after it
  * when the edit changed the person's contact (empty when it cleared it). Then writes the
  * figures the change moved (see Rollup). */
 public class RecordPersonEdited {
     public void record(@Val Person person, @Val PersonValues values, @Val TermsBefore termsBefore,
             @Val ContactBefore contactBefore, @Val RollupBefore before, Rollup rollup, Audit audit) {
         audit.record("PERSON_EDITED sheet=" + person.sheetId() + " by=" + values.by() + " name=" + person.name()
-                + " grade=" + person.grade() + (java.util.Objects.equals(termsBefore.recorded(), person.ownTerms()) ? ""
+                + " grade=" + person.grade() + (!termsBefore.given() && java.util.Objects.equals(termsBefore.recorded(), person.ownTerms()) ? ""
                         : " terms=" + (person.terms() == null ? "" : person.terms()))
                 + (java.util.Objects.equals(contactBefore.contact(), person.contact()) ? ""
                         : " contact=" + (person.contact() == null ? "" : person.contact())));

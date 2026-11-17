@@ -49,11 +49,11 @@ public class RoleRepository {
         return found.isEmpty() ? CLERK : found.get(0);
     }
 
-    /** The role the user acted in on the sheet at the end of the date: a steward while a delegation to the user held
-     *  the date, otherwise the role given as of the date. */
+    /** The role the user acted in on the sheet at the end of the date: a steward while a delegation to the user, already
+     *  made then, held the date, otherwise the role given as of the date. */
     public String roleOfAsOf(String sheetId, String user, LocalDate asOf) {
         String given = givenRoleOfAsOf(sheetId, user, asOf);
-        if (!STEWARD.equals(given) && delegations.actingFor(sheetId, user, asOf).isPresent()) {
+        if (!STEWARD.equals(given) && delegations.actingForAsOf(sheetId, user, asOf).isPresent()) {
             return STEWARD;
         }
         return given;

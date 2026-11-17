@@ -19,10 +19,20 @@ import java.util.List;
  *  PersonRepository#treeKeys): set only on the people listed, false elsewhere. {@code origin} is the sheet the person was
  *  last transferred from, null when they were never transferred here. {@code retirements} are the person's past
  *  retirements (each ended by unretiring them), in the order they ended. {@code tags} are the person's tags (each trimmed and
- *  in lower case, no repeats, sorted; empty when none): a claim of theirs counts for each in the tag totals. */
+ *  in lower case, no repeats, sorted; empty when none): a claim of theirs counts for each in the tag totals. {@code flag} is the
+ *  reason and until-date a steward last flagged them with, null when never flagged: while the sheet's today is on or before its
+ *  until-date only a steward may open a claim of theirs (see PersonFlag). */
 public record Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
         List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases,
-        boolean clashing, String origin, List<PersonRetirement> retirements, List<String> tags, List<PersonTerms> ownTerms) {
+        boolean clashing, String origin, List<PersonRetirement> retirements, List<String> tags, List<PersonTerms> ownTerms,
+        PersonFlag flag) {
+
+    public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
+            List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases,
+            boolean clashing, String origin, List<PersonRetirement> retirements, List<String> tags, List<PersonTerms> ownTerms) {
+        this(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin,
+                retirements, tags, ownTerms, null);
+    }
 
     public Person(long id, String sheetId, String name, String grade, long version, String retiredFrom, boolean held,
             List<PersonGrade> grades, List<PersonHold> holds, Integer terms, String contact, List<String> aliases,
@@ -56,27 +66,37 @@ public record Person(long id, String sheetId, String name, String grade, long ve
 
     /** The person with whether they clash in the sheet's tree. */
     public Person withClashing(boolean clashing) {
-        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements, tags, ownTerms);
+        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements, tags, ownTerms, flag);
     }
 
     /** The person with the sheet they were transferred from (null: none). */
     public Person withOrigin(String origin) {
-        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements, tags, ownTerms);
+        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements, tags, ownTerms, flag);
     }
 
     /** The person with their past retirements. */
     public Person withRetirements(List<PersonRetirement> retirements) {
-        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements, tags, ownTerms);
+        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements, tags, ownTerms, flag);
     }
 
     /** The person with their tags. */
     public Person withTags(List<String> tags) {
-        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements, tags, ownTerms);
+        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements, tags, ownTerms, flag);
     }
 
     /** The person with their own terms as recorded, and {@code terms} those in force on the sheet's today. */
     public Person withOwnTerms(List<PersonTerms> ownTerms, Integer terms) {
-        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements, tags, ownTerms);
+        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements, tags, ownTerms, flag);
+    }
+
+    /** The person with their flag (null: never flagged). */
+    public Person withFlag(PersonFlag flag) {
+        return new Person(id, sheetId, name, grade, version, retiredFrom, held, grades, holds, terms, contact, aliases, clashing, origin, retirements, tags, ownTerms, flag);
+    }
+
+    /** Whether the person's flag is in force on the date: it is on or before the flag's until-date. */
+    public boolean flaggedOn(LocalDate date) {
+        return flag != null && flag.inForceOn(date);
     }
 
     /** The person's own terms from the beginning of time (null: none). */

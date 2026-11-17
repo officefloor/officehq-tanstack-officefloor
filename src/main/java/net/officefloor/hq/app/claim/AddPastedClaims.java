@@ -21,7 +21,8 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  amount changes. Either claim is then opened by the user pasting as the open button opens it (see ApplyClaimStatus,
  *  SaveClaimStatus): one with an empty note whose due is above the note threshold, or one that would take its person
  *  past its period's cap (those opened before it in the paste count), refuses the whole paste. It takes its number,
- *  writes CLAIM_OPENED and the figures the line moved (see Rollup). No line is written to the audit file until every
+ *  writes CLAIM_OPENED (or, its due above the review threshold, goes to REVIEW unnumbered and writes CLAIM_REVIEW, see
+ *  ApplyClaimStatus#needsReview) and the figures the line moved (see Rollup). No line is written to the audit file until every
  *  line has gone through; a refusal writes nothing (the transaction gives back what was stored). */
 public class AddPastedClaims {
     public void add(@PathVariable("sheetId") String sheetId, @Val PastedClaims checked, @Val PastedLines pasted,
@@ -70,17 +71,19 @@ public class AddPastedClaims {
             if (ClaimRules.overCap(claim, periods, claims)) {
                 throw new InvalidClaimException("The person already has as many open claims in the period as its cap allows");
             }
-            String number = ClaimNumbering.next(claim, claims, periods, settings, sheets);
+            boolean review = ApplyClaimStatus.needsReview(claim, people, rates, settings, LateCharge.of(sheet, sheets, settings, claims));
+            String number = review ? null : ClaimNumbering.next(claim, claims, periods, settings, sheets);
             Claim opened = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
-                    claim.note(), ClaimStatus.OPEN, number, claim.due(), by, claim.stated(), claim.statedDue(),
+                    claim.note(), review ? ClaimStatus.REVIEW : ClaimStatus.OPEN, number, claim.due(), by, claim.stated(), claim.statedDue(),
                     claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(),
                     claim.ref(), claim.tags());
             if (!claims.updateStatus(opened, ClaimStatus.DRAFT)) {
                 throw new InvalidClaimException("The claim was changed by someone else");
             }
             log.write(opened, by);
-            lines.add("CLAIM_OPENED sheet=" + sheet + " by=" + by + " person=" + person + " amount="
-                    + opened.amount().toPlainString() + " date=" + opened.date() + " number=" + number);
+            lines.add((review ? "CLAIM_REVIEW" : "CLAIM_OPENED") + " sheet=" + sheet + " by=" + by + " person=" + person
+                    + " amount=" + opened.amount().toPlainString() + " date=" + opened.date()
+                    + (review ? "" : " number=" + number));
             lines.addAll(rollup.lines(sheet, by, before));
         }
         lines.forEach(audit::record);

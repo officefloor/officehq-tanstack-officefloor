@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.PathVariable;
  * before it in the same press count), takes its
  * number (see ClaimNumbering) and records who opened it (or, its due above the review threshold, goes to REVIEW
  * unnumbered, writing CLAIM_REVIEW, and counts as opened; see ApplyClaimStatus#needsReview), adds its OPEN line to its status log (see ClaimLog), then writes CLAIM_OPENED and the figures it moved (see Rollup).
+ * Only a steward opens a claim of a person flagged on the sheet's today (see Person#flaggedOn).
  * A user whose role the sheet does not permit to open opens none. Each that cannot, or is not on the sheet, is left as it is and counted refused.
  */
 public class OpenClaims {
@@ -47,13 +48,17 @@ public class OpenClaims {
                 .toList();
         LateCharge late = LateCharge.of(sheet, sheets, settings, claims);
         int opened = 0;
-        if (!settings.permits(sheet, "open", roles.roleOf(sheet, request.by()))) {
+        String role = roles.roleOf(sheet, request.by());
+        boolean steward = RoleRepository.STEWARD.equals(role);
+        java.time.LocalDate today = sheets.today(sheet);
+        if (!settings.permits(sheet, "open", role)) {
             chosen = List.of();
         }
         for (Claim claim : chosen) {
             if (claim.status() != ClaimStatus.DRAFT || periods.closedOn(sheet, claim.dueBy())
                     || ApplyClaimStatus.needsNote(claim, people, rates, settings, late)
-                    || ClaimRules.overCap(claim, periods, claims)) {
+                    || ClaimRules.overCap(claim, periods, claims)
+                    || (!steward && byId.containsKey(claim.personId()) && byId.get(claim.personId()).flaggedOn(today))) {
                 continue;
             }
             RollupBefore before = rollup.take(sheet);

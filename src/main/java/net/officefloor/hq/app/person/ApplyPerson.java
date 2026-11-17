@@ -18,9 +18,14 @@ import net.officefloor.plugin.variable.Val;
 public class ApplyPerson {
     public void apply(@Val Person person, @Val PersonValues values, SheetRepository sheets, Out<Person> changed,
             Out<TermsBefore> termsBefore, Out<ContactBefore> contactBefore) {
-        termsBefore.set(new TermsBefore(person.terms(), person.ownTerms()));
+        termsBefore.set(new TermsBefore(person.terms(), person.ownTerms(), termsGiven(person, values)));
         contactBefore.set(new ContactBefore(person.contact()));
         changed.set(edited(person, values, sheets.today(person.sheetId())));
+    }
+
+    /** Whether the edit records the person's own terms: it gives a from-date, or terms other than those in force. */
+    static boolean termsGiven(Person person, PersonValues values) {
+        return values.termsFrom() != null || !Objects.equals(values.terms(), person.terms());
     }
 
     /** The person as the edit leaves them, on the sheet's today (see above). */
@@ -34,7 +39,7 @@ public class ApplyPerson {
         }
         List<PersonGrade> kept = List.copyOf(grades);
         List<PersonTerms> own = new ArrayList<>(person.ownTerms());
-        if (values.termsFrom() != null || !Objects.equals(values.terms(), person.terms())) {
+        if (termsGiven(person, values)) {
             LocalDate from = values.termsFrom();
             own.removeIf((t) -> Objects.equals(t.from(), from));
             own.add(new PersonTerms(values.terms(), from));

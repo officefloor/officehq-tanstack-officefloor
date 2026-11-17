@@ -24,7 +24,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, version, retired_from, terms, contact, origin, tags";
+    private static final String COLUMNS = "id, sheet_id, name, version, retired_from, terms, contact, origin, tags, flag_reason, flag_until";
 
     private final JdbcTemplate jdbc;
     private final SheetRepository sheets;
@@ -119,7 +119,7 @@ public class PersonRepository {
             people.add(new Person(p.id(), p.sheetId(), p.name(), Person.gradeOn(mine, today), p.version(), p.retiredFrom(),
                     mine, List.copyOf(holds.getOrDefault(p.id(), List.of())), p.terms(), p.contact(),
                     List.copyOf(aliases.getOrDefault(p.id(), List.of()))).withOrigin(p.origin())
-                    .withRetirements(List.copyOf(retirements.getOrDefault(p.id(), List.of()))).withTags(p.tags())
+                    .withRetirements(List.copyOf(retirements.getOrDefault(p.id(), List.of()))).withTags(p.tags()).withFlag(p.flag())
                     .withOwnTerms(own, Person.termsOn(own, today)));
         }
         return people;
@@ -458,6 +458,12 @@ public class PersonRepository {
                 id, Date.valueOf(today));
     }
 
+    /** Flags the person with the reason until the date, replacing any flag they had. */
+    public void flag(String sheetId, long id, PersonFlag flag) {
+        jdbc.update("UPDATE person SET flag_reason = ?, flag_until = ? WHERE sheet_id = ? AND id = ?", flag.reason(),
+                Date.valueOf(flag.until()), sheetId, id);
+    }
+
     /** Adds a hold on the person, from the date until the date (null: open-ended). */
     public void hold(String sheetId, long id, PersonHold hold) {
         jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, made_on) VALUES (?, ?, ?, ?, ?)", sheetId, id,
@@ -469,7 +475,13 @@ public class PersonRepository {
         return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
                 retired == null ? null : retired.toLocalDate().toString(), List.of(), List.of(),
                 rs.getObject("terms", Integer.class), rs.getString("contact")).withOrigin(rs.getString("origin"))
-                .withTags(tags(rs.getString("tags")));
+                .withTags(tags(rs.getString("tags"))).withFlag(flag(rs));
+    }
+
+    /** The flag as read from its columns (null: never flagged). */
+    private static PersonFlag flag(ResultSet rs) throws SQLException {
+        Date until = rs.getDate("flag_until");
+        return until == null ? null : new PersonFlag(rs.getString("flag_reason"), until.toLocalDate());
     }
 
     /** Tags as stored: joined by commas, null when none. */

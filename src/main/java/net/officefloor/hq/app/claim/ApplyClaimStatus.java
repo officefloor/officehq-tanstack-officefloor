@@ -42,6 +42,7 @@ import net.officefloor.plugin.variable.Val;
  * Opening a claim whose due is above the sheet's review threshold in force on its date (if it has one) makes it REVIEW
  * instead, unnumbered, recording who opened it (see #needsReview); only a steward reviews it, making it OPEN (numbered
  * then). A REVIEW claim may otherwise only be voided.
+ * While the claim's person is flagged (the sheet's today on or before the flag's until-date) only a steward opens it.
  */
 public class ApplyClaimStatus {
 
@@ -100,6 +101,9 @@ public class ApplyClaimStatus {
         };
         if (permission != null && !settings.permits(claim.sheetId(), permission, role)) {
             throw new InvalidClaimStatusException("A " + role + " may not " + permission + " a claim");
+        }
+        if (change.action() == ClaimAction.OPEN && !steward && flagged(claim, people, sheets)) {
+            throw new InvalidClaimStatusException("Only a steward may open a claim of a flagged person");
         }
         if (change.action() == ClaimAction.VOID && !change.reason().isEmpty()
                 ? !voidReasons.has(claim.sheetId(), change.reason())
@@ -178,6 +182,12 @@ public class ApplyClaimStatus {
         changed.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                 claim.note(), to, claim.number(), settledDue,
                 change.action() == ClaimAction.OPEN ? change.by() : claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags()));
+    }
+
+    /** Whether the claim's person is flagged on the sheet's today (see Person#flaggedOn): only a steward may open it. */
+    static boolean flagged(Claim claim, PersonRepository people, SheetRepository sheets) {
+        Person person = people.find(claim.sheetId(), claim.personId());
+        return person != null && person.flaggedOn(sheets.today(claim.sheetId()));
     }
 
     /** Whether the claim cannot be opened for want of a note: its note is empty and its due is above the sheet's note

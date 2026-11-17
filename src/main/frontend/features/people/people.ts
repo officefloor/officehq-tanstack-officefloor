@@ -47,7 +47,16 @@ export type Person = {
   origin: string | null;
   retirements: PersonRetirement[];
   tags: string[];
+  flag: PersonFlag | null;
 };
+
+/** A steward's flag on a person: its reason, in force until its until-date (yyyy-MM-dd, included). While the sheet's
+ *  today is on or before it only a steward may open a claim of the person; after it the flag shows nothing. */
+export type PersonFlag = { reason: string; until: string };
+
+/** The reason of the person's flag in force on the day (yyyy-MM-dd), or '' when none is. */
+export const flagOn = (person: Pick<Person, 'flag'>, on: string) =>
+  person.flag && on !== '' && on <= person.flag.until ? person.flag.reason : '';
 
 /** A past retirement of a person (yyyy-MM-dd): from their retirement date to the sheet's today when they were
  *  unretired. No claim of theirs may be dated after the from and before the to. */
