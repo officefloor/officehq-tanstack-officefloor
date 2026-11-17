@@ -78,20 +78,33 @@ public class PeriodCloser {
     private Map<Long, BigDecimal> carried(Period period) {
         List<Period> earlier = periods.list(period.sheetId()).stream()
                 .filter((p) -> p.to().isBefore(period.from())).toList();
-        Map<Long, Person> byId = people.list(period.sheetId()).stream()
+        Map<Long, BigDecimal> perPerson = openAt(period.sheetId(), earlier, period.to());
+        periods.openings(period, null).forEach((id, amount) -> {
+            if (perPerson.containsKey(id)) {
+                perPerson.merge(id, amount, BigDecimal::add);
+            }
+        });
+        return perPerson;
+    }
+
+    /** Each person's open figure at the end of a day, by person id (every person of the sheet, 0.00 when nothing is
+     *  open): the figures of their claims whose due-by falls in one of the given periods and that were OPEN or PENDING
+     *  at the end of that day, the live rules otherwise applying as for the due-total (see #figures). */
+    public Map<Long, BigDecimal> openAt(String sheetId, List<Period> within, java.time.LocalDate asOf) {
+        Map<Long, Person> byId = people.list(sheetId).stream()
                 .collect(Collectors.toMap(Person::id, (p) -> p));
-        Map<Long, List<ClaimLogLine>> logs = log.bySheet(period.sheetId());
-        LateCharge late = LateCharge.of(period.sheetId(), sheets, settings, claims);
+        Map<Long, List<ClaimLogLine>> logs = log.bySheet(sheetId);
+        LateCharge late = LateCharge.of(sheetId, sheets, settings, claims);
         Map<Long, BigDecimal> perPerson = new LinkedHashMap<>();
         for (Long id : byId.keySet()) {
             perPerson.put(id, BigDecimal.ZERO.setScale(2));
         }
-        for (Claim c : claims.list(period.sheetId())) {
+        for (Claim c : claims.list(sheetId)) {
             Person person = byId.get(c.personId());
-            if (earlier.stream().noneMatch((p) -> !c.dueBy().isBefore(p.from()) && !c.dueBy().isAfter(p.to()))) {
+            if (within.stream().noneMatch((p) -> !c.dueBy().isBefore(p.from()) && !c.dueBy().isAfter(p.to()))) {
                 continue;
             }
-            ClaimStatus status = ClaimDue.statusAsOf(logs.getOrDefault(c.id(), List.of()), period.to());
+            ClaimStatus status = ClaimDue.statusAsOf(logs.getOrDefault(c.id(), List.of()), asOf);
             if ((status != ClaimStatus.OPEN && status != ClaimStatus.PENDING)
                     || ClaimDue.retiredOut(c, person, late.today())
                     || ClaimDue.deferred(c, late.today())) {
@@ -102,11 +115,6 @@ public class PeriodCloser {
                 perPerson.merge(c.personId(), figure, BigDecimal::add);
             }
         }
-        periods.openings(period, null).forEach((id, amount) -> {
-            if (perPerson.containsKey(id)) {
-                perPerson.merge(id, amount, BigDecimal::add);
-            }
-        });
         return perPerson;
     }
 

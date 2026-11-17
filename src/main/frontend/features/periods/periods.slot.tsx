@@ -75,6 +75,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
         )}
       </form>
       <PeriodGenerate sheetId={sheetId} user={user} />
+      <Rollover sheetId={sheetId} user={user} />
       {periods.isError && <p data-testid="periods-load-error">Could not load periods.</p>}
       <table data-testid="periods-table">
         <tbody>
@@ -220,6 +221,57 @@ function PeriodGenerate({ sheetId, user }: { sheetId: string; user: string }) {
       {generate.isError && <span data-testid="period-generate-error"> The to-date may not be before the from-date.</span>}
       {generateFy.isError && <span data-testid="period-generate-error"> The fiscal year must be a year yyyy.</span>}
       {generateQuarters.isError && <span data-testid="period-generate-error"> The year must be a year yyyy.</span>}
+    </p>
+  );
+}
+
+/** Rolls a fiscal year (yyyy) over (a steward only): generates the next fiscal year's twelve periods as the fiscal year
+ *  generator does, and adds each person's open figure at the end of the old year's last period to their carried figure
+ *  for the new year's first period. Shows how many periods the last press made; the count is cleared while a new press
+ *  runs. A year that is not yyyy, a year with no periods, or anyone but a steward is refused. */
+function Rollover({ sheetId, user }: { sheetId: string; user: string }) {
+  const queryClient = useQueryClient();
+  const [year, setYear] = useState('');
+  const rollover = useMutation({
+    mutationFn: (y: string) =>
+      postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/rollover`, { year: y, by: user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+  });
+  return (
+    <p>
+      Roll year over{' '}
+      <input
+        data-testid="rollover-year"
+        inputMode="numeric"
+        placeholder="yyyy"
+        value={year}
+        onChange={(e) => {
+          setYear(e.target.value);
+          rollover.reset();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="rollover"
+        disabled={rollover.isPending}
+        onClick={() => {
+          rollover.reset();
+          rollover.mutate(year);
+        }}
+      >
+        Roll over
+      </button>
+      {rollover.isSuccess && (
+        <>
+          {' '}
+          Made <span data-testid="rollover-made">{rollover.data.made}</span>
+        </>
+      )}
+      {rollover.isError && (
+        <span data-testid="rollover-error"> Only a steward can roll a year over, and only a year yyyy that has periods.</span>
+      )}
     </p>
   );
 }
