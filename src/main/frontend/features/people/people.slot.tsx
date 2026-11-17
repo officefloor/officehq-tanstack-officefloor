@@ -9,6 +9,23 @@ import { tagsKey } from '../tags/tags';
 import { usePeopleDue } from '../header/totals';
 import { GRADES, peopleKey, shownName, SORT_KEYS, sortPeople, useEditingPerson, usePeople, useShowRetired, useSortBy, type Person } from './people';
 import { useShownColumns } from '../columns/columns';
+import { useCrews, type Crew } from '../crews/crews';
+import { useActingRole } from '../roles/roles';
+
+/** The ids of the people a restricted user may see on the list: the person with the user's name (case and outer
+ *  spaces ignored) and everyone in the crews that person leads or belongs to. */
+function visibleTo(user: string, people: Person[], crews: Crew[]): Set<number> {
+  const me = people.find((p) => p.name.trim().toLowerCase() === user.trim().toLowerCase());
+  const ids = new Set<number>();
+  if (!me) return ids;
+  ids.add(me.id);
+  for (const c of crews) {
+    if (c.leadId !== me.id && !c.members.some((m) => m.personId === me.id)) continue;
+    if (c.leadId !== null) ids.add(c.leadId);
+    c.members.forEach((m) => ids.add(m.personId));
+  }
+  return ids;
+}
 
 /** The form's values. `gradeFrom` (yyyy-MM-dd) is the date the grade is given from; blank, the sheet's today. A
  *  person's first grade applies from the beginning of time. `terms` are the person's own terms in days; blank, none. `termsFrom` (yyyy-MM-dd) is the date they are given from;
@@ -98,6 +115,11 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
   const [showRetired, setShowRetired] = useShowRetired();
   const [sortBy, setSortBy] = useSortBy();
   const due = usePeopleDue(sheetId);
+  const role = useActingRole(sheetId, user);
+  const crews = useCrews(sheetId);
+  // until the user's role is known, no row shows: a restricted user never glimpses another's row
+  const restricted = role.data ? role.data.role === 'restricted' : user.trim() !== '' && !role.isError;
+  const visible = restricted ? visibleTo(user, people.data ?? [], crews.data ?? []) : null;
   const queryClient = useQueryClient();
   const [editingId, setEditingId] = useEditingPerson();
   const editing = people.data?.find((p) => String(p.id) === editingId);
@@ -275,7 +297,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
           </tr>
         </thead>
         <tbody>
-          {sortPeople(people.data?.filter((p) => showRetired || p.retiredFrom === null) ?? [], sortBy, due).map((p) => (
+          {sortPeople(people.data?.filter((p) => (showRetired || p.retiredFrom === null) && (visible === null || visible.has(p.id))) ?? [], sortBy, due).map((p) => (
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{shownName(p)}</td>
               <td data-testid="person-grade">{p.grade}</td>

@@ -8,13 +8,15 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** The stored roles (clerk, steward or viewer), one per user name per sheet. A name with no row is a clerk. */
+/** The stored roles (clerk, steward, viewer or restricted), one per user name per sheet. A name with no row is a clerk. */
 @Repository
 public class RoleRepository {
 
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
     public static final String VIEWER = "viewer";
+    /** Sees on the people list only their own crews' people and themselves; otherwise as a clerk. */
+    public static final String RESTRICTED = "restricted";
 
     private final JdbcTemplate jdbc;
     private final DelegationRepository delegations;

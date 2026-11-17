@@ -5,9 +5,10 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Reads the body: the user name is not blank, the role clerk, steward or viewer. */
+/** Reads the body: the user name is not blank, the role clerk, steward, viewer or restricted. */
 public class ValidateRole {
-    private static final Set<String> ROLES = Set.of(RoleRepository.CLERK, RoleRepository.STEWARD, RoleRepository.VIEWER);
+    private static final Set<String> ROLES = Set.of(RoleRepository.CLERK, RoleRepository.STEWARD, RoleRepository.VIEWER,
+            RoleRepository.RESTRICTED);
 
     public void validate(@PathVariable("user") String user, @RequestBody RoleRequest request, Out<RoleValues> values)
             throws InvalidRoleException {
@@ -17,7 +18,7 @@ public class ValidateRole {
         }
         String role = request == null || request.role() == null ? "" : request.role().trim();
         if (!ROLES.contains(role)) {
-            throw new InvalidRoleException("The role must be clerk, steward or viewer");
+            throw new InvalidRoleException("The role must be clerk, steward, viewer or restricted");
         }
         values.set(new RoleValues(u, role, request.by() == null ? "" : request.by().trim()));
     }
