@@ -150,6 +150,12 @@ export function useStatusCounts(sheetId: string): (status: ClaimStatus) => numbe
   return (status) => (claims.data ?? []).filter((c) => c.status === status).length;
 }
 
+/** How many of the sheet's REVIEW claims are assigned to the user for review. */
+export function useMyReviewsCount(sheetId: string, user: string): number {
+  const claims = useClaims(sheetId);
+  return (claims.data ?? []).filter((c) => c.status === 'REVIEW' && c.reviewAssigned === user).length;
+}
+
 /** The due-total of each grade: the due-totals of the people on it on the sheet's today (retired people left out)
  *  added up, skipping n/a. */
 export function useGradeDue(sheetId: string): (grade: string) => string {

@@ -33,6 +33,7 @@ public class RespondWithClaims {
         Map<Long, List<ClaimComment>> comments = claims.comments(sheet, date);
         Map<Long, Integer> batches = claims.batches(sheet, date);
         Set<Long> waived = claims.waived(sheet, date);
+        Map<Long, String> reviewAssignees = claims.reviewAssignees(sheet);
         Map<Long, List<ClaimShare>> shares = claims.shares(sheet, date);
         Map<Long, List<ClaimLine>> lineItems = claims.lines(sheet, date);
         Map<Long, Claim> edited = date == null ? Map.of() : claims.editedAfter(sheet, date);
@@ -53,7 +54,7 @@ public class RespondWithClaims {
             out.add(ClaimResponse.from(shown, claims, lines, today, date == null ? locks.get(c.id()) : null,
                     late.contains(c.id()), reminded.get(c.id()), comments.getOrDefault(c.id(), List.of()),
                     batches.get(c.id()), lineItems.getOrDefault(c.id(), List.of()), seqs.getOrDefault(c.id(), 0L), waived.contains(c.id()),
-                    shares.getOrDefault(c.id(), List.of())));
+                    shares.getOrDefault(c.id(), List.of()), reviewAssignees.get(c.id())));
         }
         response.send(out);
     }

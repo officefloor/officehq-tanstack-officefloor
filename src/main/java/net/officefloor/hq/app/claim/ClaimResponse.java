@@ -17,12 +17,14 @@ import java.util.List;
  *  the sheet's today (yyyy-MM-dd) then; batch is the number of the bulk settle batch that settled it, null when none did; lines are its lines in the order added (empty when none); seq is the order it was added in, across every sheet (a
  *  forward-only rate applies only to claims whose seq is above its after; see Rate#appliesTo); waived is whether a steward waived its late charge
  *  (see ApplyWaive); held is whether it is held (see ApplyClaimHold); shares are the shares of it other people hold, in the
- *  order made (see ApplyShare). */
+ *  order made (see ApplyShare); reviewAssigned is the user it was last assigned to for review, null when never (see
+ *  ApplyReviewAssign). */
 public record ClaimResponse(long id, String sheetId, long personId, String amount, String date, String note,
         String status, String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
         String roundsOn, String dueBy, boolean deferred, String deferredUntil, int proofs, int proofsReceipt, int proofsPhoto, String splitFrom, List<LogLine> log,
         String lockedBy, boolean lateEntry, String reminded, String ref, List<String> tags,
-        List<Comment> comments, Integer batch, List<Line> lines, long seq, boolean waived, boolean held, List<Share> shares) {
+        List<Comment> comments, Integer batch, List<Line> lines, long seq, boolean waived, boolean held, List<Share> shares,
+        String reviewAssigned) {
 
     /** A share of a claim as sent to the screen: its holder's person id and their share (two decimals). */
     public record Share(long personId, String share) {
@@ -49,12 +51,13 @@ public record ClaimResponse(long id, String sheetId, long personId, String amoun
                 claims.lateEntry(claim.sheetId(), claim.id()), claims.remindedOn(claim.sheetId(), claim.id()),
                 claims.comments(claim.sheetId(), claim.id()), claims.batchOf(claim.sheetId(), claim.id()),
                 claims.lines(claim.sheetId(), claim.id()), claims.addedSeq(claim.sheetId(), claim.id()),
-                claims.waivedOn(claim.sheetId(), claim.id()) != null, claims.shares(claim.sheetId(), claim.id()));
+                claims.waivedOn(claim.sheetId(), claim.id()) != null, claims.shares(claim.sheetId(), claim.id()),
+                claims.reviewAssignee(claim.sheetId(), claim.id()));
     }
 
     public static ClaimResponse from(Claim claim, ClaimRepository claims, List<ClaimLogLine> log, LocalDate today, String lockedBy,
             boolean lateEntry, LocalDate reminded, List<ClaimComment> comments, Integer batch, List<ClaimLine> lines,
-            long seq, boolean waived, List<ClaimShare> shares) {
+            long seq, boolean waived, List<ClaimShare> shares, String reviewAssigned) {
         boolean deferred = ClaimDue.deferred(claim, today);
         int photos = claims.photoProofs(claim);
         return new ClaimResponse(claim.id(), claim.sheetId(), claim.personId(), claim.amount().toPlainString(),
@@ -68,6 +71,6 @@ public record ClaimResponse(long id, String sheetId, long personId, String amoun
                 claim.tags() == null ? List.of() : List.of(claim.tags().split(",")),
                 comments.stream().map((m) -> new Comment(m.by(), m.date().toString(), m.text())).toList(), batch,
                 lines.stream().map((l) -> new Line(l.label(), l.qty(), l.unit().toPlainString())).toList(), seq, waived, claim.held(),
-                shares.stream().map((s) -> new Share(s.personId(), s.share().toPlainString())).toList());
+                shares.stream().map((s) -> new Share(s.personId(), s.share().toPlainString())).toList(), reviewAssigned);
     }
 }

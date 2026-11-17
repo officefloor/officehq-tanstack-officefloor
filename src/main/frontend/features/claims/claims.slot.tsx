@@ -127,6 +127,15 @@ function ClaimRow({
     mutationFn: () => putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/waive`, { by: user }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
+  const [reviewUser, setReviewUser] = useState('');
+  const assignReview = useMutation({
+    mutationFn: (assignee: string) =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/review-assignee`, { user: assignee, by: user }),
+    onSuccess: () => {
+      setReviewUser('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
   const hold = useMutation({
     mutationFn: () => putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/hold`, { held: !c.held, by: user }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
@@ -242,6 +251,7 @@ function ClaimRow({
     reassign.reset();
     defer.reset();
     waive.reset();
+    assignReview.reset();
     hold.reset();
     share.reset();
     redate.reset();
@@ -284,6 +294,7 @@ function ClaimRow({
       </span>{' '}
       <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
       <span data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="claim-review-assigned">{c.reviewAssigned ?? ''}</span>{' '}
       <span data-testid="claim-held">{c.held ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-proofs">{c.proofs}</span>{' '}
       (receipts <span data-testid="claim-proofs-receipt">{c.proofsReceipt}</span>, photos{' '}
@@ -333,6 +344,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          assignReview.reset();
           hold.reset();
           redate.reset();
           proof.reset();
@@ -356,6 +368,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          assignReview.reset();
           hold.reset();
           share.reset();
           redate.reset();
@@ -413,6 +426,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          assignReview.reset();
           hold.reset();
           share.reset();
           redate.reset();
@@ -500,6 +514,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          assignReview.reset();
           hold.reset();
           share.reset();
           redate.reset();
@@ -536,6 +551,7 @@ function ClaimRow({
           setDeferUntil(e.target.value);
           defer.reset();
           waive.reset();
+          assignReview.reset();
           hold.reset();
           share.reset();
           redate.reset();
@@ -559,6 +575,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          assignReview.reset();
           hold.reset();
           share.reset();
           redate.reset();
@@ -585,6 +602,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          assignReview.reset();
           hold.reset();
           share.reset();
           redate.reset();
@@ -600,6 +618,42 @@ function ClaimRow({
       >
         Waive late charge
       </button>{' '}
+      <input
+        data-testid="claim-review-user"
+        aria-label="Assign review to"
+        value={reviewUser}
+        onChange={(e) => {
+          setReviewUser(e.target.value);
+          assignReview.reset();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-review-assign"
+        disabled={assignReview.isPending}
+        onClick={() => {
+          setEditRefused(null);
+          lock.reset();
+          status.reset();
+          reassign.reset();
+          defer.reset();
+          waive.reset();
+          hold.reset();
+          share.reset();
+          redate.reset();
+          proof.reset();
+          split.reset();
+          settlePart.reset();
+          remind.reset();
+          comment.reset();
+          line.reset();
+          inline.reset();
+          assignReview.reset();
+          assignReview.mutate(reviewUser.trim());
+        }}
+      >
+        Assign review
+      </button>{' '}
       <button
         type="button"
         data-testid="claim-hold"
@@ -611,6 +665,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          assignReview.reset();
           redate.reset();
           proof.reset();
           split.reset();
@@ -647,6 +702,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          assignReview.reset();
           hold.reset();
           share.reset();
           redate.reset();
@@ -688,6 +744,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          assignReview.reset();
           hold.reset();
           share.reset();
           redate.reset();
@@ -729,6 +786,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          assignReview.reset();
           hold.reset();
           share.reset();
           redate.reset();
@@ -773,6 +831,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          assignReview.reset();
           hold.reset();
           share.reset();
           redate.reset();
@@ -799,6 +858,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          assignReview.reset();
           hold.reset();
           share.reset();
           redate.reset();
@@ -835,6 +895,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          assignReview.reset();
           hold.reset();
           share.reset();
           redate.reset();
@@ -895,6 +956,7 @@ function ClaimRow({
           reassign.reset();
           defer.reset();
           waive.reset();
+          assignReview.reset();
           hold.reset();
           share.reset();
           redate.reset();
@@ -936,6 +998,12 @@ function ClaimRow({
         <span data-testid="claim-error">
           {' '}
           Only a steward waives a late charge, and only on an open or pending claim not already waived.
+        </span>
+      )}
+      {assignReview.isError && (
+        <span data-testid="claim-error">
+          {' '}
+          Only a steward assigns a claim for review, and only a review claim, to a user named.
         </span>
       )}
       {hold.isError && (

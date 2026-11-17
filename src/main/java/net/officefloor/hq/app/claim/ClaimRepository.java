@@ -246,6 +246,28 @@ public class ClaimRepository {
                 + " AND held = ?", claim.held(), claim.sheetId(), claim.id(), !claim.held()) == 1;
     }
 
+    /** Stores the user the claim is assigned to for review, but only while it is still REVIEW; false otherwise (nothing
+     *  is written). */
+    public boolean assignReview(Claim claim, String user) {
+        return jdbc.update("UPDATE claim SET review_assignee = ? WHERE sheet_id = ? AND id = ? AND status = 'REVIEW'",
+                user, claim.sheetId(), claim.id()) == 1;
+    }
+
+    /** The user the claim was last assigned to for review; null when never assigned. */
+    public String reviewAssignee(String sheetId, long id) {
+        List<String> found = jdbc.queryForList("SELECT review_assignee FROM claim WHERE sheet_id = ? AND id = ?",
+                String.class, sheetId, id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The user each of the sheet's claims assigned for review was last assigned to, by claim id. */
+    public Map<Long, String> reviewAssignees(String sheetId) {
+        Map<Long, String> out = new HashMap<>();
+        jdbc.query("SELECT id, review_assignee FROM claim WHERE sheet_id = ? AND review_assignee IS NOT NULL",
+                (rs) -> { out.put(rs.getLong("id"), rs.getString("review_assignee")); }, sheetId);
+        return out;
+    }
+
     /** The sheet's today the claim's late charge was waived on; null when it was never waived. */
     public LocalDate waivedOn(String sheetId, long id) {
         List<LocalDate> found = jdbc.queryForList("SELECT waived_on FROM claim WHERE sheet_id = ? AND id = ?",

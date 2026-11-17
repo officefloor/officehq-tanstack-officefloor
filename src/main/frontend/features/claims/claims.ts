@@ -44,6 +44,8 @@ export type Claim = {
   deferredUntil: string | null;
   /** Whether a steward waived its late charge: from then on it bears none, whatever its overdue state. */
   waived: boolean;
+  /** The user a steward last assigned it to for review (null when never): kept once it leaves REVIEW. */
+  reviewAssigned: string | null;
   /** Whether it is held (an OPEN or PENDING claim is held and released with Hold): a held claim still counts in every
    *  total, as one dated within a hold of its person does. */
   held: boolean;
