@@ -1,0 +1,428 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index 9af7c2ecf..eb233de19 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -14,8 +14,20 @@ export function viewAsOf(): string {
+   return /^"?(\d{4}-\d{2}-\d{2})"?$/.exec(raw)?.[1] ?? '';
+ }
+ 
++/** The date this screen previews the sheet's today as (yyyy-MM-dd; the `preview` search param, see features/preview),
++ *  or ''. While set, and no as-of date is, every read of a sheet asks for its figures as if its today were that date
++ *  (`preview`); a change never carries it, so every change uses the sheet's real today. */
++export function viewPreview(): string {
++  const raw = new URLSearchParams(window.location.search).get('preview') ?? '';
++  return /^"?(\d{4}-\d{2}-\d{2})"?$/.exec(raw)?.[1] ?? '';
++}
++
+ async function send<T>(path: string, init?: RequestInit, now = false): Promise<T> {
+   const asOf = now ? '' : viewAsOf();
++  const preview = now || asOf !== '' ? '' : viewPreview();
++  if (preview !== '' && path.startsWith('/api/sheets/') && (init?.method ?? 'GET') === 'GET') {
++    path = `${path}${path.includes('?') ? '&' : '?'}preview=${preview}`;
++  }
+   if (asOf !== '' && path.startsWith('/api/sheets/')) {
+     if ((init?.method ?? 'GET') === 'GET') {
+       path = `${path}${path.includes('?') ? '&' : '?'}asOf=${asOf}`;
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 64a7480a1..4b672ad9b 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -14,7 +14,7 @@ import { isReviewLate } from '../overdue/late';
+ import { useFloor, useLate, useReviewSla, type Dated } from '../settings/settings';
+ import { claimsKey, commentLine, lineLine, live, liveClaimed, logLine, claimed, useClaims, type Claim } from './claims';
+ import { useSelectedClaims } from './selection';
+-import { useSheetToday } from '../session/session';
++import { useSheet, useSheetToday } from '../session/session';
+ import { useVoidReasons } from '../voidreasons/voidreasons';
+ import { useTemplates } from '../templates/templates';
+ import { useShownColumns } from '../columns/columns';
+@@ -74,10 +74,12 @@ function ClaimRow({
+   const roles = useRoles(sheetId);
+   const delegations = useDelegations(sheetId);
+   const today = useSheetToday(sheetId);
++  // who may act is judged on the sheet's real today, whatever date the screen previews
++  const realToday = useSheet(sheetId).data?.today ?? '';
+   // a viewer acting for a steward who delegated to them (the sheet's today inside its range) is not a viewer then
+   const viewer =
+     roles.data?.find((r) => r.user === user)?.role === 'viewer' &&
+-    !delegations.data?.some((d) => d.user === user && d.from <= today && today <= d.to);
++    !delegations.data?.some((d) => d.user === user && d.from <= realToday && realToday <= d.to);
+   const queryClient = useQueryClient();
+   const periods = usePeriods(sheetId);
+   const late = useLate(sheetId);
+diff --git a/src/main/frontend/features/preview/preview.slot.tsx b/src/main/frontend/features/preview/preview.slot.tsx
+new file mode 100644
+index 000000000..e6f043107
+--- /dev/null
++++ b/src/main/frontend/features/preview/preview.slot.tsx
+@@ -0,0 +1,48 @@
++import { useState } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { useNavigate } from '@tanstack/react-router';
++import { SheetPage } from '../../slots/defs/sheetPage';
++import { usePreview } from './preview';
++
++/** The preview date: an entry, set and clear, and the date shown (nothing while none is set). Setting or clearing it
++ *  re-reads everything on the screen. */
++function Preview() {
++  const [preview] = usePreview();
++  const navigate = useNavigate();
++  const queryClient = useQueryClient();
++  const [typed, setTyped] = useState('');
++  const show = async (date: string) => {
++    await navigate({
++      to: '.',
++      search: (prev: Record<string, unknown>) => {
++        const next = { ...prev };
++        if (date === '') delete next.preview;
++        else next.preview = date;
++        return next;
++      },
++      replace: true,
++    });
++    await queryClient.resetQueries();
++  };
++  return (
++    <form
++      data-testid="preview-form"
++      onSubmit={(e) => {
++        e.preventDefault();
++        const date = typed.trim();
++        if (/^\d{4}-\d{2}-\d{2}$/.test(date)) void show(date);
++      }}
++    >
++      Preview today as <span data-testid="sheet-preview">{preview}</span>{' '}
++      <input type="date" data-testid="preview-date" value={typed} onChange={(e) => setTyped(e.target.value)} />
++      <button type="submit" data-testid="preview-set">
++        Preview
++      </button>{' '}
++      <button type="button" data-testid="preview-clear" onClick={() => void show('')}>
++        Clear
++      </button>
++    </form>
++  );
++}
++
++export const contribution = SheetPage.fill({ order: 1.5, Component: Preview });
+diff --git a/src/main/frontend/features/preview/preview.ts b/src/main/frontend/features/preview/preview.ts
+new file mode 100644
+index 000000000..e67167dca
+--- /dev/null
++++ b/src/main/frontend/features/preview/preview.ts
+@@ -0,0 +1,7 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++/** The date this screen previews the sheet's today as (yyyy-MM-dd), or '' for none. It belongs to this user's screen
++ *  (the `preview` search param), so loading another sheet keeps it, and no other user sees it. While it is set every
++ *  figure on the screen takes it as the sheet's today, over the sheet's current records (see api/http and
++ *  session#useSheetToday); every change still uses the sheet's real today. */
++export const usePreview = () => useSearchParam('preview', asString);
+diff --git a/src/main/frontend/features/session/session.ts b/src/main/frontend/features/session/session.ts
+index d16674153..8fffb2249 100644
+--- a/src/main/frontend/features/session/session.ts
++++ b/src/main/frontend/features/session/session.ts
+@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { nowKey, useReadNow } from '../../query/readNow';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
++import { useAsOf } from '../asof/asof.slot';
++import { usePreview } from '../preview/preview';
+ 
+ // Who is signed in and which sheet is active live in the URL (`user`, `sheet`), so any feature
+ // reads them directly. There is no password: signing in is typing a name.
+@@ -23,7 +25,13 @@ export function useSheet(sheetId: string) {
+   });
+ }
+ 
+-/** The sheet's today (yyyy-MM-dd), or '' while the sheet loads. Use it for every default date. */
++/** The sheet's today (yyyy-MM-dd), or '' while the sheet loads, as every figure on this screen takes it: the preview
++ *  date while this screen previews one (see features/preview; not while it shows the sheet as of a date, nor in a read
++ *  of the sheet as it is now). Use it for every figure; a change and its defaults use the sheet's real today. */
+ export function useSheetToday(sheetId: string): string {
+-  return useSheet(sheetId).data?.today ?? '';
++  const today = useSheet(sheetId).data?.today ?? '';
++  const [preview] = usePreview();
++  const [asOf] = useAsOf();
++  const now = useReadNow();
++  return today !== '' && preview !== '' && asOf === '' && !now ? preview : today;
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+index 53708a1f9..dae3ce8b2 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+@@ -6,6 +6,7 @@ import java.util.List;
+ import java.util.Map;
+ import java.util.Set;
+ import net.officefloor.hq.app.sheet.AsOf;
++import net.officefloor.hq.app.sheet.Preview;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.hq.app.statement.Statement;
+ import net.officefloor.hq.app.statement.StatementRepository;
+@@ -19,13 +20,14 @@ import org.springframework.web.bind.annotation.RequestParam;
+  *  statement was taken while the sheet's today was on or before the date; the date stands in for today. */
+ public class RespondWithClaims {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, ClaimRepository claims,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, ClaimRepository claims,
+             ClaimLogRepository log, SheetRepository sheets, StatementRepository statements,
+             ObjectResponse<List<ClaimResponse>> response) {
+         String sheet = sheetId.trim();
+         LocalDate date = AsOf.parse(asOf);
+         Map<Long, List<ClaimLogLine>> logs = log.bySheet(sheet);
+-        LocalDate today = date == null ? sheets.today(sheet) : date;
++        LocalDate today = Preview.today(sheet, date, preview, sheets);
+         Map<Long, String> locks = claims.locks(sheet);
+         Map<Long, Long> seqs = claims.addedSeqs(sheet);
+         Set<Long> late = claims.lateEntries(sheet);
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index de84a462b..9b758ace2 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -64,8 +64,14 @@ public class PersonRepository {
+     }
+ 
+     public List<Person> list(String sheetId) {
++        return list(sheetId, null);
++    }
++
++    /** The sheet's people (see #list), their grade and terms in force on the day given instead of the sheet's today
++     *  (null: on its today) — a preview of the sheet (see Preview). */
++    public List<Person> list(String sheetId, LocalDate on) {
+         return withGrades(sheetId, jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY position, id",
+-                PersonRepository::map, sheetId));
++                PersonRepository::map, sheetId), on);
+     }
+ 
+     public Person find(String sheetId, long id) {
+@@ -86,6 +92,11 @@ public class PersonRepository {
+ 
+     /** The people with their grades and holds, and the grade in force on the sheet's today. */
+     private List<Person> withGrades(String sheetId, List<Person> found) {
++        return withGrades(sheetId, found, null);
++    }
++
++    /** The people with their grades and holds, and the grade in force on the day (null: the sheet's today). */
++    private List<Person> withGrades(String sheetId, List<Person> found, LocalDate on) {
+         if (found.isEmpty()) {
+             return found;
+         }
+@@ -111,7 +122,7 @@ public class PersonRepository {
+                     retirements.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(new PersonRetirement(
+                             rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate()));
+                 }, sheetId);
+-        LocalDate today = sheets.today(sheetId);
++        LocalDate today = on != null ? on : sheets.today(sheetId);
+         List<Person> people = new ArrayList<>();
+         for (Person p : found) {
+             List<PersonGrade> mine = List.copyOf(grades.getOrDefault(p.id(), List.of()));
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+index 619fdc598..39c89e6bf 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.person;
+ import java.util.List;
+ import net.officefloor.web.ObjectResponse;
+ import net.officefloor.hq.app.sheet.AsOf;
++import net.officefloor.hq.app.sheet.Preview;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+@@ -10,10 +11,11 @@ import org.springframework.web.bind.annotation.RequestParam;
+  *  with whether they clash (see PersonRepository#withClashing). */
+ public class RespondWithPeople {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, PersonRepository people,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, PersonRepository people,
+             ObjectResponse<List<Person>> response) {
+         java.time.LocalDate date = AsOf.parse(asOf);
+         String sheet = sheetId.trim();
+-        response.send(people.withClashing(sheet, date == null ? people.list(sheet) : people.listAsOf(sheet, date)));
++        response.send(people.withClashing(sheet, date == null ? people.list(sheet, Preview.parse(preview)) : people.listAsOf(sheet, date)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+index 2ed124e85..925852c72 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
++++ b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.plan;
+ import java.time.LocalDate;
+ import java.util.List;
+ import net.officefloor.hq.app.sheet.AsOf;
++import net.officefloor.hq.app.sheet.Preview;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+@@ -12,11 +13,12 @@ import org.springframework.web.bind.annotation.RequestParam;
+  *  as of a date (see AsOf), as they stood then. */
+ public class RespondWithPlans {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, PlanRepository plans, SheetRepository sheets,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, PlanRepository plans, SheetRepository sheets,
+             ObjectResponse<List<PlanView>> response) {
+         String sheet = sheetId.trim();
+         LocalDate date = AsOf.parse(asOf);
+-        LocalDate today = sheets.today(sheet);
++        LocalDate today = Preview.today(sheet, null, preview, sheets);
+         response.send(plans.list(sheet, date).stream().map((p) -> PlanView.of(p, today)).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index e654219bd..bc64a4de8 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -56,8 +56,15 @@ public class PoolRepository {
+      *  whose to-date is on or before the sheet's today, their cut as it stood at the end of that period (see #stood).
+      *  Null when they had none then. */
+     public List<Pool> list(String sheetId, LocalDate asOf) {
+-        List<Pool> now = stood(sheetId, asOf);
+-        LocalDate today = asOf != null ? asOf : sheets.today(sheetId);
++        return list(sheetId, asOf, null);
++    }
++
++    /** The sheet's pools (see #list(String, LocalDate)), with the preview date (null: none; see Preview) standing in for
++     *  the sheet's today when read as it is now. */
++    public List<Pool> list(String sheetId, LocalDate asOf, LocalDate preview) {
++        LocalDate shown = asOf == null ? preview : null;
++        List<Pool> now = stood(sheetId, asOf, shown);
++        LocalDate today = asOf != null ? asOf : shown != null ? shown : sheets.today(sheetId);
+         Map<Long, String> fixed = periods.poolCuts(sheetId, asOf);
+         List<String> ended = new ArrayList<>();
+         List<Map<String, String>> cutsThen = new ArrayList<>();
+@@ -144,8 +151,14 @@ public class PoolRepository {
+      *  the sheet's today, and only the pools, memberships, crews, holds, retirements and pot stored while the sheet's
+      *  today was on or before it count. */
+     private List<Pool> stood(String sheetId, LocalDate asOf) {
++        return stood(sheetId, asOf, null);
++    }
++
++    /** The pools as they stood (see #stood(String, LocalDate)), the preview date (null: none) standing in for the
++     *  sheet's today when read as it is now. */
++    private List<Pool> stood(String sheetId, LocalDate asOf, LocalDate preview) {
+         BigDecimal pot = asOf != null ? settings.pot(sheetId, asOf) : settings.pot(sheetId);
+-        LocalDate today = asOf != null ? asOf : sheets.today(sheetId);
++        LocalDate today = asOf != null ? asOf : preview != null ? preview : sheets.today(sheetId);
+         java.sql.Date then = asOf != null ? java.sql.Date.valueOf(asOf) : java.sql.Date.valueOf(LocalDate.of(9999, 12, 31));
+         Set<Long> held = held(sheetId, today, then);
+         Map<Long, Boolean> retiredThen = asOf != null ? retired(sheetId, then) : null;
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index de42923d4..579a03dd4 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.pool;
+ 
+ import java.util.List;
+ import net.officefloor.hq.app.sheet.AsOf;
++import net.officefloor.hq.app.sheet.Preview;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+@@ -10,8 +11,9 @@ import org.springframework.web.bind.annotation.RequestParam;
+  *  date (see AsOf), the date stands in for the sheet's today. */
+ public class RespondWithPools {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, PoolRepository pools,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, PoolRepository pools,
+             ObjectResponse<List<Pool>> response) {
+-        response.send(pools.list(sheetId.trim(), AsOf.parse(asOf)));
++        response.send(pools.list(sheetId.trim(), AsOf.parse(asOf), Preview.parse(preview)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 4755b33b5..eb149b418 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -115,6 +115,13 @@ public class Rollup {
+         return new RollupBefore(figures);
+     }
+ 
++    /** What the shares of the sheet's claims that count live move in each person's due-total now (see #shareParts), by
++     *  person id. */
++    public Map<Long, BigDecimal> shareParts(String sheetId) {
++        return shareParts(sheetId, sheets.today(sheetId), LateCharge.of(sheetId, sheets, settings, claims),
++                claims.list(sheetId), people.list(sheetId));
++    }
++
+     /** What the shares of the claims that count live move in each person's due-total, by person id: each holder gains
+      *  their part of the claim's figure (see ClaimShare#part), and the claim's own person loses it. A person with no
+      *  share of a claim that has a figure is left out. */
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Preview.java b/src/main/java/net/officefloor/hq/app/sheet/Preview.java
+new file mode 100644
+index 000000000..14890d08a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/Preview.java
+@@ -0,0 +1,28 @@
++package net.officefloor.hq.app.sheet;
++
++import java.time.LocalDate;
++
++/**
++ * The preview date of a read: a screen previewing the sheet as if its today were a date sends it as the
++ * {@code preview} query parameter of every read (never of a change: every change uses the sheet's real today). The
++ * sheet's current records are read as they are; only the date that stands in for today in every figure changes.
++ */
++public final class Preview {
++
++    private Preview() {
++    }
++
++    /** The preview date given (yyyy-MM-dd), or null when none (or none readable) was. */
++    public static LocalDate parse(String preview) {
++        return AsOf.parse(preview);
++    }
++
++    /** The date a read's figures take as the sheet's today: the as-of date, else the preview date, else its today. */
++    public static LocalDate today(String sheetId, LocalDate asOf, String preview, SheetRepository sheets) {
++        if (asOf != null) {
++            return asOf;
++        }
++        LocalDate shown = parse(preview);
++        return shown != null ? shown : sheets.today(sheetId);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index 688c866a8..77416d75e 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -19,6 +19,7 @@ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.pool.PoolRepository;
+ import net.officefloor.hq.app.rate.Rate;
+ import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
+@@ -29,7 +30,8 @@ import net.officefloor.plugin.variable.Val;
+  * added up, each with its late charge; n/a when their grade has no rate today and no counting claim has a
+  * figure, kept or at the grade in force on its date; at most the sheet's cap less their cut total, not below 0.00), and binds every claim of theirs that counts (a person's OPEN or PENDING claims dated within a hold of theirs, or any once their retirement date is reached, not bound by a statement, do not, nor do deferred claims) to its due
+  * as shown, its late charge (and the floor) included, so its late charge no longer follows today while bound (a claim
+- * already bound keeps its bound figure); one that does not count is unbound (live again).
++ * already bound keeps its bound figure); one that does not count is unbound (live again). The due-total moves by the
++ * parts of shared claims, as the person's figures do (see Rollup).
+  *
+  * Taken as of a date (on or before the sheet's today; a later one is refused, as is one before the person was added),
+  * it is the same with the sheet as it stood at the end of that date (see SheetAsOf, PersonRepository#asOf): each claim
+@@ -39,7 +41,7 @@ import net.officefloor.plugin.variable.Val;
+ public class TakeStatement {
+     public void take(@Val Person person, @Val StatementTaker taker, ClaimRepository claims, RateRepository rates,
+             SheetRepository sheets, SettingRepository settings, StatementRepository statements, PersonRepository people,
+-            ClaimLogRepository log, PoolRepository pools, Out<Statement> taken) throws InvalidPersonException {
++            ClaimLogRepository log, PoolRepository pools, Rollup rollup, Out<Statement> taken) throws InvalidPersonException {
+         if (taker.asOf() != null) {
+             takeAsOf(person, taker, claims, rates, sheets, settings, statements, people, log, pools, taken);
+             return;
+@@ -65,6 +67,11 @@ public class TakeStatement {
+             counted++;
+             claims.bind(c, true, shown);
+         }
++        BigDecimal part = rollup.shareParts(sheetId).get(person.id());
++        if (part != null) {
++            total = total.add(part);
++            figured = true;
++        }
+         String dueTotal = rates.find(sheetId, person.gradeOn(today), today) == null && !figured ? "n/a" : SettingRepository.capped(total, settings.cap(sheetId), pools.cutTotals(sheetId, null).get(person.id())).toPlainString();
+         Statement statement = new Statement(sheetId, person.id(), today, dueTotal, counted, taker.by());
+         statements.add(statement);
