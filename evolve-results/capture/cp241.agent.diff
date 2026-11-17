@@ -1,0 +1,76 @@
+diff --git a/src/main/java/net/officefloor/hq/app/role/RespondWithRoles.java b/src/main/java/net/officefloor/hq/app/role/RespondWithRoles.java
+index b1f743a2a..c3e255260 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RespondWithRoles.java
++++ b/src/main/java/net/officefloor/hq/app/role/RespondWithRoles.java
+@@ -1,13 +1,19 @@
+ package net.officefloor.hq.app.role;
+ 
++import java.time.LocalDate;
+ import java.util.List;
++import net.officefloor.hq.app.sheet.AsOf;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** The roles given on the sheet, by user name. */
++/** The roles given on the sheet, by user name; read as of a date (see AsOf), those in force at the end of it. */
+ public class RespondWithRoles {
+-    public void respond(@PathVariable("sheetId") String sheetId, RoleRepository roles,
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(value = "asOf", required = false) String asOf, RoleRepository roles,
+             ObjectResponse<List<Role>> response) {
+-        response.send(roles.list(sheetId.trim()));
++        String id = sheetId.trim();
++        LocalDate date = AsOf.parse(asOf);
++        response.send(date == null ? roles.list(id) : roles.listAsOf(id, date));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/RoleRepository.java b/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
+index bef8225e2..51864d560 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
++++ b/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.role;
+ import java.sql.ResultSet;
+ import java.sql.SQLException;
+ import java.time.LocalDate;
++import java.util.ArrayList;
+ import java.util.List;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import org.springframework.jdbc.core.JdbcTemplate;
+@@ -34,6 +35,25 @@ public class RoleRepository {
+                 RoleRepository::map, sheetId);
+     }
+ 
++    /** The roles in force on the sheet at the end of the date, by user name: for each name given a role, the role given
++     *  as of the date (see givenRoleOfAsOf); a name first given one after the date is left out. */
++    public List<Role> listAsOf(String sheetId, LocalDate asOf) {
++        List<String> users = jdbc.queryForList("SELECT user_name FROM user_role WHERE sheet_id = ?"
++                + " UNION SELECT user_name FROM user_role_log WHERE sheet_id = ? ORDER BY user_name",
++                String.class, sheetId, sheetId);
++        List<Role> inForce = new ArrayList<>();
++        for (String user : users) {
++            Integer logged = jdbc.queryForObject("SELECT COUNT(*) FROM user_role_log WHERE sheet_id = ?"
++                    + " AND user_name = ?", Integer.class, sheetId, user);
++            Integer counted = jdbc.queryForObject("SELECT COUNT(*) FROM user_role_log WHERE sheet_id = ?"
++                    + " AND user_name = ? AND set_on <= ?", Integer.class, sheetId, user, asOf);
++            if (logged == null || logged == 0 || (counted != null && counted > 0)) {
++                inForce.add(new Role(sheetId, user, givenRoleOfAsOf(sheetId, user, asOf)));
++            }
++        }
++        return inForce;
++    }
++
+     /** The role the user acts in on the sheet, for every rule: a steward while a delegation to the user holds the
+      *  sheet's today, otherwise the role given. */
+     public String roleOf(String sheetId, String user) {
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.GET.yml
+index 4041f207f..96896a670 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.GET.yml
+@@ -1,4 +1,5 @@
+-# GET /api/sheets/{sheetId}/roles — the roles given on the sheet, by user name.
++# GET /api/sheets/{sheetId}/roles — the roles given on the sheet, by user name; read as of a date (see AsOf), those
++# in force at the end of it.
+ respond:
+   class: net.officefloor.hq.app.role.RespondWithRoles
+   govern: [ readonly-transaction ]
