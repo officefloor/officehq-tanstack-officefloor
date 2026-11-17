@@ -1,0 +1,52 @@
+diff --git a/src/main/frontend/features/score/score.slot.tsx b/src/main/frontend/features/score/score.slot.tsx
+new file mode 100644
+index 000000000..d0b477e29
+--- /dev/null
++++ b/src/main/frontend/features/score/score.slot.tsx
+@@ -0,0 +1,28 @@
++import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
++import { live, useClaims } from '../claims/claims';
++import { overdue } from '../overdue/overdue';
++import { type Person } from '../people/people';
++import { personSplit, useRates } from '../rates/rates';
++import { useFloor, useLate } from '../settings/settings';
++import { score } from './score';
++
++function ScoreHead() {
++  return <th>Score</th>;
++}
++
++/** A person's score (see score), over their claims that count in the live totals. */
++function PersonScore({ sheetId, person }: { sheetId: string; person: Person }) {
++  const claims = useClaims(sheetId);
++  const rates = useRates(sheetId);
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++  const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person], late.today);
++  const settled = personSplit(mine, rates.data, person, late, floor).settled;
++  const count = overdue(mine, rates.data, person, late, floor).count;
++  return <td data-testid="person-score">{score(settled, count)}</td>;
++}
++
++export const contributions = [
++  PeopleHead.fill({ order: 26, Component: ScoreHead }),
++  PersonRow.fill({ order: 26, Component: PersonScore }),
++];
+diff --git a/src/main/frontend/features/score/score.ts b/src/main/frontend/features/score/score.ts
+new file mode 100644
+index 000000000..00fc36484
+--- /dev/null
++++ b/src/main/frontend/features/score/score.ts
+@@ -0,0 +1,12 @@
++/** A person's score from their settled figures (two decimals, see personSplit) and their overdue count: the settled
++ *  figures / 100, minus 5 for every overdue claim, rounded once, half to even, to a whole number. */
++export function score(settled: string, overdueCount: number): string {
++  const [whole, frac = ''] = settled.replace('-', '').split('.');
++  const h = BigInt(whole) * 100n + BigInt(frac.padEnd(2, '0').slice(0, 2));
++  const p = (settled.startsWith('-') ? -h : h) - 50000n * BigInt(overdueCount); // in 1/10000 of the score
++  const a = p < 0n ? -p : p;
++  const q = a / 10000n;
++  const rem = a % 10000n;
++  const r = rem > 5000n || (rem === 5000n && q % 2n === 1n) ? q + 1n : q;
++  return String(p < 0n ? -r : r);
++}
