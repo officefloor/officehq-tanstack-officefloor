@@ -77,11 +77,11 @@ public class ViewerGuard {
                 chain.doFilter(new Replay(request, body), response);
                 return;
             }
-            if (rest.equals("/bulk-open") || rest.equals("/bulk-settle")) {
+            if (rest.equals("/bulk-open") || rest.equals("/bulk-settle") || rest.equals("/bulk-void")) {
                 int selected = json != null && json.get("claimIds") != null && json.get("claimIds").isArray()
                         ? json.get("claimIds").size()
                         : 0;
-                String done = rest.equals("/bulk-open") ? "opened" : "settled";
+                String done = rest.equals("/bulk-open") ? "opened" : rest.equals("/bulk-void") ? "voided" : "settled";
                 response.setStatus(HttpServletResponse.SC_OK);
                 response.setContentType("application/json");
                 response.setCharacterEncoding("UTF-8");
