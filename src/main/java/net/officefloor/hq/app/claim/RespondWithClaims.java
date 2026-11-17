@@ -61,11 +61,13 @@ public class RespondWithClaims {
     private static Claim asItStood(Claim c, Claim before, int proofsAfter, LocalDate deferredUntil, List<ClaimLogLine> lines, LocalDate date, StatementRepository statements) {
         ClaimStatus status = lines.isEmpty() ? c.status() : lines.get(lines.size() - 1).status();
         boolean opened = lines.isEmpty() || lines.stream().anyMatch((l) -> l.status() == ClaimStatus.OPEN);
+        // Opening a claim may send it to REVIEW instead of OPEN: it was opened all the same.
+        boolean openedBy = opened || lines.stream().anyMatch((l) -> l.status() == ClaimStatus.REVIEW);
         Statement last = c.stated() ? statements.last(c.sheetId(), c.personId()) : null;
         boolean stated = last != null && AsOf.counts(last.madeOn(), date);
         Claim values = before == null ? c : before;
         return new Claim(c.id(), c.sheetId(), c.personId(), values.amount(), values.date(), values.note(), status,
-                opened ? c.number() : null, status == ClaimStatus.SETTLED ? c.due() : null, opened ? c.openedBy() : null,
+                opened ? c.number() : null, status == ClaimStatus.SETTLED ? c.due() : null, openedBy ? c.openedBy() : null,
                 stated, stated ? c.statedDue() : null, values.corrects(), c.dueBy(), deferredUntil, c.proofs() - proofsAfter,
                 c.splitFrom(), values.ref(), values.tags(), c.held());
     }

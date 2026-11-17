@@ -99,6 +99,22 @@ public class Audit {
         return found;
     }
 
+    /** The sheet's activity: one line {@code <user> <EVENT> <count>} for every user (by=) and event in the sheet's
+     *  lines, sorted by user then event. */
+    public synchronized List<String> activity(String sheetId) {
+        java.util.TreeMap<String, java.util.TreeMap<String, Integer>> counts = new java.util.TreeMap<>();
+        for (String line : lines(sheetId, "")) {
+            Matcher head = HEAD.matcher(line);
+            if (head.find()) {
+                counts.computeIfAbsent(head.group(3), (u) -> new java.util.TreeMap<>()).merge(head.group(1), 1,
+                        Integer::sum);
+            }
+        }
+        List<String> found = new ArrayList<>();
+        counts.forEach((user, events) -> events.forEach((event, n) -> found.add(user + " " + event + " " + n)));
+        return found;
+    }
+
     /** The lines about the person (see #lines) on the sheet they were transferred from to {@code to}, newest first,
      *  from the last PERSON_TRANSFERRED of them to that sheet back: what the sheet recorded about them while they were there. */
     public synchronized List<String> history(String fromSheet, String name, String to) {
