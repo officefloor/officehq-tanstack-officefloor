@@ -1,18 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { getJson } from '../../api/http';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { STATUSES, useGradeDue, usePeopleDue, usePeopleOverdue, useStatusCounts } from '../header/totals';
 import { GRADES, usePeople } from '../people/people';
 import { sum, trimmedSum } from '../rates/rates';
-
-/** The ids of the sheet's descendants: the sheets naming it as their parent, then theirs, and so on. */
-function useDescendants(sheetId: string) {
-  return useQuery({
-    queryKey: ['sheet', sheetId, 'descendants'],
-    queryFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/descendants`),
-  });
-}
+import { useDescendants } from './descendants';
 
 /** One sheet's own figures: its people's names (each person's name then aliases), due-totals and overdue-totals (as
  *  their rows show them, in the same order), and as its summary shows them the due-total per grade and the claim count

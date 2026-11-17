@@ -14,8 +14,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** The sheet's claims, newest first, each with its status log. Read as of a date (see AsOf), each as it stood then:
- *  one added later is left out; its amount, date and note are those it had before any later edit; its status, and its log, are those its log shows then; its comments are those written by then; its lines are those added by then; its proofs count leaves out the proofs added after; its shares are those made by then; its deferral is the last one made by then; it has the number and opener
- *  only once opened by then, its settled due only while SETTLED then, and is bound only when its person's last
+ *  one added later is left out; its amount, date and note are those it had before any later edit; its status, and its log, are those its log shows then; its comments are those written by then; its lines are those added by then; its proofs count leaves out the proofs added after; its shares are those made by then; its deferral is the last one made by then; it has its opener only once opened by then and its
+ *  number only once settled by then (numbers are given as a claim settles; see SaveClaimStatus), its settled due only while SETTLED then, and is bound only when its person's last
  *  statement was taken while the sheet's today was on or before the date; the date stands in for today. */
 public class RespondWithClaims {
     public void respond(@PathVariable("sheetId") String sheetId,
@@ -66,11 +66,12 @@ public class RespondWithClaims {
         boolean opened = lines.isEmpty() || lines.stream().anyMatch((l) -> l.status() == ClaimStatus.OPEN);
         // Opening a claim may send it to REVIEW instead of OPEN: it was opened all the same.
         boolean openedBy = opened || lines.stream().anyMatch((l) -> l.status() == ClaimStatus.REVIEW);
+        boolean numbered = lines.isEmpty() || lines.stream().anyMatch((l) -> l.status() == ClaimStatus.SETTLED);
         Statement last = c.stated() ? statements.last(c.sheetId(), c.personId()) : null;
         boolean stated = last != null && AsOf.counts(last.madeOn(), date);
         Claim values = before == null ? c : before;
         return new Claim(c.id(), c.sheetId(), c.personId(), values.amount(), values.date(), values.note(), status,
-                opened ? c.number() : null, status == ClaimStatus.SETTLED ? c.due() : null, openedBy ? c.openedBy() : null,
+                numbered ? c.number() : null, status == ClaimStatus.SETTLED ? c.due() : null, openedBy ? c.openedBy() : null,
                 stated, stated ? c.statedDue() : null, values.corrects(), c.dueBy(), deferredUntil, c.proofs() - proofsAfter,
                 c.splitFrom(), values.ref(), values.tags(), c.held());
     }
