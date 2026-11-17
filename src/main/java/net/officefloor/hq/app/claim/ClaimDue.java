@@ -26,11 +26,13 @@ public final class ClaimDue {
         return counts(claim);
     }
 
-    /** Whether a claim is deferred on the given today: an OPEN claim deferred until a date after it. Until then it
-     *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement; from that day on
-     *  it is an OPEN claim like any other. */
+    /** Whether a claim is deferred on the given today: a claim that counts, deferred until a date after it, and not
+     *  bound by a statement. Until then it counts in no total, is not overdue, cannot be settled and is left unbound
+     *  by a statement; from that day on it is a claim like any other. A claim deferred while a statement binds it
+     *  stays in the totals, counts and can be settled while bound: the deferral takes effect only once the binding
+     *  ends (the statement is cancelled, or the next statement leaves it unbound). */
     public static boolean deferred(Claim claim, java.time.LocalDate today) {
-        return claim.status() == ClaimStatus.OPEN && claim.deferredUntil() != null
+        return counts(claim) && !bound(claim) && claim.deferredUntil() != null
                 && claim.deferredUntil().isAfter(today);
     }
 

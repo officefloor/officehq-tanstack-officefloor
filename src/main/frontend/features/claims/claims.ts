@@ -18,8 +18,9 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'D
  *  the number of the SETTLED claim of the same person it corrects (null for any other claim); `roundsOn` (yyyy-MM-dd)
  *  is the date that decides how its live figures round: the corrected claim's date for a correction, else its own;
  *  `dueBy` (yyyy-MM-dd) is its due-by, fixed when it was added from the terms in force on that day (its person's own, else their grade's, else the sheet's), or as a steward last set it directly (then kept, whatever holiday is added later);
- *  `deferred` is whether it is deferred on the sheet's today (an OPEN claim deferred until a date after it: it counts in no
- *  total, is not overdue and cannot be settled) and `deferredUntil` (yyyy-MM-dd) the date it was last deferred until (shown
+ *  `deferred` is whether it is deferred on the sheet's today (a claim that counts, deferred until a date after it and
+ *  not bound by a statement: it counts in no total, is not overdue and cannot be settled; while bound the deferral
+ *  waits for the binding to end) and `deferredUntil` (yyyy-MM-dd) the date it was last deferred until (shown
  *  even once that date has passed; null when never deferred); `proofs` is its proofs count (a claim whose due is above the sheet's proof threshold
  *  on its date cannot be settled nor approved while it is 0); `splitFrom` is the number of the claim it was split from
  *  (null for any other claim); `log` is its status log, oldest first; `lockedBy` is who has its editor open (it is locked for

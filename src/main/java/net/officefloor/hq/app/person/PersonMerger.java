@@ -45,6 +45,25 @@ public class PersonMerger {
 
         statements.moveAll(sheetId, f, sheetId, t);
 
+        // the figures fixed for them by a (soft) close are added to into's (moved where into has none)
+        for (Map<String, Object> p : jdbc.queryForList("SELECT period_id, total, carried FROM period_person_total"
+                + " WHERE sheet_id = ? AND person_id = ?", sheetId, f)) {
+            Object period = p.get("period_id");
+            Integer theirs = jdbc.queryForObject("SELECT COUNT(*) FROM period_person_total WHERE sheet_id = ? AND period_id = ?"
+                    + " AND person_id = ?", Integer.class, sheetId, period, t);
+            if (theirs != null && theirs > 0) {
+                jdbc.update("UPDATE period_person_total SET total = total + ?, carried = CASE WHEN carried IS NULL AND ? IS NULL"
+                        + " THEN NULL ELSE COALESCE(carried, 0) + COALESCE(CAST(? AS DECIMAL(12, 2)), 0) END"
+                        + " WHERE sheet_id = ? AND period_id = ? AND person_id = ?",
+                        p.get("total"), p.get("carried"), p.get("carried"), sheetId, period, t);
+                jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_id = ? AND person_id = ?",
+                        sheetId, period, f);
+            } else {
+                jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND period_id = ? AND person_id = ?",
+                        t, sheetId, period, f);
+            }
+        }
+
         jdbc.update("UPDATE person_alias SET person_id = ? WHERE sheet_id = ? AND person_id = ?", t, sheetId, f);
 
         for (Map<String, Object> p : jdbc.queryForList("SELECT patron_id, added_on FROM patron WHERE sheet_id = ? AND person_id = ?",

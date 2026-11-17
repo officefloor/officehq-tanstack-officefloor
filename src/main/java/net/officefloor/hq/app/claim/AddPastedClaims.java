@@ -15,6 +15,8 @@ import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Takes the checked lines in the order pasted. A line that adds a claim adds it as a DRAFT as AddClaim adds one,
@@ -27,12 +29,33 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  before any line is written. It stays unnumbered (numbered at settlement, see SaveClaimStatus),
  *  writes CLAIM_OPENED (or, its due above the review threshold, goes to REVIEW and writes CLAIM_REVIEW, see
  *  ApplyClaimStatus#needsReview) and the figures the line moved (see Rollup). No line is written to the audit file until every
- *  line has gone through; a refusal writes nothing (the transaction gives back what was stored). */
+ *  line has gone through; a refusal writes nothing (the transaction gives back what was stored: the lines are written
+ *  in a transaction of their own, as the repositories are not governed by the pipeline's). */
 public class AddPastedClaims {
     public void add(@PathVariable("sheetId") String sheetId, @Val PastedClaims checked, @Val PastedLines pasted,
             ClaimRepository claims, PersonRepository people, RateRepository rates, SettingRepository settings,
             PeriodRepository periods, SheetRepository sheets, ClaimLog log, Rollup rollup, Audit audit,
-            Out<PasteClaimsResult> result) throws InvalidClaimException {
+            PlatformTransactionManager transactions, Out<PasteClaimsResult> result) throws InvalidClaimException {
+        InvalidClaimException[] refused = new InvalidClaimException[1];
+        List<String> lines = new TransactionTemplate(transactions).execute((status) -> {
+            try {
+                return write(sheetId, checked, pasted, claims, people, rates, settings, periods, sheets, log, rollup);
+            } catch (InvalidClaimException e) {
+                status.setRollbackOnly();
+                refused[0] = e;
+                return null;
+            }
+        });
+        if (refused[0] != null) {
+            throw refused[0];
+        }
+        lines.forEach(audit::record);
+        result.set(new PasteClaimsResult(checked.claims().size()));
+    }
+
+    private static List<String> write(String sheetId, PastedClaims checked, PastedLines pasted, ClaimRepository claims,
+            PersonRepository people, RateRepository rates, SettingRepository settings, PeriodRepository periods,
+            SheetRepository sheets, ClaimLog log, Rollup rollup) throws InvalidClaimException {
         String sheet = sheetId.trim();
         String by = pasted.by();
         Integer maxOpen = settings.maxOpen(sheet);
@@ -100,7 +123,6 @@ public class AddPastedClaims {
                     + " amount=" + opened.amount().toPlainString() + " date=" + opened.date());
             lines.addAll(rollup.lines(sheet, by, before));
         }
-        lines.forEach(audit::record);
-        result.set(new PasteClaimsResult(checked.claims().size()));
+        return lines;
     }
 }
