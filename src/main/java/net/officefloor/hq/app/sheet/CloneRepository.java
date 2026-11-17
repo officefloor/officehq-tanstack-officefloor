@@ -20,7 +20,7 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
 /**
- * Copies a sheet to another, never used, id. The copy takes the sheet's today, settings, roles, rates, holidays, void
+ * Copies a sheet to another, never used, id. The copy takes the sheet's today, settings, roles, rates, retired grades, holidays, void
  * reasons, templates, people (with their grades, terms, contacts, aliases, holds, retirements and patrons), pools,
  * periods (all open, no figures fixed) and claims (status, frozen due, dates, notes and their logs, unbound from any
  * statement). Statements, watches, delegations, settle batches and archiving are not copied. The copy's claims are
@@ -33,7 +33,7 @@ public class CloneRepository {
 
     /** The tables kept per sheet: a sheet with a row in any of them (or one loaded) has been used. */
     private static final List<String> SHEET_TABLES = List.of("person", "claim", "rate", "setting", "user_role", "period",
-            "pool", "holiday", "sheet_source", "void_reason", "claim_template", "delegation", "statement", "sheet_archived", "watch");
+            "pool", "holiday", "sheet_source", "void_reason", "claim_template", "delegation", "statement", "sheet_archived", "watch", "grade_retired");
 
     private final JdbcTemplate jdbc;
     private final SheetRepository sheets;
@@ -69,7 +69,7 @@ public class CloneRepository {
         sheets.saveToday(to, sheets.today(from));
         sheets.markLoaded(to);
         sheets.saveSource(to, from);
-        for (String table : List.of("setting", "setting_log", "user_role", "user_role_log", "rate", "rate_log", "rate_version", "holiday", "void_reason",
+        for (String table : List.of("setting", "setting_log", "user_role", "user_role_log", "rate", "rate_log", "rate_version", "holiday", "void_reason", "grade_retired",
                 "claim_template")) {
             copy(table, "WHERE sheet_id = ?" + (hasColumn(table, "id") ? " ORDER BY id" : ""), from, to, Map.of());
         }

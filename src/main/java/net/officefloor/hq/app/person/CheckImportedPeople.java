@@ -5,17 +5,19 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Matches each imported line to the person on the sheet with its name or alias (as names are compared), and checks
  *  every line before any is stored: a matched line as the person form checks an edit (see CheckPersonRename and
- *  CheckPersonRecontact), any other as it checks an add (see CheckNewPersonName and CheckPersonContact). Two lines
+ *  CheckPersonRecontact and CheckPersonRegrade), any other as it checks an add (see CheckNewPersonName,
+ *  CheckNewPersonGrade and CheckPersonContact). Two lines
  *  matching the same person, or any failing line, refuse the whole import. */
 public class CheckImportedPeople {
     public void check(@PathVariable("sheetId") String sheetId, @Val ImportedPeople imported, PersonRepository people,
-            Out<ImportMatches> matches)
+            GradeRepository grades, Out<ImportMatches> matches)
             throws DuplicatePersonNameException, DuplicatePersonContactException, InvalidPersonException {
         String sheet = sheetId.trim();
         List<Person> matched = new ArrayList<>();
@@ -26,6 +28,7 @@ public class CheckImportedPeople {
                 if (people.nameTaken(sheet, values.name(), 0) || people.treeTaken(sheet, values.name())) {
                     throw new DuplicatePersonNameException(values.name());
                 }
+                grades.checkChoosable(sheet, values.grade());
                 if (values.contact() != null && people.contactTaken(sheet, values.contact(), 0)) {
                     throw new DuplicatePersonContactException(values.contact());
                 }
@@ -36,6 +39,7 @@ public class CheckImportedPeople {
                 PersonValues edit = AddImportedPeople.edit(person, values);
                 new CheckPersonRename().check(person, edit, people);
                 new CheckPersonRecontact().check(person, edit, people);
+                CheckPersonRegrade.refuse(sheet, person, edit, grades);
             }
             matched.add(person);
         }

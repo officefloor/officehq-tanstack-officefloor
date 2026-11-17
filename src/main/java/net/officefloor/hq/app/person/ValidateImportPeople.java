@@ -4,19 +4,20 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Reads the body: each non-blank line is name,grade,terms,contact (terms and contact may be absent or blank), read by
- *  the person form's rules (see PersonValues#from); a blank or absent grade is the sheet's default grade (else A). A name (case ignored) or contact repeated within the paste, or a
+ *  the person form's rules (see PersonValues#from); a blank or absent grade is the sheet's default grade (else A, and A while the default grade is retired). A name (case ignored) or contact repeated within the paste, or a
  *  paste with no lines, is refused. */
 public class ValidateImportPeople {
-    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ImportPeopleRequest request, SettingRepository settings, Out<ImportedPeople> imported) throws InvalidPersonException {
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ImportPeopleRequest request, SettingRepository settings, GradeRepository grades, Out<ImportedPeople> imported) throws InvalidPersonException {
         String text = request == null || request.text() == null ? "" : request.text();
         String by = request == null || request.by() == null ? "" : request.by().trim();
-        String defaultGrade = settings.defaultGrade(sheetId.trim());
+        String defaultGrade = grades.defaultGrade(sheetId.trim(), settings);
         List<PersonValues> people = new ArrayList<>();
         Set<String> names = new HashSet<>();
         Set<String> contacts = new HashSet<>();
