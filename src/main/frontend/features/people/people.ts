@@ -84,6 +84,10 @@ export function gradeOn(person: Pick<Person, 'grade' | 'grades'>, on: string): s
   return found?.grade ?? person.grade;
 }
 
+/** How the screen shows a person's name: `<name> (<grade in force on the sheet's today>)`. Exports, audit lines, the
+ *  import and paste boxes and the selects of names keep the plain name. */
+export const shownName = (person: Pick<Person, 'name' | 'grade'>) => `${person.name} (${person.grade})`;
+
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'];
 
 /** The sheet's people, in list order (new people at the end; see the move buttons). */

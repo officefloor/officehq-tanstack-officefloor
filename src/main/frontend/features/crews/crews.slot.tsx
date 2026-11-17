@@ -4,7 +4,7 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { usePeopleDue } from '../header/totals';
-import { usePeople } from '../people/people';
+import { shownName, usePeople } from '../people/people';
 import { poolsKey } from '../pools/pools';
 import { crewDueTotal, crewsKey, useCrews, type Crew, type CrewMember } from './crews';
 
@@ -14,6 +14,7 @@ function CrewRow({ sheetId, user, crew, due }: { sheetId: string; user: string; 
   const people = usePeople(sheetId);
   const queryClient = useQueryClient();
   const [chosen, setChosen] = useState('');
+  const leadPerson = crew.leadId === null ? undefined : people.data?.find((p) => p.id === crew.leadId);
 
   const submit = useSubmitOnce();
   const add = useMutation({
@@ -29,7 +30,7 @@ function CrewRow({ sheetId, user, crew, due }: { sheetId: string; user: string; 
 
   return (
     <li data-testid={`crew-row-${crew.name}`}>
-      <strong>{crew.name}</strong> — lead <span data-testid="crew-lead">{crew.lead}</span>, due total{' '}
+      <strong>{crew.name}</strong> — lead <span data-testid="crew-lead">{leadPerson === undefined ? crew.lead : shownName(leadPerson)}</span>, due total{' '}
       <span data-testid="crew-due-total">{crewDueTotal(crew, due)}</span>
       <ul>
         {crew.members.map((m) => (

@@ -5,7 +5,7 @@ import { PeopleHead, PersonRow } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { useClaims } from '../claims/claims';
 import { plusDays } from '../overdue/late';
-import { usePeople, type Person } from '../people/people';
+import { shownName, usePeople, type Person } from '../people/people';
 import { useSheetToday } from '../session/session';
 import { equalShares, sharedSum, sum } from '../rates/rates';
 import { patronsKey, usePatrons, type Patron } from './patrons';
@@ -53,9 +53,9 @@ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: strin
     .filter((p): p is Person => p !== undefined);
   const shares = equalShares(mine.length);
   const names = mine
-    .map((p, i) => ({ name: p.name, share: shares[i] }))
+    .map((p, i) => ({ name: p.name, shown: shownName(p), share: shares[i] }))
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map((p) => `${p.name} ${p.share}`);
+    .map((p) => `${p.shown} ${p.share}`);
   const since = today === '' ? '' : plusDays(today, -89);
   const settled = (claims.data ?? []).filter((c) => c.status === 'SETTLED' && c.date >= since && c.date <= today);
   const backing = sharedSum(

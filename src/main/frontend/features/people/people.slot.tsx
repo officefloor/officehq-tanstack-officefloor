@@ -7,7 +7,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { claimsKey, type Claim } from '../claims/claims';
 import { tagsKey } from '../tags/tags';
 import { usePeopleDue } from '../header/totals';
-import { GRADES, peopleKey, SORT_KEYS, sortPeople, useEditingPerson, usePeople, useShowRetired, useSortBy, type Person } from './people';
+import { GRADES, peopleKey, shownName, SORT_KEYS, sortPeople, useEditingPerson, usePeople, useShowRetired, useSortBy, type Person } from './people';
 import { useShownColumns } from '../columns/columns';
 
 /** The form's values. `gradeFrom` (yyyy-MM-dd) is the date the grade is given from; blank, the sheet's today. A
@@ -277,7 +277,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
         <tbody>
           {sortPeople(people.data?.filter((p) => showRetired || p.retiredFrom === null) ?? [], sortBy, due).map((p) => (
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
-              <td data-testid="person-name">{p.name}</td>
+              <td data-testid="person-name">{shownName(p)}</td>
               <td data-testid="person-grade">{p.grade}</td>
               {shown('terms') && <td data-testid="person-terms">{p.terms ?? ''}</td>}
               {shown('contact') && <td data-testid="person-contact">{p.contact ?? ''}</td>}

@@ -5,7 +5,7 @@ import { ReadNow } from '../../query/readNow';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { useClaims } from '../claims/claims';
 import { usePeopleDue } from '../header/totals';
-import { usePeople } from '../people/people';
+import { shownName, usePeople } from '../people/people';
 import { useRates } from '../rates/rates';
 import { useSettings } from '../settings/settings';
 
@@ -23,7 +23,7 @@ function SheetPeople({ sheetId, report }: { sheetId: string; report: (sheetId: s
   const fetching = useIsFetching({ queryKey: ['sheet', sheetId] });
   const ready = fetching === 0 && people.isSuccess && claims.isSuccess && rates.isSuccess && settings.isSuccess;
   const found: Found | null = ready
-    ? people.data.map((p) => ({ sheetId, name: p.name, names: [p.name, ...(p.aliases ?? [])], due: due.get(p.id) ?? 'n/a' }))
+    ? people.data.map((p) => ({ sheetId, name: shownName(p), names: [p.name, ...(p.aliases ?? [])], due: due.get(p.id) ?? 'n/a' }))
     : null;
   const key = found === null ? null : JSON.stringify(found);
   useEffect(() => {
@@ -33,7 +33,7 @@ function SheetPeople({ sheetId, report }: { sheetId: string; report: (sheetId: s
 }
 
 /** The tree search: every person, over this sheet and every other sheet of its tree, whose name or an alias contains the
- *  typed text (case ignored), one line each as `<sheet id> <name> <due-total>`: this sheet's people first in list order,
+ *  typed text (case ignored), one line each as `<sheet id> <name> (<grade>) <due-total>`: this sheet's people first in list order,
  *  then the other sheets' by sheet id. The sheets are read as they are now, afresh on each press. */
 function TreeSearch({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
