@@ -7,6 +7,7 @@ import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
 import { useShareParts, useSheetDueTotal, useSheetSplit } from '../header/totals';
 import { GRADES, usePeople, type Person } from '../people/people';
+import { personCutTotal, usePools } from '../pools/pools';
 import { useSheetToday } from '../session/session';
 import { useCap, useFloor, useLate } from '../settings/settings';
 import { ownRates, personDue, personExcess, personSplit, RATE_PATTERN, ratePreview, rateFor, ratesKey, useRates, type Rate } from './rates';
@@ -318,8 +319,8 @@ function DueHead({ user }: { user: string }) {
   );
 }
 
-/** A person's due-total: the sum of their claims' due figures, at most the sheet's cap (see personDue), and their
- *  excess over the cap (see personExcess). */
+/** A person's due-total: the sum of their claims' due figures, at most the sheet's cap less their cut total (see personDue),
+ *  and their excess over the cap (see personExcess). */
 function PersonDueTotal({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const shown = useShownColumns(user);
   const claims = useClaims(sheetId);
@@ -327,13 +328,14 @@ function PersonDueTotal({ sheetId, user, person }: { sheetId: string; user: stri
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
   const cap = useCap(sheetId);
+  const pools = usePools(sheetId);
   const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person], late.today);
   const parts = useShareParts(sheetId)(person.id);
   const split = personSplit(mine, rates.data, person, late, floor, parts);
   return (
     <>
-      {shown('due-total') && <td data-testid="person-due-total">{personDue(mine, rates.data, person, late, floor, cap, parts)}</td>}
-      {shown('excess') && <td data-testid="person-excess">{personExcess(mine, rates.data, person, late, floor, cap, parts)}</td>}
+      {shown('due-total') && <td data-testid="person-due-total">{personDue(mine, rates.data, person, late, floor, cap, personCutTotal(pools.data, person.id), parts)}</td>}
+      {shown('excess') && <td data-testid="person-excess">{personExcess(mine, rates.data, person, late, floor, cap, personCutTotal(pools.data, person.id), parts)}</td>}
       <td data-testid="person-settled-total">{split.settled}</td>
       <td data-testid="person-open-total">{split.open}</td>
     </>

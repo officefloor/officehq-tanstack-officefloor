@@ -4,7 +4,7 @@ import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
 import { gradeOn, usePeople } from '../people/people';
 import { periodOf, usePeriods } from '../periods/periods';
-import { usePools } from '../pools/pools';
+import { personCutTotal, usePools } from '../pools/pools';
 import { claimDue, personDue, claimRate, useRates } from '../rates/rates';
 import { useShareParts } from '../header/totals';
 import { useCap, useFloor, useLate } from '../settings/settings';
@@ -21,6 +21,7 @@ function ExportPeople({ sheetId }: { sheetId: string }) {
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
   const cap = useCap(sheetId);
+  const pools = usePools(sheetId);
   const parts = useShareParts(sheetId);
   const fetching = useIsFetching({ queryKey: ['sheet', sheetId] });
   const [wanted, setWanted] = useState(false);
@@ -30,11 +31,11 @@ function ExportPeople({ sheetId }: { sheetId: string }) {
     setWanted(false);
     const lines = ['name,grade,retired-from,due-total'];
     for (const p of people.data) {
-      const due = personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap, parts(p.id));
+      const due = personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap, personCutTotal(pools.data, p.id), parts(p.id));
       lines.push([p.name, p.grade, p.retiredFrom ?? '', due].map(csvValue).join(','));
     }
     download(`people-${sheetId}.csv`, lines);
-  }, [wanted, fetching, people.data, claims.data, rates.data, late, floor, cap, parts, sheetId]);
+  }, [wanted, fetching, people.data, claims.data, rates.data, late, floor, cap, pools.data, parts, sheetId]);
 
   return (
     <p>

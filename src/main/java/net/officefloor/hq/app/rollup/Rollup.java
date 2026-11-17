@@ -17,6 +17,7 @@ import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.LateCharge;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.pool.PoolRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
@@ -26,7 +27,7 @@ import org.springframework.stereotype.Service;
  * The sheet's figures as the screen shows them: each person's claimed (the amounts of their claims that count added up, leaving out corrections; a person's OPEN or PENDING claims, once their retirement date is reached, not bound by a statement, do not, nor do deferred claims; a held claim still does) and
  * due-total (the figures of the claims that count live — held ones included, each with its late charge, added up, less
  * the parts of them other people hold by a share, plus their own parts of others' shared claims (see ClaimShare#part); n/a when their grade has no rate today and no counting claim
- * has a figure, kept or at the grade in force on its date; at most the sheet's cap), overdue-total (the figures, late charge included, of those claims that are overdue — open, their due-by plus
+ * has a figure, kept or at the grade in force on its date; at most the sheet's cap less their cut total, not below 0.00), overdue-total (the figures, late charge included, of those claims that are overdue — open, their due-by plus
  * their grace (see LateCharge#lateFrom) before today — added up, skipping n/a; not capped), and the sheet's claimed-total, due-total and overdue-total (everyone's added up, skipping n/a; the due-total and
  * overdue-total leave out the single highest and the single lowest figure when three or more people have one).
  *
@@ -44,10 +45,12 @@ public class Rollup {
     private final RateRepository rates;
     private final SheetRepository sheets;
     private final SettingRepository settings;
+    private final PoolRepository pools;
     private final Audit audit;
 
     public Rollup(PersonRepository people, ClaimRepository claims, RateRepository rates, SheetRepository sheets,
-            SettingRepository settings, Audit audit) {
+            SettingRepository settings, PoolRepository pools, Audit audit) {
+        this.pools = pools;
         this.people = people;
         this.claims = claims;
         this.rates = rates;
@@ -64,6 +67,7 @@ public class Rollup {
         List<Claim> all = claims.list(sheetId);
         List<Person> listed = people.list(sheetId);
         Map<Long, BigDecimal> parts = shareParts(sheetId, today, late, all, listed);
+        Map<Long, BigDecimal> cuts = cap == null ? Map.of() : pools.cutTotals(sheetId, null);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         for (Person person : listed) {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
@@ -104,7 +108,7 @@ public class Rollup {
                 figured = true;
             }
             String dueTotal = rates.find(sheetId, person.gradeOn(today), today) == null && !figured ? "n/a"
-                    : SettingRepository.capped(due, cap).toPlainString();
+                    : SettingRepository.capped(due, cap, cuts.get(person.id())).toPlainString();
             figures.put(person.id(), new Figures(person.name(), claimed.toPlainString(), dueTotal,
                     overdue.toPlainString(), score(settled, overdueCount)));
         }

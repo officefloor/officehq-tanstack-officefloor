@@ -16,6 +16,7 @@ import net.officefloor.hq.app.claim.Rounding;
 import net.officefloor.hq.app.person.InvalidPersonException;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.pool.PoolRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
@@ -26,7 +27,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Takes the person's statement on the sheet's today: their due-total now (the figures of their claims that count
  * added up, each with its late charge; n/a when their grade has no rate today and no counting claim has a
- * figure, kept or at the grade in force on its date; at most the sheet's cap), and binds every claim of theirs that counts (a person's OPEN or PENDING claims dated within a hold of theirs, or any once their retirement date is reached, not bound by a statement, do not, nor do deferred claims) to its due
+ * figure, kept or at the grade in force on its date; at most the sheet's cap less their cut total, not below 0.00), and binds every claim of theirs that counts (a person's OPEN or PENDING claims dated within a hold of theirs, or any once their retirement date is reached, not bound by a statement, do not, nor do deferred claims) to its due
  * as shown, its late charge (and the floor) included, so its late charge no longer follows today while bound (a claim
  * already bound keeps its bound figure); one that does not count is unbound (live again).
  *
@@ -38,9 +39,9 @@ import net.officefloor.plugin.variable.Val;
 public class TakeStatement {
     public void take(@Val Person person, @Val StatementTaker taker, ClaimRepository claims, RateRepository rates,
             SheetRepository sheets, SettingRepository settings, StatementRepository statements, PersonRepository people,
-            ClaimLogRepository log, Out<Statement> taken) throws InvalidPersonException {
+            ClaimLogRepository log, PoolRepository pools, Out<Statement> taken) throws InvalidPersonException {
         if (taker.asOf() != null) {
-            takeAsOf(person, taker, claims, rates, sheets, settings, statements, people, log, taken);
+            takeAsOf(person, taker, claims, rates, sheets, settings, statements, people, log, pools, taken);
             return;
         }
         String sheetId = person.sheetId();
@@ -64,7 +65,7 @@ public class TakeStatement {
             counted++;
             claims.bind(c, true, shown);
         }
-        String dueTotal = rates.find(sheetId, person.gradeOn(today), today) == null && !figured ? "n/a" : SettingRepository.capped(total, settings.cap(sheetId)).toPlainString();
+        String dueTotal = rates.find(sheetId, person.gradeOn(today), today) == null && !figured ? "n/a" : SettingRepository.capped(total, settings.cap(sheetId), pools.cutTotals(sheetId, null).get(person.id())).toPlainString();
         Statement statement = new Statement(sheetId, person.id(), today, dueTotal, counted, taker.by());
         statements.add(statement);
         taken.set(statement);
@@ -72,7 +73,7 @@ public class TakeStatement {
 
     private static void takeAsOf(Person current, StatementTaker taker, ClaimRepository claims, RateRepository rates,
             SheetRepository sheets, SettingRepository settings, StatementRepository statements, PersonRepository people,
-            ClaimLogRepository log, Out<Statement> taken) throws InvalidPersonException {
+            ClaimLogRepository log, PoolRepository pools, Out<Statement> taken) throws InvalidPersonException {
         String sheetId = current.sheetId();
         LocalDate today = sheets.today(sheetId);
         LocalDate date = taker.asOf();
@@ -115,7 +116,7 @@ public class TakeStatement {
             claims.bind(c, true, shown);
         }
         String dueTotal = sheet.rate(person.gradeOn(date), date) == null && !figured ? "n/a"
-                : SettingRepository.capped(total, sheet.cap()).toPlainString();
+                : SettingRepository.capped(total, sheet.cap(), pools.cutTotals(sheetId, date).get(person.id())).toPlainString();
         Statement statement = new Statement(sheetId, person.id(), date, dueTotal, counted, taker.by(), date, today);
         statements.add(statement);
         taken.set(statement);

@@ -237,9 +237,14 @@ public class SettingRepository {
         return value == null ? null : new BigDecimal(value);
     }
 
-    /** A due-total held to the cap: the cap when the total is above it (a null cap holds nothing). */
-    public static BigDecimal capped(BigDecimal total, BigDecimal cap) {
-        return cap != null && total.compareTo(cap) > 0 ? cap.setScale(2) : total;
+    /** A due-total held to the cap less the person's cut total (not below 0.00): that when the total is above it (a
+     *  null cap holds nothing). */
+    public static BigDecimal capped(BigDecimal total, BigDecimal cap, BigDecimal cut) {
+        if (cap == null) {
+            return total;
+        }
+        BigDecimal limit = cap.subtract(cut == null ? BigDecimal.ZERO : cut).max(BigDecimal.ZERO).setScale(2);
+        return total.compareTo(limit) > 0 ? limit : total;
     }
 
     /** The sheet's floor in force on the date (a claim's date): the least the claim's live due may be. */

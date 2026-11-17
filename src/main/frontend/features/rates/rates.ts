@@ -193,20 +193,29 @@ export function personSplit(claims: Claim[], rates: Rate[] | undefined, person: 
   };
 }
 
-/** A person's due-total: the sum of their figures (see personFigures), at most the sheet's cap (null: none); 'n/a'
- *  is not capped. */
-export function personDue(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, cap: string | null, parts: SharePart[] = []): string {
-  const total = personFigures(claims, rates, person, late, floor, parts);
-  return total !== 'n/a' && cap !== null && hundredths(total) > hundredths(cap) ? shown(hundredths(cap)) : total;
+/** The most a person's due-total may be: the sheet's cap less their cut total (two decimals), not below 0.00; null
+ *  with no cap. */
+function capLimit(cap: string | null, cut: string): bigint | null {
+  if (cap === null) return null;
+  const limit = hundredths(cap) - hundredths(cut);
+  return limit > 0n ? limit : 0n;
 }
 
-/** A person's excess: how far the sum of their figures is above the sheet's cap; 0.00 when it is not (or with no
- *  cap, or an n/a due-total). */
-export function personExcess(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, cap: string | null, parts: SharePart[] = []): string {
+/** A person's due-total: the sum of their figures (see personFigures), at most the sheet's cap less their cut total
+ *  (null cap: none; not below 0.00); 'n/a' is not capped. */
+export function personDue(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, cap: string | null, cut: string, parts: SharePart[] = []): string {
   const total = personFigures(claims, rates, person, late, floor, parts);
-  return total !== 'n/a' && cap !== null && hundredths(total) > hundredths(cap)
-    ? shown(hundredths(total) - hundredths(cap))
-    : '0.00';
+  const limit = capLimit(cap, cut);
+  return total !== 'n/a' && limit !== null && hundredths(total) > limit ? shown(limit) : total;
+}
+
+/** A person's excess: how far the sum of their figures plus their cut total is above the sheet's cap; 0.00 when it is
+ *  not (or with no cap, or an n/a due-total). */
+export function personExcess(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, cap: string | null, cut: string, parts: SharePart[] = []): string {
+  const total = personFigures(claims, rates, person, late, floor, parts);
+  if (total === 'n/a' || cap === null) return '0.00';
+  const over = hundredths(total) + hundredths(cut) - hundredths(cap);
+  return over > 0n ? shown(over) : '0.00';
 }
 
 /** A candidate rate: a percent 0.00 or more with up to two decimals (as the rate form takes it). */

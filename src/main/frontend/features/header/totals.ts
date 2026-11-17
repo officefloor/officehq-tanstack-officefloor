@@ -4,6 +4,7 @@ import { overdue } from '../overdue/overdue';
 import { gradeOn, usePeople, type Person } from '../people/people';
 import { personDue, personSplit, shareParts, sum, trimmedSum, useRates, type SharePart } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../settings/settings';
+import { personCutTotal, usePools } from '../pools/pools';
 import { useWatches } from '../watch/watch';
 
 // The sheet-wide figures shown in more than one place (the rollups, the summary and the header), worked out once
@@ -33,9 +34,10 @@ export function useSheetDueTotal(sheetId: string): string {
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
   const cap = useCap(sheetId);
+  const pools = usePools(sheetId);
   return trimmedSum(
     (people.data ?? []).map((p) =>
-      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap, parts(p.id)),
+      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap, personCutTotal(pools.data, p.id), parts(p.id)),
     ),
   );
 }
@@ -55,10 +57,11 @@ export function usePeopleDue(sheetId: string): Map<number, string> {
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
   const cap = useCap(sheetId);
+  const pools = usePools(sheetId);
   return new Map(
     (people.data ?? []).map((p) => [
       p.id,
-      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap, parts(p.id)),
+      personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap, personCutTotal(pools.data, p.id), parts(p.id)),
     ]),
   );
 }
@@ -124,11 +127,12 @@ export function useMyFigures(sheetId: string, user: string): { due: string; over
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
   const cap = useCap(sheetId);
+  const pools = usePools(sheetId);
   const p = findUser(people.data ?? [], user);
   if (!p) return null;
   const mine = live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today);
   return {
-    due: personDue(mine, rates.data, p, late, floor, cap, parts(p.id)),
+    due: personDue(mine, rates.data, p, late, floor, cap, personCutTotal(pools.data, p.id), parts(p.id)),
     overdue: overdue(mine, rates.data, p, late, floor).total,
   };
 }
