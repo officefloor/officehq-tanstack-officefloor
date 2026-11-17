@@ -60,11 +60,33 @@ export function useFloor(sheetId: string): Dated {
   return (date) => inForce(settings.data, 'floor', date)?.value ?? DEFAULT_FLOOR;
 }
 
-/** The sheet's cap in force on its today: the most a person's due-total may be (two decimals); null when blank (none). */
-export function useCap(sheetId: string): string | null {
+/** A dated figure that may be blank: its value in force on a date (yyyy-MM-dd), null when blank (none). */
+export type DatedOrNone = (date: string) => string | null;
+
+/** The sheet's cap: the most a person's due-total may be (two decimals), the one in force on the date of their latest
+ *  claim that counts; null when blank (none). */
+export function useCap(sheetId: string): DatedOrNone {
   const settings = useSettings(sheetId);
-  const today = useSheetToday(sheetId);
-  return inForce(settings.data, 'cap', today)?.value ?? null;
+  return (date) => inForce(settings.data, 'cap', date)?.value ?? null;
+}
+
+/** A policy version: its number (from 1, in the order made) and the date it is in force from (null: none, counts
+ *  always). Every change to a policy setting (rounding, floor, cap, terms, late-pct, clerk-limit) is a new version. */
+export type PolicyVersion = { number: number; from: string | null };
+
+/** The sheet's policy versions, in the order made (as of the screen's date: only those made by then). */
+export function usePolicyVersions(sheetId: string) {
+  const now = useReadNow();
+  return useQuery({
+    queryKey: nowKey([...settingsKey(sheetId), 'policy-versions'], now),
+    queryFn: () => getJson<PolicyVersion[]>(`/api/sheets/${encodeURIComponent(sheetId)}/policy-versions`, now),
+  });
+}
+
+/** The policy version in force on a date: how many versions have their from-date on or before it (one with none
+ *  counts always). */
+export function policyVersionOn(versions: PolicyVersion[] | undefined, date: string): number {
+  return (versions ?? []).filter((v) => v.from === null || v.from <= date).length;
 }
 
 /** The terms a sheet has until they are set. */

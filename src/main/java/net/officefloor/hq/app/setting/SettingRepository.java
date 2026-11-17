@@ -161,6 +161,9 @@ public class SettingRepository {
             "reopen", RoleRepository.STEWARD,
             "today", RoleRepository.CLERK + "," + RoleRepository.STEWARD + "," + RoleRepository.RESTRICTED);
 
+    /** The policy settings, versioned together: every change to one of them is a new policy version. */
+    public static final List<String> POLICY_KEYS = List.of(ROUNDING, FLOOR, CAP, TERMS, LATE_PCT, CLERK_LIMIT);
+
     /** The from-date an undated setting is stored under: before every date. */
     private static final LocalDate UNDATED = LocalDate.of(1, 1, 1);
 
@@ -198,23 +201,54 @@ public class SettingRepository {
         return value(sheetId, key, UNDATED);
     }
 
-    /** The sheet's clerk limit in force on its today, or null when there is none. */
-    public BigDecimal clerkLimit(String sheetId) {
-        String value = value(sheetId, CLERK_LIMIT, sheets.today(sheetId));
+    /** The sheet's clerk limit in force on the date (a claim's date), or null when there is none. */
+    public BigDecimal clerkLimit(String sheetId, LocalDate date) {
+        String value = value(sheetId, CLERK_LIMIT, date);
         return value == null ? null : new BigDecimal(value);
     }
 
-    /** The clerk limit of a grade in force on the sheet's today: its own when one is set on it, else the sheet's (a
-     *  null grade has the sheet's); null when there is none. */
-    public BigDecimal clerkLimit(String sheetId, String grade) {
-        String value = grade == null ? null : value(sheetId, CLERK_LIMIT_PREFIX + grade, sheets.today(sheetId));
-        return value == null ? clerkLimit(sheetId) : new BigDecimal(value);
+    /** The clerk limit of a grade in force on the date (a claim's date): its own when one is set on it, else the
+     *  sheet's (a null grade has the sheet's); null when there is none. */
+    public BigDecimal clerkLimit(String sheetId, String grade, LocalDate date) {
+        String value = grade == null ? null : value(sheetId, CLERK_LIMIT_PREFIX + grade, date);
+        return value == null ? clerkLimit(sheetId, date) : new BigDecimal(value);
     }
 
-    /** The sheet's cap in force on its today, or null when there is none. */
-    public BigDecimal cap(String sheetId) {
-        String value = value(sheetId, CAP, sheets.today(sheetId));
+    /** The sheet's cap in force on the date (the date of a person's latest claim that counts), or null when there is
+     *  none. */
+    public BigDecimal cap(String sheetId, LocalDate date) {
+        String value = value(sheetId, CAP, date);
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The from-dates of the sheet's policy versions, in the order made (version 1 first; null: no from-date, counts
+     *  always): every change to a policy setting (see POLICY_KEYS) is a new version. */
+    public List<LocalDate> policyVersions(String sheetId) {
+        return policyVersions(jdbc.query("SELECT sheet_id, setting_key, setting_value, from_date FROM setting_log"
+                + " WHERE sheet_id = ? ORDER BY id", SettingRepository::map, sheetId));
+    }
+
+    /** The from-dates of the policy versions among the settings stored (in the order stored), as #policyVersions. */
+    public static List<LocalDate> policyVersions(List<Setting> stored) {
+        List<LocalDate> versions = new java.util.ArrayList<>();
+        for (Setting s : stored) {
+            if (POLICY_KEYS.contains(s.key())) {
+                versions.add(s.from());
+            }
+        }
+        return versions;
+    }
+
+    /** The policy version in force on the date: how many versions have their from-date on or before it (one with
+     *  none counts always). */
+    public static int policyVersion(List<LocalDate> versions, LocalDate date) {
+        int n = 0;
+        for (LocalDate from : versions) {
+            if (from == null || !from.isAfter(date)) {
+                n++;
+            }
+        }
+        return n;
     }
 
     /** The sheet's proof threshold in force on the date (a claim's date), or null when there is none. */

@@ -150,9 +150,9 @@ public final class SheetAsOf {
         return value == null ? 0 : Integer.parseInt(value);
     }
 
-    /** The cap in force on the date; null when there is none. */
-    public BigDecimal cap() {
-        String value = value(SettingRepository.CAP, date);
+    /** The cap in force on a date (the date of a person's latest claim that counts); null when there is none. */
+    public BigDecimal cap(LocalDate on) {
+        String value = value(SettingRepository.CAP, on);
         return value == null ? null : new BigDecimal(value);
     }
 

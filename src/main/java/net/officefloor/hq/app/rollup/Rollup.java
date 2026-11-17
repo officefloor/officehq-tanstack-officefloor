@@ -62,12 +62,11 @@ public class Rollup {
     /** Every person's figures on the sheet now, in list order (see PersonRepository#list). */
     public RollupBefore take(String sheetId) {
         LocalDate today = sheets.today(sheetId);
-        BigDecimal cap = settings.cap(sheetId);
         LateCharge late = LateCharge.of(sheetId, sheets, settings, claims);
         List<Claim> all = claims.list(sheetId);
         List<Person> listed = people.list(sheetId);
         Map<Long, BigDecimal> parts = shareParts(sheetId, today, late, all, listed);
-        Map<Long, BigDecimal> cuts = cap == null ? Map.of() : pools.cutTotals(sheetId, null);
+        Map<Long, BigDecimal> cuts = pools.cutTotals(sheetId, null);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         for (Person person : listed) {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
@@ -76,6 +75,7 @@ public class Rollup {
             BigDecimal settled = BigDecimal.ZERO.setScale(2);
             int overdueCount = 0;
             boolean figured = false;
+            LocalDate latest = null;
             for (Claim c : all) {
                 if (c.personId() != person.id()) {
                     continue;
@@ -85,6 +85,9 @@ public class Rollup {
                 }
                 if (!ClaimDue.countsLive(c, person, today)) {
                     continue;
+                }
+                if (latest == null || c.date().isAfter(latest)) {
+                    latest = c.date();
                 }
                 BigDecimal figure = late.add(c, ClaimDue.figure(c, person.gradeOn(c.date()), rates, late.rounding()), settings.floor(sheetId, c.date()));
                 figured |= figure != null;
@@ -108,7 +111,7 @@ public class Rollup {
                 figured = true;
             }
             String dueTotal = rates.find(sheetId, person.gradeOn(today), today) == null && !figured ? "n/a"
-                    : SettingRepository.capped(due, cap, cuts.get(person.id())).toPlainString();
+                    : SettingRepository.capped(due, settings.cap(sheetId, latest == null ? today : latest), cuts.get(person.id())).toPlainString();
             figures.put(person.id(), new Figures(person.name(), claimed.toPlainString(), dueTotal,
                     overdue.toPlainString(), score(settled, overdueCount)));
         }

@@ -11,7 +11,7 @@ import { useDelegations } from '../delegation/delegation';
 import { claimDue, claimRate, useRates } from '../rates/rates';
 import { dueBy, isOverdue } from '../overdue/overdue';
 import { isPendingLate, isReviewLate } from '../overdue/late';
-import { useFloor, useLate, usePendingSla, useReviewSla, type Dated } from '../settings/settings';
+import { policyVersionOn, useFloor, useLate, usePendingSla, usePolicyVersions, useReviewSla, type Dated } from '../settings/settings';
 import { claimsKey, commentLine, lineLine, live, liveClaimed, logLine, claimed, useClaims, type Claim } from './claims';
 import { useSelectedClaims } from './selection';
 import { useSheet, useSheetToday } from '../session/session';
@@ -83,6 +83,7 @@ function ClaimRow({
   const queryClient = useQueryClient();
   const periods = usePeriods(sheetId);
   const late = useLate(sheetId);
+  const policyVersions = usePolicyVersions(sheetId);
   const reviewSla = useReviewSla(sheetId);
   const pendingSla = usePendingSla(sheetId);
   const status = useMutation({
@@ -293,6 +294,7 @@ function ClaimRow({
       <span data-testid="claim-amount">{c.amount}</span> <span data-testid="claim-date">{c.date}</span>{' '}
       <span data-testid="claim-note">{c.note}</span>{' '}
       <span data-testid="claim-due">{claimDue(c, rate, floor, late)}</span>{' '}
+      <span data-testid="claim-policy">{policyVersionOn(policyVersions.data, c.date)}</span>{' '}
       <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
       <span data-testid="claim-overdue">{isOverdue(c, late) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}

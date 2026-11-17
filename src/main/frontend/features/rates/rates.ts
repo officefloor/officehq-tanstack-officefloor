@@ -4,7 +4,7 @@ import { nowKey, useReadNow } from '../../query/readNow';
 import { counts, isOpen, type Claim, type ClaimStatus } from '../claims/claims';
 import { lateBoundaries, roundsHalfUp, type Late } from '../overdue/late';
 import { gradeOn, type Person } from '../people/people';
-import type { Dated } from '../settings/settings';
+import type { Dated, DatedOrNone } from '../settings/settings';
 
 /** A grade's rate on the sheet: `rate` is a percent as text with two decimals (never a float), in force from
  *  `from` (yyyy-MM-dd; null: from the beginning of time) through `to` (yyyy-MM-dd; null: no end). `level` is how far
@@ -218,20 +218,25 @@ function capLimit(cap: string | null, cut: string): bigint | null {
   return limit > 0n ? limit : 0n;
 }
 
-/** A person's due-total: the sum of their figures (see personFigures), at most the sheet's cap less their cut total
- *  (null cap: none; not below 0.00); 'n/a' is not capped. */
-export function personDue(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, cap: string | null, cut: string, parts: SharePart[] = []): string {
+/** The date a person's cap is taken on: that of their latest claim that counts; the sheet's today when none does. */
+function capDate(claims: Claim[], late: Late): string {
+  return claims.filter(counts).reduce((d, c) => (c.date > d ? c.date : d), '') || late.today;
+}
+
+/** A person's due-total: the sum of their figures (see personFigures), at most the sheet's cap (in force on the date of
+ *  their latest claim that counts) less their cut total (null cap: none; not below 0.00); 'n/a' is not capped. */
+export function personDue(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, cap: DatedOrNone, cut: string, parts: SharePart[] = []): string {
   const total = personFigures(claims, rates, person, late, floor, parts);
-  const limit = capLimit(cap, cut);
+  const limit = capLimit(cap(capDate(claims, late)), cut);
   return total !== 'n/a' && limit !== null && hundredths(total) > limit ? shown(limit) : total;
 }
 
 /** A person's excess: how far the sum of their figures is above the most their due-total may be (the sheet's cap less
  *  their cut total, not below 0.00; see capLimit) — what the cap takes off it; 0.00 when it is not (or with no cap, or
  *  an n/a due-total). A cut above the cap alone is no excess. */
-export function personExcess(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, cap: string | null, cut: string, parts: SharePart[] = []): string {
+export function personExcess(claims: Claim[], rates: Rate[] | undefined, person: Person, late: Late, floor: Dated, cap: DatedOrNone, cut: string, parts: SharePart[] = []): string {
   const total = personFigures(claims, rates, person, late, floor, parts);
-  const limit = capLimit(cap, cut);
+  const limit = capLimit(cap(capDate(claims, late)), cut);
   if (total === 'n/a' || limit === null) return '0.00';
   const over = hundredths(total) - limit;
   return over > 0n ? shown(over) : '0.00';

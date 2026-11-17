@@ -53,6 +53,7 @@ public class TakeStatement {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean figured = false;
         int counted = 0;
+        LocalDate latest = null;
         for (Claim c : mine) {
             if (!ClaimDue.countsLive(c, person, today)) {
                 claims.bind(c, false, null);
@@ -65,6 +66,9 @@ public class TakeStatement {
                 total = total.add(shown);
             }
             counted++;
+            if (latest == null || c.date().isAfter(latest)) {
+                latest = c.date();
+            }
             claims.bind(c, true, shown);
         }
         BigDecimal part = rollup.shareParts(sheetId).get(person.id());
@@ -72,7 +76,7 @@ public class TakeStatement {
             total = total.add(part);
             figured = true;
         }
-        String dueTotal = rates.find(sheetId, person.gradeOn(today), today) == null && !figured ? "n/a" : SettingRepository.capped(total, settings.cap(sheetId), pools.cutTotals(sheetId, null).get(person.id())).toPlainString();
+        String dueTotal = rates.find(sheetId, person.gradeOn(today), today) == null && !figured ? "n/a" : SettingRepository.capped(total, settings.cap(sheetId, latest == null ? today : latest), pools.cutTotals(sheetId, null).get(person.id())).toPlainString();
         Statement statement = new Statement(sheetId, person.id(), today, dueTotal, counted, taker.by());
         statements.add(statement);
         taken.set(statement);
@@ -105,6 +109,7 @@ public class TakeStatement {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean figured = false;
         int counted = 0;
+        LocalDate latest = null;
         for (Claim c : mine) {
             List<ClaimLogLine> lines = logs.getOrDefault(c.id(), List.of());
             ClaimStatus status = lines.isEmpty() ? c.status() : ClaimDue.statusAsOf(lines, date);
@@ -120,10 +125,13 @@ public class TakeStatement {
                 total = total.add(shown);
             }
             counted++;
+            if (latest == null || c.date().isAfter(latest)) {
+                latest = c.date();
+            }
             claims.bind(c, true, shown);
         }
         String dueTotal = sheet.rate(person.gradeOn(date), date) == null && !figured ? "n/a"
-                : SettingRepository.capped(total, sheet.cap(), pools.cutTotals(sheetId, date).get(person.id())).toPlainString();
+                : SettingRepository.capped(total, sheet.cap(latest == null ? date : latest), pools.cutTotals(sheetId, date).get(person.id())).toPlainString();
         Statement statement = new Statement(sheetId, person.id(), date, dueTotal, counted, taker.by(), date, today);
         statements.add(statement);
         taken.set(statement);

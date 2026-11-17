@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { poolsKey } from '../pools/pools';
 import { useSheetToday } from '../session/session';
-import { DEFAULT_FISCAL_START_MONTH, DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, inForce, settingsKey, useSettings, type Setting } from './settings';
+import { DEFAULT_FISCAL_START_MONTH, DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, inForce, settingsKey, usePolicyVersions, useSettings, type Setting } from './settings';
 
 const GRADES = ['A', 'B', 'C'] as const;
 type GradeTerms = `terms-${(typeof GRADES)[number]}`;
@@ -25,9 +25,10 @@ const BLANK: Record<Key, string> = {
 const DATED: Key[] = ['clerk-limit', 'cap', 'proof-threshold', 'note-threshold', 'review-threshold', 'floor', 'terms', 'terms-A', 'terms-B', 'terms-C', 'grace-A', 'grace-B', 'grace-C', 'proof-threshold-A', 'proof-threshold-B', 'proof-threshold-C', 'clerk-limit-A', 'clerk-limit-B', 'clerk-limit-C', 'late-pct', 'rounding'];
 const dated = (key: Key) => DATED.includes(key);
 
-/** The sheet's settings: the clerk limit (the most a clerk may settle a claim's due for; blank for no limit) and the
- *  cap (the most a person's due-total may be; blank for none) and the proof threshold (a claim whose due is above
- *  the one in force on its date cannot be settled nor approved while it has no proofs, nor while it lacks a proof of one of the proof kinds when they are set; blank for none) and each grade's own proof threshold (a claim whose person has that grade on its date takes the grade's in force on that date instead of the sheet's; blank for none) and each grade's own clerk limit (a claim whose person has that grade on the sheet's today takes the grade's in force on it instead of the sheet's; blank for none) and the note threshold (a claim whose due is above the one in force on its date cannot be
+/** The sheet's settings, and the current policy version (how many changes to the rounding, floor, cap, terms, late
+ *  percent and clerk limit have been made). The settings: the clerk limit (the most a clerk may settle a claim's due for, the one in force on the claim's date; blank for no limit) and the
+ *  cap (the most a person's due-total may be, the one in force on the date of their latest claim that counts; blank for none) and the proof threshold (a claim whose due is above
+ *  the one in force on its date cannot be settled nor approved while it has no proofs, nor while it lacks a proof of one of the proof kinds when they are set; blank for none) and each grade's own proof threshold (a claim whose person has that grade on its date takes the grade's in force on that date instead of the sheet's; blank for none) and each grade's own clerk limit (a claim whose person has that grade on the sheet's today takes the grade's in force on the claim's date instead of the sheet's; blank for none) and the note threshold (a claim whose due is above the one in force on its date cannot be
  *  opened while its note is empty; blank for none) and the floor (the least a claim's live due may be; 1.00 until set) and the terms (the days from a claim's date to its
  *  due-by, fixed when the claim is added; 14 until set) and each grade's own terms (a grade without its own has the
  *  sheet's) and each grade's grace (whole days added to the due-by of a claim whose person has that grade on its date, the one in force on that date, before
@@ -49,6 +50,7 @@ const dated = (key: Key) => DATED.includes(key);
  *  (a field focused counts, so a blank typed over a blank still saves), the clerk limit when none was. */
 function Settings({ sheetId, user }: { sheetId: string; user: string }) {
   const settings = useSettings(sheetId);
+  const policyVersions = usePolicyVersions(sheetId);
   const queryClient = useQueryClient();
   const today = useSheetToday(sheetId);
   const [values, setValues] = useState<Record<Key, string>>(BLANK);
@@ -173,6 +175,9 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         )}
       </form>
       {settings.isError && <p data-testid="settings-load-error">Could not load settings.</p>}
+      <p>
+        Policy version <span data-testid="policy-version">{policyVersions.data?.length ?? 0}</span>
+      </p>
       <p>
         Clerk limit in force <span data-testid="setting-clerk-limit-current">{current('clerk-limit')}</span>
       </p>
