@@ -67,6 +67,14 @@ public class ApplyClaimStatus {
 
     public void apply(@Val Claim claim, @Val ClaimStatusChange change, PersonRepository people, RateRepository rates,
             PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, ClaimLog log, VoidReasonRepository voidReasons, Out<Claim> changed, Out<ClaimNumber> number, Out<PreviousDue> previous) throws InvalidClaimStatusException {
+        applyJudged(claim, claim, change, people, rates, periods, settings, roles, sheets, claims, log, voidReasons,
+                changed, number, previous);
+    }
+
+    /** As #apply, but the four-eyes rules and the proof rule are judged on the claim given as judged (a part-settle
+     *  judges them on the claim it splits from, see SettlePart) instead of on the claim changed. */
+    static void applyJudged(Claim claim, Claim judged, ClaimStatusChange change, PersonRepository people, RateRepository rates,
+            PeriodRepository periods, SettingRepository settings, RoleRepository roles, SheetRepository sheets, ClaimRepository claims, ClaimLog log, VoidReasonRepository voidReasons, Out<Claim> changed, Out<ClaimNumber> number, Out<PreviousDue> previous) throws InvalidClaimStatusException {
         boolean allowed = switch (change.action()) {
             case OPEN -> claim.status() == ClaimStatus.DRAFT;
             case SETTLE -> claim.status() == ClaimStatus.OPEN;
@@ -118,11 +126,11 @@ public class ApplyClaimStatus {
             throw new InvalidClaimStatusException("The person already has as many open claims in the period as its cap allows");
         }
         if ((change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE)
-                && change.by().equals(claim.openedBy())) {
+                && change.by().equals(judged.openedBy())) {
             throw new InvalidClaimStatusException("The user who opened a claim cannot settle nor approve it");
         }
         if ((change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE)
-                && change.by().equals(claims.editedBy(claim))) {
+                && change.by().equals(claims.editedBy(judged))) {
             throw new InvalidClaimStatusException("The user who last edited a claim cannot settle nor approve it");
         }
         if ((change.action() == ClaimAction.APPROVE || change.action() == ClaimAction.REJECT) && !steward) {
@@ -155,13 +163,15 @@ public class ApplyClaimStatus {
         } else {
             settledDue = to == ClaimStatus.SETTLED ? late.add(claim, due(claim, people, rates, late.rounding()), settings.floor(claim.sheetId(), claim.date())) : claim.due();
         }
-        if ((change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE) && settledDue != null
-                && missingProof(claim, settings, claims) != null) {
-            Person person = people.find(claim.sheetId(), claim.personId());
-            BigDecimal threshold = settings.proofThreshold(claim.sheetId(),
-                    person == null ? null : person.gradeOn(claim.date()), claim.date());
-            if (threshold != null && settledDue.compareTo(threshold) > 0) {
-                String missing = missingProof(claim, settings, claims);
+        BigDecimal judgedDue = judged == claim ? settledDue
+                : late.add(judged, due(judged, people, rates, late.rounding()), settings.floor(judged.sheetId(), judged.date()));
+        if ((change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE) && judgedDue != null
+                && missingProof(judged, settings, claims) != null) {
+            Person person = people.find(judged.sheetId(), judged.personId());
+            BigDecimal threshold = settings.proofThreshold(judged.sheetId(),
+                    person == null ? null : person.gradeOn(judged.date()), judged.date());
+            if (threshold != null && judgedDue.compareTo(threshold) > 0) {
+                String missing = missingProof(judged, settings, claims);
                 throw new InvalidClaimStatusException(missing.isEmpty()
                         ? "A claim whose due is above the proof threshold needs a proof"
                         : "A claim whose due is above the proof threshold needs a " + missing + " proof");

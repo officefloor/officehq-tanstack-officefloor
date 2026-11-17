@@ -44,7 +44,7 @@ type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | '
  *  steward approves it, or rejects it with the reason typed beside Reject. An action the status does not allow,
  *  settling or approving a claim the user opened, or a clerk approving or rejecting, is refused by the server and
  *  shows the claim's error. A steward waives an OPEN or PENDING claim's late charge with Waive late charge, shown as waived yes/no: from then on it bears none (refused, with the claim's error, for anyone else, any other claim or one already waived). An OPEN or PENDING claim is held and released with Hold / Release, shown as held yes/no: while held and not bound by a statement it counts in no due figure (it stays in claimed), as a claim dated within a hold of its person does (refused, with the claim's error, for any other claim). An OPEN claim is deferred until the date typed beside Defer (after today; refused, with the claim's error, for any other claim or date). Add proof raises its proofs count by one (refused, with the claim's error, for a SETTLED or VOID claim or one whose due-by is inside a closed period); a proof has the kind chosen beside it (receipt when none is), shown as counts per kind beside the total; a claim with no proofs whose due is above the proof threshold on its date, or with none of one of the sheet's proof kinds, cannot be settled nor approved; a claim with an empty note whose due is above the note threshold on its date cannot be opened (alone or in bulk). While the sheet has void reasons, Void needs one chosen beside it (refused, with the claim's error, without one). A steward voids a SETTLED claim within 7 days of its settlement (its frozen figure leaves every total). A steward re-settles a SETTLED claim (its due fixed again at today's figure). Delete makes a DRAFT DELETED (it counts nowhere); Restore makes it a DRAFT again, only on the sheet-today it was deleted (refused, with the claim's error, otherwise). A steward re-dates an OPEN or PENDING claim to the date typed beside Re-date (its due-by and any statement figure stay; refused, with the claim's error, for anyone else, any other claim, or a date after the person's retirement). A steward moves a DRAFT, OPEN or PENDING claim to the person picked beside Move (refused,
- *  with the claim's error, for anyone else or any other claim). Remind writes a reminder for an OPEN or PENDING claim, once per sheet-today, which becomes its reminded date (refused, with the claim's error, for any other claim or a second reminder that day). Comment adds the text typed beside it to the claim's comments, shown in the order written as `<user> on <date>: <text>` (an empty one is refused with the claim's error). Split takes the amount typed beside it off an OPEN claim (not deferred, nor with its due-by inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Only a DRAFT whose due-by is not inside a closed period can be edited: Edit opens the editor and locks the claim for the user until it
+ *  with the claim's error, for anyone else or any other claim). Remind writes a reminder for an OPEN or PENDING claim, once per sheet-today, which becomes its reminded date (refused, with the claim's error, for any other claim or a second reminder that day). Comment adds the text typed beside it to the claim's comments, shown in the order written as `<user> on <date>: <text>` (an empty one is refused with the claim's error). Split takes the amount typed beside it off an OPEN claim (not deferred, nor with its due-by inside a closed period; more than 0.00 and less than its amount; only by a role the sheet lets open a claim) into a new OPEN claim of the person, refused with the claim's error otherwise. Settle part splits the amount typed beside it off exactly as Split does and settles the new claim at once exactly as Settle does (PENDING above a clerk's limit), the four-eyes and proof rules judged on the original claim; when either would be refused the whole is refused with the claim's error and nothing changes. Only a DRAFT whose due-by is not inside a closed period can be edited: Edit opens the editor and locks the claim for the user until it
  *  is saved or cancelled (Cancel) or the sheet's today changes; Edit on any other claim, on a claim another user holds, or by a
  *  viewer shows the claim's error instead and takes no lock. The row's own amount entry and Save amount change a DRAFT's amount
  *  exactly as the editor's save would (same rules, CLAIM_EDITED), keeping its date and note; a refusal shows the claim's error. Add line adds the label, quantity and unit amount typed
@@ -150,6 +150,16 @@ function ClaimRow({
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
   });
+  const [settlePartAmount, setSettlePartAmount] = useState('');
+  // part-settle: split the amount off and settle the new claim at once, all or nothing
+  const settlePart = useMutation({
+    mutationFn: (amount: string) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/settle-part`, { amount, by: user }),
+    onSuccess: () => {
+      setSettlePartAmount('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
   const remind = useMutation({
     mutationFn: () => postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/remind`, { by: user }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
@@ -218,6 +228,7 @@ function ClaimRow({
     redate.reset();
     proof.reset();
     split.reset();
+    settlePart.reset();
     remind.reset();
     comment.reset();
     line.reset();
@@ -275,6 +286,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          settlePart.reset();
           remind.reset();
           comment.reset();
           line.reset();
@@ -330,6 +342,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          settlePart.reset();
           remind.reset();
           comment.reset();
           line.reset();
@@ -406,6 +419,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          settlePart.reset();
           remind.reset();
           comment.reset();
           line.reset();
@@ -440,6 +454,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          settlePart.reset();
           remind.reset();
           comment.reset();
           line.reset();
@@ -461,6 +476,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          settlePart.reset();
           remind.reset();
           comment.reset();
           line.reset();
@@ -485,6 +501,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          settlePart.reset();
           remind.reset();
           comment.reset();
           line.reset();
@@ -508,6 +525,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          settlePart.reset();
           remind.reset();
           comment.reset();
           line.reset();
@@ -543,6 +561,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          settlePart.reset();
           remind.reset();
           comment.reset();
           line.reset();
@@ -560,6 +579,7 @@ function ClaimRow({
         onChange={(e) => {
           setSplitAmount(e.target.value);
           split.reset();
+          settlePart.reset();
           remind.reset();
           comment.reset();
           line.reset();
@@ -581,6 +601,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          settlePart.reset();
           remind.reset();
           comment.reset();
           line.reset();
@@ -589,6 +610,46 @@ function ClaimRow({
         }}
       >
         Split
+      </button>{' '}
+      <input
+        data-testid="claim-settle-part-amount"
+        placeholder="Part-settle amount"
+        inputMode="decimal"
+        value={settlePartAmount}
+        onChange={(e) => {
+          setSettlePartAmount(e.target.value);
+          split.reset();
+          settlePart.reset();
+          remind.reset();
+          comment.reset();
+          line.reset();
+          inline.reset();
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-settle-part"
+        disabled={settlePart.isPending}
+        onClick={() => {
+          setEditRefused(null);
+          lock.reset();
+          status.reset();
+          reassign.reset();
+          defer.reset();
+          waive.reset();
+          hold.reset();
+          redate.reset();
+          proof.reset();
+          split.reset();
+          settlePart.reset();
+          remind.reset();
+          comment.reset();
+          line.reset();
+          inline.reset();
+          settlePart.mutate(settlePartAmount.trim());
+        }}
+      >
+        Settle part
       </button>{' '}
       <select
         data-testid="claim-reassign-to"
@@ -623,6 +684,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          settlePart.reset();
           remind.reset();
           comment.reset();
           line.reset();
@@ -647,6 +709,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          settlePart.reset();
           remind.reset();
           comment.reset();
           line.reset();
@@ -681,6 +744,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          settlePart.reset();
           remind.reset();
           comment.reset();
           line.reset();
@@ -739,6 +803,7 @@ function ClaimRow({
           redate.reset();
           proof.reset();
           split.reset();
+          settlePart.reset();
           remind.reset();
           comment.reset();
           line.reset();
@@ -797,6 +862,12 @@ function ClaimRow({
           {' '}
           Only an open claim, not deferred, nor with its due-by inside a closed period, can be split, by an amount more than 0.00 and less than
           its amount, and only by a role the sheet lets open a claim.
+        </span>
+      )}
+      {settlePart.isError && (
+        <span data-testid="claim-error">
+          {' '}
+          A part-settle splits the amount off and settles it at once: refused when the split or the settle would be.
         </span>
       )}
       {remind.isError && (
