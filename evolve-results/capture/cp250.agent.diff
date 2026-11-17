@@ -1,0 +1,68 @@
+diff --git a/src/main/frontend/features/export/export.slot.tsx b/src/main/frontend/features/export/export.slot.tsx
+index 84402aaad..b69c05635 100644
+--- a/src/main/frontend/features/export/export.slot.tsx
++++ b/src/main/frontend/features/export/export.slot.tsx
+@@ -7,9 +7,9 @@ import { live, useClaims } from '../claims/claims';
+ import { gradeOn, usePeople } from '../people/people';
+ import { periodOf, personPeriodCarried, personPeriodDue, usePeriods } from '../periods/periods';
+ import { personCutTotal, usePools } from '../pools/pools';
+-import { claimDue, personDue, claimRate, useRates } from '../rates/rates';
++import { claimDue, personDue, claimRate, sum, useRates } from '../rates/rates';
+ import { useShareParts } from '../header/totals';
+-import { useCap, useFloor, useLate } from '../settings/settings';
++import { policyVersionOn, useCap, useFloor, useLate, usePolicyVersions } from '../settings/settings';
+ import { type Found, SheetPeople } from '../search/search.slot';
+ import { csvValue, download } from './csv';
+ 
+@@ -208,10 +208,51 @@ function ExportTree({ sheetId }: { sheetId: string }) {
+   );
+ }
+ 
++/** The button that downloads the policy versions as a CSV file: version, from (the date it starts), key, value (empty
++ *  when blank), then its claims — the claims that count in the live totals whose date falls in it (see policyVersionOn)
++ *  — counted, and their dues as the claim rows show them added up; one line per version in the order made. Made once
++ *  the sheet's figures are no longer being re-read; while an as-of or a preview date is set they are those figures. */
++function ExportPolicy({ sheetId }: { sheetId: string }) {
++  const versions = usePolicyVersions(sheetId);
++  const people = usePeople(sheetId);
++  const claims = useClaims(sheetId);
++  const rates = useRates(sheetId);
++  const late = useLate(sheetId);
++  const floor = useFloor(sheetId);
++  const fetching = useIsFetching({ queryKey: ['sheet', sheetId] });
++  const [wanted, setWanted] = useState(false);
++
++  useEffect(() => {
++    if (!wanted || fetching > 0 || !versions.data || !people.data || !claims.data) return;
++    setWanted(false);
++    const byId = new Map(people.data.map((p) => [p.id, p]));
++    const counted = live(claims.data, people.data, late.today);
++    const lines = ['version,from,key,value,claims,due-total'];
++    for (const v of versions.data) {
++      const mine = counted.filter((c) => policyVersionOn(versions.data, c.date) === v.number);
++      const dues = mine.map((c) => {
++        const p = byId.get(c.personId);
++        return claimDue(c, p === undefined ? undefined : claimRate(rates.data, gradeOn(p, c.date), c), floor, late);
++      });
++      lines.push([String(v.number), v.start, v.key, v.value ?? '', String(mine.length), sum(dues)].map(csvValue).join(','));
++    }
++    download(`policy-${sheetId}.csv`, lines);
++  }, [wanted, fetching, versions.data, people.data, claims.data, rates.data, late, floor, sheetId]);
++
++  return (
++    <p>
++      <button type="button" data-testid="export-policy" onClick={() => setWanted(true)}>
++        Export policy versions (CSV)
++      </button>
++    </p>
++  );
++}
++
+ export const contributions = [
+   SheetPage.fill({ order: 15, Component: ExportPeople }),
+   SheetPage.fill({ order: 15.5, Component: ExportClaims }),
+   SheetPage.fill({ order: 15.6, Component: ExportPools }),
+   SheetPage.fill({ order: 15.7, Component: ExportPeriods }),
+   SheetPage.fill({ order: 15.8, Component: ExportTree }),
++  SheetPage.fill({ order: 15.9, Component: ExportPolicy }),
+ ];
