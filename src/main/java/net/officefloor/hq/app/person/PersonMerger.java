@@ -85,7 +85,7 @@ public class PersonMerger {
                 + " SELECT id, sheet_id, name, ?, retired_from, terms, contact, added_on, ? FROM person WHERE sheet_id = ? AND id = ?",
                 grades.toString(), java.sql.Date.valueOf(sheets.today(sheetId)), sheetId, f);
 
-        for (String table : List.of("person_hold", "watch", "person_grade", "person_grade_log",
+        for (String table : List.of("person_hold", "watch", "person_approver", "person_grade", "person_grade_log",
                 "person_retire_log", "person_retirement", "person_terms_log", "person_terms_from")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, f);
         }

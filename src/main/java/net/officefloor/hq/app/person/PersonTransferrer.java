@@ -58,7 +58,7 @@ public class PersonTransferrer {
         // the crews they lead stay, without a lead
         jdbc.update("UPDATE crew SET lead_id = NULL WHERE lead_id = ?", id);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", from, id);
-        for (String table : List.of("person_hold", "watch", "person_retire_log")) {
+        for (String table : List.of("person_hold", "watch", "person_approver", "person_retire_log")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", from, id);
         }
         for (String table : List.of("person_grade", "person_grade_log", "person_terms_log", "person_terms_from", "person_alias",
@@ -107,7 +107,7 @@ public class PersonTransferrer {
         // the crews they lead stay, without a lead
         jdbc.update("UPDATE crew SET lead_id = NULL WHERE lead_id = ?", id);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", from, id);
-        for (String table : List.of("person_hold", "watch", "person_retire_log", "person_grade", "person_grade_log",
+        for (String table : List.of("person_hold", "watch", "person_approver", "person_retire_log", "person_grade", "person_grade_log",
                 "person_terms_log", "person_terms_from", "person_retirement")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", from, id);
         }

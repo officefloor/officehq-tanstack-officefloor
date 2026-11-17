@@ -26,7 +26,8 @@ import net.officefloor.plugin.variable.Val;
  * count is 0, nor while the sheet's proof kinds are set and it has no proof of one of them (checked before the clerk limit, so it never goes PENDING); a due of n/a is within any threshold. A claim whose due-by falls inside a closed
  * period cannot change status, nor can a deferred claim be settled (see ClaimDue#deferred). A clerk (any user not made a steward) settling a claim whose due is above the sheet's
  * clerk limit, if it has one, makes it PENDING instead (its due left unfixed, still bound by its statement if one binds it); a due of n/a is
- * within any limit. A steward settles anything. Only a steward approves a PENDING claim (fixing its figure, live or bound by a statement, late
+ * within any limit. A steward settles anything. Only a steward, or the claim's person's approver (see
+ * PersonRepository#approver), approves a PENDING claim (fixing its figure, live or bound by a statement, late
  * charge included, at that moment) or rejects it (OPEN again, still bound by its statement if one binds it).
  * A claim whose due (as it shows: its live figure at least the floor, or the figure a statement bound it to) is above
  * the sheet's note threshold in force on its date (if it has one) cannot be opened while its note is empty; a due of
@@ -152,8 +153,9 @@ public class ApplyClaimStatus {
                 && change.by().equals(claims.editedBy(judged))) {
             throw new InvalidClaimStatusException("The user who last edited a claim cannot settle nor approve it");
         }
-        if ((change.action() == ClaimAction.APPROVE || change.action() == ClaimAction.REJECT) && !steward) {
-            throw new InvalidClaimStatusException("Only a steward approves or rejects a pending claim");
+        if ((change.action() == ClaimAction.APPROVE || change.action() == ClaimAction.REJECT) && !steward
+                && !change.by().equals(people.approver(claim.sheetId(), claim.personId()))) {
+            throw new InvalidClaimStatusException("Only a steward or the person's approver approves or rejects a pending claim");
         }
         if (change.action() == ClaimAction.VOID && claim.status() == ClaimStatus.SETTLED) {
             if (!steward) {

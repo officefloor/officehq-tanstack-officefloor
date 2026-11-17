@@ -464,6 +464,25 @@ public class PersonRepository {
                 Date.valueOf(flag.until()), sheetId, id);
     }
 
+    /** The person's approver (see person_approver), or null when they have none. */
+    public String approver(String sheetId, long id) {
+        List<String> users = jdbc.queryForList("SELECT user_name FROM person_approver WHERE sheet_id = ? AND person_id = ?",
+                String.class, sheetId, id);
+        return users.isEmpty() ? null : users.get(0);
+    }
+
+    /** Every approver on the sheet, by person id. */
+    public List<Approver> approvers(String sheetId) {
+        return jdbc.query("SELECT person_id, user_name FROM person_approver WHERE sheet_id = ? ORDER BY person_id",
+                (rs, n) -> new Approver(rs.getLong("person_id"), rs.getString("user_name")), sheetId);
+    }
+
+    /** Makes the user the person's approver, replacing any they had. */
+    public void approver(String sheetId, long id, String user) {
+        jdbc.update("DELETE FROM person_approver WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("INSERT INTO person_approver (sheet_id, person_id, user_name) VALUES (?, ?, ?)", sheetId, id, user);
+    }
+
     /** Adds a hold on the person, from the date until the date (null: open-ended). */
     public void hold(String sheetId, long id, PersonHold hold) {
         jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, made_on) VALUES (?, ?, ?, ?, ?)", sheetId, id,
