@@ -139,3 +139,10 @@ export function classicPeriodDue(
 ): string {
   return sum((people ?? []).map((person) => personPeriodDue(period, person, claims, rates, floor, late, true)));
 }
+
+/** How many claims belong to a period (their due-by falls in it), VOID and DELETED claims left out. */
+export function periodClaimsCount(period: Period, claims: Claim[] | undefined): number {
+  return (claims ?? []).filter(
+    (c) => c.status !== 'VOID' && c.status !== 'DELETED' && period.from <= c.dueBy && c.dueBy <= period.to,
+  ).length;
+}

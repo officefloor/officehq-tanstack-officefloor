@@ -8,7 +8,7 @@ import { useClaims } from '../claims/claims';
 import { usePeople, type Person } from '../people/people';
 import { useRates } from '../rates/rates';
 import { useFiscalStartMonth, useFloor, useLate } from '../settings/settings';
-import { fiscalYearOf, periodDue, periodsKey, personPeriodCarried, personPeriodDue, usePeriods, type Period } from './periods';
+import { fiscalYearOf, periodClaimsCount, periodDue, periodsKey, personPeriodCarried, personPeriodDue, usePeriods, type Period } from './periods';
 
 type Values = { name: string; from: string; to: string; cap: string };
 const EMPTY: Values = { name: '', from: '', to: '', cap: '' };
@@ -16,7 +16,7 @@ const EMPTY: Values = { name: '', from: '', to: '', cap: '' };
 /** The sheet's periods: the form that adds one, and each period with its due-total — the figures of the claims
  *  that count, each with its late charge (a person's OPEN or PENDING claims dated within a hold of theirs, not bound by a statement, do not) whose due-by falls in it, added up (skipping n/a); a closed period
  *  shows the due-total fixed when it was closed, a soft-closed one that fixed when it was soft-closed. Each period
- *  shows the fiscal year its from-date falls in (see fiscalYearOf), and its cap on each person's OPEN or PENDING claims in it (blank: none). */
+ *  shows the fiscal year its from-date falls in (see fiscalYearOf), its cap on each person's OPEN or PENDING claims in it (blank: none), and how many claims belong to it (see periodClaimsCount). */
 function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const periods = usePeriods(sheetId);
   const people = usePeople(sheetId);
@@ -89,6 +89,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid="period-fy">{fiscalYearOf(p.from, fiscalStart)}</td>
               <td data-testid="period-cap">{p.cap ?? ''}</td>
               <td data-testid="period-locked">{p.locked ? 'yes' : 'no'}</td>
+              <td data-testid="period-claims-count">{periodClaimsCount(p, claims.data)}</td>
               <td>
                 <PeriodClose sheetId={sheetId} user={user} period={p} />
               </td>
