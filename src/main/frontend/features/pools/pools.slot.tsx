@@ -45,6 +45,12 @@ function PoolRow({ sheetId, user, pool, pools }: { sheetId: string; user: string
           >
             {m.pool === null ? m.name : `pool:${m.pool}`}: <span data-testid="pool-share">{m.share.toFixed(2)}</span>, cut{' '}
             <span data-testid="pool-cut">{m.cut ?? ''}</span>
+            {m.history.map((h) => (
+              <span key={h.period}>
+                {' '}
+                {h.period}: <span data-testid={`pool-cut-${h.period}`}>{h.cut ?? ''}</span>
+              </span>
+            ))}
             {(m.from !== null || m.to !== null) && ` (${m.from ?? ''} – ${m.to ?? ''})`}
             {m.retired && ' (retired)'}
             {!m.active && ' (not in force)'}

@@ -7,7 +7,9 @@ import { peopleKey } from '../people/people';
  *  pool's pot (two decimals, as text; a retired member's 0.00, or null for everyone when every member is retired), null when the pool is not balanced or has no pot: a pool that
  *  is a member of none has the sheet's pot, a member pool its cut in the pool above. The membership may carry a `from` and a
  *  `to` date (yyyy-MM-dd, null for none); a member not `active` (its dates do not include the sheet's today) is left out
- *  entirely: not in the total, no cut. */
+ *  entirely: not in the total, no cut. `history` is their cut as it stood at the end of each period whose to-date is on or
+ *  before the sheet's today (by from-date): the pool, its members, the pot and the holds as they were then, with that day
+ *  as the sheet's today (`cut` null: none then). */
 export type PoolMember = {
   personId: number | null;
   name: string;
@@ -18,6 +20,7 @@ export type PoolMember = {
   from: string | null;
   to: string | null;
   active: boolean;
+  history: { period: string; cut: string | null }[];
 };
 
 /** A pool of the sheet: its `name` (trimmed, unique on the sheet), its members in the order added, the `totalShare`

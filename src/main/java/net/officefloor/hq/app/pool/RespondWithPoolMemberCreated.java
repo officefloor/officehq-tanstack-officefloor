@@ -10,6 +10,6 @@ public class RespondWithPoolMemberCreated {
         response.send(new ResponseEntity<>(new PoolMember(values.personId(), values.name(),
                 values.isPool() ? values.name() : null, values.share(), false, null,
                 values.from() == null ? null : values.from().toString(),
-                values.to() == null ? null : values.to().toString(), true), HttpStatus.CREATED));
+                values.to() == null ? null : values.to().toString(), true, java.util.List.of()), HttpStatus.CREATED));
     }
 }

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -14,8 +15,11 @@ public class CrewRepository {
 
     private final JdbcTemplate jdbc;
 
-    public CrewRepository(JdbcTemplate jdbc) {
+    private final SheetRepository sheets;
+
+    public CrewRepository(JdbcTemplate jdbc, SheetRepository sheets) {
         this.jdbc = jdbc;
+        this.sheets = sheets;
     }
 
     /** The sheet's crews in the order added, each with its lead and its members in the order added. */
@@ -43,7 +47,8 @@ public class CrewRepository {
     /** Adds the crew; false when the name is already taken on the sheet (the unique key refuses a second). */
     public boolean add(String sheetId, String name, long leadId) {
         try {
-            jdbc.update("INSERT INTO crew (sheet_id, name, lead_id) VALUES (?, ?, ?)", sheetId, name, leadId);
+            jdbc.update("INSERT INTO crew (sheet_id, name, lead_id, made_on) VALUES (?, ?, ?, ?)", sheetId, name, leadId,
+                    java.sql.Date.valueOf(sheets.today(sheetId)));
             return true;
         } catch (DuplicateKeyException e) {
             return false;
@@ -78,7 +83,9 @@ public class CrewRepository {
     /** Adds the person to the crew; false when they are already in it. */
     public boolean addMember(long crewId, long personId) {
         try {
-            jdbc.update("INSERT INTO crew_member (crew_id, person_id) VALUES (?, ?)", crewId, personId);
+            String sheetId = jdbc.queryForObject("SELECT sheet_id FROM crew WHERE id = ?", String.class, crewId);
+            jdbc.update("INSERT INTO crew_member (crew_id, person_id, made_on) VALUES (?, ?, ?)", crewId, personId,
+                    java.sql.Date.valueOf(sheets.today(sheetId)));
             return true;
         } catch (DuplicateKeyException e) {
             return false;
