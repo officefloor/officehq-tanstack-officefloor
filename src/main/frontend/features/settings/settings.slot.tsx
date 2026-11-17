@@ -4,8 +4,9 @@ import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { poolsKey } from '../pools/pools';
+import { useClaims } from '../claims/claims';
 import { useSheetToday } from '../session/session';
-import { DEFAULT_FISCAL_START_MONTH, DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, inForce, settingsKey, usePolicyVersions, useSettings, type Setting } from './settings';
+import { DEFAULT_FISCAL_START_MONTH, DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, inForce, policyVersionOn, settingsKey, usePolicyVersions, useSettings, type Setting } from './settings';
 
 const GRADES = ['A', 'B', 'C'] as const;
 type GradeTerms = `terms-${(typeof GRADES)[number]}`;
@@ -51,6 +52,8 @@ const dated = (key: Key) => DATED.includes(key);
 function Settings({ sheetId, user }: { sheetId: string; user: string }) {
   const settings = useSettings(sheetId);
   const policyVersions = usePolicyVersions(sheetId);
+  const claims = useClaims(sheetId);
+  const [policyShown, setPolicyShown] = useState(false);
   const queryClient = useQueryClient();
   const today = useSheetToday(sheetId);
   const [values, setValues] = useState<Record<Key, string>>(BLANK);
@@ -176,8 +179,21 @@ function Settings({ sheetId, user }: { sheetId: string; user: string }) {
       </form>
       {settings.isError && <p data-testid="settings-load-error">Could not load settings.</p>}
       <p>
-        Policy version <span data-testid="policy-version">{policyVersions.data?.length ?? 0}</span>
+        Policy version <span data-testid="policy-version">{policyVersions.data?.length ?? 0}</span>{' '}
+        <button type="button" data-testid="policy-show" onClick={() => setPolicyShown(true)}>
+          Show policy versions
+        </button>
       </p>
+      {policyShown && (
+        <ul>
+          {(policyVersions.data ?? []).map((v) => (
+            <li key={v.number} data-testid="policy-line">
+              {v.number} {v.start} {v.key}={v.value ?? ''}{' '}
+              {(claims.data ?? []).filter((c) => policyVersionOn(policyVersions.data, c.date) === v.number).length}
+            </li>
+          ))}
+        </ul>
+      )}
       <p>
         Clerk limit in force <span data-testid="setting-clerk-limit-current">{current('clerk-limit')}</span>
       </p>

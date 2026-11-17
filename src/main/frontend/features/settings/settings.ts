@@ -70,9 +70,10 @@ export function useCap(sheetId: string): DatedOrNone {
   return (date) => inForce(settings.data, 'cap', date)?.value ?? null;
 }
 
-/** A policy version: its number (from 1, in the order made) and the date it is in force from (null: none, counts
- *  always). Every change to a policy setting (rounding, floor, cap, terms, late-pct, clerk-limit) is a new version. */
-export type PolicyVersion = { number: number; from: string | null };
+/** A policy version: its number (from 1, in the order made), the setting it changed and its value (null: blank), the
+ *  date it is in force from (null: none) and the date it starts (its from-date, or the sheet's today when it was made).
+ *  Every change to a policy setting (rounding, floor, cap, terms, late-pct, clerk-limit) is a new version. */
+export type PolicyVersion = { number: number; key: string; value: string | null; from: string | null; start: string };
 
 /** The sheet's policy versions, in the order made (as of the screen's date: only those made by then). */
 export function usePolicyVersions(sheetId: string) {
@@ -83,10 +84,9 @@ export function usePolicyVersions(sheetId: string) {
   });
 }
 
-/** The policy version in force on a date: how many versions have their from-date on or before it (one with none
- *  counts always). */
+/** The policy version in force on a date: how many versions start on or before it. */
 export function policyVersionOn(versions: PolicyVersion[] | undefined, date: string): number {
-  return (versions ?? []).filter((v) => v.from === null || v.from <= date).length;
+  return (versions ?? []).filter((v) => v.start <= date).length;
 }
 
 /** The terms a sheet has until they are set. */

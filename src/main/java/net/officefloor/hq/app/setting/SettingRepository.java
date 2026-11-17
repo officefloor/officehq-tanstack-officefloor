@@ -221,30 +221,30 @@ public class SettingRepository {
         return value == null ? null : new BigDecimal(value);
     }
 
-    /** The from-dates of the sheet's policy versions, in the order made (version 1 first; null: no from-date, counts
-     *  always): every change to a policy setting (see POLICY_KEYS) is a new version. */
-    public List<LocalDate> policyVersions(String sheetId) {
-        return policyVersions(jdbc.query("SELECT sheet_id, setting_key, setting_value, from_date FROM setting_log"
-                + " WHERE sheet_id = ? ORDER BY id", SettingRepository::map, sheetId));
+    /** A policy version: the policy setting changed, its value (null: blank), its from-date (null: undated) and the
+     *  date it starts: its from-date, or when undated the sheet's today when it was made. */
+    public record PolicyVersion(String key, String value, LocalDate from, LocalDate start) {
     }
 
-    /** The from-dates of the policy versions among the settings stored (in the order stored), as #policyVersions. */
-    public static List<LocalDate> policyVersions(List<Setting> stored) {
-        List<LocalDate> versions = new java.util.ArrayList<>();
-        for (Setting s : stored) {
-            if (POLICY_KEYS.contains(s.key())) {
-                versions.add(s.from());
-            }
-        }
-        return versions;
+    /** The sheet's policy versions, in the order made (version 1 first), only those made while the sheet's today was
+     *  on or before the date (null: all): every change to a policy setting (see POLICY_KEYS) is a new version. */
+    public List<PolicyVersion> policyVersions(String sheetId, LocalDate madeBy) {
+        return jdbc.query("SELECT setting_key, setting_value, from_date, made_on FROM setting_log WHERE sheet_id = ?"
+                + " AND made_on <= ? ORDER BY id", (rs, n) -> {
+                    LocalDate from = rs.getObject("from_date", LocalDate.class);
+                    LocalDate madeOn = rs.getObject("made_on", LocalDate.class);
+                    boolean undated = UNDATED.equals(from);
+                    return new PolicyVersion(rs.getString("setting_key"), rs.getString("setting_value"),
+                            undated ? null : from, undated ? madeOn : from);
+                }, sheetId, madeBy == null ? LocalDate.of(9999, 12, 31) : madeBy)
+                .stream().filter((v) -> POLICY_KEYS.contains(v.key())).toList();
     }
 
-    /** The policy version in force on the date: how many versions have their from-date on or before it (one with
-     *  none counts always). */
-    public static int policyVersion(List<LocalDate> versions, LocalDate date) {
+    /** The policy version in force on the date: how many versions start on or before it. */
+    public static int policyVersion(List<PolicyVersion> versions, LocalDate date) {
         int n = 0;
-        for (LocalDate from : versions) {
-            if (from == null || !from.isAfter(date)) {
+        for (PolicyVersion v : versions) {
+            if (!v.start().isAfter(date)) {
                 n++;
             }
         }
