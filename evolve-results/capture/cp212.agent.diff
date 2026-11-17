@@ -1,0 +1,49 @@
+diff --git a/src/main/frontend/features/score/score.slot.tsx b/src/main/frontend/features/score/score.slot.tsx
+index 83d6057e9..845437606 100644
+--- a/src/main/frontend/features/score/score.slot.tsx
++++ b/src/main/frontend/features/score/score.slot.tsx
+@@ -15,14 +15,15 @@ function ScoreHead() {
+   );
+ }
+ 
+-/** A person's score (see score), and their band by it (see band), over their claims that count in the live totals. */
++/** A person's score (see score), and their band by it (see band), over their claims that count in the live totals; its
++ *  settled figures leave out corrections. */
+ function PersonScore({ sheetId, person }: { sheetId: string; person: Person }) {
+   const claims = useClaims(sheetId);
+   const rates = useRates(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+   const mine = live(claims.data?.filter((c) => c.personId === person.id) ?? [], [person], late.today);
+-  const settled = personSplit(mine, rates.data, person, late, floor).settled;
++  const settled = personSplit(mine.filter((c) => !c.corrects), rates.data, person, late, floor).settled;
+   const count = overdue(mine, rates.data, person, late, floor).count;
+   const thresholds = useScoreThresholds(sheetId);
+   const shown = score(settled, count);
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Figures.java b/src/main/java/net/officefloor/hq/app/rollup/Figures.java
+index d1aaf66f1..bbb8c0c30 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Figures.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Figures.java
+@@ -1,7 +1,7 @@
+ package net.officefloor.hq.app.rollup;
+ 
+ /** A person's figures as shown: their claimed, due-total (two decimals; the due-total may be n/a) and overdue-total
+- *  (two decimals), and their score (a whole number: the figures of their settled claims that count / 100, minus 5 for
+- *  every overdue claim, rounded once, half to even). */
++ *  (two decimals), and their score (a whole number: the figures of their settled claims that count and correct
++ *  nothing / 100, minus 5 for every overdue claim, rounded once, half to even). */
+ public record Figures(String name, String claimed, String dueTotal, String overdueTotal, String score) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 05aa9f903..59321086b 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -83,7 +83,7 @@ public class Rollup {
+                 if (overdueNow) {
+                     overdueCount++;
+                 }
+-                if (figure != null && c.status() == ClaimStatus.SETTLED) {
++                if (figure != null && c.status() == ClaimStatus.SETTLED && c.corrects() == null) {
+                     settled = settled.add(figure);
+                 }
+                 if (figure != null) {
