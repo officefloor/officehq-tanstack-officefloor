@@ -8,7 +8,8 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Stores the new status. Opening (unless it went to REVIEW) or reviewing gives the claim its number (see ClaimNumbering). A change another user made first (the
+ * Stores the new status. Settling (unless it went PENDING) or approving gives a claim without a number its number (see
+ * ClaimNumbering, by its due-by then); an OPEN, PENDING or REVIEW claim has none, and a claim numbered already keeps its own. A change another user made first (the
  * stored status is no longer the one this change started from) is refused, and the transaction gives back the number.
  * A settle forgets any settle batch the claim had (a bulk settle then marks its own; see SettleClaims). A void given a reason keeps it (see VoidReasonRepository). A stored change adds its line to the claim's status log (see ClaimLog).
  */
@@ -17,8 +18,8 @@ public class SaveClaimStatus {
             SettingRepository settings, SheetRepository sheets, ClaimLog log, VoidReasonRepository voidReasons, Out<Claim> saved,
             Out<ClaimNumber> number) throws InvalidClaimStatusException {
         Claim toSave = claim;
-        if ((change.action() == ClaimAction.OPEN && claim.status() == ClaimStatus.OPEN)
-                || change.action() == ClaimAction.REVIEW) {
+        if ((change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE)
+                && claim.status() == ClaimStatus.SETTLED && claim.number() == null) {
             String next = ClaimNumbering.next(claim, claims, periods, settings, sheets);
             toSave = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                     claim.note(), claim.status(), next, claim.due(), claim.openedBy(), claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags(), claim.held());

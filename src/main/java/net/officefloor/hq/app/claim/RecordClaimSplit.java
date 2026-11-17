@@ -24,8 +24,9 @@ public class RecordClaimSplit {
         Claim added = made.claim();
         return List.of("CLAIM_SPLIT sheet=" + claim.sheetId() + " by=" + split.by() + " person=" + name + " amount="
                 + claim.amount().toPlainString() + " date=" + claim.date()
-                + (claim.number() == null ? "" : " number=" + claim.number()) + " into=" + added.number(),
+                + (claim.number() == null ? "" : " number=" + claim.number()) + " into=" + (added.number() == null ? "" : added.number()),
                 "CLAIM_OPENED sheet=" + added.sheetId() + " by=" + split.by() + " person=" + name + " amount="
-                + added.amount().toPlainString() + " date=" + added.date() + " number=" + added.number());
+                + added.amount().toPlainString() + " date=" + added.date()
+                + (added.number() == null ? "" : " number=" + added.number()));
     }
 }

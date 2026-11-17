@@ -24,9 +24,8 @@ import org.springframework.web.bind.annotation.PathVariable;
  * Opens each selected claim that can be opened, in list order (people in list order, see PersonRepository#list; a person's
  * claims newest first): as the single open does, it must be a DRAFT whose due-by is not inside a closed period, nor one with an empty note whose due is above the note threshold
  * (see ApplyClaimStatus#needsNote), nor one that would take its person past its period's cap (see ClaimRules#overCap; those opened
- * before it in the same press count), takes its
- * number (see ClaimNumbering) and records who opened it (or, its due above the review threshold, goes to REVIEW
- * unnumbered, writing CLAIM_REVIEW, and counts as opened; see ApplyClaimStatus#needsReview), adds its OPEN line to its status log (see ClaimLog), then writes CLAIM_OPENED and the figures it moved (see Rollup).
+ * before it in the same press count), and records who opened it, unnumbered (a claim is numbered at settlement, see
+ * SaveClaimStatus) (or, its due above the review threshold, goes to REVIEW, writing CLAIM_REVIEW, and counts as opened; see ApplyClaimStatus#needsReview), adds its OPEN line to its status log (see ClaimLog), then writes CLAIM_OPENED and the figures it moved (see Rollup).
  * Only a steward opens a claim of a person flagged on the sheet's today (see Person#flaggedOn).
  * A user whose role the sheet does not permit to open opens none. Each that cannot, or is not on the sheet, is left as it is and counted refused.
  */
@@ -63,7 +62,7 @@ public class OpenClaims {
             }
             RollupBefore before = rollup.take(sheet);
             boolean review = ApplyClaimStatus.needsReview(claim, people, rates, settings, late);
-            String number = review ? null : ClaimNumbering.next(claim, claims, periods, settings, sheets);
+            String number = null;
             Claim toSave = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                     claim.note(), review ? ClaimStatus.REVIEW : ClaimStatus.OPEN, number, claim.due(), request.by(), claim.stated(),
                     claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(), claim.ref(), claim.tags(), claim.held());
@@ -75,7 +74,7 @@ public class OpenClaims {
             Person person = byId.get(claim.personId());
             audit.record((review ? "CLAIM_REVIEW" : "CLAIM_OPENED") + " sheet=" + sheet + " by=" + request.by() + " person="
                     + (person == null ? "" : person.name()) + " amount=" + claim.amount().toPlainString()
-                    + " date=" + claim.date() + (review ? "" : " number=" + number));
+                    + " date=" + claim.date());
             rollup.record(sheet, request.by(), before);
         }
         result.set(new BulkOpenResult(opened, selected.size() - opened));

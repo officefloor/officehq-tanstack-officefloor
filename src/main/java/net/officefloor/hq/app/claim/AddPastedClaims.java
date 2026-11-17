@@ -20,8 +20,8 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  line that updates a DRAFT edits it to the line's amount as the claim's editor would, writing CLAIM_EDITED when the
  *  amount changes. Either claim is then opened by the user pasting as the open button opens it (see ApplyClaimStatus,
  *  SaveClaimStatus): one with an empty note whose due is above the note threshold, or one that would take its person
- *  past its period's cap (those opened before it in the paste count), refuses the whole paste. It takes its number,
- *  writes CLAIM_OPENED (or, its due above the review threshold, goes to REVIEW unnumbered and writes CLAIM_REVIEW, see
+ *  past its period's cap (those opened before it in the paste count), refuses the whole paste. It stays unnumbered (numbered at settlement, see SaveClaimStatus),
+ *  writes CLAIM_OPENED (or, its due above the review threshold, goes to REVIEW and writes CLAIM_REVIEW, see
  *  ApplyClaimStatus#needsReview) and the figures the line moved (see Rollup). No line is written to the audit file until every
  *  line has gone through; a refusal writes nothing (the transaction gives back what was stored). */
 public class AddPastedClaims {
@@ -72,7 +72,7 @@ public class AddPastedClaims {
                 throw new InvalidClaimException("The person already has as many open claims in the period as its cap allows");
             }
             boolean review = ApplyClaimStatus.needsReview(claim, people, rates, settings, LateCharge.of(sheet, sheets, settings, claims));
-            String number = review ? null : ClaimNumbering.next(claim, claims, periods, settings, sheets);
+            String number = null;
             Claim opened = new Claim(claim.id(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                     claim.note(), review ? ClaimStatus.REVIEW : ClaimStatus.OPEN, number, claim.due(), by, claim.stated(), claim.statedDue(),
                     claim.corrects(), claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom(),
@@ -82,8 +82,7 @@ public class AddPastedClaims {
             }
             log.write(opened, by);
             lines.add((review ? "CLAIM_REVIEW" : "CLAIM_OPENED") + " sheet=" + sheet + " by=" + by + " person=" + person
-                    + " amount=" + opened.amount().toPlainString() + " date=" + opened.date()
-                    + (review ? "" : " number=" + number));
+                    + " amount=" + opened.amount().toPlainString() + " date=" + opened.date());
             lines.addAll(rollup.lines(sheet, by, before));
         }
         lines.forEach(audit::record);

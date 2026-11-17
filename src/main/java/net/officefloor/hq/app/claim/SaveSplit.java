@@ -12,8 +12,8 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Stores the claim's remaining amount, but only while it is still OPEN with the amount the split started from (a
  * change another user made first is refused), then adds the new claim: the split-off amount, the same person, date
- * and note, its due-by fixed now as the terms-th business day after its date (the terms in force on the day it is split, see ClaimRules#terms), OPEN with the sheet's next
- * number (see ClaimNumbering), opened by the user who split, the original's number as split-from and its tags; a late entry when its
+ * and note, its due-by fixed now as the terms-th business day after its date (the terms in force on the day it is split, see ClaimRules#terms), OPEN with no
+ * number (it is numbered at settlement, see SaveClaimStatus), opened by the user who split, the original's number as split-from and its tags; a late entry when its
  * due-by falls inside a soft-closed period. The new claim's
  * status log starts with its OPEN line (see ClaimLog).
  */
@@ -31,7 +31,7 @@ public class SaveSplit {
         if (periods.softClosedOn(added.sheetId(), added.dueBy())) {
             claims.markLateEntry(added);
         }
-        String number = ClaimNumbering.next(added, claims, periods, settings, sheets);
+        String number = null;
         Claim opened = new Claim(added.id(), added.sheetId(), added.personId(), added.amount(), added.date(),
                 added.note(), ClaimStatus.OPEN, number, null, split.by(), false, null, null, added.dueBy(), null, 0,
                 claim.number(), null, added.tags(), false);

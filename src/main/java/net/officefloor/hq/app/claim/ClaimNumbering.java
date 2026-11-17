@@ -7,7 +7,7 @@ import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 
 /**
- * The number a claim receives as it is opened. While the sheet's period-numbering-from setting is a date and the
+ * The number a claim receives as it is settled or approved (see SaveClaimStatus). While the sheet's period-numbering-from setting is a date and the
  * sheet's today is on or after it, the claim is numbered within the period containing its due-by, {@code <period>-<n>}
  * counting from 1 in each period, or {@code X-<n>} in its own sequence when no period contains it. Otherwise it takes
  * the next number of the sheet's tree within the fiscal year of its due-by (by the sheet's fiscal start month),
