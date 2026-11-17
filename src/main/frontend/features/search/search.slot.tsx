@@ -9,12 +9,12 @@ import { shownName, usePeople } from '../people/people';
 import { useRates } from '../rates/rates';
 import { useSettings } from '../settings/settings';
 
-/** One sheet's people, in list order, each with their names (name then aliases) and due-total as their row shows it. */
-type Found = { sheetId: string; name: string; names: string[]; due: string }[];
+/** One sheet's people, in list order, each with their names (name then aliases), grade and due-total as their row shows it. */
+export type Found = { sheetId: string; name: string; plainName: string; grade: string; names: string[]; due: string }[];
 
 /** Works out one sheet's people and due-totals with the same hooks as its rows, and reports them once all are read.
  *  Shows nothing. */
-function SheetPeople({ sheetId, report }: { sheetId: string; report: (sheetId: string, found: Found) => void }) {
+export function SheetPeople({ sheetId, report }: { sheetId: string; report: (sheetId: string, found: Found) => void }) {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
@@ -23,7 +23,7 @@ function SheetPeople({ sheetId, report }: { sheetId: string; report: (sheetId: s
   const fetching = useIsFetching({ queryKey: ['sheet', sheetId] });
   const ready = fetching === 0 && people.isSuccess && claims.isSuccess && rates.isSuccess && settings.isSuccess;
   const found: Found | null = ready
-    ? people.data.map((p) => ({ sheetId, name: shownName(p), names: [p.name, ...(p.aliases ?? [])], due: due.get(p.id) ?? 'n/a' }))
+    ? people.data.map((p) => ({ sheetId, name: shownName(p), plainName: p.name, grade: p.grade, names: [p.name, ...(p.aliases ?? [])], due: due.get(p.id) ?? 'n/a' }))
     : null;
   const key = found === null ? null : JSON.stringify(found);
   useEffect(() => {

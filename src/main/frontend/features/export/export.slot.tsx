@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
-import { useIsFetching } from '@tanstack/react-query';
+import { useCallback, useEffect, useState } from 'react';
+import { useIsFetching, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getJson } from '../../api/http';
+import { ReadNow } from '../../query/readNow';
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { live, useClaims } from '../claims/claims';
 import { gradeOn, usePeople } from '../people/people';
@@ -8,6 +10,7 @@ import { personCutTotal, usePools } from '../pools/pools';
 import { claimDue, personDue, claimRate, useRates } from '../rates/rates';
 import { useShareParts } from '../header/totals';
 import { useCap, useFloor, useLate } from '../settings/settings';
+import { type Found, SheetPeople } from '../search/search.slot';
 import { csvValue, download } from './csv';
 
 /** The button that downloads the people as a CSV file: name, grade in force today, retired-from date (or nothing)
@@ -150,9 +153,65 @@ function ExportPeriods({ sheetId }: { sheetId: string }) {
   );
 }
 
+/** The button that downloads the people of the whole tree as a CSV file: sheet, name, grade and due-total as each
+ *  sheet's person rows show them, this sheet's people first in list order, then the other sheets' (see the tree search)
+ *  by sheet id. The sheets are read as they are now, afresh on each press. */
+function ExportTree({ sheetId }: { sheetId: string }) {
+  const queryClient = useQueryClient();
+  const [found, setFound] = useState<Record<string, Found>>({});
+  const [made, setMade] = useState(false);
+  const read = useMutation({
+    mutationFn: async () => {
+      const others = await getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/tree`);
+      const sheets = [sheetId, ...others];
+      // re-read every sheet so what another user changed is seen
+      await Promise.all(sheets.map((id) => queryClient.refetchQueries({ queryKey: ['sheet', id] })));
+      return sheets;
+    },
+  });
+  const report = useCallback((id: string, f: Found) => setFound((all) => ({ ...all, [id]: f })), []);
+  const sheets = read.data;
+  const done = sheets !== undefined && sheets.every((id) => found[id] !== undefined);
+
+  useEffect(() => {
+    if (!done || made) return;
+    setMade(true);
+    const lines = ['sheet,name,grade,due-total'];
+    for (const id of sheets!) for (const p of found[id]) lines.push([p.sheetId, p.plainName, p.grade, p.due].map(csvValue).join(','));
+    download(`tree-${sheetId}.csv`, lines);
+  }, [done, made, sheets, found, sheetId]);
+
+  return (
+    <p>
+      <button
+        type="button"
+        data-testid="export-tree"
+        disabled={read.isPending}
+        onClick={() => {
+          read.reset();
+          setFound({});
+          setMade(false);
+          read.mutate();
+        }}
+      >
+        Export the tree's people (CSV)
+      </button>
+      {read.isError && <span data-testid="export-tree-error"> Could not read the tree.</span>}
+      {sheets !== undefined && !made && (
+        <ReadNow.Provider value={true}>
+          {sheets.map((id) => (
+            <SheetPeople key={id} sheetId={id} report={report} />
+          ))}
+        </ReadNow.Provider>
+      )}
+    </p>
+  );
+}
+
 export const contributions = [
   SheetPage.fill({ order: 15, Component: ExportPeople }),
   SheetPage.fill({ order: 15.5, Component: ExportClaims }),
   SheetPage.fill({ order: 15.6, Component: ExportPools }),
   SheetPage.fill({ order: 15.7, Component: ExportPeriods }),
+  SheetPage.fill({ order: 15.8, Component: ExportTree }),
 ];
