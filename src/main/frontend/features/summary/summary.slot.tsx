@@ -1,12 +1,12 @@
 import { SheetPage } from '../../slots/defs/sheetPage';
 import { isActive } from '../active/active';
-import { live, useClaims } from '../claims/claims';
-import { STATUSES, useStatusCounts } from '../header/totals';
+import { useClaims } from '../claims/claims';
+import { STATUSES, useGradeDue, useStatusCounts } from '../header/totals';
 import { GRADES, gradeOn, usePeople } from '../people/people';
 import { periodDue, usePeriods } from '../periods/periods';
-import { difference, personDue, sum, useRates } from '../rates/rates';
+import { difference, useRates } from '../rates/rates';
 import { isReviewLate } from '../overdue/late';
-import { useCap, useFloor, useLate, useReviewSla } from '../settings/settings';
+import { useFloor, useLate, useReviewSla } from '../settings/settings';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 
 /** The sheet's summary, worked out from the same figures the lists show. Per grade: the people on it on the sheet's
@@ -21,17 +21,11 @@ function Summary({ sheetId }: { sheetId: string }) {
   const rates = useRates(sheetId);
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
-  const cap = useCap(sheetId);
   const reviewSla = useReviewSla(sheetId);
 
   const active = (people.data ?? []).filter((p) => p.retiredFrom === null);
   const onGrade = (grade: string) => active.filter((p) => gradeOn(p, late.today) === grade);
-  const gradeDue = (grade: string) =>
-    sum(
-      onGrade(grade).map((p) =>
-        personDue(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, cap),
-      ),
-    );
+  const gradeDue = useGradeDue(sheetId);
   const byStart = [...(periods.data ?? [])].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
   const dueOf = new Map(byStart.map((p) => [p.id, periodDue(p, claims.data, people.data, rates.data, floor, late)]));
   const changeOf = new Map(

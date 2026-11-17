@@ -1,7 +1,7 @@
 import { live, useClaims, type ClaimStatus } from '../claims/claims';
 import { crewDueTotal, useCrews } from '../crews/crews';
 import { overdue } from '../overdue/overdue';
-import { usePeople, type Person } from '../people/people';
+import { gradeOn, usePeople, type Person } from '../people/people';
 import { personDue, personSplit, sum, trimmedSum, useRates } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../settings/settings';
 
@@ -118,4 +118,14 @@ export function useMyCrewDue(sheetId: string, user: string): string | null {
 export function useStatusCounts(sheetId: string): (status: ClaimStatus) => number {
   const claims = useClaims(sheetId);
   return (status) => (claims.data ?? []).filter((c) => c.status === status).length;
+}
+
+/** The due-total of each grade: the due-totals of the people on it on the sheet's today (retired people left out)
+ *  added up, skipping n/a. */
+export function useGradeDue(sheetId: string): (grade: string) => string {
+  const people = usePeople(sheetId);
+  const due = usePeopleDue(sheetId);
+  const late = useLate(sheetId);
+  const active = (people.data ?? []).filter((p) => p.retiredFrom === null);
+  return (grade) => sum(active.filter((p) => gradeOn(p, late.today) === grade).map((p) => due.get(p.id) ?? 'n/a'));
 }
