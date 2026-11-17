@@ -66,18 +66,27 @@ export function usePeopleDue(sheetId: string): Map<number, string> {
   );
 }
 
-/** The sheet's settled-total and open-total: everyone's added up (not trimmed). */
+/** The sheet's settled-total and open-total: everyone's added up, leaving out the single highest and lowest when three
+ *  or more people have one. */
 export function useSheetSplit(sheetId: string): { settled: string; open: string } {
+  const all = usePeopleSplit(sheetId);
+  return { settled: trimmedSum([...all.values()].map((s) => s.settled)), open: trimmedSum([...all.values()].map((s) => s.open)) };
+}
+
+/** Each person's settled-total and open-total as their row shows them, by person id. */
+export function usePeopleSplit(sheetId: string): Map<number, { settled: string; open: string }> {
   const parts = useShareParts(sheetId);
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
   const late = useLate(sheetId);
   const floor = useFloor(sheetId);
-  const all = (people.data ?? []).map((p) =>
-    personSplit(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, parts(p.id)),
+  return new Map(
+    (people.data ?? []).map((p) => [
+      p.id,
+      personSplit(live(claims.data?.filter((c) => c.personId === p.id) ?? [], [p], late.today), rates.data, p, late, floor, parts(p.id)),
+    ]),
   );
-  return { settled: sum(all.map((s) => s.settled)), open: sum(all.map((s) => s.open)) };
 }
 
 /** The sheet's overdue count and overdue-total: everyone's added up (the total leaving out the single highest and

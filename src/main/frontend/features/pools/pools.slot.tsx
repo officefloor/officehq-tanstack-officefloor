@@ -185,12 +185,13 @@ function PersonCutTotal({ sheetId, person }: { sheetId: string; person: Person }
   return <td data-testid="person-cut-total">{personCutTotal(pools.data, person.id)}</td>;
 }
 
-/** The sheet's cut total: everyone's cut total added up. */
+/** The sheet's cut total: everyone's cut total added up, trimmed (see sheetCutTotal). */
 function CutTotal({ sheetId }: { sheetId: string }) {
   const pools = usePools(sheetId);
+  const people = usePeople(sheetId);
   return (
     <p>
-      Cut total <span data-testid="rollup-cut-total">{sheetCutTotal(pools.data)}</span>
+      Cut total <span data-testid="rollup-cut-total">{sheetCutTotal(pools.data, (people.data ?? []).map((p) => p.id))}</span>
     </p>
   );
 }

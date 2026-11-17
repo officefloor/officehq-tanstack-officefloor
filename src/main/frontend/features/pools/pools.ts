@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { peopleKey } from '../people/people';
+import { trimmedSum } from '../rates/rates';
 
 /** A member of a pool: a person (`personId`, `name`) or another pool (`pool`, its name; `personId` null), the `share` percent (two decimals; a JSON number, shown with two), and whether they are `retired` (a retirement
  *  date set, whatever the date): then their share still counts toward the pool's total but they get no cut. `cut` is their cut of the sheet's
@@ -52,10 +53,8 @@ export function personCutTotal(pools: Pool[] | undefined, personId: number): str
   return fromCents(cents);
 }
 
-/** The sheet's cut total: everyone's cut total added up. Two decimals, as text. */
-export function sheetCutTotal(pools: Pool[] | undefined): string {
-  let cents = 0;
-  for (const pool of pools ?? [])
-    for (const m of pool.members) if (m.pool === null && m.cut !== null) cents += toCents(m.cut);
-  return fromCents(cents);
+/** The sheet's cut total: the cut totals of the given people (the sheet's) added up, leaving out the single highest and
+ *  lowest when there are three or more. Two decimals, as text. */
+export function sheetCutTotal(pools: Pool[] | undefined, personIds: number[]): string {
+  return trimmedSum(personIds.map((id) => personCutTotal(pools, id)));
 }
