@@ -1,0 +1,233 @@
+diff --git a/src/main/frontend/features/dashboard/dashboard.slot.tsx b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+new file mode 100644
+index 000000000..8296590ea
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+@@ -0,0 +1,22 @@
++import { SheetPage } from '../../slots/defs/sheetPage';
++import { useSheetOverdue, useStatusCounts } from '../header/totals';
++import { useActingRole } from '../roles/roles';
++
++/** The steward's dashboard: how many of the sheet's claims are PENDING, how many REVIEW, and how many that count are
++ *  overdue (as the rollups count them). Empty for a user who does not act as a steward; as of a date, the counts as
++ *  they stood then, for the role the user had then. */
++function Dashboard({ sheetId, user }: { sheetId: string; user: string }) {
++  const role = useActingRole(sheetId, user);
++  const withStatus = useStatusCounts(sheetId);
++  const overdue = useSheetOverdue(sheetId);
++  const steward = role.data?.role === 'steward';
++  return (
++    <section data-testid="dashboard">
++      Pending <span data-testid="dash-pending-count">{steward ? withStatus('PENDING') : ''}</span>
++      {' · '}Review <span data-testid="dash-review-count">{steward ? withStatus('REVIEW') : ''}</span>
++      {' · '}Overdue <span data-testid="dash-overdue-count">{steward ? overdue.count : ''}</span>
++    </section>
++  );
++}
++
++export const contribution = SheetPage.fill({ order: -5, Component: Dashboard });
+diff --git a/src/main/frontend/features/roles/roles.ts b/src/main/frontend/features/roles/roles.ts
+index a225878c0..7f18e2fb2 100644
+--- a/src/main/frontend/features/roles/roles.ts
++++ b/src/main/frontend/features/roles/roles.ts
+@@ -13,3 +13,14 @@ export function useRoles(sheetId: string) {
+     queryFn: () => getJson<Role[]>(`/api/sheets/${encodeURIComponent(sheetId)}/roles`),
+   });
+ }
++
++/** The role the user acts in on the sheet (a steward while a delegation to them holds its today); as of a date, the
++ *  role they acted in then. */
++export function useActingRole(sheetId: string, user: string) {
++  return useQuery({
++    queryKey: [...rolesKey(sheetId), 'acting', user],
++    queryFn: () =>
++      getJson<Role>(`/api/sheets/${encodeURIComponent(sheetId)}/roles/${encodeURIComponent(user.trim())}`),
++    enabled: user.trim() !== '',
++  });
++}
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index ad04ed66d..6f6335e98 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -21,8 +21,8 @@ function StatementsHead({ user }: { user: string }) {
+   );
+ }
+ 
+-/** A person's statement count, their last statement's due-total and date, a line per statement in force (oldest
+- *  first), and the date (blank: now) and button that
++/** A person's statement count, their last statement's due-total and date, a line per statement in force (in the order
++ *  taken), and the date (blank: now) and button that
+  *  take one: it records their due-total as of that date and binds each of their claims that counted then to its rate
+  *  figure then (not floored); and
+  *  the button that cancels their last statement (a steward only), making the claims it bound live again. */
+diff --git a/src/main/java/net/officefloor/hq/app/role/DelegationRepository.java b/src/main/java/net/officefloor/hq/app/role/DelegationRepository.java
+index 8c530580c..53eb07817 100644
+--- a/src/main/java/net/officefloor/hq/app/role/DelegationRepository.java
++++ b/src/main/java/net/officefloor/hq/app/role/DelegationRepository.java
+@@ -41,7 +41,14 @@ public class DelegationRepository {
+         if (user == null || user.isEmpty()) {
+             return Optional.empty();
+         }
+-        LocalDate today = sheets.today(sheetId);
++        return actingFor(sheetId, user, sheets.today(sheetId));
++    }
++
++    /** The steward the user acts for on the date: as {@link #actingFor(String, String)}, the date for the sheet's today. */
++    public Optional<String> actingFor(String sheetId, String user, LocalDate today) {
++        if (user == null || user.isEmpty()) {
++            return Optional.empty();
++        }
+         List<String> found = jdbc.queryForList("SELECT steward FROM delegation WHERE sheet_id = ? AND user_name = ?"
+                 + " AND from_date <= ? AND to_date >= ? ORDER BY id", String.class, sheetId, user, today, today);
+         return found.isEmpty() ? Optional.empty() : Optional.of(found.get(0));
+diff --git a/src/main/java/net/officefloor/hq/app/role/RespondWithActingRole.java b/src/main/java/net/officefloor/hq/app/role/RespondWithActingRole.java
+new file mode 100644
+index 000000000..2e6278da3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/role/RespondWithActingRole.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.role;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.sheet.AsOf;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** The role the user acts in on the sheet; read as of a date (see AsOf), the role they acted in then. */
++public class RespondWithActingRole {
++    public void respond(@PathVariable("sheetId") String sheetId, @PathVariable("user") String user,
++            @RequestParam(value = "asOf", required = false) String asOf, RoleRepository roles,
++            ObjectResponse<Role> response) {
++        String id = sheetId.trim();
++        String u = user == null ? "" : user.trim();
++        LocalDate date = AsOf.parse(asOf);
++        response.send(new Role(id, u, date == null ? roles.roleOf(id, u) : roles.roleOfAsOf(id, u, date)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/role/RoleRepository.java b/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
+index aeb8705cb..65b397170 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
++++ b/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
+@@ -2,7 +2,9 @@ package net.officefloor.hq.app.role;
+ 
+ import java.sql.ResultSet;
+ import java.sql.SQLException;
++import java.time.LocalDate;
+ import java.util.List;
++import net.officefloor.hq.app.sheet.SheetRepository;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+@@ -16,10 +18,12 @@ public class RoleRepository {
+ 
+     private final JdbcTemplate jdbc;
+     private final DelegationRepository delegations;
++    private final SheetRepository sheets;
+ 
+-    public RoleRepository(JdbcTemplate jdbc, DelegationRepository delegations) {
++    public RoleRepository(JdbcTemplate jdbc, DelegationRepository delegations, SheetRepository sheets) {
+         this.jdbc = jdbc;
+         this.delegations = delegations;
++        this.sheets = sheets;
+     }
+ 
+     /** The roles given on the sheet, by user name. */
+@@ -45,8 +49,33 @@ public class RoleRepository {
+         return found.isEmpty() ? CLERK : found.get(0);
+     }
+ 
+-    /** Stores the role, replacing the one the user had. */
++    /** The role the user acted in on the sheet at the end of the date: a steward while a delegation to the user held
++     *  the date, otherwise the role given as of the date. */
++    public String roleOfAsOf(String sheetId, String user, LocalDate asOf) {
++        String given = givenRoleOfAsOf(sheetId, user, asOf);
++        if (!STEWARD.equals(given) && delegations.actingFor(sheetId, user, asOf).isPresent()) {
++            return STEWARD;
++        }
++        return given;
++    }
++
++    /** The user's role given on the sheet as of the date: the last one given while the sheet's today was on or before
++     *  it (one given before that was kept counting from the beginning); clerk when none was. */
++    public String givenRoleOfAsOf(String sheetId, String user, LocalDate asOf) {
++        Integer logged = jdbc.queryForObject("SELECT COUNT(*) FROM user_role_log WHERE sheet_id = ? AND user_name = ?",
++                Integer.class, sheetId, user);
++        if (logged == null || logged == 0) {
++            return givenRoleOf(sheetId, user);
++        }
++        List<String> found = jdbc.queryForList("SELECT role FROM user_role_log WHERE sheet_id = ? AND user_name = ?"
++                + " AND set_on <= ? ORDER BY id DESC", String.class, sheetId, user, asOf);
++        return found.isEmpty() ? CLERK : found.get(0);
++    }
++
++    /** Stores the role, replacing the one the user had, and logs it with the sheet's today. */
+     public Role save(Role role) {
++        jdbc.update("INSERT INTO user_role_log (sheet_id, user_name, role, set_on) VALUES (?, ?, ?, ?)",
++                role.sheetId(), role.user(), role.role(), sheets.today(role.sheetId()));
+         jdbc.update("DELETE FROM user_role WHERE sheet_id = ? AND user_name = ?", role.sheetId(), role.user());
+         jdbc.update("INSERT INTO user_role (sheet_id, user_name, role) VALUES (?, ?, ?)",
+                 role.sheetId(), role.user(), role.role());
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/CloneRepository.java b/src/main/java/net/officefloor/hq/app/sheet/CloneRepository.java
+index 34f98141b..673afd4bb 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/CloneRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/CloneRepository.java
+@@ -67,7 +67,7 @@ public class CloneRepository {
+     public void copy(String from, String to) {
+         sheets.saveToday(to, sheets.today(from));
+         sheets.markLoaded(to);
+-        for (String table : List.of("setting", "setting_log", "user_role", "rate", "rate_log", "rate_version", "holiday", "void_reason",
++        for (String table : List.of("setting", "setting_log", "user_role", "user_role_log", "rate", "rate_log", "rate_version", "holiday", "void_reason",
+                 "claim_template")) {
+             copy(table, "WHERE sheet_id = ?" + (hasColumn(table, "id") ? " ORDER BY id" : ""), from, to, Map.of());
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementRepository.java b/src/main/java/net/officefloor/hq/app/statement/StatementRepository.java
+index 20b110bf5..c863860d8 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/StatementRepository.java
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementRepository.java
+@@ -76,15 +76,15 @@ public class StatementRepository {
+                 sheetId, Date.valueOf(asOf), Date.valueOf(asOf), sheetId);
+     }
+ 
+-    /** Each person's statement lines, "<statement date> <due-total>", oldest first; statements of the same date in
+-     *  their order (those a merge or a transfer brought over before the person's own). */
++    /** Each person's statement lines, "<statement date> <due-total>", in the order taken, so the last line is
++     *  their last statement (those a merge or a transfer brought over before the person's own). */
+     private Map<Long, List<String>> lines(String sheetId, String where, Object... args) {
+         Map<Long, List<String>> lines = new HashMap<>();
+         Object[] params = new Object[args.length + 1];
+         params[0] = sheetId;
+         System.arraycopy(args, 0, params, 1, args.length);
+         jdbc.query("SELECT person_id, taken_on, due_total FROM statement WHERE sheet_id = ? AND " + where
+-                + " ORDER BY person_id, taken_on, COALESCE(ord, id), id",
++                + " ORDER BY person_id, COALESCE(ord, id), id",
+                 (RowCallbackHandler) rs -> lines.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>())
+                         .add(rs.getDate("taken_on").toLocalDate() + " " + rs.getString("due_total")),
+                 params);
+diff --git a/src/main/resources/db/migration/V90__user_role_log.sql b/src/main/resources/db/migration/V90__user_role_log.sql
+new file mode 100644
+index 000000000..f85eda872
+--- /dev/null
++++ b/src/main/resources/db/migration/V90__user_role_log.sql
+@@ -0,0 +1,10 @@
++-- Every role given on a sheet, in the order given, with the sheet's today when it was given, so the role a user had
++-- as of a date can be read. A user with a role but no line here had it from the beginning.
++CREATE TABLE user_role_log (
++    id        BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id  VARCHAR(200) NOT NULL,
++    user_name VARCHAR(200) NOT NULL,
++    role      VARCHAR(20)  NOT NULL,
++    set_on    DATE         NOT NULL
++);
++CREATE INDEX user_role_log_sheet ON user_role_log (sheet_id, user_name, id);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles/{user}.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles/{user}.GET.yml
+new file mode 100644
+index 000000000..20e0d3edb
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles/{user}.GET.yml
+@@ -0,0 +1,5 @@
++# GET /api/sheets/{sheetId}/roles/{user} — the role the user acts in on the sheet (a steward while a delegation to them
++# holds the sheet's today); read as of a date (see AsOf), the role they acted in then.
++respond:
++  class: net.officefloor.hq.app.role.RespondWithActingRole
++  govern: [ readonly-transaction ]
