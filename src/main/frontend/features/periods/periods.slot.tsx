@@ -228,13 +228,22 @@ function PeriodGenerate({ sheetId, user }: { sheetId: string; user: string }) {
 /** Rolls a fiscal year (yyyy) over (a steward only): generates the next fiscal year's twelve periods as the fiscal year
  *  generator does, and adds each person's open figure at the end of the old year's last period to their carried figure
  *  for the new year's first period. Shows how many periods the last press made; the count is cleared while a new press
- *  runs. A year that is not yyyy, a year with no periods, or anyone but a steward is refused. */
+ *  runs. A year that is not yyyy, a year with no periods, or anyone but a steward is refused. Undo takes the sheet's
+ *  last rollover back (its periods removed, its opening balances taken back): only by the steward who made it, on the
+ *  sheet-today it was made, while no claim belongs to a period it generated; otherwise refused with the same error. */
 function Rollover({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const [year, setYear] = useState('');
   const rollover = useMutation({
     mutationFn: (y: string) =>
       postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/rollover`, { year: y, by: user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+  });
+  const undo = useMutation({
+    mutationFn: () =>
+      postJson<{ fy: string }>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/rollover-undo`, { by: user }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
     },
@@ -250,6 +259,7 @@ function Rollover({ sheetId, user }: { sheetId: string; user: string }) {
         onChange={(e) => {
           setYear(e.target.value);
           rollover.reset();
+          undo.reset();
         }}
       />{' '}
       <button
@@ -258,10 +268,23 @@ function Rollover({ sheetId, user }: { sheetId: string; user: string }) {
         disabled={rollover.isPending}
         onClick={() => {
           rollover.reset();
+          undo.reset();
           rollover.mutate(year);
         }}
       >
         Roll over
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="rollover-undo"
+        disabled={undo.isPending}
+        onClick={() => {
+          rollover.reset();
+          undo.reset();
+          undo.mutate();
+        }}
+      >
+        Undo last rollover
       </button>
       {rollover.isSuccess && (
         <>
@@ -271,6 +294,13 @@ function Rollover({ sheetId, user }: { sheetId: string; user: string }) {
       )}
       {rollover.isError && (
         <span data-testid="rollover-error"> Only a steward can roll a year over, and only a year yyyy that has periods.</span>
+      )}
+      {undo.isSuccess && <> Undid the {undo.data.fy} rollover.</>}
+      {undo.isError && (
+        <span data-testid="rollover-error">
+          {' '}
+          Only the steward who made the last rollover can undo it, on the same day, while no claim belongs to a period it made.
+        </span>
       )}
     </p>
   );

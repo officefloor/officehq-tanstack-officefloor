@@ -14,6 +14,7 @@ public class GeneratePeriods {
             PeriodRepository periods, Audit audit, Out<GeneratedPeriods> generated) {
         String sheet = sheetId.trim();
         int made = 0;
+        java.util.List<Long> ids = new java.util.ArrayList<>();
         YearMonth last = YearMonth.from(values.to());
         for (YearMonth month = YearMonth.from(values.from()); !month.isAfter(last); month = month.plusMonths(1)) {
             String name = month.toString();
@@ -23,8 +24,9 @@ public class GeneratePeriods {
             Period period = periods.add(sheet, name, month.atDay(1), month.atEndOfMonth(), null);
             audit.record("PERIOD_ADDED sheet=" + period.sheetId() + " by=" + values.by() + " period=" + period.name()
                     + " from=" + period.from() + " to=" + period.to());
+            ids.add(period.id());
             made++;
         }
-        generated.set(new GeneratedPeriods(made));
+        generated.set(new GeneratedPeriods(made, ids));
     }
 }

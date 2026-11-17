@@ -15,6 +15,7 @@ public class GenerateQuarters {
             PeriodRepository periods, Audit audit, Out<GeneratedPeriods> generated) {
         String sheet = sheetId.trim();
         int made = 0;
+        java.util.List<Long> ids = new java.util.ArrayList<>();
         for (int quarter = 1; quarter <= 4; quarter++) {
             YearMonth first = YearMonth.of(values.year(), quarter * 3 - 2);
             LocalDate from = first.atDay(1);
@@ -26,8 +27,9 @@ public class GenerateQuarters {
             Period period = periods.add(sheet, name, from, to, null);
             audit.record("PERIOD_ADDED sheet=" + period.sheetId() + " by=" + values.by() + " period=" + period.name()
                     + " from=" + period.from() + " to=" + period.to());
+            ids.add(period.id());
             made++;
         }
-        generated.set(new GeneratedPeriods(made));
+        generated.set(new GeneratedPeriods(made, ids));
     }
 }
